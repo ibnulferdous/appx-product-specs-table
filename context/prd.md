@@ -81,7 +81,7 @@ Shopify's native product pages have no structured way to display specifications.
 | App Framework | Shopify App Template (Remix / React Router) |
 | Database | PostgreSQL via Neon (cloud-hosted) |
 | ORM | Prisma |
-| Admin UI Grid | AG Grid (free version) |
+| Admin UI Editor | Custom React spec-table editor (@dnd-kit for drag-and-drop) |
 | Storefront Rendering | Theme App Extension — Shopify Liquid + plain JavaScript |
 | Performance Limit | Maximum 200 rows per table, validated in UI and on save |
 

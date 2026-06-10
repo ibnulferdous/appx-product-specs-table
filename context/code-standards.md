@@ -28,7 +28,7 @@
 - Keep components focused: if a component is doing layout AND data transformation AND side effects, split it
 - Do not fetch data inside components — data comes from Remix loaders via `useLoaderData`
 - Lift state only as far as it needs to go — do not put local UI state in a top-level context
-- AG Grid state (unsaved row edits) lives in local React state only — nothing persists until the merchant clicks Save
+- Spec-table editor state (unsaved row edits) lives in local React state only — nothing persists until the merchant clicks Save
 
 ## Admin UI — Polaris
 
@@ -39,10 +39,14 @@
 - Do not hardcode hex color values — use Polaris design tokens or CSS custom properties.
 - Accessibility is non-negotiable: all interactive Polaris components must be keyboard navigable and screen-reader labelled.
 
-## AG Grid (Admin)
+## Spec Table Editor (Admin)
 
-- Centralize column definitions and grid options outside of the React render cycle, or inside `useMemo`, to prevent unnecessary re-renders
-- Use plain CSS or standard AG Grid themes for table styling — do not fight the grid's own rendering with custom overrides
+- The editor is a custom React component — no AG Grid or other heavy data-grid library. The value cell is a token editor (manual text + dynamic-field pills), which a generic grid cannot model cleanly.
+- Keep the rows array in a single source of truth (a reducer over `rows`); array index is display order. Reordering, insert, delete, and duplicate are array operations on that one source.
+- Use `@dnd-kit` for drag-and-drop row reordering. Keep reordering keyboard-accessible (`@dnd-kit` supports this) — do not ship mouse-only drag.
+- Render rows with semantic HTML and Polaris design tokens — no hardcoded hex (see Polaris rules above). Scope any custom editor CSS tightly to the component file.
+- Memoize derived data and stable callbacks so a single cell edit does not re-render every row.
+- Enforce the 200-row cap in the UI (warn near the limit, block at 200); the server re-validates row count on save.
 
 ## Storefront (Theme App Extension)
 

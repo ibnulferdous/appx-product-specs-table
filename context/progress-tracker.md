@@ -31,7 +31,7 @@ Build the first vertical slice incrementally, starting with template CRUD now th
 ## In Progress
 
 - Build the first vertical slice:
-  - Template Editor rows tab (AG Grid, local React state until Save)
+  - Template Editor rows tab (custom React editor, local React state until Save)
   - save template to Postgres
   - validate the 200-row limit
   - sync active/draft/archived template payload to Shopify metaobject
@@ -68,3 +68,9 @@ Build the first vertical slice incrementally, starting with template CRUD now th
   - Re-check `shopId` ownership via `getTemplateByIdForShop` before any update mutation.
   - Add a `useEffect` resetting form + save-bar on `[params.id, loaderData]` change once the editor holds local state (prevents stale data leaking when navigating new↔edit without a remount).
   - Order metaobject sync Postgres-first and make it idempotent (deterministic `template-{id}` handle).
+
+- **Editor Build Decision (Session 2026-06-10):** The spec-table editor will be a **custom React editor — no AG Grid.** Rationale: the table is only 2 columns, capped at 200 rows, with no sort/filter; the value cell is a `valueParts` token editor (manual text + dynamic-field pills) with escaping popovers, which a generic data grid models poorly and which `code-standards.md` already forbids fighting. AG Grid would remove almost none of the real work (pill editor, field picker, undo/redo, floating toolbar, preview are custom regardless). Decisions locked:
+  - **Drag-and-drop:** `@dnd-kit` (`@dnd-kit/core` + `@dnd-kit/sortable`) — one new dependency; keyboard-accessible reordering.
+  - **Value editor:** segmented "Insert field" model (text inputs + removable pill chips + field picker). Caret-`@` typing is out of scope.
+  - **Doc sync done:** `CLAUDE.md`, `prd.md`, `data-model.md`, `code-standards.md`, and `admin-screen-plan.md` updated to drop AG Grid. The two `context/features/` files (01, 02) are historical records and were intentionally left unchanged.
+  - Suggested build order: (1) reducer + static row render + add/delete/duplicate + 200-row cap; (2) segmented value cell + pills + floating toolbar; (3) field picker + native Shopify fields (metafield definitions as a sub-step); (4) `@dnd-kit` reorder + keyboard nav; (5) undo/redo + live preview + wire Save (server-side 200-row + `shopId` re-check).

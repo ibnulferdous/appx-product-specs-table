@@ -1,7 +1,7 @@
 ## Application Building Context
 
 **App:** Appx — Product Specs Table
-**Stack:** Shopify App Template (Remix / React Router, TypeScript) · PostgreSQL via Neon · Prisma · AG Grid (free) · Theme App Extension (Liquid + plain JS)
+**Stack:** Shopify App Template (Remix / React Router, TypeScript) · PostgreSQL via Neon · Prisma · Custom React spec-table editor (@dnd-kit drag-and-drop) · Theme App Extension (Liquid + plain JS)
 
 ---
 
@@ -35,7 +35,7 @@ Read the following files in order before implementing or making any architectura
 
 3. `context/code-standards.md` — coding conventions,
    file organization rules, stack-specific standards
-   (Remix, Polaris, Prisma, AG Grid)
+   (Remix, Polaris, Prisma, custom spec-table editor)
 
 4. `context/ai-workflow-rules.md` — spec-driven
    approach, when to split work, protected files,

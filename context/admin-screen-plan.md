@@ -130,7 +130,7 @@ Shown when `Shop.onboardingStatus` is `DISMISSED`. This is the permanent dashboa
 
 This is where most of the work happens.
 
-- AG Grid table with columns: ⠿ (drag handle) | Type | Label | Value Source | Actions
+- Custom React editor grid with columns: ⠿ (drag handle) | Type | Label | Value Source | Actions
 - Row types: `DATA` and `SECTION_HEADER` — visually distinct
 - Inline editing of label and value source per row
 - Value source picker per row (three types):
@@ -139,7 +139,7 @@ This is where most of the work happens.
   - **Metafield** — two-step dropdown: namespace → key
 - "+ Add row" button at the bottom
 - "+ Add section header" button at the bottom
-- Drag-and-drop row reordering (built into AG Grid)
+- Drag-and-drop row reordering (via @dnd-kit, keyboard-accessible)
 - Row count indicator — warn at 180 rows, hard-block at 200
 - Undo / Redo buttons in the toolbar above the grid
 
