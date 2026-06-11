@@ -113,9 +113,9 @@ Shown when `Shop.onboardingStatus` is `DISMISSED`. This is the permanent dashboa
 
 ## Screen 3 — Template Editor `/app/templates/new` and `/app/templates/:id`
 
-**Purpose:** The core screen. Build or edit the template — rows, section headers, data sources, styling, and live preview.
+**Purpose:** The core screen. Build or edit the template — rows, section headers, data sources, and styling — in a WYSIWYG editor that renders exactly like the storefront table.
 
-**Layout:** Two-column split — editor on the left (~60%), live preview panel on the right (~40%). Collapse preview to a toggle on narrow screens.
+**Layout:** Single full-width WYSIWYG editor. The editing table _is_ the live preview — it renders with the current `TableStyling` at all times. A viewport toggle (Desktop / Tablet / Mobile) switches the table's rendered width/layout (mobile shows the stacked label-over-value layout), and the table stays fully editable in every viewport. No separate preview panel.
 
 **Primary Polaris components:** `Page`, `Layout`, `Card`, `Tabs`, `TextField`, `Select`, `Button`, `Banner`
 
@@ -140,6 +140,9 @@ This is where most of the work happens.
 - "+ Add row" button at the bottom
 - "+ Add section header" button at the bottom
 - Drag-and-drop row reordering (via @dnd-kit, keyboard-accessible)
+- Paste a multi-cell table copied from any website, Excel, or Google Sheets to bulk-create rows — first pasted column → label, remaining columns → manual TEXT value; 200-row cap enforced on paste
+- Dynamic value parts (SHOPIFY_FIELD / METAFIELD) render as pill chips while editing, with a resolved placeholder preview (e.g., "Storefront preview: Up to **29 hours**")
+
 - Row count indicator — warn at 180 rows, hard-block at 200
 - Undo / Redo buttons in the toolbar above the grid
 
@@ -150,13 +153,7 @@ This is where most of the work happens.
 - Font style toggle: Normal / Bold
 - Column width ratio slider or two numeric inputs (label % + value % = 100%)
 - "Reset to theme defaults" link
-
-### Right panel — Live Preview
-
-- Renders a mock spec table using current rows and styling
-- Updates on every change (debounced, no save required)
-- Displays placeholder values for SHOPIFY_FIELD and METAFIELD rows (e.g., "Shopify: price" / "Metafield: custom.battery_life")
-- Toggle: "Show empty rows" / "Hide empty rows"
+- All styling changes apply live to the WYSIWYG editor table — no save required
 
 **State to read/write:** `Template` (rows JSON, status, name), `TableStyling`
 

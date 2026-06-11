@@ -26,10 +26,11 @@ Shopify's native product pages have no structured way to display specifications.
 - Create, rename, duplicate, archive, and hard-delete templates
 - Add, edit, delete, and drag-and-drop reorder rows within a template
 - Add section headers to group related rows (e.g., "Display", "Battery")
+- Paste a multi-cell specs table copied from any website, Excel, or Google Sheets to bulk-create rows (first pasted column → label, remaining columns → manual TEXT value; 200-row cap enforced on paste)
 - Auto-hide rows with empty values on the storefront
 - Undo / redo support while editing
 - Save templates as draft or published state
-- Live preview panel while building a template
+- WYSIWYG editor — the editing table renders exactly like the storefront table and stays editable in every viewport (Desktop / Tablet / Mobile); no separate preview panel
 
 ### Data Sources
 
@@ -62,7 +63,6 @@ Shopify's native product pages have no structured way to display specifications.
 
 - Simple setup guide on first launch
 - Prompt to add the app block to the theme
-- Live preview panel during template creation
 
 ---
 
@@ -76,14 +76,14 @@ Shopify's native product pages have no structured way to display specifications.
 
 ## Technical Stack
 
-| Layer | Choice |
-| --- | --- |
-| App Framework | Shopify App Template (Remix / React Router) |
-| Database | PostgreSQL via Neon (cloud-hosted) |
-| ORM | Prisma |
-| Admin UI Editor | Custom React spec-table editor (@dnd-kit for drag-and-drop) |
-| Storefront Rendering | Theme App Extension — Shopify Liquid + plain JavaScript |
-| Performance Limit | Maximum 200 rows per table, validated in UI and on save |
+| Layer                | Choice                                                                                                                                                    |
+| -------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| App Framework        | Shopify App Template (Remix / React Router)                                                                                                               |
+| Database             | PostgreSQL via Neon (cloud-hosted)                                                                                                                        |
+| ORM                  | Prisma                                                                                                                                                    |
+| Admin UI Editor      | Custom React spec-table editor (@dnd-kit for drag-and-drop)                                                                                               |
+| Storefront Rendering | Theme App Extension — Shopify Liquid + plain JavaScript                                                                                                   |
+| Performance Limit    | Maximum 200 rows per table, validated in UI and on save (MVP cap — may increase post-MVP; keep it as a single shared constant, never a hardcoded literal) |
 
 ---
 

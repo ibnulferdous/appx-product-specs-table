@@ -46,7 +46,7 @@
 - Use `@dnd-kit` for drag-and-drop row reordering. Keep reordering keyboard-accessible (`@dnd-kit` supports this) — do not ship mouse-only drag.
 - Render rows with semantic HTML and Polaris design tokens — no hardcoded hex (see Polaris rules above). Scope any custom editor CSS tightly to the component file.
 - Memoize derived data and stable callbacks so a single cell edit does not re-render every row.
-- Enforce the 200-row cap in the UI (warn near the limit, block at 200); the server re-validates row count on save.
+- Enforce the 200-row cap in the UI (warn near the limit, block at 200); the server re-validates row count on save. UI and server must both read the same exported constant — the cap is an MVP value that may increase post-MVP, so never hardcode the literal value.
 
 ## Storefront (Theme App Extension)
 

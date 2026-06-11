@@ -505,7 +505,7 @@ Example:
 | `valueParts`    | array   | Yes      | Ordered value parts used to build the final displayed value.                                            |
 | `hideWhenEmpty` | boolean | Yes      | If true, storefront hides this row when the resolved value is empty.                                    |
 
-MVP validation: a template can contain at most 200 rows, including data rows and section headers. The admin UI should prevent merchants from exceeding this limit, and the server should reject saves that exceed it.
+MVP validation: a template can contain at most 200 rows, including data rows and section headers. The admin UI should prevent merchants from exceeding this limit, and the server should reject saves that exceed it. The 200-row cap is an MVP value and may increase post-MVP — implement it as a single shared constant, never a hardcoded literal.
 
 ### Value part reference
 

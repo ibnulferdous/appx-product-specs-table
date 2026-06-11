@@ -59,7 +59,7 @@ Build the first vertical slice incrementally, starting with template CRUD now th
   - Templates list
   - Template editor
   - Product assignment page
-  - Styling and preview area, likely inside the template editor
+  - Styling controls inside the template editor — changes apply live to the WYSIWYG editor table (no separate preview area)
 - Build the complete create/save/sync/assign/render flow before expanding advanced styling, import/export, AI, analytics, or bulk assignment.
 - Template persistence foundation is now in place; do not add assignment, styling, billing, or storefront sync before the rows editor and save path work.
 
@@ -73,4 +73,9 @@ Build the first vertical slice incrementally, starting with template CRUD now th
   - **Drag-and-drop:** `@dnd-kit` (`@dnd-kit/core` + `@dnd-kit/sortable`) — one new dependency; keyboard-accessible reordering.
   - **Value editor:** segmented "Insert field" model (text inputs + removable pill chips + field picker). Caret-`@` typing is out of scope.
   - **Doc sync done:** `CLAUDE.md`, `prd.md`, `data-model.md`, `code-standards.md`, and `admin-screen-plan.md` updated to drop AG Grid. The two `context/features/` files (01, 02) are historical records and were intentionally left unchanged.
-  - Suggested build order: (1) reducer + static row render + add/delete/duplicate + 200-row cap; (2) segmented value cell + pills + floating toolbar; (3) field picker + native Shopify fields (metafield definitions as a sub-step); (4) `@dnd-kit` reorder + keyboard nav; (5) undo/redo + live preview + wire Save (server-side 200-row + `shopId` re-check).
+  - Suggested build order: (1) reducer + static row render + add/delete/duplicate + 200-row cap; (2) segmented value cell + pills + floating toolbar; (3) field picker + native Shopify fields (metafield definitions as a sub-step); (4) `@dnd-kit` reorder + keyboard nav; (5) clipboard paste-in of multi-cell tables → bulk row creation; (6) undo/redo + storefront-styled WYSIWYG rendering (incl. viewport toggle) + wire Save (server-side 200-row + `shopId` re-check).
+
+- **Editor UX Decisions (Session 2026-06-11):** Reviewed an app's Excel-like editor and confirmed the structured-row-editor direction. Decisions locked:
+  - **WYSIWYG editor, no preview panel:** the editing table renders exactly like the storefront table with the current `TableStyling` at all times. No separate live-preview panel and no edit/preview mode switch. A Desktop / Tablet / Mobile viewport toggle changes the rendered layout (mobile = stacked label-over-value), and the table stays fully editable in every viewport.
+  - **Clipboard paste is an MVP feature:** pasting a multi-cell table copied from any website / Excel / Google Sheets bulk-creates rows — first pasted column → label, remaining columns → manual TEXT value; 200-row cap enforced on paste. Multi cell copy paste ability should be implemented.
+  - **Row cap is configurable:** 200 is the MVP value and may increase post-MVP. Implement it as a single shared constant read by both the editor UI and server-side save validation — never a hardcoded literal.
