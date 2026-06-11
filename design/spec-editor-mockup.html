@@ -333,27 +333,24 @@ svg{display:block}
 .sw2::after{content:"";position:absolute;top:2px;right:2px;width:16px;height:16px;border-radius:50%;background:#fff;transition:all .12s}
 .sw2.off::after{right:auto;left:2px}
 
-/* ---------- Preview (storefront-matching) ---------- */
-.previewstage{flex:1;display:flex;justify-content:center;padding:24px;background:#f1f1f1;overflow:auto}
-.device{background:#fff;border:1px solid var(--border);border-radius:var(--radius-lg);box-shadow:var(--shadow);width:100%;max-width:none;transition:max-width .18s;overflow:hidden}
-.device .bar{height:34px;background:#fafafa;border-bottom:1px solid var(--border-2);display:flex;align-items:center;gap:6px;padding:0 12px}
-.device .bar i{width:10px;height:10px;border-radius:50%;background:#dcdcdc;display:block}
-.device .bar .url{margin-left:10px;color:var(--text-3);font-size:11px}
-.device .pad{padding:22px}
+/* ---------- WYSIWYG viewport modes ----------
+   No separate preview: the editable grid IS the storefront-matching
+   table. The viewport toggle constrains its width; mobile stacks
+   label over value. The grid stays fully editable in every mode. */
+#gridView .grid{transition:max-width .18s}
+#gridView.tablet .grid,#gridView.mobile .grid{
+  margin:0 auto;border-left:1px solid var(--border-2);border-right:1px solid var(--border-2)
+}
+#gridView.tablet .grid{max-width:768px}
+#gridView.mobile .grid{max-width:390px}
 
-/* the spec table as a shopper sees it */
-.spectable{width:100%;border-collapse:collapse;font-size:14px;color:#202223}
-.spectable caption{text-align:left;font-size:18px;font-weight:700;margin-bottom:12px}
-.spectable .sec td{background:#f6f7f9;font-weight:700;text-transform:uppercase;font-size:11px;letter-spacing:.04em;color:#5c5f62;padding:9px 14px;border-top:1px solid #e3e3e3}
-.spectable td{padding:11px 14px;border-top:1px solid #ededed;vertical-align:top}
-.spectable td.k{width:38%;color:#6d7175;font-weight:500}
-.spectable td.v{color:#202223}
-.spectable tr:first-child td{border-top:none}
-
-/* mobile stacked variant */
-.device.mobile .spectable td.k{display:block;width:100%;padding-bottom:2px;color:#8a8a8a;font-size:12px;border-top:1px solid #ededed}
-.device.mobile .spectable td.v{display:block;width:100%;padding-top:0;border-top:none;padding-bottom:12px}
-.device.mobile .spectable .sec td{display:table-cell}
+/* mobile: stacked label-over-value, same as the storefront layout */
+#gridView.mobile .grid-head{grid-template-columns:34px 1fr}
+#gridView.mobile .grid-head .h.val{display:none}
+#gridView.mobile .row[data-type="data"]{grid-template-columns:34px 1fr}
+#gridView.mobile .row[data-type="data"] .gutter{grid-column:1;grid-row:1 / span 2}
+#gridView.mobile .row[data-type="data"] .cell.label{grid-column:2;grid-row:1;min-height:0;padding-bottom:2px;color:#8a8a8a;font-size:12px}
+#gridView.mobile .row[data-type="data"] .cell.value{grid-column:2;grid-row:2;border-left:none;padding-top:0}
 
 .legend{max-width:1180px;margin:14px auto 0;color:var(--text-3);font-size:12px;display:flex;gap:18px;flex-wrap:wrap}
 .legend b{color:var(--text-2)}
@@ -459,14 +456,11 @@ svg{display:block}
               </button>
             </div>
 
+            <!-- viewport toggle only — no Edit/preview mode switch; the table is WYSIWYG and editable in every viewport -->
             <div class="toggle" id="toggle">
-              <button data-mode="edit" class="active" title="Edit (grid)">
-                <svg viewBox="0 0 20 20" fill="currentColor"><path d="M4 13l8-8 3 3-8 8H4z"/></svg>Edit
-              </button>
-              <span class="sep"></span>
-              <button data-mode="desktop" title="Desktop preview"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="3" width="16" height="11" rx="1"/><path d="M7 17h6"/></svg></button>
-              <button data-mode="tablet" title="Tablet preview"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="4" y="2" width="12" height="16" rx="1.5"/></svg></button>
-              <button data-mode="mobile" title="Mobile preview"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="6" y="2" width="8" height="16" rx="1.5"/><path d="M9 15h2"/></svg></button>
+              <button data-mode="desktop" class="active" title="Desktop viewport"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="3" width="16" height="11" rx="1"/><path d="M7 17h6"/></svg></button>
+              <button data-mode="tablet" title="Tablet viewport"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="4" y="2" width="12" height="16" rx="1.5"/></svg></button>
+              <button data-mode="mobile" title="Mobile viewport"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="6" y="2" width="8" height="16" rx="1.5"/><path d="M9 15h2"/></svg></button>
             </div>
           </div>
 
@@ -638,36 +632,13 @@ svg{display:block}
                 </div><!-- /grid -->
               </div><!-- /gridView -->
 
-              <!-- ===== PREVIEW (device modes) ===== -->
-              <div id="previewView" class="previewstage" style="display:none">
-                <div class="device" id="device">
-                  <div class="bar"><i></i><i></i><i></i><span class="url">your-store.com / products / the-complete-phone</span></div>
-                  <div class="pad">
-                    <table class="spectable">
-                      <caption>Specifications</caption>
-                      <tbody>
-                        <tr class="sec"><td colspan="2">Display</td></tr>
-                        <tr><td class="k">Size</td><td class="v">6.9-inch (diagonal)</td></tr>
-                        <tr><td class="k">Type</td><td class="v">Super Retina XDR display</td></tr>
-                        <tr><td class="k">Resolution</td><td class="v">2868 × 1320 pixels</td></tr>
-                        <tr class="sec"><td colspan="2">Performance</td></tr>
-                        <tr><td class="k">Chipset</td><td class="v">A19 Pro chip (3 nm)</td></tr>
-                        <tr><td class="k">Brand</td><td class="v">Appx</td></tr>
-                        <tr class="sec"><td colspan="2">Battery</td></tr>
-                        <tr><td class="k">Battery Life</td><td class="v">Up to 29 hours</td></tr>
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-              </div>
-
             </div><!-- /stage -->
           </div><!-- /stage-wrap -->
         </section>
 
         <div class="legend">
           <span><b>Try it:</b> click the <b>Style</b> / <b>Settings</b> tabs</span>
-          <span>switch <b>Edit → Desktop / Tablet / Mobile</b> in the toggle</span>
+          <span>switch <b>Desktop / Tablet / Mobile</b> in the toggle — the table stays editable in every viewport</span>
           <span>hover a row, click the <b>⠿</b> handle</span>
           <span>click <b>+ Insert field</b> in the editing row</span>
         </div>
@@ -698,10 +669,10 @@ svg{display:block}
 const $  = (s,r=document)=>r.querySelector(s);
 const $$ = (s,r=document)=>[...r.querySelectorAll(s)];
 
-let tab='content', mode='edit';
+let tab='content', mode='desktop';
 
-const leftpanel=$('#leftpanel'), gridView=$('#gridView'), previewView=$('#previewView');
-const panelStyle=$('#panel-style'), panelSettings=$('#panel-settings'), device=$('#device');
+const leftpanel=$('#leftpanel'), gridView=$('#gridView');
+const panelStyle=$('#panel-style'), panelSettings=$('#panel-settings');
 
 function render(){
   // tabs visual
@@ -715,24 +686,12 @@ function render(){
   panelStyle.style.display    = tab==='style'    ? 'block':'none';
   panelSettings.style.display = tab==='settings' ? 'block':'none';
 
-  // stage: edit -> grid, device -> preview
-  const isEdit = mode==='edit';
-  gridView.style.display    = isEdit ? 'block':'none';
-  previewView.style.display = isEdit ? 'none':'flex';
-
-  // device width
-  device.classList.remove('mobile');
-  if(mode==='desktop') device.style.maxWidth='100%';
-  if(mode==='tablet')  device.style.maxWidth='768px';
-  if(mode==='mobile'){ device.style.maxWidth='390px'; device.classList.add('mobile'); }
+  // viewport: the editable grid IS the preview — it stays editable in every mode
+  gridView.classList.toggle('tablet', mode==='tablet');
+  gridView.classList.toggle('mobile', mode==='mobile');
 }
 
-// tabs set the smart default for the right pane, but you can override
-$$('#tabs .tab').forEach(t=>t.addEventListener('click',()=>{
-  tab=t.dataset.tab;
-  mode = (tab==='content') ? 'edit' : 'desktop';   // smart default
-  closePops(); render();
-}));
+$$('#tabs .tab').forEach(t=>t.addEventListener('click',()=>{ tab=t.dataset.tab; closePops(); render(); }));
 $$('#toggle button').forEach(b=>b.addEventListener('click',()=>{ mode=b.dataset.mode; closePops(); render(); }));
 
 // status select (header) just cycles for demo
