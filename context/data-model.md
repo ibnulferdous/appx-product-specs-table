@@ -23,7 +23,17 @@ This document defines the current MVP data model and storefront architecture for
 
 ---
 
-> The MVP schema is intentionally forward-compatible with post-MVP expansion areas (multilingual support, variant-level specs, flexible assignment rules, import/export, AI extraction). Consult `context/feature-roadmap.md` when making schema or feature boundary decisions that could affect those areas.
+> The MVP schema is intentionally forward-compatible with post-MVP expansion areas (multilingual support, variant-level specs, flexible assignment rules, import/export, AI extraction, product comparison). Consult `context/feature-roadmap.md` when making schema or feature boundary decisions that could affect those areas.
+
+### Comparison-readiness invariant
+
+The post-MVP product comparison feature (see "Product Comparison Feature Definition" in `context/feature-roadmap.md`) is structurally **one template resolved against N products instead of 1**. The current model already supports this because:
+
+- `valueParts` of type `SHOPIFY_FIELD` and `METAFIELD` resolve per product at render time — the same template rendered against N products yields aligned columns.
+- Row `key` is the cross-product (and cross-template) row alignment mechanism. Do not weaken its uniqueness or stability rules.
+- The metaobject payload is product-agnostic (structure only, values resolved at render), so the storefront delivery layer works unchanged for multi-product rendering.
+
+Comparison will be added with **additive migrations only** (a `ComparisonSet` model for merchant-curated comparison products, plus comparison display settings). No existing model changes are planned or permitted for it. Schema decisions must not break the template-times-N-products property — e.g., never move per-product resolved values into `Template.rows`, and never make metaobject payloads depend on a single product.
 
 ## 1. Architecture Overview
 

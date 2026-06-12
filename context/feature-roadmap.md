@@ -45,7 +45,27 @@ Phase 1 (MVP) features are fully defined in `prd.md`. This file covers post-MVP 
 - Multiple display styles: default table, card grid, accordion/collapsible
 - Tab layout (specs inside a tab alongside description and reviews)
 - Show/hide table based on product tag or type
-- Comparison mode (compare two products side by side)
+- Comparison mode — see "Product Comparison Feature Definition" below; Phase 2 delivers the static product-page comparison table
+
+### Product Comparison Feature Definition
+
+Based on App Store competitor research (2026-06-12: Bear Specs & Compare, Equate, Compareder, Comparable, CompareXpert). Comparison is the premium-tier feature: competitors price specs at the entry tier and gate comparison behind a higher tier ($5–10/month market band). Architecturally, a comparison table is **one spec template resolved against N products instead of 1** — it reuses the existing template engine, `valueParts` resolution, and row `key` alignment. No changes to existing models; additive migrations only (`ComparisonSet`, comparison display settings).
+
+**Stage 1 — merchant-curated static comparison (Phase 2):**
+
+- Merchant picks comparison products per product (curated `ComparisonSet`); table renders on the product page comparing the current product against them
+- Columns show product image, title, price, and add-to-cart button; rows come from the shared template
+- Highlight differences / hide similarities toggle
+- Row show/hide per comparison context; reuse existing drag-and-drop ordering and styling
+- Mobile: sticky first column with horizontal scroll
+
+**Stage 2 — shopper-driven dynamic comparison (Phase 3/4):**
+
+- Compare buttons/checkboxes on collection and product pages; selection persisted client-side (e.g., localStorage)
+- Comparison drawer or dedicated page for 2–4+ products side by side
+- Requires storefront JS + Storefront API or section rendering to resolve other products' metafield values (Liquid alone cannot) — the main effort is the Theme App Extension, not the database
+
+**Premium differentiators (later):** variant-level comparison, AI comparison verdicts, comparison analytics.
 
 ### Styling Upgrades
 
@@ -136,7 +156,7 @@ Phase 1 (MVP) features are fully defined in `prd.md`. This file covers post-MVP 
 
 - Search within specs (filter a large table by keyword)
 - Collapsible sections
-- Spec comparison across multiple products (like GSMArena)
+- Spec comparison across multiple products (like GSMArena) — Stage 2 of the "Product Comparison Feature Definition" in Phase 2 above
 - Print-friendly layout
 - Share specs as a direct link
 
