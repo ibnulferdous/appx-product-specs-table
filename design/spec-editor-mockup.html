@@ -211,7 +211,7 @@ svg{display:block}
 /* ---- The grid ---- */
 .grid{flex:1;overflow:auto}
 .grid-head,.row{
-  display:grid;grid-template-columns:34px minmax(180px,0.9fr) minmax(260px,1.6fr);align-items:stretch
+  display:grid;grid-template-columns:56px minmax(180px,0.9fr) minmax(260px,1.6fr);align-items:stretch
 }
 .grid-head{position:sticky;top:0;background:var(--surface);border-bottom:1px solid var(--border);z-index:2}
 .grid-head .h{padding:12px 14px;font-weight:600;color:var(--text);display:flex;align-items:center}
@@ -220,15 +220,20 @@ svg{display:block}
 
 .row{border-bottom:1px solid var(--border-2);position:relative}
 .row:hover{background:#fbfdff}
-.row .gutter{display:flex;align-items:flex-start;justify-content:center;padding-top:12px;gap:2px}
-.row .gutter .handle,.row .gutter .plus{
-  width:22px;height:22px;border-radius:5px;display:flex;align-items:center;justify-content:center;
-  color:#9a9a9a;opacity:0;transition:opacity .08s;border:none;background:transparent
+.row .gutter{display:flex;align-items:flex-start;justify-content:center;gap:2px;padding-top:10px}
+/* gutter holds a persistent, muted pair: drag-to-reorder handle + delete.
+   Both sit quiet at rest; the handle darkens to grab, the delete reddens. */
+.row .gutter .handle,.row .gutter .del{
+  width:24px;height:24px;border-radius:6px;display:flex;align-items:center;justify-content:center;
+  color:#cdcdcd;border:none;background:transparent;transition:color .08s,background .08s
 }
-.row:hover .gutter .handle,.row:hover .gutter .plus{opacity:1}
+.row:hover .gutter .handle,.row:hover .gutter .del,
+.row:focus-within .gutter .handle,.row:focus-within .gutter .del{color:#9a9a9a}
 .row .gutter .handle{cursor:grab}
-.row .gutter .handle:hover,.row .gutter .plus:hover{background:#ececec;color:#4a4a4a}
-.row .gutter svg{width:15px;height:15px}
+.row .gutter .handle:hover{background:#ececec;color:#4a4a4a}
+.row .gutter .del{cursor:pointer}
+.row .gutter .del:hover{background:#fff5f4;color:#8e1f0b}
+.row .gutter svg{width:16px;height:16px}
 
 .cell{padding:11px 14px;display:flex;align-items:flex-start;min-height:44px}
 .cell.label{color:var(--text);font-weight:500;align-items:center;gap:6px}
@@ -238,7 +243,7 @@ svg{display:block}
 .info{width:14px;height:14px;color:var(--text-3)}
 
 /* section header row */
-.row.section{grid-template-columns:34px 1fr;background:#f6f7f9}
+.row.section{grid-template-columns:56px 1fr;background:#f6f7f9}
 .row.section:hover{background:#eef1f4}
 .row.section .cell.section{
   grid-column:2 / -1;font-weight:700;letter-spacing:.01em;color:#303030;align-items:center;
@@ -255,6 +260,8 @@ svg{display:block}
 .chip .x{width:14px;height:14px;border-radius:3px;display:flex;align-items:center;justify-content:center;color:#5c8fd6;cursor:pointer}
 .chip .x:hover{background:#d6e8ff;color:#0257b3}
 
+/* active row = the insert target for "Add row" / "Add section" / "Duplicate" */
+.row.active{background:#fbfdff;box-shadow:inset 3px 0 0 var(--link)}
 /* editing cell */
 .row.editing{background:#f4f9ff;box-shadow:inset 3px 0 0 var(--link)}
 .editor-box{
@@ -293,17 +300,17 @@ svg{display:block}
 .picker .opt .meta small{color:var(--text-3);font-size:11px}
 .picker .foot{border-top:1px solid var(--border-2);padding:8px 12px;color:var(--text-3);font-size:11.5px;background:var(--surface-2)}
 
-/* row menu */
-.menu{min-width:240px;padding:6px}
-.menu .mi{display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:var(--radius-xs);color:var(--text);font-weight:500}
-.menu .mi svg{width:15px;height:15px;color:var(--icon)}
-.menu .mi .kbd{margin-left:auto;color:var(--text-3);font-size:11px}
-.menu .mi:hover{background:var(--surface-hover)}
-.menu .mi.danger{color:#8e1f0b}
-.menu .mi.danger svg{color:#8e1f0b}
-.menu .mi.toggle .sw{margin-left:auto;width:30px;height:18px;border-radius:9px;background:#29845a;position:relative}
-.menu .mi.toggle .sw::after{content:"";position:absolute;top:2px;right:2px;width:14px;height:14px;border-radius:50%;background:#fff}
-.menu .sep{height:1px;background:var(--border-2);margin:6px 4px}
+/* bottom add-row: a detached, full-width dashed button — the table's growth point.
+   Always appends to the end. (Per-row delete now lives in the gutter, see above.) */
+.addrow{
+  display:flex;align-items:center;justify-content:center;gap:8px;
+  width:calc(100% - 28px);margin:10px 14px 14px;padding:11px;
+  border:1px dashed var(--border);border-radius:var(--radius);
+  background:var(--surface);color:var(--text-2);font-weight:500
+}
+.addrow svg{width:15px;height:15px;color:var(--text-3)}
+.addrow:hover{background:var(--surface-hover);border-color:#c9c9c9;color:var(--text)}
+.addrow:hover svg{color:var(--icon)}
 
 /* ---------- Style panel ---------- */
 .panel-title{font-weight:700;font-size:12px;color:var(--text-3);text-transform:uppercase;letter-spacing:.03em;margin:4px 0 12px}
@@ -345,9 +352,9 @@ svg{display:block}
 #gridView.mobile .grid{max-width:390px}
 
 /* mobile: stacked label-over-value, same as the storefront layout */
-#gridView.mobile .grid-head{grid-template-columns:34px 1fr}
+#gridView.mobile .grid-head{grid-template-columns:56px 1fr}
 #gridView.mobile .grid-head .h.val{display:none}
-#gridView.mobile .row[data-type="data"]{grid-template-columns:34px 1fr}
+#gridView.mobile .row[data-type="data"]{grid-template-columns:56px 1fr}
 #gridView.mobile .row[data-type="data"] .gutter{grid-column:1;grid-row:1 / span 2}
 #gridView.mobile .row[data-type="data"] .cell.label{grid-column:2;grid-row:1;min-height:0;padding-bottom:2px;color:#8a8a8a;font-size:12px}
 #gridView.mobile .row[data-type="data"] .cell.value{grid-column:2;grid-row:2;border-left:none;padding-top:0}
@@ -510,12 +517,11 @@ svg{display:block}
               <div id="gridView">
                 <div class="toolbar">
                   <button class="btn primary" id="addRowBtn"><svg viewBox="0 0 20 20" fill="currentColor"><path d="M10 4v12M4 10h12" stroke="#fff" stroke-width="2"/></svg>Add row</button>
-                  <button class="btn"><svg viewBox="0 0 20 20" fill="currentColor"><path d="M4 6h12M4 10h12M4 14h8"/></svg>Insert<svg class="caret" viewBox="0 0 20 20" fill="currentColor"><path d="M5 8l5 5 5-5"/></svg></button>
-                  <button class="btn"><svg viewBox="0 0 20 20" fill="currentColor"><path d="M3 4h14v4H3z"/></svg>Add section</button>
-                  <button class="btn danger"><svg viewBox="0 0 20 20" fill="currentColor"><path d="M6 7h8l-1 9H7zM8 4h4l1 2H7z"/></svg>Delete (1)</button>
+                  <button class="btn" id="addSectionBtn"><svg viewBox="0 0 20 20" fill="currentColor"><rect x="3" y="4" width="14" height="12" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M5 6.5h10v2.2H5z"/></svg>Add section</button>
+                  <button class="btn" id="dupBtn"><svg viewBox="0 0 20 20" fill="currentColor"><path d="M7 7h9v9H7z" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M4 4h9v2H6v7H4z"/></svg>Duplicate</button>
                   <span class="count">Rows: <b id="rowCount">8</b> / 200</span>
                 </div>
-                <div class="hint">Click a value to edit · type <code>@</code> or press <b>+ Insert field</b> to add a product field or metafield · hover a row and click the <b>⠿</b> handle for row options.</div>
+                <div class="hint">Click a value to edit · type <code>@</code> or press <b>+ Insert field</b> to add a product field or metafield · drag the <b>⠿</b> handle to reorder · <b>Add row</b> drops a new row below the one you're on.</div>
 
                 <div class="grid" id="grid">
                   <div class="grid-head">
@@ -526,14 +532,13 @@ svg{display:block}
 
                   <!-- SECTION: Display -->
                   <div class="row section" data-type="section">
-                    <div class="gutter"><button class="handle" title="Drag / options"><svg viewBox="0 0 20 20" fill="currentColor"><circle cx="7" cy="5" r="1.3"/><circle cx="13" cy="5" r="1.3"/><circle cx="7" cy="10" r="1.3"/><circle cx="13" cy="10" r="1.3"/><circle cx="7" cy="15" r="1.3"/><circle cx="13" cy="15" r="1.3"/></svg></button></div>
+                    <div class="gutter"><button class="handle" title="Drag to reorder"><svg viewBox="0 0 20 20" fill="currentColor"><circle cx="7" cy="5" r="1.3"/><circle cx="13" cy="5" r="1.3"/><circle cx="7" cy="10" r="1.3"/><circle cx="13" cy="10" r="1.3"/><circle cx="7" cy="15" r="1.3"/><circle cx="13" cy="15" r="1.3"/></svg></button></div>
                     <div class="cell section"><svg class="disc" viewBox="0 0 20 20" width="12" height="12" fill="currentColor"><path d="M6 5l6 5-6 5z"/></svg>Display</div>
                   </div>
 
                   <div class="row" data-type="data">
                     <div class="gutter">
-                      <button class="plus" title="Add row below"><svg viewBox="0 0 20 20" fill="currentColor"><path d="M10 4v12M4 10h12" stroke="currentColor" stroke-width="2"/></svg></button>
-                      <button class="handle" title="Drag / options"><svg viewBox="0 0 20 20" fill="currentColor"><circle cx="7" cy="5" r="1.3"/><circle cx="13" cy="5" r="1.3"/><circle cx="7" cy="10" r="1.3"/><circle cx="13" cy="10" r="1.3"/><circle cx="7" cy="15" r="1.3"/><circle cx="13" cy="15" r="1.3"/></svg></button>
+                      <button class="handle" title="Drag to reorder"><svg viewBox="0 0 20 20" fill="currentColor"><circle cx="7" cy="5" r="1.3"/><circle cx="13" cy="5" r="1.3"/><circle cx="7" cy="10" r="1.3"/><circle cx="13" cy="10" r="1.3"/><circle cx="7" cy="15" r="1.3"/><circle cx="13" cy="15" r="1.3"/></svg></button>
                     </div>
                     <div class="cell label">Size</div>
                     <div class="cell value"><span class="line">6.9-inch (diagonal)</span></div>
@@ -541,8 +546,7 @@ svg{display:block}
 
                   <div class="row" data-type="data">
                     <div class="gutter">
-                      <button class="plus" title="Add row below"><svg viewBox="0 0 20 20" fill="currentColor"><path d="M10 4v12M4 10h12" stroke="currentColor" stroke-width="2"/></svg></button>
-                      <button class="handle" title="Drag / options"><svg viewBox="0 0 20 20" fill="currentColor"><circle cx="7" cy="5" r="1.3"/><circle cx="13" cy="5" r="1.3"/><circle cx="7" cy="10" r="1.3"/><circle cx="13" cy="10" r="1.3"/><circle cx="7" cy="15" r="1.3"/><circle cx="13" cy="15" r="1.3"/></svg></button>
+                      <button class="handle" title="Drag to reorder"><svg viewBox="0 0 20 20" fill="currentColor"><circle cx="7" cy="5" r="1.3"/><circle cx="13" cy="5" r="1.3"/><circle cx="7" cy="10" r="1.3"/><circle cx="13" cy="10" r="1.3"/><circle cx="7" cy="15" r="1.3"/><circle cx="13" cy="15" r="1.3"/></svg></button>
                     </div>
                     <div class="cell label">Type <svg class="info" viewBox="0 0 20 20" fill="currentColor"><path d="M10 2a8 8 0 100 16 8 8 0 000-16zm1 12H9v-4h2zm0-6H9V6h2z"/></svg></div>
                     <div class="cell value"><span class="line">Super Retina XDR display</span></div>
@@ -550,8 +554,7 @@ svg{display:block}
 
                   <div class="row" data-type="data">
                     <div class="gutter">
-                      <button class="plus" title="Add row below"><svg viewBox="0 0 20 20" fill="currentColor"><path d="M10 4v12M4 10h12" stroke="currentColor" stroke-width="2"/></svg></button>
-                      <button class="handle" title="Drag / options"><svg viewBox="0 0 20 20" fill="currentColor"><circle cx="7" cy="5" r="1.3"/><circle cx="13" cy="5" r="1.3"/><circle cx="7" cy="10" r="1.3"/><circle cx="13" cy="10" r="1.3"/><circle cx="7" cy="15" r="1.3"/><circle cx="13" cy="15" r="1.3"/></svg></button>
+                      <button class="handle" title="Drag to reorder"><svg viewBox="0 0 20 20" fill="currentColor"><circle cx="7" cy="5" r="1.3"/><circle cx="13" cy="5" r="1.3"/><circle cx="7" cy="10" r="1.3"/><circle cx="13" cy="10" r="1.3"/><circle cx="7" cy="15" r="1.3"/><circle cx="13" cy="15" r="1.3"/></svg></button>
                     </div>
                     <div class="cell label">Resolution</div>
                     <div class="cell value"><span class="line">2868 × 1320 pixels</span></div>
@@ -565,7 +568,6 @@ svg{display:block}
 
                   <div class="row" data-type="data">
                     <div class="gutter">
-                      <button class="plus"><svg viewBox="0 0 20 20" fill="currentColor"><path d="M10 4v12M4 10h12" stroke="currentColor" stroke-width="2"/></svg></button>
                       <button class="handle"><svg viewBox="0 0 20 20" fill="currentColor"><circle cx="7" cy="5" r="1.3"/><circle cx="13" cy="5" r="1.3"/><circle cx="7" cy="10" r="1.3"/><circle cx="13" cy="10" r="1.3"/><circle cx="7" cy="15" r="1.3"/><circle cx="13" cy="15" r="1.3"/></svg></button>
                     </div>
                     <div class="cell label">Chipset</div>
@@ -576,7 +578,6 @@ svg{display:block}
 
                   <div class="row" data-type="data">
                     <div class="gutter">
-                      <button class="plus"><svg viewBox="0 0 20 20" fill="currentColor"><path d="M10 4v12M4 10h12" stroke="currentColor" stroke-width="2"/></svg></button>
                       <button class="handle"><svg viewBox="0 0 20 20" fill="currentColor"><circle cx="7" cy="5" r="1.3"/><circle cx="13" cy="5" r="1.3"/><circle cx="7" cy="10" r="1.3"/><circle cx="13" cy="10" r="1.3"/><circle cx="7" cy="15" r="1.3"/><circle cx="13" cy="15" r="1.3"/></svg></button>
                     </div>
                     <div class="cell label">Brand</div>
@@ -594,7 +595,6 @@ svg{display:block}
                   <!-- EDITING ROW: shows valueParts composition + @-mention picker open -->
                   <div class="row editing" data-type="data" id="editingRow">
                     <div class="gutter">
-                      <button class="plus"><svg viewBox="0 0 20 20" fill="currentColor"><path d="M10 4v12M4 10h12" stroke="currentColor" stroke-width="2"/></svg></button>
                       <button class="handle"><svg viewBox="0 0 20 20" fill="currentColor"><circle cx="7" cy="5" r="1.3"/><circle cx="13" cy="5" r="1.3"/><circle cx="7" cy="10" r="1.3"/><circle cx="13" cy="10" r="1.3"/><circle cx="7" cy="15" r="1.3"/><circle cx="13" cy="15" r="1.3"/></svg></button>
                     </div>
                     <div class="cell label">Battery Life</div>
@@ -629,6 +629,12 @@ svg{display:block}
                     </div>
                   </div>
 
+                  <!-- bottom add-row: always appends to the end of the table -->
+                  <button class="addrow" id="addRowEnd" type="button">
+                    <svg viewBox="0 0 20 20" fill="currentColor"><path d="M10 4v12M4 10h12" stroke="currentColor" stroke-width="2"/></svg>
+                    Add row
+                  </button>
+
                 </div><!-- /grid -->
               </div><!-- /gridView -->
 
@@ -639,8 +645,8 @@ svg{display:block}
         <div class="legend">
           <span><b>Try it:</b> click the <b>Style</b> / <b>Settings</b> tabs</span>
           <span>switch <b>Desktop / Tablet / Mobile</b> in the toggle — the table stays editable in every viewport</span>
-          <span>hover a row, click the <b>⠿</b> handle</span>
-          <span>click <b>+ Insert field</b> in the editing row</span>
+          <span>each row's gutter pairs a <b>⠿</b> drag handle with a <b>✕</b> delete</span>
+          <span><b>Add row</b> inserts below the active row · the bottom <b>+ Add row</b> appends at the end</span>
         </div>
 
       </div>
@@ -648,19 +654,8 @@ svg{display:block}
   </div>
 </div>
 
-<!-- floating row menu (single instance, repositioned on open) -->
-<div class="pop menu" id="rowMenu">
-  <div class="mi"><svg viewBox="0 0 20 20" fill="currentColor"><path d="M10 4l5 6H5z"/></svg>Move up</div>
-  <div class="mi"><svg viewBox="0 0 20 20" fill="currentColor"><path d="M10 16l5-6H5z"/></svg>Move down</div>
-  <div class="sep"></div>
-  <div class="mi"><svg viewBox="0 0 20 20" fill="currentColor"><path d="M10 4v12M4 10h12"/></svg>Insert row above</div>
-  <div class="mi" id="miInsertBelow"><svg viewBox="0 0 20 20" fill="currentColor"><path d="M10 4v12M4 10h12"/></svg>Insert row below</div>
-  <div class="mi"><svg viewBox="0 0 20 20" fill="currentColor"><path d="M3 4h14v4H3z"/></svg>Insert section header ▸</div>
-  <div class="mi" id="miDuplicate"><svg viewBox="0 0 20 20" fill="currentColor"><path d="M7 7h9v9H7z" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M4 4h9v2H6v7H4z"/></svg>Duplicate row</div>
-  <div class="mi toggle"><svg viewBox="0 0 20 20" fill="currentColor"><path d="M10 4C5 4 2 10 2 10s3 6 8 6 8-6 8-6-3-6-8-6zm0 9a3 3 0 110-6 3 3 0 010 6z"/></svg>Hide when empty<span class="sw"></span></div>
-  <div class="sep"></div>
-  <div class="mi danger" id="miDelete"><svg viewBox="0 0 20 20" fill="currentColor"><path d="M6 7h8l-1 9H7zM8 4h4l1 2H7z"/></svg>Delete row<span class="kbd">⌫</span></div>
-</div>
+<!-- no floating row menu: row actions live in the toolbar (acting on the active row),
+     reorder is the drag handle, and delete is the reveal-on-hover/focus button per row -->
 
 <script>
 /* ------------------------------------------------------------------ *
@@ -704,26 +699,9 @@ $('#statusSelect').addEventListener('click',()=>{
 });
 
 /* ---- popovers ---- */
-const picker=$('#picker'), rowMenu=$('#rowMenu');
-function closePops(){ rowMenu.classList.remove('open'); }
-document.addEventListener('click',e=>{
-  if(!e.target.closest('#rowMenu') && !e.target.closest('.handle')) rowMenu.classList.remove('open');
-});
-
-// row handle -> menu
-$$('.handle').forEach(h=>h.addEventListener('click',e=>{
-  e.stopPropagation();
-  const r=h.getBoundingClientRect();
-  rowMenu.style.left=(r.right+6)+'px';
-  rowMenu.style.top =(r.top)+'px';
-  rowMenu.classList.add('open');
-  rowMenu._row=h.closest('.row');
-}));
-
-// menu actions (mockup-grade)
-$('#miDelete').addEventListener('click',()=>{ rowMenu._row?.remove(); rowMenu.classList.remove('open'); recount(); });
-$('#miDuplicate').addEventListener('click',()=>{ if(rowMenu._row){ const c=rowMenu._row.cloneNode(true); rowMenu._row.after(c); wireRow(c);} rowMenu.classList.remove('open'); recount(); });
-$('#miInsertBelow').addEventListener('click',()=>{ if(rowMenu._row){ const c=rowMenu._row.cloneNode(true); $('.cell.value',c)&&($('.cell.value',c).innerHTML='<span class="line muted">—</span>'); $('.cell.label',c)&&($('.cell.label',c).textContent='New row'); rowMenu._row.after(c); wireRow(c);} rowMenu.classList.remove('open'); recount(); });
+const picker=$('#picker');
+// the row handle is drag-to-reorder only now — no floating menu to open or close.
+function closePops(){ picker.classList.remove('open'); }
 
 // field picker — anchored (fixed) to the Insert field button so it never gets clipped by the grid
 function positionPicker(){
@@ -754,19 +732,81 @@ $$('#picker .opt').forEach(o=>o.addEventListener('click',()=>{
 // remove chip
 document.addEventListener('click',e=>{ if(e.target.classList.contains('x')) e.target.closest('.chip')?.remove(); });
 
-// add row button
-$('#addRowBtn').addEventListener('click',()=>{
-  const grid=$('#grid');
-  const row=document.createElement('div'); row.className='row'; row.dataset.type='data';
-  row.innerHTML=`<div class="gutter"><button class="plus"><svg viewBox="0 0 20 20" fill="currentColor"><path d="M10 4v12M4 10h12" stroke="currentColor" stroke-width="2"/></svg></button><button class="handle"><svg viewBox="0 0 20 20" fill="currentColor"><circle cx="7" cy="5" r="1.3"/><circle cx="13" cy="5" r="1.3"/><circle cx="7" cy="10" r="1.3"/><circle cx="13" cy="10" r="1.3"/><circle cx="7" cy="15" r="1.3"/><circle cx="13" cy="15" r="1.3"/></svg></button></div><div class="cell label">New row</div><div class="cell value"><span class="line muted">Click to add a value…</span></div>`;
-  grid.appendChild(row); wireRow(row); recount();
-});
+/* ---- active row + per-row decoration (mockup-grade) ---- */
+const grid=$('#grid');
+const endBtn=()=>$('#addRowEnd');
 
-function wireRow(row){
-  const h=row.querySelector('.handle');
-  if(h) h.addEventListener('click',e=>{ e.stopPropagation(); const r=h.getBoundingClientRect(); rowMenu.style.left=(r.right+6)+'px'; rowMenu.style.top=r.top+'px'; rowMenu.classList.add('open'); rowMenu._row=row; });
+const handleSVG='<svg viewBox="0 0 20 20" fill="currentColor"><circle cx="7" cy="5" r="1.3"/><circle cx="13" cy="5" r="1.3"/><circle cx="7" cy="10" r="1.3"/><circle cx="13" cy="10" r="1.3"/><circle cx="7" cy="15" r="1.3"/><circle cx="13" cy="15" r="1.3"/></svg>';
+const delSVG='<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M6 6l8 8M14 6l-8 8"/></svg>';
+
+// the active row is the insert target; it stays visibly marked so "Add row" is predictable
+function setActive(row){ $$('#grid .row').forEach(r=>r.classList.remove('active')); row.classList.add('active'); }
+function reveal(row){ recount(); setActive(row); row.scrollIntoView({block:'nearest'}); }
+
+// give every row a reveal-on-hover/focus delete + click-to-activate
+function decorateRow(row){
+  const gutter=row.querySelector('.gutter');
+  gutter?.querySelector('.del')?.remove();
+  if(gutter){
+    const del=document.createElement('button');
+    del.className='del'; del.type='button'; del.title='Delete row'; del.innerHTML=delSVG;
+    del.addEventListener('click',e=>{
+      e.stopPropagation();
+      const wasActive=row.classList.contains('active');
+      row.remove(); recount();
+      if(wasActive){ const first=$('#grid .row'); if(first) setActive(first); }
+    });
+    gutter.appendChild(del);            // sits right after the handle: ⠿ ✕
+  }
+  row.onclick=()=>setActive(row);
+  return row;
 }
-function recount(){ $('#rowCount').textContent=$$('#grid .row').length - 0; }
+
+function makeDataRow(){
+  const row=document.createElement('div'); row.className='row'; row.dataset.type='data';
+  row.innerHTML='<div class="gutter"><button class="handle" title="Drag to reorder">'+handleSVG+'</button></div><div class="cell label">New row</div><div class="cell value"><span class="line muted">Click to add a value…</span></div>';
+  return decorateRow(row);
+}
+function makeSectionRow(){
+  const row=document.createElement('div'); row.className='row section'; row.dataset.type='section';
+  row.innerHTML='<div class="gutter"><button class="handle" title="Drag to reorder">'+handleSVG+'</button></div><div class="cell section"><svg class="disc" viewBox="0 0 20 20" width="12" height="12" fill="currentColor"><path d="M6 5l6 5-6 5z"/></svg>New section</div>';
+  return decorateRow(row);
+}
+
+// toolbar Add row -> below the active row (appends if nothing is active)
+$('#addRowBtn').addEventListener('click',()=>{
+  const row=makeDataRow(), active=$('#grid .row.active');
+  active ? active.after(row) : grid.insertBefore(row,endBtn());
+  reveal(row);
+});
+// bottom + Add row -> always appends to the very end
+$('#addRowEnd').addEventListener('click',()=>{
+  const row=makeDataRow(); grid.insertBefore(row,endBtn()); reveal(row);
+});
+// Add section -> below the active row (appends if nothing is active)
+$('#addSectionBtn').addEventListener('click',()=>{
+  const sec=makeSectionRow(), active=$('#grid .row.active');
+  active ? active.after(sec) : grid.insertBefore(sec,endBtn());
+  reveal(sec);
+});
+// Duplicate -> directly below its source (the active row)
+$('#dupBtn').addEventListener('click',()=>{
+  const active=$('#grid .row.active'); if(!active) return;
+  const c=active.cloneNode(true);
+  c.removeAttribute('id'); c.classList.remove('editing','active');
+  c.querySelectorAll('[id]').forEach(el=>el.removeAttribute('id'));
+  c.querySelector('.pop')?.remove();
+  const box=c.querySelector('.editor-box'), val=c.querySelector('.cell.value');
+  if(box && val) val.innerHTML='<span class="line muted">Click to add a value…</span>';
+  active.after(c); decorateRow(c); reveal(c);
+});
+// delete now lives per-row in the gutter (⠿ ✕) — no toolbar Delete button
+
+function recount(){ $('#rowCount').textContent=$$('#grid .row').length; }
+
+// decorate the static rows; mark the open editing row as the active insert target
+$$('#grid .row').forEach(decorateRow);
+setActive($('#editingRow'));
 
 recount();
 render();

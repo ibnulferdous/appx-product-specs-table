@@ -1,24 +1,18 @@
-# Editor Step 2 — Segmented value cell + pills + floating toolbar
-
-> Build step 2 of 6 for the custom React spec-table editor (see the build order
-> in `progress-tracker.md`, "Editor Build Decision"). Builds directly on
-> `02-editor-step1-reducer-static-rows.md` — same single `rows` reducer, same row
-> contract. This step turns the plain-text Value cell into the real segmented
-> token editor from the mockup.
+# Editor Step 2 — Segmented value cell + pills + toolbar
 
 ## Goal in one sentence
 
 Make a row's value a **sequence of parts** — typed text and blue pill chips side
 by side ("Up to `[pill]` hours") — that can be edited, removed, and inserted, and
-put the floating toolbar (Add row / Insert field / Add section / Delete) above
-the table.
+put the toolbar (Add row / Add section / Duplicate) above the table, with a
+persistent drag-handle + delete pair in each row's gutter.
 
 ## Why this is second
 
 This is the heart of the product and the hardest UI piece, but it is still pure
 array work on the Step 1 reducer: a value is `valueParts`, and editing it is
 splice/update on that array. At this stage the pills are deliberately **"dumb"**
-— you can insert and remove them, but you cannot yet pick *which* metafield. That
+— you can insert and remove them, but you cannot yet pick _which_ metafield. That
 is Step 3 (field picker). Keeping the picker out keeps this step verifiable.
 
 ## Foundation carried from Step 1
@@ -103,41 +97,49 @@ existing text part" can be a later refinement.
 **Verify:** type "Up to " → insert → type " hours" reproduces the mockup value
 end to end, and ✕ (2.3) still removes the inserted pill cleanly.
 
-### 2.5 — Floating toolbar
+### 2.5 — Toolbar + row gutter
 
-Add the toolbar above the table with four controls. If this feels large, split
-into **2.5a** (toolbar shell + wire existing actions) and **2.5b** (Add section).
+Add the toolbar above the table with three row-creating controls. If this feels
+large, split into **2.5a** (toolbar shell + wire existing actions) and **2.5b**
+(Add section).
 
-| Toolbar button | Wires to                                                                 |
-| -------------- | ------------------------------------------------------------------------ |
-| Add row        | Step 1 `ADD_ROW`                                                         |
-| Delete         | Step 1 `DELETE_ROW` on the active row                                    |
-| Insert field   | 2.4 `INSERT_VALUE_PART` against the active row (placeholder pill)        |
-| Add section    | new `ADD_SECTION` → inserts a `SECTION_HEADER` row, rendered full-width  |
+| Toolbar button | Wires to                                                                       |
+| -------------- | ------------------------------------------------------------------------------ |
+| Add row        | Step 1 `ADD_ROW` — inserts directly below the active row (appends if none)      |
+| Add section    | new `ADD_SECTION` → inserts a `SECTION_HEADER` row below the active row, full-width |
+| Duplicate      | Step 1 `DUPLICATE_ROW` — inserts the copy directly below its source (active) row |
 
-- Track an **`activeRowId`** (set on row/cell focus) so Insert field and Delete
-  know which row to act on. This is UI state, not part of the persisted `rows`
-  array.
+- Track an **`activeRowId`** — the insert target — set on row/cell click or focus
+  and shown with a left accent. This is UI state, not part of the persisted `rows`
+  array. The three toolbar actions insert directly below it (append if none) and
+  scroll the new row into view.
+- Each row's **gutter** carries a persistent, muted pair: a `⠿` drag-handle
+  (reorder, wired in Step 4) and an `✕` delete (Step 1 `DELETE_ROW`). Both stay
+  visible at rest — no hover-only controls and no floating row menu.
+- A separate full-width **"Add row"** at the bottom of the table always appends to
+  the end (also `ADD_ROW`).
+- Insert field is **not** a toolbar button — it lives in the value cell (sub-step
+  2.4), acting on the row being edited.
 - `ADD_SECTION` creates a `SECTION_HEADER` row per `data-model.md` §7 (`id`, `key`,
   `rowType: "SECTION_HEADER"`, `label`, `hideWhenEmpty`) — no `valueParts`. Render
   it as a distinct full-width header row, not a two-cell data row.
 - The 200-row cap still gates Add row, Duplicate, and Add section (disabled at the
   limit **and** refused in the reducer).
 
-**Verify:** each toolbar button acts on the correct (active) row; section rows
-render distinctly from data rows; the cap still blocks all three row-creating
-actions.
+**Verify:** each toolbar action inserts below the active row (the bottom "Add row"
+appends); the gutter delete removes its own row; section rows render distinctly
+from data rows; the cap still blocks all three row-creating actions.
 
 ---
 
 ## Reducer actions added in Step 2
 
-| Action              | Payload                      | Effect                                                        |
-| ------------------- | ---------------------------- | ------------------------------------------------------------ |
-| `SET_VALUE_TEXT`*   | `{ id, partIndex, text }`    | Update one TEXT part (*extends Step 1's index-0-only version).|
-| `REMOVE_VALUE_PART` | `{ id, partIndex }`          | Remove a part, then merge adjacent TEXT parts; keep ≥1 TEXT.  |
-| `INSERT_VALUE_PART` | `{ id, part }`               | Append a part, then ensure a trailing empty TEXT part.        |
-| `ADD_SECTION`       | —                            | Insert a `SECTION_HEADER` row (no-op at cap).                 |
+| Action              | Payload                   | Effect                                                          |
+| ------------------- | ------------------------- | --------------------------------------------------------------- |
+| `SET_VALUE_TEXT`\*  | `{ id, partIndex, text }` | Update one TEXT part (\*extends Step 1's index-0-only version). |
+| `REMOVE_VALUE_PART` | `{ id, partIndex }`       | Remove a part, then merge adjacent TEXT parts; keep ≥1 TEXT.    |
+| `INSERT_VALUE_PART` | `{ id, part }`            | Append a part, then ensure a trailing empty TEXT part.          |
+| `ADD_SECTION`       | —                         | Insert a `SECTION_HEADER` row below the active row (no-op at cap). |
 
 Guardrails unchanged from Step 1: reducer stays pure; `id`/`key` minted in a
 helper, not in the reducer; cap enforced inside every row-creating action.
@@ -170,8 +172,9 @@ helper, not in the reducer; cap enforced inside every row-creating action.
 1. Sub-steps 2.1–2.5 each pass their verify check.
 2. A value can be authored, edited, have pills removed, and have a placeholder
    pill inserted — all in local state, all reflected immediately.
-3. The floating toolbar's four buttons act on the active row; section rows render
-   distinctly; the 200 cap holds across Add row / Duplicate / Add section.
+3. The toolbar's three buttons insert below the active row (the bottom "Add row"
+   appends), each row's gutter pairs a drag-handle with a delete, section rows
+   render distinctly; the 200 cap holds across Add row / Duplicate / Add section.
 4. `200` is still only the single shared constant — no stray literal.
 5. `npm run build` passes and ESLint is clean.
 6. `progress-tracker.md` updated to mark Step 2 complete and point at Step 3.
@@ -184,5 +187,3 @@ helper, not in the reducer; cap enforced inside every row-creating action.
 - Empty-value rule: `hideWhenEmpty` interaction when a value has only an empty
   TEXT part — confirm this is purely a storefront concern (Step 6) and not
   enforced in the editor.
-- `ADD_SECTION` insert position — at the end, or below the active row? Pick one
-  and keep it consistent with where Add row / Duplicate insert.

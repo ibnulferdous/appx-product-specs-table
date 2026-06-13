@@ -10,7 +10,7 @@ Building the MVP
 
 ## Current Goal
 
-Build the first vertical slice incrementally, starting with template CRUD now that the shop persistence foundation is in place.
+Build the custom spec-table editor incrementally. Step 1 (reducer + static row render + add/delete/duplicate + 200-row cap) is complete; next is Step 2 (segmented value cell + pills).
 
 ---
 
@@ -27,23 +27,23 @@ Build the first vertical slice incrementally, starting with template CRUD now th
 - Added `/app/templates/new` route with name + status form, server-side validation, and inline error UX
 - Added `/app/templates/:id` placeholder route showing name, status badge, and a "Rows editor coming soon" stub (404 when not found or wrong shop)
 - Consolidated the editor into a single dynamic route: merged `app.templates_.new.tsx` into `app.templates_.$id.tsx`, branching on `params.id === "new"` (blank scaffold) vs. an existing template (fetch + 404). Deleted the standalone `new` route; `/app/templates/new` now resolves to the dynamic route. `npm run build` and ESLint pass clean.
+- **Editor Step 1 complete** (reducer + static rows + add/delete/duplicate + cap). See `context/features/02-editor-step1-reducer-static-rows.md`. Built:
+  - `app/utils/rows.ts` — single source of truth for the row array: `MAX_TEMPLATE_ROWS` constant (read by UI now, server later), `EditorRow`/`ValuePart` types matching `data-model.md` §6–7, key helpers (`slugifyKey`, `uniqueKey`), `newRowId` (crypto.randomUUID, kept out of the reducer), `normalizeRows`, and the pure `rowsReducer` (`ADD_ROW`, `DUPLICATE_ROW`, `DELETE_ROW`, `SET_LABEL`, `SET_VALUE_TEXT`).
+  - Converted the flat route `app.templates_.$id.tsx` into a folder route (`app.templates_.$id/route.tsx`) so the editor can be co-located, and added `app.templates_.$id/SpecTableEditor.tsx` — a memoized two-column Label/Value editor (Polaris web components) with per-row duplicate/delete, an `Add row` button, and a live `Rows: N / 200` counter that disables Add/Duplicate and shows an at-limit banner at the cap.
+  - Cap is enforced inside the reducer (not just disabled buttons); duplicate mints a fresh `id` + unique `key`; editing a label never rewrites the row's `key`. New data rows store one `TEXT` `valuePart` so Step 2 extends it in place.
+  - Step 1 is local React state only — no Save/loader/action/Postgres/metaobject yet. The `action` still returns `{ ok: false }` for non-`new` POSTs.
+  - `npm run typecheck`, `npm run lint`, and `npm run build` all pass clean.
 
 ## In Progress
 
-- Build the first vertical slice:
-  - Template Editor rows tab (custom React editor, local React state until Save)
-  - save template to Postgres
-  - validate the 200-row limit
-  - sync active/draft/archived template payload to Shopify metaobject
-  - assign template to one product
-  - write product metafield pointing to the template metaobject handle
-  - render the table through the Theme App Extension app block
+- Editor Step 2 — segmented value cell + pills (see `context/features/03-editor-step2-segmented-value-cell.md`).
 
 ---
 
 ## Next Up
 
--
+- Editor Step 2: segmented `valueParts` editing (manual TEXT segments + removable dynamic-field pills), extending the `valueParts` array already seeded in Step 1.
+- Remaining first-slice work after the editor steps: save template to Postgres (server-side 200-row + `shopId` re-check), sync active/draft/archived payload to the Shopify metaobject, assign a template to one product, write the product metafield, render via the Theme App Extension app block.
 
 ## Open Questions
 

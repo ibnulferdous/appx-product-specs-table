@@ -130,15 +130,15 @@ Shown when `Shop.onboardingStatus` is `DISMISSED`. This is the permanent dashboa
 
 This is where most of the work happens.
 
-- Custom React editor grid with columns: ⠿ (drag handle) | Type | Label | Value Source | Actions
+- Custom React editor grid (Type | Label | Value Source); each row's gutter pairs a persistent ⠿ drag-handle with an ✕ delete
 - Row types: `DATA` and `SECTION_HEADER` — visually distinct
 - Inline editing of label and value source per row
 - Value source picker per row (three types):
   - **Manual Text** — plain text input
   - **Shopify Field** — dropdown of mapped fields (title, vendor, SKU, weight, price, etc.)
   - **Metafield** — two-step dropdown: namespace → key
-- "+ Add row" button at the bottom
-- "+ Add section header" button at the bottom
+- Toolbar above the table — **Add row**, **Add section**, **Duplicate** — each inserts directly below the active row (appends if none) and scrolls it into view; the active row (set on click/focus) is shown with a left accent
+- A full-width "+ Add row" at the bottom always appends to the end
 - Drag-and-drop row reordering (via @dnd-kit, keyboard-accessible)
 - Paste a multi-cell table copied from any website, Excel, or Google Sheets to bulk-create rows — first pasted column → label, remaining columns → manual TEXT value; 200-row cap enforced on paste
 - Dynamic value parts (SHOPIFY_FIELD / METAFIELD) render as pill chips while editing, with a resolved placeholder preview (e.g., "Storefront preview: Up to **29 hours**")
