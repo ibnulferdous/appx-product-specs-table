@@ -1,0 +1,72 @@
+/* Scoped styles for the spec-table editor's segmented value cell.
+ *
+ * Polaris web components carry the chrome here — chips, buttons, boxes, grids.
+ * These rules cover only what those primitives cannot express: the inline
+ * token-editor flow (content-sized text segments sitting beside pill chips as
+ * one continuous value) and the active-row accent. This is the custom token
+ * editor that `code-standards.md` ("Spec Table Editor") anticipates Polaris
+ * cannot model cleanly.
+ *
+ * No hardcoded hex: the only colors used are `currentColor` (theme-adaptive),
+ * everything else is spacing/sizing. */
+
+/* Inline flow of text segments + pills + the insert control inside one cell. */
+.cell {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.25rem;
+  min-height: 1.25rem;
+}
+
+/* A pill = the (inert) chip + its own ✕ button kept snug together so they read
+ * as one unit and never wrap apart. The chip's built-in `removable` control is
+ * not painted by the current Polaris build, so removal is an explicit button. */
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.0625rem;
+}
+
+/* Borderless, content-sized input so "Up to [pill] hours" reads as a single
+ * continuous value rather than a row of separate boxed fields. Width is driven
+ * by the input's `size` attribute (set from the text length). */
+.segment {
+  appearance: none;
+  border: none;
+  outline: none;
+  background: transparent;
+  font: inherit;
+  color: inherit;
+  padding: 0;
+  margin: 0;
+  min-width: 2ch;
+}
+
+.segment::placeholder {
+  color: currentColor;
+  opacity: 0.5;
+}
+
+.segment:focus-visible {
+  /* currentColor keeps the focus underline theme-safe (no hardcoded hex). */
+  box-shadow: inset 0 -1px 0 0 currentColor;
+}
+
+/* Persistent, muted reorder affordance. Drag is wired in Step 4; for now the
+ * handle only signals draggability. */
+.dragHandle {
+  display: inline-flex;
+  align-items: center;
+  cursor: grab;
+  opacity: 0.5;
+}
+
+.row {
+  border-radius: 0.5rem;
+}
+
+/* Left accent marks the active row — the target the toolbar inserts below. */
+.rowActive {
+  box-shadow: inset 0.1875rem 0 0 0 currentColor;
+}

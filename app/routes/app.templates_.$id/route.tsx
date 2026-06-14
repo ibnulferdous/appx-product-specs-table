@@ -12,12 +12,14 @@ import {
 } from "react-router";
 import type { TemplateStatus } from "@prisma/client";
 import { boundary } from "@shopify/shopify-app-react-router/server";
-import { authenticate } from "../shopify.server";
-import { upsertShop } from "../models/shop.server";
+import { authenticate } from "../../shopify.server";
+import { upsertShop } from "../../models/shop.server";
 import {
   createTemplateForShop,
   getTemplateByIdForShop,
-} from "../models/template.server";
+} from "../../models/template.server";
+import { normalizeRows } from "../../utils/rows";
+import { SpecTableEditor } from "./SpecTableEditor";
 
 const STATUS_OPTIONS = [
   { label: "Draft", value: "DRAFT" },
@@ -54,8 +56,8 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
   const shop = await upsertShop(session);
 
   // Only template creation is wired up for now. The edit/update + rows-save
-  // path (with server-side 200-row validation and metaobject sync) lands with
-  // the rows editor in the next phase.
+  // path (with server-side row-count validation and metaobject sync) lands with
+  // the Save wiring in Step 6 — Step 1 keeps row edits in local React state.
   if (params.id !== "new") {
     return { ok: false as const, error: "Editing is not available yet" };
   }
@@ -149,7 +151,7 @@ function NewTemplateForm() {
 function TemplateOverview({
   template,
 }: {
-  template: { name: string; status: TemplateStatus };
+  template: { name: string; status: TemplateStatus; rows: unknown };
 }) {
   return (
     <s-page heading={template.name}>
@@ -168,7 +170,7 @@ function TemplateOverview({
       </s-section>
 
       <s-section heading="Rows">
-        <s-paragraph>Rows editor coming in the next phase.</s-paragraph>
+        <SpecTableEditor initialRows={normalizeRows(template.rows)} />
       </s-section>
     </s-page>
   );

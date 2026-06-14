@@ -9,8 +9,7 @@ persistent drag-handle + delete pair in each row's gutter.
 
 ## Why this is second
 
-This is the heart of the product and the hardest UI piece, but it is still pure
-array work on the Step 1 reducer: a value is `valueParts`, and editing it is
+This is the heart of the product, but it is still pure array work on the Step 1 reducer: a value is `valueParts`, and editing it is
 splice/update on that array. At this stage the pills are deliberately **"dumb"**
 — you can insert and remove them, but you cannot yet pick _which_ metafield. That
 is Step 3 (field picker). Keeping the picker out keeps this step verifiable.
@@ -103,11 +102,11 @@ Add the toolbar above the table with three row-creating controls. If this feels
 large, split into **2.5a** (toolbar shell + wire existing actions) and **2.5b**
 (Add section).
 
-| Toolbar button | Wires to                                                                       |
-| -------------- | ------------------------------------------------------------------------------ |
-| Add row        | Step 1 `ADD_ROW` — inserts directly below the active row (appends if none)      |
+| Toolbar button | Wires to                                                                            |
+| -------------- | ----------------------------------------------------------------------------------- |
+| Add row        | Step 1 `ADD_ROW` — inserts directly below the active row (appends if none)          |
 | Add section    | new `ADD_SECTION` → inserts a `SECTION_HEADER` row below the active row, full-width |
-| Duplicate      | Step 1 `DUPLICATE_ROW` — inserts the copy directly below its source (active) row |
+| Duplicate      | Step 1 `DUPLICATE_ROW` — inserts the copy directly below its source (active) row    |
 
 - Track an **`activeRowId`** — the insert target — set on row/cell click or focus
   and shown with a left accent. This is UI state, not part of the persisted `rows`
@@ -134,11 +133,11 @@ from data rows; the cap still blocks all three row-creating actions.
 
 ## Reducer actions added in Step 2
 
-| Action              | Payload                   | Effect                                                          |
-| ------------------- | ------------------------- | --------------------------------------------------------------- |
-| `SET_VALUE_TEXT`\*  | `{ id, partIndex, text }` | Update one TEXT part (\*extends Step 1's index-0-only version). |
-| `REMOVE_VALUE_PART` | `{ id, partIndex }`       | Remove a part, then merge adjacent TEXT parts; keep ≥1 TEXT.    |
-| `INSERT_VALUE_PART` | `{ id, part }`            | Append a part, then ensure a trailing empty TEXT part.          |
+| Action              | Payload                   | Effect                                                             |
+| ------------------- | ------------------------- | ------------------------------------------------------------------ |
+| `SET_VALUE_TEXT`\*  | `{ id, partIndex, text }` | Update one TEXT part (\*extends Step 1's index-0-only version).    |
+| `REMOVE_VALUE_PART` | `{ id, partIndex }`       | Remove a part, then merge adjacent TEXT parts; keep ≥1 TEXT.       |
+| `INSERT_VALUE_PART` | `{ id, part }`            | Append a part, then ensure a trailing empty TEXT part.             |
 | `ADD_SECTION`       | —                         | Insert a `SECTION_HEADER` row below the active row (no-op at cap). |
 
 Guardrails unchanged from Step 1: reducer stays pure; `id`/`key` minted in a
@@ -177,7 +176,9 @@ helper, not in the reducer; cap enforced inside every row-creating action.
    render distinctly; the 200 cap holds across Add row / Duplicate / Add section.
 4. `200` is still only the single shared constant — no stray literal.
 5. `npm run build` passes and ESLint is clean.
-6. `progress-tracker.md` updated to mark Step 2 complete and point at Step 3.
+6. run the app on the browser and check the real behavious of the app and make
+   sure it is working as expected.
+7. `progress-tracker.md` updated to mark Step 2 complete and point at Step 3.
 
 ## Open questions to resolve during build
 
