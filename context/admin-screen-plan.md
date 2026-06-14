@@ -115,7 +115,7 @@ Shown when `Shop.onboardingStatus` is `DISMISSED`. This is the permanent dashboa
 
 **Purpose:** The core screen. Build or edit the template — rows, section headers, data sources, and styling — in a WYSIWYG editor that renders exactly like the storefront table.
 
-**Layout:** Single full-width WYSIWYG editor. The editing table _is_ the live preview — it renders with the current `TableStyling` at all times. A viewport toggle (Desktop / Tablet / Mobile) switches the table's rendered width/layout (mobile shows the stacked label-over-value layout), and the table stays fully editable in every viewport. No separate preview panel.
+**Layout:** Single full-width WYSIWYG editor. The editing table renders with the current `TableStyling` at all times. A single view toggle has four mutually-exclusive segments — **Edit** (pencil + label), a divider, then **Desktop / Tablet / Mobile**. **Edit** is the only editable view; **Desktop / Tablet / Mobile** are read-only previews of how the table renders for shoppers at that width (mobile shows the stacked label-over-value layout). In a device view all editor chrome is hidden (toolbar, hint, gutter, add-row, edit box, field picker) and the gutter column collapses. No separate preview panel. _(View Toggle Decision, Session 2026-06-14 — supersedes the earlier "fully editable in every viewport" wording.)_
 
 **Primary Polaris components:** `Page`, `Layout`, `Card`, `Tabs`, `TextField`, `Select`, `Button`, `Banner`
 

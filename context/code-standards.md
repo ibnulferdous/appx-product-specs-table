@@ -73,6 +73,16 @@
 - `prisma/` — Database schema (`schema.prisma`) and migrations history
 - `context/` — Project context files: roadmap, requirements, data model, progress tracker, and this file
 
+## Testing
+
+- Test runner is **Vitest**. `npm test` (watch) while developing, `npm run test:run` once (CI), `npm run test:coverage` for a coverage report.
+- Co-locate unit tests next to the module they cover, named `*.test.ts` (e.g. `app/utils/rows.test.ts` tests `app/utils/rows.ts`).
+- Import test functions explicitly from `vitest` (`import { describe, it, expect } from "vitest"`) — no global test types are configured.
+- `vitest.config.ts` is standalone and must not load the React Router Vite plugin (`reactRouter()`); it expects the framework build context and breaks under Vitest.
+- Prioritize testing **pure logic and security boundaries** over UI markup: the spec-table reducer (`app/utils/rows.ts`), shop isolation in `app/models/*.server.ts`, save/assignment validation, and billing/entitlement math. Do not chase 100% coverage — test what hurts if it breaks.
+- Keep reducers and helpers **pure** so they stay testable: mint non-deterministic values (ids, timestamps) outside the function and pass them in (see `newRowId`).
+- Polaris web components (`<s-…>`) do not render in jsdom, so component tests have limited value here — cover real editor UI behavior with end-to-end tests (Playwright), not brittle jsdom component tests.
+
 ## Scope Discipline
 
 - Work on one feature unit at a time

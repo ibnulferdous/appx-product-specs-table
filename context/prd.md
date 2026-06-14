@@ -30,7 +30,7 @@ Shopify's native product pages have no structured way to display specifications.
 - Auto-hide rows with empty values on the storefront
 - Undo / redo support while editing
 - Save templates as draft or published state
-- WYSIWYG editor — the editing table renders exactly like the storefront table and stays editable in every viewport (Desktop / Tablet / Mobile); no separate preview panel
+- WYSIWYG editor — the editing table renders exactly like the storefront table; a single view toggle switches between **Edit** (the only editable view) and read-only **Desktop / Tablet / Mobile** previews that show how the table renders for shoppers (mobile = stacked label-over-value). No separate preview panel
 
 ### Data Sources
 

@@ -42,6 +42,15 @@
 
   --chip-bg:#ebf5ff; --chip-border:#a4cafe; --chip-text:#0257b3;
 
+  /* Claude-style inline "smart pill" token (Step 4): link-blue text on a
+     subtle tint, no border, no ✕ — deleted as one unit from the keyboard.
+     Four states: resting / hover / caret-on (next delete) + tooltip. */
+  --token-text:#0a51b0;
+  --token-bg:#eff4fc;
+  --token-bg-hover:#e3edfb;
+  --token-bg-active:#d2e2f8;
+  --token-ring:#9cc0ee;
+
   --radius-xs:6px; --radius:8px; --radius-lg:12px; --radius-pill:999px;
   --shadow-sm:0 1px 0 rgba(0,0,0,.05);
   --shadow:0 1px 2px rgba(0,0,0,.08),0 0 0 1px rgba(0,0,0,.02);
@@ -251,14 +260,23 @@ svg{display:block}
 }
 .row.section .disc{margin-right:6px}
 
-/* dynamic chips */
+/* dynamic-field token — Claude-style inline "smart pill" (Step 4).
+   Link-styled: blue text on a subtle tint, NO border, NO ✕. Text-forward to
+   match the Claude desktop reference; removed as one unit from the keyboard.
+   States: resting · hover (lighter→darker tint) · caret-on (next delete). */
 .chip{
-  display:inline-flex;align-items:center;gap:6px;background:var(--chip-bg);border:1px solid var(--chip-border);
-  color:var(--chip-text);border-radius:var(--radius-xs);padding:2px 6px 2px 7px;font-weight:500;font-size:12px;line-height:1.4
+  display:inline;
+  background:transparent;color:var(--token-text);
+  border-radius:4px;
+  padding:0 2px;font-weight:500;font-size:inherit;line-height:inherit;
+  cursor:default;transition:background .1s;
+  white-space:nowrap;
 }
-.chip svg{width:12px;height:12px;color:var(--chip-text)}
-.chip .x{width:14px;height:14px;border-radius:3px;display:flex;align-items:center;justify-content:center;color:#5c8fd6;cursor:pointer}
-.chip .x:hover{background:#d6e8ff;color:#0257b3}
+/* hover: a light tint hugs the link text */
+.chip:hover{background:var(--token-bg-hover)}
+/* caret-on: a slightly darker tint marks the token the next Backspace/Delete removes */
+.chip[data-caret-on]{background:var(--token-bg-active)}
+.chip svg{width:12px;height:12px;color:var(--token-text);opacity:.85}
 
 /* active row = the insert target for "Add row" / "Add section" / "Duplicate" */
 .row.active{background:#fbfdff;box-shadow:inset 3px 0 0 var(--link)}
@@ -340,10 +358,11 @@ svg{display:block}
 .sw2::after{content:"";position:absolute;top:2px;right:2px;width:16px;height:16px;border-radius:50%;background:#fff;transition:all .12s}
 .sw2.off::after{right:auto;left:2px}
 
-/* ---------- WYSIWYG viewport modes ----------
-   No separate preview: the editable grid IS the storefront-matching
-   table. The viewport toggle constrains its width; mobile stacks
-   label over value. The grid stays fully editable in every mode. */
+/* ---------- Viewport modes ----------
+   Edit is the only editable view. Desktop / Tablet / Mobile are VIEW-ONLY
+   previews (see the `.preview` block below): the toggle constrains the
+   table's width and mobile stacks label over value, but no input can be
+   edited and the editor chrome is hidden. */
 #gridView .grid{transition:max-width .18s}
 #gridView.tablet .grid,#gridView.mobile .grid{
   margin:0 auto;border-left:1px solid var(--border-2);border-right:1px solid var(--border-2)
@@ -358,6 +377,45 @@ svg{display:block}
 #gridView.mobile .row[data-type="data"] .gutter{grid-column:1;grid-row:1 / span 2}
 #gridView.mobile .row[data-type="data"] .cell.label{grid-column:2;grid-row:1;min-height:0;padding-bottom:2px;color:#8a8a8a;font-size:12px}
 #gridView.mobile .row[data-type="data"] .cell.value{grid-column:2;grid-row:2;border-left:none;padding-top:0}
+
+/* ---------- View-only (preview) mode: Desktop / Tablet / Mobile ----------
+   These three views render the table read-only, the way the storefront sees
+   it: the editor chrome (toolbar, hint, gutter, add-row, edit box, picker) is
+   hidden, the gutter column collapses, and nothing is editable. Only Edit is
+   editable. */
+#gridView.preview .toolbar,
+#gridView.preview .hint,
+#gridView.preview .addrow,
+#gridView.preview .gutter,
+#gridView.preview .editor-box,
+#gridView.preview #picker{display:none}
+
+/* a preview-only resolved value stands in for the open edit box */
+.preview-only{display:none}
+#gridView.preview .preview-only{display:block}
+
+/* drop the gutter column so it reads like a real table */
+#gridView.preview .grid-head{grid-template-columns:minmax(180px,0.9fr) minmax(260px,1.6fr)}
+#gridView.preview .grid-head .h:first-child{display:none}
+#gridView.preview .row[data-type="data"]{grid-template-columns:minmax(180px,0.9fr) minmax(260px,1.6fr)}
+#gridView.preview .row.section{grid-template-columns:1fr}
+#gridView.preview .row.section .cell.section{grid-column:1 / -1}
+
+/* nothing is editable or interactive — strip edit highlights & affordances */
+#gridView.preview .row{cursor:default}
+#gridView.preview .row:hover,
+#gridView.preview .row.active,
+#gridView.preview .row.editing{background:var(--surface);box-shadow:none}
+#gridView.preview .chip{cursor:default}
+#gridView.preview .chip:hover{background:transparent}
+#gridView.preview input,
+#gridView.preview button{pointer-events:none}
+
+/* mobile preview: stacked label-over-value with the gutter column gone */
+#gridView.preview.mobile .grid-head{grid-template-columns:1fr}
+#gridView.preview.mobile .row[data-type="data"]{grid-template-columns:1fr}
+#gridView.preview.mobile .row[data-type="data"] .cell.label{grid-column:1;grid-row:1}
+#gridView.preview.mobile .row[data-type="data"] .cell.value{grid-column:1;grid-row:2}
 
 .legend{max-width:1180px;margin:14px auto 0;color:var(--text-3);font-size:12px;display:flex;gap:18px;flex-wrap:wrap}
 .legend b{color:var(--text-2)}
@@ -463,11 +521,15 @@ svg{display:block}
               </button>
             </div>
 
-            <!-- viewport toggle only — no Edit/preview mode switch; the table is WYSIWYG and editable in every viewport -->
+            <!-- Edit + viewport toggle: Edit is the working view (default); the three
+                 device buttons constrain the table to a preview width. The grid stays
+                 editable in every viewport — Edit just labels/returns to the full-width view. -->
             <div class="toggle" id="toggle">
-              <button data-mode="desktop" class="active" title="Desktop viewport"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="3" width="16" height="11" rx="1"/><path d="M7 17h6"/></svg></button>
-              <button data-mode="tablet" title="Tablet viewport"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="4" y="2" width="12" height="16" rx="1.5"/></svg></button>
-              <button data-mode="mobile" title="Mobile viewport"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="6" y="2" width="8" height="16" rx="1.5"/><path d="M9 15h2"/></svg></button>
+              <button data-view="edit" class="active" title="Edit"><svg viewBox="0 0 20 20" fill="currentColor"><path d="M4 13l8-8 3 3-8 8H4z"/></svg>Edit</button>
+              <span class="sep"></span>
+              <button data-view="desktop" title="Desktop viewport"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="3" width="16" height="11" rx="1"/><path d="M7 17h6"/></svg></button>
+              <button data-view="tablet" title="Tablet viewport"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="4" y="2" width="12" height="16" rx="1.5"/></svg></button>
+              <button data-view="mobile" title="Mobile viewport"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="6" y="2" width="8" height="16" rx="1.5"/><path d="M9 15h2"/></svg></button>
             </div>
           </div>
 
@@ -521,7 +583,7 @@ svg{display:block}
                   <button class="btn" id="dupBtn"><svg viewBox="0 0 20 20" fill="currentColor"><path d="M7 7h9v9H7z" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M4 4h9v2H6v7H4z"/></svg>Duplicate</button>
                   <span class="count">Rows: <b id="rowCount">8</b> / 200</span>
                 </div>
-                <div class="hint">Click a value to edit · type <code>@</code> or press <b>+ Insert field</b> to add a product field or metafield · drag the <b>⠿</b> handle to reorder · <b>Add row</b> drops a new row below the one you're on.</div>
+                <div class="hint">Click a value to edit · press <b>+ Insert field</b> to add a product field or metafield · a field token is removed as one unit with <code>Backspace</code> / <code>Delete</code> (no ✕ on the pill) · drag the <b>⠿</b> handle to reorder · <b>Add row</b> drops a new row below the one you're on.</div>
 
                 <div class="grid" id="grid">
                   <div class="grid-head">
@@ -572,7 +634,7 @@ svg{display:block}
                     </div>
                     <div class="cell label">Chipset</div>
                     <div class="cell value">
-                      <span class="chip"><svg viewBox="0 0 20 20" fill="currentColor"><path d="M6 2v2H4v3H2v2h2v2H2v2h2v3h3v2h2v-2h2v2h2v-2h3v-3h2v-2h-2V9h2V7h-2V4h-3V2h-2v2H9V2z"/></svg>Metafield · Chipset</span>
+                      <span class="chip" title="Metafield · custom.chipset">Metafield · Chipset</span>
                     </div>
                   </div>
 
@@ -582,7 +644,7 @@ svg{display:block}
                     </div>
                     <div class="cell label">Brand</div>
                     <div class="cell value">
-                      <span class="chip"><svg viewBox="0 0 20 20" fill="currentColor"><path d="M3 6l7-3 7 3v8l-7 3-7-3z"/></svg>Product · Vendor</span>
+                      <span class="chip" title="Product field · product.vendor">Product · Vendor</span>
                     </div>
                   </div>
 
@@ -599,18 +661,18 @@ svg{display:block}
                     </div>
                     <div class="cell label">Battery Life</div>
                     <div class="cell value">
+                      <!-- shown only in the view-only device previews (edit box is hidden there) -->
+                      <span class="line preview-only">Up to <span class="chip" title="Metafield · custom.battery_life">Metafield · battery_life</span> hours</span>
                       <div class="editor-box">
                         <div class="parts" id="parts">
                           <span class="partstext">Up to&nbsp;</span>
-                          <span class="chip"><svg viewBox="0 0 20 20" fill="currentColor"><path d="M6 2v2H4v3H2v2h2v2H2v2h2v3h3v2h2v-2h2v2h2v-2h3v-3h2v-2h-2V9h2V7h-2V4h-3V2h-2v2H9V2z"/></svg>Metafield · battery_life<span class="x">✕</span></span>
+                          <span class="chip" data-caret-on title="Metafield · custom.battery_life">Metafield · battery_life</span>
                           <span class="partstext">&nbsp;hours</span>
                           <input class="txt" placeholder="" />
                         </div>
                         <div class="minirow">
                           <button class="btn-insert" id="insertFieldBtn"><svg viewBox="0 0 20 20" fill="currentColor"><path d="M10 4v12M4 10h12" stroke="currentColor" stroke-width="2"/></svg>Insert field</button>
-                          <span class="or">or type <code>@</code></span>
                         </div>
-                        <div class="resolved">Storefront preview: Up to <b>29 hours</b> <span style="color:var(--text-3)">(resolves per product)</span></div>
                       </div>
 
                       <!-- field picker popover -->
@@ -644,8 +706,9 @@ svg{display:block}
 
         <div class="legend">
           <span><b>Try it:</b> click the <b>Style</b> / <b>Settings</b> tabs</span>
-          <span>switch <b>Desktop / Tablet / Mobile</b> in the toggle — the table stays editable in every viewport</span>
+          <span>switch <b>Edit → Desktop / Tablet / Mobile</b> in the toggle — <b>Edit</b> is editable; the three device views are <b>view-only</b> previews</span>
           <span>each row's gutter pairs a <b>⠿</b> drag handle with a <b>✕</b> delete</span>
+          <span>dynamic-field tokens are <b>link-styled smart pills</b> — deleted with <b>Backspace</b> / <b>Delete</b>, no ✕</span>
           <span><b>Add row</b> inserts below the active row · the bottom <b>+ Add row</b> appends at the end</span>
         </div>
 
@@ -664,7 +727,7 @@ svg{display:block}
 const $  = (s,r=document)=>r.querySelector(s);
 const $$ = (s,r=document)=>[...r.querySelectorAll(s)];
 
-let tab='content', mode='desktop';
+let tab='content', view='edit';
 
 const leftpanel=$('#leftpanel'), gridView=$('#gridView');
 const panelStyle=$('#panel-style'), panelSettings=$('#panel-settings');
@@ -672,8 +735,8 @@ const panelStyle=$('#panel-style'), panelSettings=$('#panel-settings');
 function render(){
   // tabs visual
   $$('#tabs .tab').forEach(t=>t.classList.toggle('active',t.dataset.tab===tab));
-  // toggle visual
-  $$('#toggle button').forEach(b=>b.classList.toggle('active',b.dataset.mode===mode));
+  // toggle visual (Edit + the three device buttons share one active state)
+  $$('#toggle button').forEach(b=>b.classList.toggle('active',b.dataset.view===view));
 
   // left panel: only on style/settings
   const showPanel = tab!=='content';
@@ -681,13 +744,15 @@ function render(){
   panelStyle.style.display    = tab==='style'    ? 'block':'none';
   panelSettings.style.display = tab==='settings' ? 'block':'none';
 
-  // viewport: the editable grid IS the preview — it stays editable in every mode
-  gridView.classList.toggle('tablet', mode==='tablet');
-  gridView.classList.toggle('mobile', mode==='mobile');
+  // grid width: Edit (and Desktop) = full width; Tablet / Mobile constrain it.
+  gridView.classList.toggle('tablet', view==='tablet');
+  gridView.classList.toggle('mobile', view==='mobile');
+  // Edit is the only editable view; the three device views are read-only previews.
+  gridView.classList.toggle('preview', view!=='edit');
 }
 
 $$('#tabs .tab').forEach(t=>t.addEventListener('click',()=>{ tab=t.dataset.tab; closePops(); render(); }));
-$$('#toggle button').forEach(b=>b.addEventListener('click',()=>{ mode=b.dataset.mode; closePops(); render(); }));
+$$('#toggle button').forEach(b=>b.addEventListener('click',()=>{ view=b.dataset.view; closePops(); render(); }));
 
 // status select (header) just cycles for demo
 const statuses=[['Draft','#e2a400',''],['Active','#29845a','active'],['Archived','#8a8a8a','']];
@@ -723,14 +788,16 @@ $('#insertFieldBtn').addEventListener('click',e=>{
 document.addEventListener('click',e=>{ if(!e.target.closest('#picker') && !e.target.closest('#insertFieldBtn')) picker.classList.remove('open'); });
 $$('#picker .opt').forEach(o=>o.addEventListener('click',()=>{
   const name=o.querySelector('.meta span').textContent;
+  const key=o.querySelector('.meta small').textContent;
+  // insert a Claude-style smart-pill token: text-forward, no icon, no ✕.
   const chip=document.createElement('span');
   chip.className='chip';
-  chip.innerHTML='<svg viewBox="0 0 20 20" fill="currentColor"><path d="M6 2v2H4v3H2v2h2v2H2v2h2v3h3v2h2v-2h2v2h2v-2h3v-3h2v-2h-2V9h2V7h-2V4h-3V2h-2v2H9V2z"/></svg>'+name+'<span class="x">✕</span>';
+  chip.title=key;                         // tooltip carries namespace · key
+  chip.textContent=name;
   $('#parts').insertBefore(chip,$('#parts .txt'));
   picker.classList.remove('open');
 }));
-// remove chip
-document.addEventListener('click',e=>{ if(e.target.classList.contains('x')) e.target.closest('.chip')?.remove(); });
+// tokens are deleted from the keyboard (Step 4) — no per-pill ✕ to wire up.
 
 /* ---- active row + per-row decoration (mockup-grade) ---- */
 const grid=$('#grid');
