@@ -1,4 +1,4 @@
-# Editor Step 4 — Claude-style inline pills (atomic, link-styled, keyboard-deletable)
+# Editor Step 4 — Claude-style inline pills + hard-break multiline
 
 ## Goal in one sentence
 
@@ -6,34 +6,50 @@ Replace the chip-plus-✕ pill with an inline, **link-styled token** that behave
 like a Claude desktop file-reference — blue link-like text, a light hover
 background, a slightly darker "caret-on-it" background, and a tooltip carrying its
 `namespace · key` (METAFIELD) or field source (SHOPIFY_FIELD) — **deleted as a
-single unit by Backspace/Delete from the keyboard** (no per-pill ✕), exactly like
-a character of text.
+single unit by Backspace/Delete** (no per-pill ✕); and on that same surface, let
+a value hold **author-intended hard line breaks** (`LINE_BREAK`) so a "Features"
+value can list one item per line.
 
 ## Why this is now
 
-The pill's interaction model must be **final before the field picker (Step 5+)
-starts inserting pills into it** — every later picker step (open popover → native
-fields → search → fetch → live metafields) fills _this_ token, so its caret,
+The pill's interaction model **and** the editing surface's caret model must be
+**final before the field picker (Step 5+) starts inserting pills into it** — every
+later picker step (modal shell → native fields → search → fetch → live metafields)
+drops a complete pill into _this_ surface at the merchant's caret, so caret,
 deletion, and focus behavior have to be settled first. This is genuinely the hard
 part again: the caret handling Step 2 deferred and Step 3 explicitly logged
-(finding #3). It adds no reducer action and no new data surface, so it stands
-alone rather than hiding inside the review or the picker.
+(finding #3). Multiline (`LINE_BREAK`) rides along here as **sub-step 4.4** rather
+than a standalone step because it lives on the exact same `contenteditable`
+surface and shares Step 4's caret machinery — splitting it out would mean building
+the caret model twice.
 
 ## Foundation carried from Steps 1–3
 
-- The value shape is **unchanged** — a value is still an ordered `ValuePart[]` of
-  `TEXT` / `SHOPIFY_FIELD` / `METAFIELD` (`data-model.md` §6–7). Step 4 changes
-  only **how that array is rendered and edited**, never its shape, the reducer's
-  actions, or the 200-row cap.
+- A value is an ordered `ValuePart[]` in [rows.ts](app/utils/rows.ts). Through
+  4.1–4.3 the **shape is unchanged** (`TEXT` / `SHOPIFY_FIELD` / `METAFIELD`,
+  `data-model.md` §6–7); those sub-steps change only **how the array is rendered
+  and edited**. **4.4 is the one exception** — it adds a `LINE_BREAK` member to
+  the union (see 4.4).
 - **Deletion reuses `REMOVE_VALUE_PART { id, partIndex }`** — it already drops a
   part and runs `normalizeValueParts` (merge adjacent TEXT, guarantee ≥1 TEXT).
-  No new reducer action.
 - Text editing still flows through `SET_VALUE_TEXT { id, partIndex, text }`.
-- The token is still a **placeholder** (no field chosen yet): it reads
-  `Metafield · choose field` — `placeholderMetafieldPart()` mints an empty
-  `namespace`/`key`, which the picker fills from **Step 6** on. **Clicking the
-  token does nothing yet** — opening a popover is Step 5.
-- The Step 2 Polaris workarounds being **retired** here: the `strong`-tone
+- **Pills are now created complete — the placeholder pill is retired.** The
+  pick-then-insert decision (2026-06-15) reversed the old insert-then-fill model:
+  a pill is only ever rendered as a finished `SHOPIFY_FIELD` (`Field · <field>`)
+  or `METAFIELD` (`Metafield · <key>`) token. There is **no `· choose field`
+  empty state** to style or guard, and no incomplete reference can reach the
+  storefront. So `placeholderMetafieldPart()` and the append-only
+  `INSERT_VALUE_PART` path that seeded it are **dead after this slice**; they are
+  removed when **Step 5** lands the modal + the caret-aware insert (4.4) that
+  replaces them. **Clicking a token does nothing yet** — opening the modal is
+  Step 5; reopening it pre-filled to **Update** a field is Step 6.
+- **Verifying Step 4 without the picker:** because the real insert path is the
+  Step 5 modal, seed a **complete sample pill** in the editor's initial state
+  (e.g. a `METAFIELD custom/battery_life` inside "Up to `[pill]` hours") so the
+  token's render/hover/caret/delete behavior is exercisable on its own. Do **not**
+  reintroduce a placeholder insert button as a shortcut — the token must be
+  verified in its final, always-complete form.
+- The Step 2 Polaris workarounds are **retired here**: the `strong`-tone
   `<s-chip>` + explicit ✕ button is exactly the surface this step replaces — do
   not carry them forward (see [[polaris-web-component-gotchas]]).
 
@@ -45,19 +61,22 @@ inline editable surface** (`contenteditable`):
 - `TEXT` parts → editable text runs (text nodes).
 - `METAFIELD` / `SHOPIFY_FIELD` parts → **atomic, non-editable token spans**
   (`contenteditable="false"`), styled as link tokens.
+- `LINE_BREAK` parts (4.4) → an atomic `<br>`, rendered identically in the editor
+  and on the storefront.
 
 DOM order = `valueParts` order; the caret moves across text and **over** tokens
-as one continuous line. This is the consolidation logged as the Step 3 caret
-follow-up (finding #3) — it lives here, not in the review.
+and breaks as one continuous flow. This is the consolidation logged as the Step 3
+caret follow-up (finding #3) — it lives here, not in the review.
 
 ---
 
 ## Sub-steps (build and verify one at a time)
 
-Chain: **render the token → consolidate the surface → keyboard-delete**. Each
-builds clean (`npm run typecheck` + `lint` + `build`), is visually verifiable on
-its own, and adds **no** reducer action — so a regression points at exactly one
-sub-step.
+Chain: **render the token → consolidate the surface → keyboard-delete → hard-break
+multiline**. Each builds clean (`npm run typecheck` + `lint` + `build`), is
+visually verifiable on its own, and 4.1–4.3 add **no reducer action** — so a
+regression points at exactly one sub-step. The single new reducer action lands in
+**4.4**.
 
 ### 4.1 — Inline link-styled token + states + tooltip (presentation only)
 
@@ -71,9 +90,9 @@ flow):
 - **Caret-on (deletion target):** a slightly darker background — shown when the
   caret sits immediately before/after the token (wired live in 4.3; in 4.1 prove
   it with a `data-*` attribute toggled by hand).
-- **Tooltip on hover:** `namespace · key` for METAFIELD (e.g. `custom · battery_life`),
-  the field source for SHOPIFY_FIELD, and a "no field chosen yet" hint while the
-  part is still a placeholder (empty `namespace`/`key`).
+- **Tooltip on hover:** `namespace · key` for METAFIELD (e.g.
+  `custom · battery_life`), the field source for SHOPIFY_FIELD. (No
+  "choose field" hint — pills are always complete now.)
 
 Colors come from **Polaris color tokens** (CSS custom properties) — an
 interactive/link text token and a subdued/info surface token — confirmed against
@@ -114,37 +133,101 @@ anywhere in the cell places the caret (the fiddly empty-segment problem is gone)
 ### 4.3 — Keyboard-delete a token as one unit; remove the ✕
 
 Wire Backspace/Delete so a token is removed as a **single unit**, like a
-character:
+character — and write the handler against **any atomic non-TEXT part**, not just
+tokens, so 4.4's `LINE_BREAK` deletion comes for free:
 
-- Backspace with the caret **immediately after** a token (or Delete **immediately
-  before** it) → `REMOVE_VALUE_PART` for that token's part index;
+- Backspace with the caret **immediately after** an atomic part (or Delete
+  **immediately before** it) → `REMOVE_VALUE_PART` for that part's index;
   `normalizeValueParts` merges the surrounding TEXT and guarantees ≥1 TEXT.
-- A selection that **spans** a token deletes it too.
+- A selection that **spans** an atomic part deletes it too.
 - **Remove the per-pill ✕ button entirely** — the token is now deleted only from
-  the keyboard (and re-pickable later via Step 5+).
+  the keyboard (and re-pickable later via the Step 5 modal).
 - Reflect the 4.1 "caret-on" darker state **live** as the caret lands beside a
   token, so the merchant sees what the next Backspace will remove.
 
 **Verify:** caret just after a token + Backspace removes the whole token and the
-text merges; Delete just before it does the same; ≥1 TEXT part always remains;
-there is **no ✕ control anywhere**; deletion still dispatches only
-`REMOVE_VALUE_PART`.
+text merges; Delete just before it does the same; a span-selection delete removes
+it; ≥1 TEXT part always remains; there is **no ✕ control anywhere**; deletion
+still dispatches only `REMOVE_VALUE_PART`.
+
+### 4.4 — Hard-break multiline (`LINE_BREAK`)
+
+Let a value carry **author-intended** line breaks on the same surface (soft-wrap
+of long text already happens for free via CSS — `LINE_BREAK` is only for breaks
+the merchant types). This is the one place Step 4 touches the data shape and adds
+a reducer action.
+
+- **Data shape:** add `| { type: "LINE_BREAK" }` to the `ValuePart` union in
+  [rows.ts](app/utils/rows.ts) (matches `data-model.md` §7). It carries no `text`
+  and no dynamic reference.
+- **Insert at the caret:** Enter (and Shift+Enter — there is no paragraph concept
+  in a value cell, so both map to a hard break) inserts a `LINE_BREAK` **at the
+  caret**. `preventDefault` the browser's native Enter so the `contenteditable`
+  does not inject its own `<div>`/`<br>`; dispatch the new action below and
+  re-render from `valueParts`, placing the caret after the break.
+- **New reducer action — caret-aware insert/split.** The existing
+  `INSERT_VALUE_PART` only **appends**, so it cannot place a part at the caret or
+  split a TEXT run. Add one action — e.g.
+  `INSERT_VALUE_PART_AT { id, partIndex, offset, part }` — that splits the TEXT at
+  `partIndex` at character `offset`, inserts `part` between the halves, then runs
+  `normalizeValueParts`. The editor computes `(partIndex, offset)` from the DOM
+  caret `Range` and dispatches **plain numbers**, so the reducer stays pure and
+  DOM-free (Step 1 invariant). For 4.4, `part = { type: "LINE_BREAK" }`.
+  **This same action is what Step 5 reuses to drop a picked pill at the saved
+  caret** (`part` = the `SHOPIFY_FIELD` / `METAFIELD`) — one action serves both
+  line break and pill insert.
+- **Delete:** a `LINE_BREAK` is an atomic non-TEXT part, so 4.3's
+  keyboard-delete removes it via `REMOVE_VALUE_PART` and `normalizeValueParts`
+  re-merges the now-adjacent TEXT — no extra code if 4.3 was written generally.
+- **Normalize:** `normalizeValueParts` needs **no change** — it already treats any
+  non-TEXT part as a merge boundary (so two TEXT runs split by a `LINE_BREAK` stay
+  separate) and never strips non-TEXT parts. Confirm the ≥1-TEXT guarantee still
+  holds for a value like `[TEXT, LINE_BREAK, TEXT]`.
+- **Emptiness is whole-row, never per line (`data-model.md` §10):** `LINE_BREAK`
+  carries no content and is ignored when judging whether a row is empty. The
+  editor adds **no per-line hide logic**; `hideWhenEmpty` is unchanged.
+- **WYSIWYG parity:** the editor renders the break exactly as the storefront will
+  (`<br>`); a `LINE_BREAK` never counts toward the 200-row cap (only rows do) and
+  is product-agnostic, so it does not affect row `key` alignment or the
+  comparison-readiness invariant.
+
+**Verify:** type "1000 nits max brightness (typical)", press Enter, type "1600
+nits peak brightness (HDR)" → two visual lines in **one** value cell, **one** row
+(the `Rows: N / 200` counter does not change); Backspace at the start of the
+second line removes the break and rejoins the lines; the value round-trips to
+`[TEXT, LINE_BREAK, TEXT]` in `valueParts`; a value of only TEXT + `LINE_BREAK`
+always renders (never treated as empty).
 
 ---
 
 ## Reducer actions
 
-**None added.** Step 4 is entirely in the value cell's render + caret/selection
-handling and scoped CSS:
+4.1–4.3 add **none** (render + caret/selection handling + scoped CSS only). 4.4
+adds **one** — the caret-aware insert/split — shared with Step 5:
 
-| Interaction        | Existing action used                          |
-| ------------------ | --------------------------------------------- |
-| Delete a token     | `REMOVE_VALUE_PART` (+ `normalizeValueParts`) |
-| Edit a TEXT run    | `SET_VALUE_TEXT` (part-indexed)               |
+| Interaction                        | Reducer action                                     |
+| ---------------------------------- | -------------------------------------------------- |
+| Edit a TEXT run                    | `SET_VALUE_TEXT` (part-indexed) — existing         |
+| Delete a token or line break       | `REMOVE_VALUE_PART` (+ `normalizeValueParts`) — existing |
+| Insert a line break at the caret   | **new** caret-aware insert/split (4.4)             |
+| Insert a picked pill at the caret  | same **new** action (Step 5 reuses it)            |
 
-Keep it this way. If DOM→state sync seems to want a coarser "replace all
-`valueParts`" action, treat that as a **decision to record**, not a default — the
-step's intent is _no new reducer action_ (see Open questions).
+The append-only `INSERT_VALUE_PART` and `placeholderMetafieldPart()` become dead
+once pick-then-insert lands; remove them with Step 5's modal, not before (Step 4
+still seeds its sample pill in initial state).
+
+## What Step 4 does *not* own (boundary with Step 5+)
+
+Pick-then-insert keeps the picker **entirely outside** this `contenteditable`, so
+Step 4 never has to model field selection inside the caret flow. Step 4 owns the
+**surface** (render, caret, keyboard-delete, line breaks) and the **caret-aware
+insert action**. It does **not** own:
+
+- The **Insert field** toolbar button, the focus-trapped **modal**, or
+  caret save/restore around it → **Step 5**.
+- Click-a-pill-to-reopen-the-modal-pre-filled → **Update** → **Step 6**.
+- Any field data (native list, search, metafield fetch, live data) →
+  **Steps 6–9**.
 
 ## Step 3 follow-ups this step resolves
 
@@ -160,15 +243,19 @@ The three items tagged **[Step 4]** in `progress-tracker.md`:
 
 ## Explicitly out of scope (later steps)
 
-- **Field-picker popover** (open / anchor / focus-trap on token click) → **Step
-  5**. Step 4 tokens are placeholders; clicking does nothing yet.
-- Native Shopify fields / search / metafield fetch / live data → **Steps 6–9**.
-  The token still reads "choose field" until then.
+- **Insert field modal + caret save/restore** (the pick-then-insert container) →
+  **Step 5**. It is a **modal, not a popover** — room for the growing
+  search + native-fields + live-metafields content and zero positioning math in
+  the embedded-admin iframe (see [[polaris-web-component-gotchas]]).
+- Native Shopify fields / search / metafield fetch / live data, and
+  click-a-pill-to-**Update** → **Steps 6–9**.
 - Drag reorder + keyboard reorder → **Steps 10–11** (the gutter `⠿` stays inert).
 - Clipboard paste → **Steps 12–13**.
-- Save / persistence / server re-validation → **Step 6**. Step 4 is still local
-  React state only — nothing persists.
-- Any change to the `valueParts` shape, the reducer's actions, or the 200-row cap.
+- Save / persistence / server re-validation → first slice after the editor. Step 4
+  is still local React state only — nothing persists.
+- Any inline rich formatting, links, or widgets (links are the roadmap's Phase 4
+  URL field; star-rating widgets are out). A full editor framework (Lexical) was
+  considered and **rejected** — no committed MVP feature justifies it.
 
 ## File placement (unchanged from Steps 1–3)
 
@@ -179,53 +266,43 @@ The three items tagged **[Step 4]** in `progress-tracker.md`:
 - Token + state styling in
   [SpecTableEditor.module.css](app/routes/app.templates_.$id/SpecTableEditor.module.css),
   scoped to the component, **Polaris color tokens only, no hardcoded hex**.
-- No new pure helper is expected; if DOM↔`valueParts` parsing grows, a pure,
-  framework-free helper in `app/utils/` is its home (kept testable) — but prefer
-  to keep it minimal.
+- The `LINE_BREAK` union member and the caret-aware insert/split action live in
+  [rows.ts](app/utils/rows.ts) (framework-free, covered by `rows.test.ts`).
+- If DOM↔`valueParts` parsing grows (mapping a caret `Range` to `(partIndex,
+  offset)`, or serializing the surface back to parts), put it in a pure,
+  framework-free helper in `app/utils/` so it stays unit-testable — but keep it
+  minimal.
+
+## Open questions
+
+- **Uncontrolled-while-typing vs. controlled re-render (4.2):** the exact rule for
+  when React re-renders the surface from `valueParts` (only on add/remove of
+  parts) vs. lets the browser own the caret (on keystrokes), and how the caret is
+  saved/restored across a structural re-render. This is the step's main risk.
+- **Caret `Range` → `(partIndex, offset)` mapping (4.4 / Step 5):** the precise
+  helper that turns a DOM selection into the reducer's plain-number coordinates,
+  including the caret-immediately-beside-a-token boundary cases.
 
 ## Done when
 
-1. Sub-steps 4.1–4.3 each pass their verify check.
+1. Sub-steps 4.1–4.4 each pass their verify check.
 2. The pill is an inline link-styled token (link-blue text, light hover bg, darker
-   caret-on bg, tooltip carrying `namespace · key` / field source); there is **no
-   per-pill ✕ anywhere**.
-3. A token is deleted as a single unit by Backspace/Delete from the keyboard; text
-   editing and token deletion both still flow **only** through the existing
-   `SET_VALUE_TEXT` and `REMOVE_VALUE_PART` — no new reducer action.
-4. The three Step 3 **[Step 4]** follow-ups are resolved (caret/focus stable,
+   caret-on bg, tooltip carrying `namespace · key` / field source) and is always
+   **complete** — there is **no per-pill ✕ and no "choose field" state anywhere**.
+3. A token is deleted as a single unit by Backspace/Delete; text editing and
+   token deletion flow through the existing `SET_VALUE_TEXT` / `REMOVE_VALUE_PART`;
+   the **only** new reducer action is the caret-aware insert/split (4.4), reused
+   by Step 5.
+4. A value can hold **author-intended hard line breaks** via `LINE_BREAK`: Enter
+   inserts one at the caret, Backspace rejoins, breaks render identically in
+   editor and storefront, never count toward the 200-row cap, and never trigger
+   per-line hide logic (`hideWhenEmpty` stays whole-row).
+5. The three Step 3 **[Step 4]** follow-ups are resolved (caret/focus stable,
    single accessible labelled surface, no fiddly empty segment).
-5. **No hardcoded hex** — token colors are Polaris tokens / CSS custom properties;
+6. **No hardcoded hex** — token colors are Polaris tokens / CSS custom properties;
    the module stays token/`currentColor`-only.
-6. Accessibility holds: the surface and every token are keyboard-reachable and
+7. Accessibility holds: the surface and every token are keyboard-reachable and
    screen-reader labelled; IME/composition input is not broken.
-7. `npm run typecheck`, `npm run lint`, and `npm run build` pass clean.
-8. **Re-verify in the real embedded app** (dev store, behind Shopify auth —
-   Claude-in-Chrome on the `shopify app dev` preview URL, see
-   [[browser-verify-embedded-app]]): author "Up to `[token]` hours", arrow across
-   the token, Backspace/Delete removes it as one unit and the text merges, hover
-   shows the tooltip, the four visual states read correctly, no console errors.
-   (Still local React state — nothing persists.)
-9. `progress-tracker.md` updated to mark Step 4 complete and point at Step 5
-   (field-picker popover shell).
-
-## Open questions to resolve during build
-
-- **React + `contenteditable` reconciliation:** confirm the "uncontrolled while
-  typing, re-render only on structural change, restore the caret" model keeps the
-  caret stable — this is the genuine risk of the step. Settle on one approach
-  before building 4.3 on top of it.
-- **Exact Polaris color tokens** for the link-blue text and the hover / caret-on
-  surfaces in the current CDN build (the build has repeatedly differed from
-  `@shopify/polaris-types` — see [[polaris-web-component-gotchas]]). If Polaris
-  exposes no usable surface token, decide the token-only fallback (still no
-  hardcoded hex) and comment why.
-- **DOM→state sync:** is per-run `SET_VALUE_TEXT` + `REMOVE_VALUE_PART` sufficient
-  for every caret operation (typing, splitting, merging across a token), or does a
-  correct sync need a new "replace `valueParts`" action? Default: no new action;
-  if one proves unavoidable, record the decision before adding it.
-- **"Caret-on" semantics:** define precisely when a token shows the darker state
-  (caret immediately before, immediately after, or either) to match the Claude
-  reference.
-- **Tooltip mechanics:** native `title` attribute vs. an accessible
-  `aria-describedby` tooltip — pick the one that is both accessible and does not
-  fight the `contenteditable` surface.
+8. `npm run typecheck`, `npm run lint`, `npm run build`, and `npm run test:run`
+   all pass; `rows.test.ts` covers the new `LINE_BREAK` member and the caret-aware
+   insert/split action.

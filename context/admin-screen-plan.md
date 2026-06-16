@@ -5,8 +5,7 @@
 ```
 /app                          → Dashboard (onboarding / status overview)
 /app/templates                → Templates List
-/app/templates/new            → Template Editor (create)
-/app/templates/:id            → Template Editor (edit)
+/app/templates/:id            → Template Editor (one route; :id = "new" to create, any template id to edit)
 /app/templates/:id/assign     → Product Assignment
 ```
 
@@ -111,7 +110,9 @@ Shown when `Shop.onboardingStatus` is `DISMISSED`. This is the permanent dashboa
 
 ---
 
-## Screen 3 — Template Editor `/app/templates/new` and `/app/templates/:id`
+## Screen 3 — Template Editor `/app/templates/:id`
+
+> One route serves both create and edit: `:id = "new"` scaffolds a blank template, any other `:id` loads that template (404 when not found or owned by another shop). The create URL `/app/templates/new` resolves to this same dynamic route.
 
 **Purpose:** The core screen. Build or edit the template — rows, section headers, data sources, and styling — in a WYSIWYG editor that renders exactly like the storefront table.
 
@@ -126,27 +127,27 @@ Shown when `Shop.onboardingStatus` is `DISMISSED`. This is the permanent dashboa
 - Actions: Save (primary) | Save as draft | Discard
 - Unsaved changes indicator
 
-### Tab 1 — Rows (default tab)
+### Tab 1 — Content (default tab)
 
-This is where most of the work happens.
+The rows-and-sections editor — where most of the work happens. (Labeled **Content** in the editor tab bar.)
 
-- Custom React editor grid (Type | Label | Value Source); each row's gutter pairs a persistent ⠿ drag-handle with an ✕ delete
-- Row types: `DATA` and `SECTION_HEADER` — visually distinct
-- Inline editing of label and value source per row
-- Value source picker per row (three types):
-  - **Manual Text** — plain text input
-  - **Shopify Field** — dropdown of mapped fields (title, vendor, SKU, weight, price, etc.)
-  - **Metafield** — two-step dropdown: namespace → key
-- Toolbar above the table — **Add row**, **Add section**, **Duplicate** — each inserts directly below the active row (appends if none) and scrolls it into view; the active row (set on click/focus) is shown with a left accent
-- A full-width "+ Add row" at the bottom always appends to the end
-- Drag-and-drop row reordering (via @dnd-kit, keyboard-accessible)
-- Paste a multi-cell table copied from any website, Excel, or Google Sheets to bulk-create rows — first pasted column → label, remaining columns → manual TEXT value; 200-row cap enforced on paste
-- Dynamic value parts (SHOPIFY_FIELD / METAFIELD) render as pill chips while editing, with a resolved placeholder preview (e.g., "Storefront preview: Up to **29 hours**")
+- Custom React editor grid — each data row is **Label | Value**; the row's gutter pairs a persistent ⠿ drag-handle with an ✕ delete. There is no separate "Type" column — row type is conveyed visually.
+- Row types: `DATA` and `SECTION_HEADER` — visually distinct (a section renders as a single full-width header).
+- Inline editing of the label per row; the value is an inline token editor (below).
+- **Value editing — manual text + dynamic-field pills on one shared surface.** The value cell is a single inline editable surface holding plain `TEXT` and atomic dynamic-field **pills** (`SHOPIFY_FIELD` / `METAFIELD`). Manual text is typed directly. Dynamic fields are added with **pick-then-insert**, not a per-row picker:
+  - Place the caret in a value, then click **Insert field** in the toolbar (disabled when there is no active caret in a value cell). This opens a focus-trapped **modal** listing native Shopify fields and the shop's metafields.
+  - Pick a field, then **Insert** → a complete pill drops at the saved caret. **Cancel / Esc / outside-click** inserts nothing.
+  - **Click an existing pill** to reopen the same modal pre-filled → **Update** replaces the field (Cancel leaves it untouched). One modal serves create and edit.
+- **Toolbar above the table** — **Add row**, **Add section**, **Duplicate** (each inserts directly below the active row, appends if none, scrolls it into view; the active row, set on click/focus, is shown with a left accent), a separator, then **Insert field** and the row-count indicator.
+- A full-width "+ Add row" at the bottom always appends to the end.
+- Drag-and-drop row reordering (via @dnd-kit, keyboard-accessible). Sections are ordinary rows in the same array and drag exactly like data rows — a section is **not** a group, so moving it does not carry child rows with it.
+- Paste a multi-cell table copied from any website, Excel, or Google Sheets to bulk-create rows — first pasted column → label, remaining columns → manual TEXT value; 200-row cap enforced on paste.
+- Dynamic-field tokens render as **link-styled smart pills** while editing — blue link-like text, a light background on hover and when the caret sits beside the token, and a tooltip carrying `namespace · key` (METAFIELD) or the field source (SHOPIFY_FIELD). A pill is deleted **as one unit** with **Backspace / Delete** — there is no ✕ on the pill.
+- Values may contain **author-intended hard line breaks** (`LINE_BREAK` parts) on top of automatic soft-wrap, rendered identically in the editor and on the storefront.
+- Row count indicator — `Rows: N / 200`; hard-block at the 200-row cap (no early-warning threshold).
+- **Undo / Redo (MVP)** — available while editing.
 
-- Row count indicator — warn at 180 rows, hard-block at 200
-- Undo / Redo buttons in the toolbar above the grid
-
-### Tab 2 — Styling
+### Tab 2 — Style
 
 - Color pickers (Polaris `ColorPicker` or hex `TextField`): header background, label background, value background, border color, label text color, value text color
 - Font size selector (dropdown: Small / Medium / Large / Inherit)
@@ -154,6 +155,10 @@ This is where most of the work happens.
 - Column width ratio slider or two numeric inputs (label % + value % = 100%)
 - "Reset to theme defaults" link
 - All styling changes apply live to the WYSIWYG editor table — no save required
+
+### Tab 3 — Settings
+
+Reserved tab present in the editor mockup; its contents are **not yet defined**. Define before building (tracked as an open question) — do not implement placeholder controls.
 
 **State to read/write:** `Template` (rows JSON, status, name), `TableStyling`
 
@@ -205,10 +210,10 @@ This is where most of the work happens.
 | ---- | --------------------------------------- | --------------------------------------------- |
 | 1    | App shell + routing                     | Required for everything                       |
 | 2    | Templates List (read-only, empty state) | Gets routing + Polaris layout working cheaply |
-| 3    | Template Editor — Rows tab only         | Core of the vertical slice                    |
+| 3    | Template Editor — Content tab only      | Core of the vertical slice                    |
 | 4    | Save template to Postgres               | Makes data real                               |
 | 5    | Sync to Shopify metaobject              | Unlocks storefront rendering                  |
 | 6    | Theme App Extension — render table      | Completes the vertical slice                  |
 | 7    | Product Assignment screen               | Connects template to products                 |
-| 8    | Template Editor — Styling tab           | Polish after slice is working                 |
+| 8    | Template Editor — Style tab             | Polish after slice is working                 |
 | 9    | Dashboard + onboarding checklist        | Only useful once everything above works       |

@@ -513,7 +513,7 @@ Example:
 | `rowType`       | `DATA`  | Yes      | Identifies this as a data row.                                                                          |
 | `label`         | string  | Yes      | Shopper-facing label. Can be translated later.                                                          |
 | `valueParts`    | array   | Yes      | Ordered value parts used to build the final displayed value.                                            |
-| `hideWhenEmpty` | boolean | Yes      | If true, storefront hides this row when the resolved value is empty.                                    |
+| `hideWhenEmpty` | boolean | Yes      | If true, storefront hides this row when the whole-row resolved value is empty (see §10 for semantics).  |
 
 MVP validation: a template can contain at most 200 rows, including data rows and section headers. The admin UI should prevent merchants from exceeding this limit, and the server should reject saves that exceed it. The 200-row cap is an MVP value and may increase post-MVP — implement it as a single shared constant, never a hardcoded literal.
 
@@ -524,8 +524,28 @@ MVP validation: a template can contain at most 200 rows, including data rows and
 | `TEXT`          | `text`             | Fixed manual template text, same for every product using the template. |
 | `SHOPIFY_FIELD` | `field`            | Dynamic value read from the Shopify product object.                    |
 | `METAFIELD`     | `namespace`, `key` | Dynamic value read from a Shopify product metafield.                   |
+| `LINE_BREAK`    | _(none)_           | Hard line break inside a value. Renders as a new line; carries no text and no dynamic data. |
 
 Admin UI may show Liquid-like tokens such as `{{ product.metafields.custom.battery_life.value }}`, but Appx should save structured `valueParts`, not merchant-authored raw Liquid.
+
+### Multiline values
+
+A value may span multiple hard-break lines by placing `LINE_BREAK` parts between content parts. Soft-wrapping of long text happens automatically via CSS and needs no part — `LINE_BREAK` is only for **author-intended** breaks (e.g., a "Features" value with one item per line).
+
+Example — a two-line value:
+
+```json
+"valueParts": [
+  { "type": "TEXT", "text": "1000 nits max brightness (typical)" },
+  { "type": "LINE_BREAK" },
+  { "type": "TEXT", "text": "1600 nits peak brightness (HDR)" }
+]
+```
+
+- `LINE_BREAK` is purely structural: it carries no `text` and no dynamic reference, and is ignored when determining whether a row is empty (see §10).
+- Line breaks inside a value never count toward the 200-row cap — only rows do.
+- `LINE_BREAK` is product-agnostic static structure; it does not affect row `key` alignment or the comparison-readiness invariant.
+- The editor renders these breaks identically to the storefront (WYSIWYG).
 
 ### Section header row
 
@@ -758,7 +778,14 @@ Then Liquid combines:
 - `SHOPIFY_FIELD` parts from the Shopify product object
 - `METAFIELD` parts from Shopify product metafields
 
-Liquid or plain JavaScript should join resolved parts in order to produce the final displayed value. If all dynamic parts are empty and `hideWhenEmpty = true`, the storefront should hide the row instead of rendering leftover text.
+Liquid or plain JavaScript should join resolved parts in order to produce the final displayed value. `LINE_BREAK` parts render as a hard line break (e.g., `<br>`) and carry no content.
+
+`hideWhenEmpty` is evaluated for the **whole row, never per line**. Emptiness is judged across every part of the value together (all lines), with `LINE_BREAK` parts ignored:
+
+- If the value contains any dynamic part (`SHOPIFY_FIELD` / `METAFIELD`), the row is empty when **all** of those dynamic parts resolve empty — the surrounding `TEXT` is treated as leftover and hidden with the row.
+- A value made only of `TEXT` (and/or `LINE_BREAK`) has no dynamic parts and is never empty; it always renders.
+
+When a row is empty and `hideWhenEmpty = true`, the storefront hides the entire row instead of rendering leftover text or blank lines.
 
 ---
 
