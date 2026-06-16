@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import {
+  isAtomicPart,
   MAX_TEMPLATE_ROWS,
   newRowId,
   normalizeRows,
@@ -33,6 +34,8 @@ const metafield: ValuePart = {
   namespace: "custom",
   key: "battery_life",
 };
+
+const lineBreak: ValuePart = { type: "LINE_BREAK" };
 
 // ---------------------------------------------------------------------------
 // Pure key/label helpers
@@ -69,6 +72,19 @@ describe("uniqueKey", () => {
 });
 
 // ---------------------------------------------------------------------------
+// Atomic-part predicate (Step 4)
+// ---------------------------------------------------------------------------
+
+describe("isAtomicPart", () => {
+  it("is false for TEXT and true for every non-TEXT part", () => {
+    expect(isAtomicPart({ type: "TEXT", text: "x" })).toBe(false);
+    expect(isAtomicPart(metafield)).toBe(true);
+    expect(isAtomicPart({ type: "SHOPIFY_FIELD", field: "vendor" })).toBe(true);
+    expect(isAtomicPart(lineBreak)).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Value-part normalization
 // ---------------------------------------------------------------------------
 
@@ -95,6 +111,29 @@ describe("normalizeValueParts", () => {
     expect(normalizeValueParts([])).toEqual([{ type: "TEXT", text: "" }]);
     expect(normalizeValueParts([metafield])).toEqual([
       metafield,
+      { type: "TEXT", text: "" },
+    ]);
+  });
+
+  it("treats LINE_BREAK as a merge boundary so the two lines stay separate", () => {
+    const parts: ValuePart[] = [
+      { type: "TEXT", text: "line one" },
+      lineBreak,
+      { type: "TEXT", text: "line two" },
+    ];
+    expect(normalizeValueParts(parts)).toEqual(parts);
+  });
+
+  it("keeps the ≥1-TEXT guarantee for a TEXT + LINE_BREAK value", () => {
+    // A value that is only TEXT and LINE_BREAK is never treated as empty.
+    const parts: ValuePart[] = [
+      { type: "TEXT", text: "" },
+      lineBreak,
+      { type: "TEXT", text: "" },
+    ];
+    expect(normalizeValueParts(parts)).toEqual(parts);
+    expect(normalizeValueParts([lineBreak])).toEqual([
+      lineBreak,
       { type: "TEXT", text: "" },
     ]);
   });
@@ -363,6 +402,112 @@ describe("rowsReducer", () => {
           type: "INSERT_VALUE_PART",
           id: "s",
           part: metafield,
+        }),
+      ).toEqual(rows);
+    });
+  });
+
+  describe("INSERT_VALUE_PART_AT (caret-aware insert/split)", () => {
+    it("splits the TEXT run at the offset and drops the part between the halves", () => {
+      const rows = [dataRow("a", "a", [{ type: "TEXT", text: "abcd" }])];
+      const result = rowsReducer(rows, {
+        type: "INSERT_VALUE_PART_AT",
+        id: "a",
+        partIndex: 0,
+        offset: 2,
+        part: lineBreak,
+      }) as DataRow[];
+      expect(result[0].valueParts).toEqual([
+        { type: "TEXT", text: "ab" },
+        lineBreak,
+        { type: "TEXT", text: "cd" },
+      ]);
+    });
+
+    it("inserts a LINE_BREAK at the caret between two existing TEXT lines", () => {
+      // "1000 nits…" + Enter at the end → break then an empty trailing line.
+      const rows = [
+        dataRow("a", "a", [{ type: "TEXT", text: "1000 nits max" }]),
+      ];
+      const result = rowsReducer(rows, {
+        type: "INSERT_VALUE_PART_AT",
+        id: "a",
+        partIndex: 0,
+        offset: 13,
+        part: lineBreak,
+      }) as DataRow[];
+      expect(result[0].valueParts).toEqual([
+        { type: "TEXT", text: "1000 nits max" },
+        lineBreak,
+        { type: "TEXT", text: "" },
+      ]);
+    });
+
+    it("keeps an empty leading TEXT when splitting at offset 0", () => {
+      const rows = [dataRow("a", "a", [{ type: "TEXT", text: "hours" }])];
+      const result = rowsReducer(rows, {
+        type: "INSERT_VALUE_PART_AT",
+        id: "a",
+        partIndex: 0,
+        offset: 0,
+        part: metafield,
+      }) as DataRow[];
+      expect(result[0].valueParts).toEqual([
+        { type: "TEXT", text: "" },
+        metafield,
+        { type: "TEXT", text: "hours" },
+      ]);
+    });
+
+    it("splices the part in (no split) when the target index is an atomic part", () => {
+      const rows = [
+        dataRow("a", "a", [
+          { type: "TEXT", text: "x" },
+          metafield,
+          { type: "TEXT", text: "y" },
+        ]),
+      ];
+      // partIndex 1 is the metafield token → splice the break before it.
+      const result = rowsReducer(rows, {
+        type: "INSERT_VALUE_PART_AT",
+        id: "a",
+        partIndex: 1,
+        offset: 0,
+        part: lineBreak,
+      }) as DataRow[];
+      expect(result[0].valueParts).toEqual([
+        { type: "TEXT", text: "x" },
+        lineBreak,
+        metafield,
+        { type: "TEXT", text: "y" },
+      ]);
+    });
+
+    it("splices at the end when partIndex is past the last part (defensive)", () => {
+      // Not reachable from a padded editor caret (linearToPartOffset resolves the
+      // end into the trailing TEXT), but the reducer must still handle it: a
+      // bare splice leaves no trailing TEXT because normalize only adds one when
+      // the value has no TEXT at all.
+      const rows = [dataRow("a", "a", [{ type: "TEXT", text: "x" }])];
+      const result = rowsReducer(rows, {
+        type: "INSERT_VALUE_PART_AT",
+        id: "a",
+        partIndex: 1,
+        offset: 0,
+        part: metafield,
+      }) as DataRow[];
+      expect(result[0].valueParts).toEqual([{ type: "TEXT", text: "x" }, metafield]);
+    });
+
+    it("does nothing to SECTION_HEADER rows (they have no value cell)", () => {
+      const rows = [sectionRow("s", "section")];
+      expect(
+        rowsReducer(rows, {
+          type: "INSERT_VALUE_PART_AT",
+          id: "s",
+          partIndex: 0,
+          offset: 0,
+          part: lineBreak,
         }),
       ).toEqual(rows);
     });

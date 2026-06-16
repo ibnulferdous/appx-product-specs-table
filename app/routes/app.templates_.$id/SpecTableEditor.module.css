@@ -1,59 +1,74 @@
-/* Scoped styles for the spec-table editor's segmented value cell.
+/* Scoped styles for the spec-table editor's value cell.
  *
- * Polaris web components carry the chrome here — chips, buttons, boxes, grids.
- * These rules cover only what those primitives cannot express: the inline
- * token-editor flow (content-sized text segments sitting beside pill chips as
- * one continuous value) and the active-row accent. This is the custom token
- * editor that `code-standards.md` ("Spec Table Editor") anticipates Polaris
- * cannot model cleanly.
+ * Polaris web components carry the chrome here — buttons, boxes, grids. These
+ * rules cover only what those primitives cannot express: the single inline
+ * contenteditable value surface (Step 4) where editable text, atomic dynamic-field
+ * tokens, and hard line breaks flow as one continuous value, plus the active-row
+ * accent. This is the custom token editor that `code-standards.md` ("Spec Table
+ * Editor") anticipates Polaris cannot model cleanly.
  *
- * No hardcoded hex: the only colors used are `currentColor` (theme-adaptive),
- * everything else is spacing/sizing. */
+ * No hardcoded hex: colors are Polaris color tokens (CSS custom properties) or
+ * `currentColor`; everything else is spacing/sizing in rem. */
 
-/* Inline flow of text segments + pills + the insert control inside one cell. */
-.cell {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0.25rem;
-  min-height: 1.25rem;
-}
-
-/* A pill = the (inert) chip + its own ✕ button kept snug together so they read
- * as one unit and never wrap apart. The chip's built-in `removable` control is
- * not painted by the current Polaris build, so removal is an explicit button. */
-.pill {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.0625rem;
-}
-
-/* Borderless, content-sized input so "Up to [pill] hours" reads as a single
- * continuous value rather than a row of separate boxed fields. Width is driven
- * by the input's `size` attribute (set from the text length). */
-.segment {
-  appearance: none;
-  border: none;
-  outline: none;
-  background: transparent;
+/* The one contenteditable host. Borderless and content-shaped so "Up to [token]
+ * hours" reads as a single value, not a row of separate fields. `pre-wrap` honors
+ * author-intended LINE_BREAK `<br>`s and soft-wraps long text for free. */
+.surface {
   font: inherit;
   color: inherit;
-  padding: 0;
-  margin: 0;
-  min-width: 2ch;
+  outline: none;
+  min-height: 1.25rem;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  cursor: text;
 }
 
-.segment::placeholder {
+/* contenteditable has no native placeholder; paint one for an empty cell and drop
+ * it as soon as the merchant focuses or types. */
+.surface[data-empty="true"]:not(:focus)::before {
+  content: attr(data-placeholder);
   color: currentColor;
   opacity: 0.5;
+  pointer-events: none;
 }
 
-.segment:focus-visible {
-  /* currentColor keeps the focus underline theme-safe (no hardcoded hex). */
-  box-shadow: inset 0 -1px 0 0 currentColor;
+/* Inline, link-styled dynamic-field token — a Claude-style file reference rather
+ * than a chip: blue link-like text with no border, a light hover background, and a
+ * darker "caret-on" background that marks it as the next Backspace/Delete target.
+ * Deleted as one unit from the keyboard (no per-pill ✕).
+ *
+ * Polaris `s-*` color tokens are sealed in shadow DOM and are not exposed as
+ * light-DOM CSS custom properties (confirmed in-browser), so this module cannot
+ * reference `--p-color-text-link`. `--appx-token-color` is Polaris's own link
+ * color, captured at runtime from an `<s-link>` and published on the document by
+ * `useCapturedTokenColor()`; the hover / caret-on tints are mixed from that same
+ * value. No hardcoded hex — the module stays custom-property/`currentColor`-only,
+ * degrading to `currentColor` when the capture is unavailable. */
+.token {
+  color: var(--appx-token-color, currentColor);
+  border-radius: 0.25rem;
+  padding: 0 0.125rem;
+  cursor: default;
+  white-space: nowrap;
 }
 
-/* Persistent, muted reorder affordance. Drag is wired in Step 4; for now the
+.token:hover {
+  background: color-mix(
+    in srgb,
+    var(--appx-token-color, currentColor) 10%,
+    transparent
+  );
+}
+
+.token[data-caret-on] {
+  background: color-mix(
+    in srgb,
+    var(--appx-token-color, currentColor) 20%,
+    transparent
+  );
+}
+
+/* Persistent, muted reorder affordance. Drag is wired in a later step; for now the
  * handle only signals draggability. */
 .dragHandle {
   display: inline-flex;

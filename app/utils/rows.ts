@@ -16,7 +16,22 @@ export const MAX_TEMPLATE_ROWS = 200;
 export type ValuePart =
   | { type: "TEXT"; text: string }
   | { type: "SHOPIFY_FIELD"; field: string }
-  | { type: "METAFIELD"; namespace: string; key: string };
+  | { type: "METAFIELD"; namespace: string; key: string }
+  // Author-intended hard line break (data-model.md §7). Carries no text and no
+  // dynamic reference; renders as a `<br>` in the editor and the storefront. It
+  // is an atomic, non-TEXT part, so deletion reuses REMOVE_VALUE_PART and
+  // normalizeValueParts treats it as a TEXT-merge boundary like any token.
+  | { type: "LINE_BREAK" };
+
+/**
+ * True for any value part that is rendered as a single, non-editable unit in the
+ * editor surface — a dynamic-field token (SHOPIFY_FIELD / METAFIELD) or a
+ * LINE_BREAK. These are the parts deleted whole by Backspace/Delete and inserted
+ * at the caret by INSERT_VALUE_PART_AT; only TEXT is free-typed.
+ */
+export function isAtomicPart(part: ValuePart): boolean {
+  return part.type !== "TEXT";
+}
 
 export type RowType = "DATA" | "SECTION_HEADER";
 
@@ -205,7 +220,20 @@ export type RowsAction =
   // partIndex targets one TEXT segment of valueParts (Step 1 only had index 0).
   | { type: "SET_VALUE_TEXT"; id: string; partIndex: number; text: string }
   | { type: "REMOVE_VALUE_PART"; id: string; partIndex: number }
-  | { type: "INSERT_VALUE_PART"; id: string; part: ValuePart };
+  | { type: "INSERT_VALUE_PART"; id: string; part: ValuePart }
+  // Caret-aware insert/split (Step 4.4). Splits the TEXT at `partIndex` at
+  // character `offset` and drops `part` between the halves; when `partIndex`
+  // points at an atomic part (or past the end) the part is spliced in at that
+  // position instead. The editor computes (partIndex, offset) from the DOM caret
+  // and passes plain numbers, so the reducer stays pure and DOM-free. Used by
+  // 4.4's LINE_BREAK and reused by Step 5 to drop a picked pill at the caret.
+  | {
+      type: "INSERT_VALUE_PART_AT";
+      id: string;
+      partIndex: number;
+      offset: number;
+      part: ValuePart;
+    };
 
 export function rowsReducer(
   rows: EditorRow[],
@@ -310,6 +338,32 @@ export function rowsReducer(
           valueParts.push({ type: "TEXT", text: "" });
         }
         return { ...row, valueParts };
+      });
+
+    case "INSERT_VALUE_PART_AT":
+      return rows.map((row) => {
+        if (row.id !== action.id || row.rowType !== "DATA") {
+          return row;
+        }
+        const { partIndex, offset, part } = action;
+        const parts = row.valueParts;
+        const target = parts[partIndex];
+        // Split the targeted TEXT run at the caret offset and drop the new part
+        // between the halves; if the caret sits at an atomic boundary (or past
+        // the last part) there is no TEXT to split, so splice the part in place.
+        const next =
+          target?.type === "TEXT"
+            ? [
+                ...parts.slice(0, partIndex),
+                { type: "TEXT" as const, text: target.text.slice(0, offset) },
+                part,
+                { type: "TEXT" as const, text: target.text.slice(offset) },
+                ...parts.slice(partIndex + 1),
+              ]
+            : [...parts.slice(0, partIndex), part, ...parts.slice(partIndex)];
+        // normalizeValueParts merges any adjacent TEXT the split produced and
+        // keeps the ≥1-TEXT guarantee; it never strips the new atomic part.
+        return { ...row, valueParts: normalizeValueParts(next) };
       });
 
     default:
