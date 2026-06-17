@@ -1,5 +1,9 @@
 import { describe, it, expect } from "vitest";
-import { NATIVE_SHOPIFY_FIELDS, findNativeField } from "./shopifyFields";
+import {
+  NATIVE_SHOPIFY_FIELDS,
+  findNativeField,
+  filterNativeFields,
+} from "./shopifyFields";
 
 // The `field` tokens are the locked storefront-resolver contract (persisted in
 // SHOPIFY_FIELD value parts), so this suite pins the exact set and order — a
@@ -52,5 +56,61 @@ describe("findNativeField", () => {
   it("returns undefined for an unknown token (e.g. a metafield key)", () => {
     expect(findNativeField("battery_life")).toBeUndefined();
     expect(findNativeField("")).toBeUndefined();
+  });
+});
+
+describe("filterNativeFields", () => {
+  const tokensOf = (query: string) =>
+    filterNativeFields(query).map((entry) => entry.field);
+
+  it("returns the full list in order for an empty query", () => {
+    expect(filterNativeFields("")).toEqual(NATIVE_SHOPIFY_FIELDS);
+  });
+
+  it("returns the full list in order for a whitespace-only query", () => {
+    expect(filterNativeFields("   ")).toEqual(NATIVE_SHOPIFY_FIELDS);
+  });
+
+  it("matches on the human label, preserving original order", () => {
+    // "price" appears in both Price and Compare-at price; order follows the
+    // source list (compare_at_price comes after price).
+    expect(tokensOf("price")).toEqual(["price", "compare_at_price"]);
+  });
+
+  it("matches a multi-word label fragment", () => {
+    expect(tokensOf("type")).toEqual(["product_type"]);
+  });
+
+  it("is case-insensitive", () => {
+    expect(tokensOf("PRICE")).toEqual(tokensOf("price"));
+    expect(tokensOf("Vendor")).toEqual(["vendor"]);
+  });
+
+  it("matches the snake_case token with underscores read as spaces", () => {
+    // The label is "Compare-at price" (hyphen), but the token normalises to
+    // "compare at price", so "compare at" still finds it.
+    expect(tokensOf("compare at")).toEqual(["compare_at_price"]);
+    expect(tokensOf("available for")).toEqual(["available_for_sale"]);
+  });
+
+  it("trims surrounding whitespace before matching", () => {
+    expect(tokensOf("  vendor  ")).toEqual(["vendor"]);
+  });
+
+  it("returns an empty array when nothing matches", () => {
+    expect(filterNativeFields("zzz")).toEqual([]);
+  });
+
+  it("does not mutate the source constant", () => {
+    const before = NATIVE_SHOPIFY_FIELDS.map((entry) => entry.field);
+    filterNativeFields("price");
+    filterNativeFields("");
+    expect(NATIVE_SHOPIFY_FIELDS.map((entry) => entry.field)).toEqual(before);
+  });
+
+  it("returns a fresh array for the empty-query identity view", () => {
+    // The full-list path must be a copy, not the readonly source, so callers
+    // can treat the result as a plain mutable array.
+    expect(filterNativeFields("")).not.toBe(NATIVE_SHOPIFY_FIELDS);
   });
 });

@@ -13,7 +13,9 @@ import {
   useRef,
   useState,
 } from "react";
+import { useFetcher } from "react-router";
 import { useAppBridge } from "@shopify/app-bridge-react";
+import type { loader as metafieldDefinitionsLoader } from "../app.metafield-definitions";
 import {
   MAX_TEMPLATE_ROWS,
   newRowId,
@@ -42,8 +44,8 @@ import {
   updateCaretOnState,
 } from "../../utils/valueDom";
 import {
+  filterNativeFields,
   findNativeField,
-  NATIVE_SHOPIFY_FIELDS,
 } from "../../utils/shopifyFields";
 import styles from "./SpecTableEditor.module.css";
 
@@ -617,6 +619,32 @@ export function SpecTableEditor({ initialRows }: { initialRows: EditorRow[] }) {
   useCapturedTokenColor();
   const shopify = useAppBridge();
 
+  // --- Metafield definitions fetch (Step 8) --------------------------------
+  // The shop's product metafield definitions are fetched lazily from the
+  // `/app/metafield-definitions` resource route the FIRST time the modal opens,
+  // then cached for the editor's lifetime (reopening never refetches). The fetch
+  // is observably async so the modal can show explicit loading / empty / error
+  // states. Step 8 only confirms the fetch + states — the definitions are NOT
+  // rendered as selectable choices yet (that is Step 9).
+  const metafieldsFetcher = useFetcher<typeof metafieldDefinitionsLoader>();
+  // Flips true on the first open; gates both the "load once" guard and whether
+  // the status region renders at all (so it never shows a spinner before the
+  // merchant has opened the modal).
+  const [metafieldsRequested, setMetafieldsRequested] = useState(false);
+
+  const loadMetafieldDefinitions = useCallback(() => {
+    metafieldsFetcher.load("/app/metafield-definitions");
+  }, [metafieldsFetcher]);
+
+  // Trigger the fetch once, on the first modal open. Subsequent opens reuse the
+  // cached result; the error state's Retry calls `loadMetafieldDefinitions`
+  // directly to re-issue.
+  const ensureMetafieldDefinitions = useCallback(() => {
+    if (metafieldsRequested) return;
+    setMetafieldsRequested(true);
+    loadMetafieldDefinitions();
+  }, [metafieldsRequested, loadMetafieldDefinitions]);
+
   // --- Insert field modal: caret bridge (Step 5) ---------------------------
   // `activeCaretRef` holds the live caret in whichever value cell last reported
   // one; it is NOT cleared when that cell blurs (so tabbing/clicking to the
@@ -633,6 +661,18 @@ export function SpecTableEditor({ initialRows }: { initialRows: EditorRow[] }) {
   // heading, the primary button label, and which commit path runs.
   const [selectedField, setSelectedField] = useState<string | null>(null);
   const [editTarget, setEditTarget] = useState<EditTarget | null>(null);
+  // The modal's search query (Step 7). Pure UI: it filters which native fields
+  // are rendered (`filterNativeFields`) and never touches `selectedField` — a
+  // selected field filtered out of view stays selected and committable. Reset to
+  // "" on every open so the list always opens full.
+  const [searchQuery, setSearchQuery] = useState("");
+  // The modal's search field. Focused shortly after open so the merchant can
+  // type immediately; the focus is deliberately deferred past the modal's open
+  // animation (see `focusSearchField`). Typed via the global tag-name map so the
+  // JSX ref accepts it (the element is an <s-search-field>, not a plain element).
+  const searchFieldRef = useRef<HTMLElementTagNameMap["s-search-field"] | null>(
+    null,
+  );
   // Caret positions queued for a value cell after a modal Insert, keyed by row id.
   // A ref-held Map so its identity is stable across renders (memoization-safe) and
   // mutating it never triggers a render; the target ValueCell consumes it once in
@@ -718,13 +758,26 @@ export function SpecTableEditor({ initialRows }: { initialRows: EditorRow[] }) {
   // first. Runs on the button's click while the cell still holds the saved
   // selection (value-cell blur does not clear activeCaretRef), so the snapshot is
   // always valid. Resets editTarget + selectedField so a prior edit can't leak in.
+  // Focus the modal's search field after it is open. App Bridge plays a view
+  // transition when the modal shows; calling .focus() while that transition is
+  // mid-flight aborts it (an "InvalidStateError: Transition was aborted" surfaces
+  // in the admin console), so we defer past the animation. The modal's own focus
+  // trap lands on the close button first; this moves it to the search field so
+  // the merchant can type straight away.
+  const focusSearchField = useCallback(() => {
+    setTimeout(() => searchFieldRef.current?.focus(), 350);
+  }, []);
+
   const handleOpenInsertField = useCallback(() => {
     savedCaretRef.current = activeCaretRef.current;
     if (!savedCaretRef.current) return;
     setEditTarget(null);
     setSelectedField(null);
+    setSearchQuery("");
+    ensureMetafieldDefinitions();
     shopify.modal.show(INSERT_FIELD_MODAL_ID);
-  }, [shopify]);
+    focusSearchField();
+  }, [shopify, focusSearchField, ensureMetafieldDefinitions]);
 
   // Open the same modal in EDIT mode for a clicked pill (Step 6.3). No saved
   // caret — edit targets the pill's own slot, not an insertion point. Pre-select
@@ -739,10 +792,20 @@ export function SpecTableEditor({ initialRows }: { initialRows: EditorRow[] }) {
       setSelectedField(
         prefillField && findNativeField(prefillField) ? prefillField : null,
       );
+      setSearchQuery("");
+      ensureMetafieldDefinitions();
       shopify.modal.show(INSERT_FIELD_MODAL_ID);
+      focusSearchField();
     },
-    [shopify],
+    [shopify, focusSearchField, ensureMetafieldDefinitions],
   );
+
+  // Track the merchant's search query (Step 7). `onInput` fires per keystroke,
+  // before `onChange`, so the list filters live as they type.
+  const handleSearchInput = useCallback((event: Event) => {
+    const value = (event.currentTarget as unknown as { value?: string }).value;
+    setSearchQuery(value ?? "");
+  }, []);
 
   // Track the merchant's pick in the modal's choice list (single select).
   const handleSelectField = useCallback((event: Event) => {
@@ -801,6 +864,7 @@ export function SpecTableEditor({ initialRows }: { initialRows: EditorRow[] }) {
     savedCaretRef.current = null;
     setEditTarget(null);
     setSelectedField(null);
+    setSearchQuery("");
   }, [editTarget, rows, selectedField, shopify]);
 
   const handleCancelInsertField = useCallback(() => {
@@ -808,9 +872,22 @@ export function SpecTableEditor({ initialRows }: { initialRows: EditorRow[] }) {
     savedCaretRef.current = null;
     setEditTarget(null);
     setSelectedField(null);
+    setSearchQuery("");
   }, [shopify]);
 
   const canDuplicate = activeRowId !== null && !atCap;
+  // The native fields visible in the modal for the current search query (Step 7).
+  // Cheap over 13 entries, so computed inline each render rather than memoized.
+  const visibleFields = filterNativeFields(searchQuery);
+
+  // Metafield fetch status for the modal's status region (Step 8). `data` is
+  // undefined until the first load resolves; treat that — and any non-idle
+  // fetcher state, including a Retry that still holds stale data — as loading.
+  const metafieldsData = metafieldsFetcher.data;
+  const metafieldsLoading =
+    metafieldsFetcher.state !== "idle" || metafieldsData === undefined;
+  const metafieldCount =
+    metafieldsData && metafieldsData.ok ? metafieldsData.definitions.length : 0;
 
   return (
     <s-stack direction="block" gap="base">
@@ -914,27 +991,83 @@ export function SpecTableEditor({ initialRows }: { initialRows: EditorRow[] }) {
       {/* One editor-level Insert field modal serving both create and edit (Step
           6). Hidden until `shopify.modal.show` is called — from the toolbar
           button (create) or a pill click (edit); <s-modal> provides the focus
-          trap, Esc, and outside-click dismiss natively. The body is the static
-          native-field list; the primary button is disabled until a field is
-          selected and commits create (Insert at the saved caret) or edit (Update
-          the clicked pill in place). Cancel / Esc / outside-click commit nothing.
-          Live metafield fields arrive in Steps 8–9. */}
+          trap, Esc, and outside-click dismiss natively. The body is a search box
+          (Step 7) over the native-field list; the primary button is disabled
+          until a field is selected and commits create (Insert at the saved
+          caret) or edit (Update the clicked pill in place). Cancel / Esc /
+          outside-click commit nothing. Live metafield fields arrive in Steps 8–9. */}
       <s-modal
         id={INSERT_FIELD_MODAL_ID}
         heading={editTarget ? "Edit field" : "Insert field"}
       >
-        <s-choice-list
-          label="Product field"
-          labelAccessibilityVisibility="exclusive"
-          values={selectedField ? [selectedField] : []}
-          onChange={handleSelectField}
-        >
-          {NATIVE_SHOPIFY_FIELDS.map((nativeField) => (
-            <s-choice key={nativeField.field} value={nativeField.field}>
-              {nativeField.label}
-            </s-choice>
-          ))}
-        </s-choice-list>
+        {/* Search box (Step 7): filters the native-field list as the merchant
+            types. Pure presentation — it never changes `selectedField`, so a
+            pick that scrolls out of the filtered view stays committable. */}
+        <s-stack direction="block" gap="base">
+          <s-search-field
+            ref={searchFieldRef}
+            label="Search fields"
+            labelAccessibilityVisibility="exclusive"
+            placeholder="Search fields"
+            value={searchQuery}
+            onInput={handleSearchInput}
+          />
+          {visibleFields.length > 0 ? (
+            <s-choice-list
+              label="Product field"
+              labelAccessibilityVisibility="exclusive"
+              values={selectedField ? [selectedField] : []}
+              onChange={handleSelectField}
+            >
+              {visibleFields.map((nativeField) => (
+                <s-choice key={nativeField.field} value={nativeField.field}>
+                  {nativeField.label}
+                </s-choice>
+              ))}
+            </s-choice-list>
+          ) : (
+            <s-paragraph color="subdued">
+              No fields match “{searchQuery.trim()}”.
+            </s-paragraph>
+          )}
+
+          {/* Metafield status region (Step 8): sits BELOW the native-field list.
+              Step 8 only confirms the shop-scoped fetch and its loading / empty /
+              error states; Step 9 turns this region into the filterable metafield
+              section (covered by the same search box above). */}
+          {metafieldsRequested ? (
+            <s-stack direction="block" gap="small-200">
+              <s-divider />
+              <s-text type="strong">Metafields</s-text>
+              {metafieldsLoading ? (
+                <s-stack
+                  direction="inline"
+                  gap="small-200"
+                  alignItems="center"
+                >
+                  <s-spinner accessibilityLabel="Loading metafields"></s-spinner>
+                  <s-text color="subdued">Loading metafields…</s-text>
+                </s-stack>
+              ) : !metafieldsData!.ok ? (
+                <s-stack direction="block" gap="small-200">
+                  <s-banner tone="critical">{metafieldsData!.error}</s-banner>
+                  <s-stack direction="inline">
+                    <s-button onClick={loadMetafieldDefinitions}>Retry</s-button>
+                  </s-stack>
+                </s-stack>
+              ) : metafieldCount === 0 ? (
+                <s-text color="subdued">
+                  This store has no product metafield definitions.
+                </s-text>
+              ) : (
+                <s-text color="subdued">
+                  {metafieldCount} metafield{metafieldCount === 1 ? "" : "s"}{" "}
+                  available. Selecting them arrives in the next step.
+                </s-text>
+              )}
+            </s-stack>
+          ) : null}
+        </s-stack>
         <s-button
           slot="primary-action"
           variant="primary"

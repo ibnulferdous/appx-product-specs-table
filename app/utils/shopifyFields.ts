@@ -59,3 +59,32 @@ export const NATIVE_SHOPIFY_FIELDS: readonly NativeShopifyField[] = [
 export function findNativeField(field: string): NativeShopifyField | undefined {
   return NATIVE_SHOPIFY_FIELDS.find((entry) => entry.field === field);
 }
+
+/**
+ * Filter the native field list by the modal's search query (Step 7). Pure — it
+ * reads the constant and returns a fresh array, never mutating the source.
+ *
+ * - An empty / whitespace query returns the full list in its original order
+ *   (the modal's open state and the cleared-search state).
+ * - Otherwise a case-insensitive substring match, preserving the original
+ *   order. Each entry matches when the query is a substring of either its human
+ *   `label` or its snake_case `field` token with underscores normalised to
+ *   spaces — so "price" surfaces both *Price* and *Compare-at price*, "type"
+ *   surfaces *Product type*, and "compare at" surfaces *Compare-at price* via
+ *   the normalised token. Search only reads tokens; the locked `field` strings
+ *   are never rewritten.
+ *
+ * The matching rule lives here (not in the component) so it is unit-tested once
+ * and Step 9's metafield section can reuse it over its own list.
+ */
+export function filterNativeFields(query: string): NativeShopifyField[] {
+  const needle = query.trim().toLowerCase();
+  if (needle === "") {
+    return [...NATIVE_SHOPIFY_FIELDS];
+  }
+  return NATIVE_SHOPIFY_FIELDS.filter((entry) => {
+    const label = entry.label.toLowerCase();
+    const token = entry.field.toLowerCase().replace(/_/g, " ");
+    return label.includes(needle) || token.includes(needle);
+  });
+}
