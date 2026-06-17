@@ -35,7 +35,7 @@ Shopify's native product pages have no structured way to display specifications.
 ### Data Sources
 
 - **Manual text** — saved as `TEXT` valueParts; fixed template text shared by every product using the template
-- **Native Shopify fields** — title, vendor, product type, tags, weight, SKU, barcode, price, compare-at price, inventory quantity. Variant-sensitive fields (SKU, price, weight, etc.) use selected variant with default/first variant fallback
+- **Native Shopify fields** — vendor, product type, category, tags, total inventory, available for sale, selected options, weight, SKU, barcode, price, compare-at price, inventory quantity. Variant-sensitive fields (SKU, price, weight, available for sale, selected options, etc.) use the selected variant with a default/first-variant fallback. (Field set last revised 2026-06-16 against the Admin API 2026-04 schema: `title` dropped as redundant with the product-page heading; `category` is the structured Standard Product Taxonomy category; `available for sale` and `total inventory` cover stock; `selected options` is a list of name/value pairs that the storefront resolver joins into one cell value.)
 - **Metafield picker** — select namespace and key from a dropdown; no code, no Liquid, no JSON required
 
 ### Product Assignment

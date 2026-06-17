@@ -5,7 +5,6 @@ import {
   newRowId,
   normalizeRows,
   normalizeValueParts,
-  placeholderMetafieldPart,
   rowsReducer,
   slugifyKey,
   uniqueKey,
@@ -169,16 +168,6 @@ describe("newRowId", () => {
       /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i,
     );
     expect(a).not.toBe(b);
-  });
-});
-
-describe("placeholderMetafieldPart", () => {
-  it("is a keyless custom METAFIELD that the field picker fills in later", () => {
-    expect(placeholderMetafieldPart()).toEqual({
-      type: "METAFIELD",
-      namespace: "custom",
-      key: "",
-    });
   });
 });
 
@@ -380,28 +369,80 @@ describe("rowsReducer", () => {
     });
   });
 
-  describe("INSERT_VALUE_PART", () => {
-    it("appends the part plus a trailing empty TEXT so typing can continue after it", () => {
-      const rows = [dataRow("a", "a", [{ type: "TEXT", text: "Up to " }])];
+  describe("SET_VALUE_PART (in-place pill swap)", () => {
+    const vendor: ValuePart = { type: "SHOPIFY_FIELD", field: "vendor" };
+    const price: ValuePart = { type: "SHOPIFY_FIELD", field: "price" };
+
+    it("replaces the atomic part in place, leaving length and neighbours untouched", () => {
+      const rows = [
+        dataRow("a", "a", [
+          { type: "TEXT", text: "Up to " },
+          vendor,
+          { type: "TEXT", text: " hours" },
+        ]),
+      ];
       const result = rowsReducer(rows, {
-        type: "INSERT_VALUE_PART",
+        type: "SET_VALUE_PART",
         id: "a",
-        part: metafield,
+        partIndex: 1,
+        part: price,
       }) as DataRow[];
       expect(result[0].valueParts).toEqual([
         { type: "TEXT", text: "Up to " },
-        metafield,
-        { type: "TEXT", text: "" },
+        price,
+        { type: "TEXT", text: " hours" },
       ]);
+    });
+
+    it("converts a METAFIELD token to a SHOPIFY_FIELD in place (Step 6: native list only)", () => {
+      const rows = [
+        dataRow("a", "a", [
+          { type: "TEXT", text: "" },
+          metafield,
+          { type: "TEXT", text: "" },
+        ]),
+      ];
+      const result = rowsReducer(rows, {
+        type: "SET_VALUE_PART",
+        id: "a",
+        partIndex: 1,
+        part: vendor,
+      }) as DataRow[];
+      expect(result[0].valueParts[1]).toEqual(vendor);
+    });
+
+    it("no-ops on an out-of-range partIndex", () => {
+      const rows = [dataRow("a", "a", [{ type: "TEXT", text: "x" }])];
+      expect(
+        rowsReducer(rows, {
+          type: "SET_VALUE_PART",
+          id: "a",
+          partIndex: 5,
+          part: vendor,
+        }),
+      ).toEqual(rows);
+    });
+
+    it("no-ops when the id is not found", () => {
+      const rows = [dataRow("a", "a")];
+      expect(
+        rowsReducer(rows, {
+          type: "SET_VALUE_PART",
+          id: "ghost",
+          partIndex: 0,
+          part: vendor,
+        }),
+      ).toEqual(rows);
     });
 
     it("does nothing to SECTION_HEADER rows (they have no value cell)", () => {
       const rows = [sectionRow("s", "section")];
       expect(
         rowsReducer(rows, {
-          type: "INSERT_VALUE_PART",
+          type: "SET_VALUE_PART",
           id: "s",
-          part: metafield,
+          partIndex: 0,
+          part: vendor,
         }),
       ).toEqual(rows);
     });

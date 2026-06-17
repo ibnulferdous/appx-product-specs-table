@@ -2,6 +2,7 @@ import type {
   ClipboardEvent,
   Dispatch,
   KeyboardEvent as ReactKeyboardEvent,
+  MouseEvent as ReactMouseEvent,
 } from "react";
 import {
   memo,
@@ -12,6 +13,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { useAppBridge } from "@shopify/app-bridge-react";
 import {
   MAX_TEMPLATE_ROWS,
   newRowId,
@@ -19,15 +21,18 @@ import {
   type DataRow,
   type EditorRow,
   type RowsAction,
+  type ValuePart,
 } from "../../utils/rows";
 import {
   linearLength,
   linearToPartOffset,
+  partOffsetToLinear,
   planAtomicDelete,
   planSelectionDelete,
 } from "../../utils/valueParts";
 import {
   getSelectionLinearRange,
+  partIndexOfElement,
   partsEqual,
   readPartsFromHost,
   renderPartsToHost,
@@ -36,6 +41,10 @@ import {
   syncTrailingFiller,
   updateCaretOnState,
 } from "../../utils/valueDom";
+import {
+  findNativeField,
+  NATIVE_SHOPIFY_FIELDS,
+} from "../../utils/shopifyFields";
 import styles from "./SpecTableEditor.module.css";
 
 // React runs layout effects only in the browser; fall back to useEffect during
@@ -48,6 +57,27 @@ const useBrowserLayoutEffect =
 const GUTTER = "2.75rem";
 const DATA_COLUMNS = `${GUTTER} 1fr 1.6fr`;
 const SECTION_COLUMNS = `${GUTTER} 1fr`;
+
+// The single editor-level "Insert field" modal, addressed by the App Bridge
+// Modal API (`shopify.modal.show/hide`).
+const INSERT_FIELD_MODAL_ID = "insert-field-modal";
+
+// The pill the merchant is editing (Step 6.3): the row and the value-part index
+// of the clicked token. `null` means the modal is in create mode (Insert drops a
+// new pill at the saved caret); non-null means edit mode (Update swaps this pill's
+// field in place). One modal serves both.
+interface EditTarget {
+  rowId: string;
+  partIndex: number;
+}
+
+// A caret saved from a value cell: which row, and where in that cell's linear
+// caret space (see valueParts.ts). Plain numbers, never a DOM Range, so it
+// survives focus moving into the modal and any re-render.
+interface SavedCaret {
+  rowId: string;
+  linear: number;
+}
 
 // Polaris field events are typed as plain DOM `Event`; the field element exposes
 // the current text on `value`, so we read it through this narrowed cast.
@@ -87,17 +117,36 @@ const RowGutter = memo(function RowGutter({
 // one line. The surface is uncontrolled while typing (the browser owns the caret;
 // onInput maps the changed text run to SET_VALUE_TEXT) and is only re-rendered
 // from state on structural edits (insert/delete), with the caret restored from a
-// linear index. The field picker that inserts complete pills is Step 5; here the
-// only structural edits the merchant can make are typing, deleting a token/break,
-// and pressing Enter for a hard line break.
+// linear index. The merchant's in-surface structural edits are typing, deleting a
+// token/break, and Enter for a hard line break. A pill can also be inserted from
+// *outside* the surface by the Step 5 "Insert field" modal: the container queues a
+// caret in `pendingCaret` (keyed by row id) and dispatches INSERT_VALUE_PART_AT;
+// the reconcile effect below picks that up, refocuses the host, and restores the
+// caret — the same linear-caret path as an internal edit.
 function ValueCell({
   row,
   rowNumber,
   dispatch,
+  onCaretChange,
+  onEditPart,
+  pendingCaret,
 }: {
   row: DataRow;
   rowNumber: number;
   dispatch: Dispatch<RowsAction>;
+  // Report this cell's caret to the container: a linear index on focus / caret
+  // move, never null from here (the gate is dropped when a label field is focused).
+  onCaretChange: (rowId: string, linear: number | null) => void;
+  // Open the Insert field modal in edit mode for a clicked pill (Step 6.3): the
+  // cell resolves the token's part index from the live DOM and reports it plus
+  // the field to pre-select (null for a METAFIELD, which has no native entry).
+  onEditPart: (
+    rowId: string,
+    partIndex: number,
+    prefillField: string | null,
+  ) => void;
+  // Caret positions queued by the modal Insert, keyed by row id. Consumed once.
+  pendingCaret: Map<string, number>;
 }) {
   const rowName = row.label || `row ${rowNumber}`;
   const valueParts = row.valueParts;
@@ -128,12 +177,22 @@ function ValueCell({
     // the DOM already matches state (e.g. the merchant just typed on the new
     // line), so the filler is removed before it can paint a phantom line.
     syncTrailingFiller(host, valueParts);
-    if (!inSync && pendingCaretRef.current !== null) {
+    // An external (modal) Insert queued a caret for this row: focus the host
+    // (focus is in the modal at this point) and place the caret after the freshly
+    // inserted pill. Takes precedence over a pending internal caret for this pass.
+    const external = pendingCaret.get(row.id);
+    if (external !== undefined) {
+      pendingCaret.delete(row.id);
+      host.focus();
+      setCaretLinear(host, external);
+      updateCaretOnState(host);
+      onCaretChange(row.id, external);
+    } else if (!inSync && pendingCaretRef.current !== null) {
       setCaretLinear(host, pendingCaretRef.current);
       updateCaretOnState(host);
     }
     pendingCaretRef.current = null;
-  }, [valueParts]);
+  }, [valueParts, row.id, pendingCaret, onCaretChange]);
 
   const handleInput = useCallback(() => {
     const host = hostRef.current;
@@ -266,19 +325,54 @@ function ValueCell({
     [dispatch, row.id, valueParts],
   );
 
+  // Click an existing pill to edit it (Step 6.3). A delegated click on the host
+  // detects a `[data-token]` element (TEXT and line breaks have none), resolves
+  // its part index from the live DOM, and asks the container to reopen the modal
+  // in edit mode pre-filled with that pill's field. LINE_BREAK `<br>`s carry no
+  // data-token, so clicking near one never triggers an edit.
+  const handleClick = useCallback(
+    (event: ReactMouseEvent<HTMLDivElement>) => {
+      const host = hostRef.current;
+      if (!host) return;
+      const tokenEl = (event.target as HTMLElement).closest?.("[data-token]");
+      if (!tokenEl || !host.contains(tokenEl)) return;
+      const partIndex = partIndexOfElement(host, tokenEl);
+      if (partIndex === null) return;
+      const part = valueParts[partIndex];
+      if (!part || (part.type !== "SHOPIFY_FIELD" && part.type !== "METAFIELD")) {
+        return;
+      }
+      onEditPart(
+        row.id,
+        partIndex,
+        part.type === "SHOPIFY_FIELD" ? part.field : null,
+      );
+    },
+    [onEditPart, row.id, valueParts],
+  );
+
   // Live "caret-on" highlight: while focused, mark the token/break the next
   // Backspace/Delete would remove. selectionchange is the only event that fires
-  // for every caret move (arrows, click, drag).
+  // for every caret move (arrows, click, drag). It also feeds the container the
+  // live caret so the "Insert field" gate stays accurate and the save snapshot is
+  // current; when the selection has left this host (e.g. into the modal) the range
+  // is null and we leave the last-known caret in place.
   const handleSelectionChange = useCallback(() => {
     const host = hostRef.current;
-    if (host) updateCaretOnState(host);
-  }, []);
+    if (!host) return;
+    updateCaretOnState(host);
+    const range = getSelectionLinearRange(host);
+    if (range) onCaretChange(row.id, range.from);
+  }, [onCaretChange, row.id]);
 
   const handleFocus = useCallback(() => {
     document.addEventListener("selectionchange", handleSelectionChange);
     const host = hostRef.current;
-    if (host) updateCaretOnState(host);
-  }, [handleSelectionChange]);
+    if (!host) return;
+    updateCaretOnState(host);
+    const range = getSelectionLinearRange(host);
+    onCaretChange(row.id, range ? range.from : 0);
+  }, [handleSelectionChange, onCaretChange, row.id]);
 
   const handleBlur = useCallback(() => {
     document.removeEventListener("selectionchange", handleSelectionChange);
@@ -315,6 +409,7 @@ function ValueCell({
         onInput={handleInput}
         onKeyDown={handleKeyDown}
         onPaste={handlePaste}
+        onClick={handleClick}
         onCompositionStart={() => {
           composingRef.current = true;
         }}
@@ -337,11 +432,19 @@ interface RowItemProps {
   onActivate: (id: string) => void;
   onDelete: (id: string) => void;
   dispatch: Dispatch<RowsAction>;
+  onCaretChange: (rowId: string, linear: number | null) => void;
+  onEditPart: (
+    rowId: string,
+    partIndex: number,
+    prefillField: string | null,
+  ) => void;
+  pendingCaret: Map<string, number>;
 }
 
 // Memoized so a single cell edit re-renders only that row. `dispatch`,
-// `onActivate`, and `onDelete` are stable; `isActive` is a boolean, so non-edited,
-// non-(de)activated rows skip re-rendering entirely.
+// `onActivate`, `onDelete`, `onCaretChange`, and `onEditPart` are stable;
+// `pendingCaret` is a stable ref-held Map; `isActive` is a boolean, so
+// non-edited, non-(de)activated rows skip re-rendering entirely.
 const EditorRowItem = memo(function EditorRowItem({
   row,
   index,
@@ -349,6 +452,9 @@ const EditorRowItem = memo(function EditorRowItem({
   onActivate,
   onDelete,
   dispatch,
+  onCaretChange,
+  onEditPart,
+  pendingCaret,
 }: RowItemProps) {
   const rowNumber = index + 1;
 
@@ -361,6 +467,13 @@ const EditorRowItem = memo(function EditorRowItem({
   const handleActivate = useCallback(
     () => onActivate(row.id),
     [onActivate, row.id],
+  );
+  // Focusing a Label / Section field means the merchant is no longer in a value
+  // cell, so drop the "Insert field" gate (a pill can only be inserted into a
+  // value). Focusing a value cell re-arms it via ValueCell's onCaretChange.
+  const handleLabelFocus = useCallback(
+    () => onCaretChange(row.id, null),
+    [onCaretChange, row.id],
   );
 
   const rowClass = isActive ? `${styles.row} ${styles.rowActive}` : styles.row;
@@ -391,6 +504,7 @@ const EditorRowItem = memo(function EditorRowItem({
                 placeholder="Section title"
                 value={row.label}
                 onInput={handleLabel}
+                onFocus={handleLabelFocus}
               />
             </s-box>
           ) : (
@@ -401,8 +515,16 @@ const EditorRowItem = memo(function EditorRowItem({
                 placeholder="Label"
                 value={row.label}
                 onInput={handleLabel}
+                onFocus={handleLabelFocus}
               />
-              <ValueCell row={row} rowNumber={rowNumber} dispatch={dispatch} />
+              <ValueCell
+                row={row}
+                rowNumber={rowNumber}
+                dispatch={dispatch}
+                onCaretChange={onCaretChange}
+                onEditPart={onEditPart}
+                pendingCaret={pendingCaret}
+              />
             </>
           )}
         </s-grid>
@@ -493,6 +615,42 @@ export function SpecTableEditor({ initialRows }: { initialRows: EditorRow[] }) {
   const [activeRowId, setActiveRowId] = useState<string | null>(null);
   const atCap = rows.length >= MAX_TEMPLATE_ROWS;
   useCapturedTokenColor();
+  const shopify = useAppBridge();
+
+  // --- Insert field modal: caret bridge (Step 5) ---------------------------
+  // `activeCaretRef` holds the live caret in whichever value cell last reported
+  // one; it is NOT cleared when that cell blurs (so tabbing/clicking to the
+  // toolbar button keeps a saved selection — the canonical rich-text-toolbar
+  // pattern). It IS cleared when a Label/Section field is focused, since the
+  // merchant is no longer editing a value. `savedCaretRef` is the snapshot taken
+  // when the modal opens; `hasActiveCaret` only drives the button's disabled gate.
+  const activeCaretRef = useRef<SavedCaret | null>(null);
+  const savedCaretRef = useRef<SavedCaret | null>(null);
+  const [hasActiveCaret, setHasActiveCaret] = useState(false);
+  // The field the merchant has picked in the modal (Step 6). Insert/Update is
+  // disabled while this is null. `editTarget` is null in create mode and holds
+  // the clicked pill's coordinate in edit mode; together they drive the modal
+  // heading, the primary button label, and which commit path runs.
+  const [selectedField, setSelectedField] = useState<string | null>(null);
+  const [editTarget, setEditTarget] = useState<EditTarget | null>(null);
+  // Caret positions queued for a value cell after a modal Insert, keyed by row id.
+  // A ref-held Map so its identity is stable across renders (memoization-safe) and
+  // mutating it never triggers a render; the target ValueCell consumes it once in
+  // its reconcile effect. Created once.
+  const pendingCaretByRowRef = useRef<Map<string, number>>(new Map());
+
+  const onCaretChange = useCallback(
+    (rowId: string, linear: number | null) => {
+      if (linear === null) {
+        activeCaretRef.current = null;
+        setHasActiveCaret(false);
+      } else {
+        activeCaretRef.current = { rowId, linear };
+        setHasActiveCaret(true);
+      }
+    },
+    [],
+  );
 
   // A freshly created row should scroll into view once it has rendered.
   const scrollTargetRef = useRef<string | null>(null);
@@ -514,6 +672,12 @@ export function SpecTableEditor({ initialRows }: { initialRows: EditorRow[] }) {
     // The active id may now point at a removed row; clear it so toolbar inserts
     // fall back to appending until the merchant focuses another row.
     setActiveRowId((current) => (current === id ? null : current));
+    // If the deleted row held the saved caret, drop the Insert field gate so it
+    // cannot target a row that no longer exists.
+    if (activeCaretRef.current?.rowId === id) {
+      activeCaretRef.current = null;
+      setHasActiveCaret(false);
+    }
   }, []);
 
   // Toolbar inserts land directly below the active row (append when none); the
@@ -550,6 +714,102 @@ export function SpecTableEditor({ initialRows }: { initialRows: EditorRow[] }) {
     [insertActive],
   );
 
+  // Open the modal in CREATE mode, snapshotting the current value-cell caret
+  // first. Runs on the button's click while the cell still holds the saved
+  // selection (value-cell blur does not clear activeCaretRef), so the snapshot is
+  // always valid. Resets editTarget + selectedField so a prior edit can't leak in.
+  const handleOpenInsertField = useCallback(() => {
+    savedCaretRef.current = activeCaretRef.current;
+    if (!savedCaretRef.current) return;
+    setEditTarget(null);
+    setSelectedField(null);
+    shopify.modal.show(INSERT_FIELD_MODAL_ID);
+  }, [shopify]);
+
+  // Open the same modal in EDIT mode for a clicked pill (Step 6.3). No saved
+  // caret — edit targets the pill's own slot, not an insertion point. Pre-select
+  // the pill's field when it is a native field; a METAFIELD (only via dev sample
+  // rows) has no native entry, so it opens unselected and Update stays disabled
+  // until a native field is picked (selecting one converts it to SHOPIFY_FIELD;
+  // live metafield editing is Step 9).
+  const handleEditPart = useCallback(
+    (rowId: string, partIndex: number, prefillField: string | null) => {
+      savedCaretRef.current = null;
+      setEditTarget({ rowId, partIndex });
+      setSelectedField(
+        prefillField && findNativeField(prefillField) ? prefillField : null,
+      );
+      shopify.modal.show(INSERT_FIELD_MODAL_ID);
+    },
+    [shopify],
+  );
+
+  // Track the merchant's pick in the modal's choice list (single select).
+  const handleSelectField = useCallback((event: Event) => {
+    const values = (event.currentTarget as unknown as { values?: string[] })
+      .values;
+    setSelectedField(values && values.length > 0 ? values[0] : null);
+  }, []);
+
+  // Commit the picked field. One handler serves both modes: edit swaps the
+  // clicked pill in place (SET_VALUE_PART), create inserts a new pill at the saved
+  // caret (INSERT_VALUE_PART_AT, the Step 5 path). Either way the post-commit
+  // caret lands just after the committed pill via pendingCaretByRowRef, and all
+  // modal state is reset so create and edit can't leak into each other.
+  const handleCommit = useCallback(() => {
+    if (!selectedField) return; // primary button is disabled in this state
+    const part: ValuePart = { type: "SHOPIFY_FIELD", field: selectedField };
+    shopify.modal.hide(INSERT_FIELD_MODAL_ID);
+
+    if (editTarget) {
+      const row = rows.find((r) => r.id === editTarget.rowId);
+      if (row && row.rowType === "DATA") {
+        // In-place swap keeps the array length, so the caret index after the
+        // pill is the start of the next part on the current valueParts.
+        pendingCaretByRowRef.current.set(
+          editTarget.rowId,
+          partOffsetToLinear(row.valueParts, editTarget.partIndex + 1, 0),
+        );
+        dispatch({
+          type: "SET_VALUE_PART",
+          id: editTarget.rowId,
+          partIndex: editTarget.partIndex,
+          part,
+        });
+      }
+    } else {
+      const saved = savedCaretRef.current;
+      if (saved) {
+        const row = rows.find((r) => r.id === saved.rowId);
+        if (row && row.rowType === "DATA") {
+          const { partIndex, offset } = linearToPartOffset(
+            row.valueParts,
+            saved.linear,
+          );
+          pendingCaretByRowRef.current.set(saved.rowId, saved.linear + 1);
+          dispatch({
+            type: "INSERT_VALUE_PART_AT",
+            id: saved.rowId,
+            partIndex,
+            offset,
+            part,
+          });
+        }
+      }
+    }
+
+    savedCaretRef.current = null;
+    setEditTarget(null);
+    setSelectedField(null);
+  }, [editTarget, rows, selectedField, shopify]);
+
+  const handleCancelInsertField = useCallback(() => {
+    shopify.modal.hide(INSERT_FIELD_MODAL_ID);
+    savedCaretRef.current = null;
+    setEditTarget(null);
+    setSelectedField(null);
+  }, [shopify]);
+
   const canDuplicate = activeRowId !== null && !atCap;
 
   return (
@@ -583,6 +843,16 @@ export function SpecTableEditor({ initialRows }: { initialRows: EditorRow[] }) {
             {...(canDuplicate ? {} : { disabled: true })}
           >
             Duplicate
+          </s-button>
+          {/* Disabled until a value cell has an active caret — a pill can only be
+              dropped into a value, never a label. Opens the Insert field modal. */}
+          <s-button
+            variant="secondary"
+            icon="metafields"
+            onClick={handleOpenInsertField}
+            {...(hasActiveCaret ? {} : { disabled: true })}
+          >
+            Insert field
           </s-button>
         </s-stack>
         <s-text
@@ -624,6 +894,9 @@ export function SpecTableEditor({ initialRows }: { initialRows: EditorRow[] }) {
               onActivate={onActivate}
               onDelete={onDelete}
               dispatch={dispatch}
+              onCaretChange={onCaretChange}
+              onEditPart={handleEditPart}
+              pendingCaret={pendingCaretByRowRef.current}
             />
           ))}
         </s-stack>
@@ -637,6 +910,43 @@ export function SpecTableEditor({ initialRows }: { initialRows: EditorRow[] }) {
       >
         Add row
       </s-button>
+
+      {/* One editor-level Insert field modal serving both create and edit (Step
+          6). Hidden until `shopify.modal.show` is called — from the toolbar
+          button (create) or a pill click (edit); <s-modal> provides the focus
+          trap, Esc, and outside-click dismiss natively. The body is the static
+          native-field list; the primary button is disabled until a field is
+          selected and commits create (Insert at the saved caret) or edit (Update
+          the clicked pill in place). Cancel / Esc / outside-click commit nothing.
+          Live metafield fields arrive in Steps 8–9. */}
+      <s-modal
+        id={INSERT_FIELD_MODAL_ID}
+        heading={editTarget ? "Edit field" : "Insert field"}
+      >
+        <s-choice-list
+          label="Product field"
+          labelAccessibilityVisibility="exclusive"
+          values={selectedField ? [selectedField] : []}
+          onChange={handleSelectField}
+        >
+          {NATIVE_SHOPIFY_FIELDS.map((nativeField) => (
+            <s-choice key={nativeField.field} value={nativeField.field}>
+              {nativeField.label}
+            </s-choice>
+          ))}
+        </s-choice-list>
+        <s-button
+          slot="primary-action"
+          variant="primary"
+          onClick={handleCommit}
+          {...(selectedField ? {} : { disabled: true })}
+        >
+          {editTarget ? "Update" : "Insert"}
+        </s-button>
+        <s-button slot="secondary-actions" onClick={handleCancelInsertField}>
+          Cancel
+        </s-button>
+      </s-modal>
     </s-stack>
   );
 }

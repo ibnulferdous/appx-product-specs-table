@@ -175,6 +175,39 @@ export function readPartsFromHost(host: HTMLElement): ValuePart[] {
   return parts;
 }
 
+/**
+ * The `valueParts` index of an atomic DOM element (a dynamic-field token or a
+ * line break) inside `host`, or `null` if it is not a direct atomic child.
+ *
+ * Mirrors `readPartsFromHost` exactly: that walk flushes one TEXT part before
+ * every atomic, so an atomic's index is the count of parts emitted ahead of it.
+ * Used by the click-a-pill-to-edit path (Step 6.3) to resolve which value part a
+ * clicked token represents — indices shift on every structural edit, so they are
+ * never stashed on the element and are recomputed from the live DOM on demand.
+ */
+export function partIndexOfElement(
+  host: HTMLElement,
+  target: Node,
+): number | null {
+  let index = 0; // index the next emitted part would take
+  for (const node of Array.from(host.childNodes)) {
+    if (isFiller(node) || node.nodeType === TEXT_NODE) {
+      // Filler is skipped; a text node accumulates into the current TEXT run and
+      // emits no part on its own.
+      continue;
+    }
+    if (isAtomicElement(node)) {
+      index += 1; // the TEXT run flushed ahead of this atomic
+      if (node === target) {
+        return index; // the atomic itself is emitted at this index
+      }
+      index += 1; // step past the atomic
+    }
+    // Any other (browser-injected) element is folded into text — no part emitted.
+  }
+  return null;
+}
+
 function samePart(a: ValuePart, b: ValuePart): boolean {
   if (a.type !== b.type) return false;
   if (a.type === "TEXT" && b.type === "TEXT") return a.text === b.text;

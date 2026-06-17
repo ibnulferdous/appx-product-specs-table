@@ -150,16 +150,6 @@ function createSectionRow(id: string, key: string): SectionHeaderRow {
 }
 
 /**
- * The placeholder pill inserted by `INSERT_VALUE_PART` in Step 2. It proves the
- * splice mechanics only — choosing which metafield it points at is Step 3 (field
- * picker), so the `key` is left empty until then. The renderer labels a keyless
- * pill as "choose field".
- */
-export function placeholderMetafieldPart(): ValuePart {
-  return { type: "METAFIELD", namespace: "custom", key: "" };
-}
-
-/**
  * Collapse a value-part array back to canonical form after a structural edit:
  * merge adjacent TEXT parts into one (so removing a pill from
  * `[TEXT, PILL, TEXT]` yields a single TEXT rather than two fragments) and
@@ -220,7 +210,12 @@ export type RowsAction =
   // partIndex targets one TEXT segment of valueParts (Step 1 only had index 0).
   | { type: "SET_VALUE_TEXT"; id: string; partIndex: number; text: string }
   | { type: "REMOVE_VALUE_PART"; id: string; partIndex: number }
-  | { type: "INSERT_VALUE_PART"; id: string; part: ValuePart }
+  // Replace the value part at `partIndex` in place (Step 6). Edit-an-existing-pill:
+  // the merchant reopens the picker on a pill and swaps its field, so the atomic
+  // slot is replaced one-for-one — array length, surrounding parts, and the caret
+  // all stay put. No split, no merge needed (a pill→pill swap keeps types adjacent
+  // the same), so unlike REMOVE + INSERT_VALUE_PART_AT this never moves the caret.
+  | { type: "SET_VALUE_PART"; id: string; partIndex: number; part: ValuePart }
   // Caret-aware insert/split (Step 4.4). Splits the TEXT at `partIndex` at
   // character `offset` and drops `part` between the halves; when `partIndex`
   // points at an atomic part (or past the end) the part is spliced in at that
@@ -326,17 +321,22 @@ export function rowsReducer(
         return { ...row, valueParts: normalizeValueParts(remaining) };
       });
 
-    case "INSERT_VALUE_PART":
+    case "SET_VALUE_PART":
       return rows.map((row) => {
         if (row.id !== action.id || row.rowType !== "DATA") {
           return row;
         }
-        // Append the pill, then ensure a trailing empty TEXT part so the
-        // merchant can keep typing after it (left-to-right authoring flow).
-        const valueParts = [...row.valueParts, action.part];
-        if (valueParts[valueParts.length - 1]?.type !== "TEXT") {
-          valueParts.push({ type: "TEXT", text: "" });
+        // In-place swap of one atomic slot (edit-an-existing-pill): replace the
+        // part at partIndex one-for-one. A pill→pill swap keeps the part types
+        // adjacent the same, so array length, surrounding parts, and the caret
+        // are all unchanged — no split, no merge, no normalize needed. No-op on
+        // an out-of-range index.
+        if (action.partIndex < 0 || action.partIndex >= row.valueParts.length) {
+          return row;
         }
+        const valueParts = row.valueParts.map((part, partIndex) =>
+          partIndex === action.partIndex ? action.part : part,
+        );
         return { ...row, valueParts };
       });
 
