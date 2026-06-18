@@ -11,6 +11,8 @@
 // Framework-free and pure on purpose: the editor renders it now, Step 7 filters
 // it, and the storefront resolver reads the same `field` tokens later.
 
+import type { MetafieldDefinitionSummary } from "../shopify/metafieldDefinitions.server";
+
 export interface NativeShopifyField {
   /**
    * The token persisted in a SHOPIFY_FIELD value part. This is the
@@ -61,6 +63,17 @@ export function findNativeField(field: string): NativeShopifyField | undefined {
 }
 
 /**
+ * The shared matching rule for the modal's search box (Steps 7 & 9). A query
+ * matches when, once trimmed + lowercased, it is a substring of any of the
+ * supplied haystacks. The caller is responsible for lowercasing / normalising the
+ * haystacks it passes (e.g. reading a snake_case token's `_` as a space) so the
+ * one rule serves both the native-field list and the metafield list.
+ */
+function matchesQuery(needle: string, ...haystacks: string[]): boolean {
+  return haystacks.some((haystack) => haystack.includes(needle));
+}
+
+/**
  * Filter the native field list by the modal's search query (Step 7). Pure — it
  * reads the constant and returns a fresh array, never mutating the source.
  *
@@ -75,16 +88,49 @@ export function findNativeField(field: string): NativeShopifyField | undefined {
  *   are never rewritten.
  *
  * The matching rule lives here (not in the component) so it is unit-tested once
- * and Step 9's metafield section can reuse it over its own list.
+ * and Step 9's metafield section reuses it (`filterMetafieldDefinitions`).
  */
 export function filterNativeFields(query: string): NativeShopifyField[] {
   const needle = query.trim().toLowerCase();
   if (needle === "") {
     return [...NATIVE_SHOPIFY_FIELDS];
   }
-  return NATIVE_SHOPIFY_FIELDS.filter((entry) => {
-    const label = entry.label.toLowerCase();
-    const token = entry.field.toLowerCase().replace(/_/g, " ");
-    return label.includes(needle) || token.includes(needle);
-  });
+  return NATIVE_SHOPIFY_FIELDS.filter((entry) =>
+    matchesQuery(
+      needle,
+      entry.label.toLowerCase(),
+      entry.field.toLowerCase().replace(/_/g, " "),
+    ),
+  );
+}
+
+/**
+ * Filter fetched product metafield definitions by the modal's search query
+ * (Step 9), using the **same** rule as `filterNativeFields`. Pure — it reads the
+ * supplied array (fetched data, so passed in rather than module-owned) and
+ * returns a fresh array, never mutating the source.
+ *
+ * - An empty / whitespace query returns the full list in its original order.
+ * - Otherwise a case-insensitive substring match against either the human `name`
+ *   or the `namespace.key` token with every non-alphanumeric run normalised to a
+ *   space — so `custom.battery_life` is matched by "battery", "battery life", and
+ *   "custom". The locked `namespace`/`key` are read only, never rewritten.
+ */
+export function filterMetafieldDefinitions(
+  definitions: readonly MetafieldDefinitionSummary[],
+  query: string,
+): MetafieldDefinitionSummary[] {
+  const needle = query.trim().toLowerCase();
+  if (needle === "") {
+    return [...definitions];
+  }
+  return definitions.filter((definition) =>
+    matchesQuery(
+      needle,
+      definition.name.toLowerCase(),
+      `${definition.namespace}.${definition.key}`
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, " "),
+    ),
+  );
 }

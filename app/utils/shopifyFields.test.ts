@@ -3,7 +3,9 @@ import {
   NATIVE_SHOPIFY_FIELDS,
   findNativeField,
   filterNativeFields,
+  filterMetafieldDefinitions,
 } from "./shopifyFields";
+import type { MetafieldDefinitionSummary } from "../shopify/metafieldDefinitions.server";
 
 // The `field` tokens are the locked storefront-resolver contract (persisted in
 // SHOPIFY_FIELD value parts), so this suite pins the exact set and order — a
@@ -112,5 +114,94 @@ describe("filterNativeFields", () => {
     // The full-list path must be a copy, not the readonly source, so callers
     // can treat the result as a plain mutable array.
     expect(filterNativeFields("")).not.toBe(NATIVE_SHOPIFY_FIELDS);
+  });
+});
+
+describe("filterMetafieldDefinitions", () => {
+  // A small fixture mirroring the shape the Step 8 fetch produces. `name` is the
+  // human label; `namespace`/`key` are the locked pill contract.
+  const DEFINITIONS: MetafieldDefinitionSummary[] = [
+    {
+      id: "gid://1",
+      namespace: "custom",
+      key: "battery_life",
+      name: "Battery life",
+      type: "number_integer",
+    },
+    {
+      id: "gid://2",
+      namespace: "custom",
+      key: "chipset",
+      name: "Chipset",
+      type: "single_line_text_field",
+    },
+    {
+      id: "gid://3",
+      namespace: "specs",
+      key: "weight_grams",
+      name: "Weight (g)",
+      type: "number_decimal",
+    },
+  ];
+
+  const keysOf = (query: string) =>
+    filterMetafieldDefinitions(DEFINITIONS, query).map((d) => d.key);
+
+  it("returns the full list in order for an empty query", () => {
+    expect(filterMetafieldDefinitions(DEFINITIONS, "")).toEqual(DEFINITIONS);
+  });
+
+  it("returns the full list in order for a whitespace-only query", () => {
+    expect(filterMetafieldDefinitions(DEFINITIONS, "   ")).toEqual(DEFINITIONS);
+  });
+
+  it("matches on the human name, preserving original order", () => {
+    expect(keysOf("battery")).toEqual(["battery_life"]);
+  });
+
+  it("matches via the namespace.key token", () => {
+    // "battery" is also present in the key token (battery_life); "specs" only
+    // appears in the namespace.
+    expect(keysOf("specs")).toEqual(["weight_grams"]);
+  });
+
+  it("reads the namespace.key token's non-alphanumerics as spaces", () => {
+    // `custom.battery_life` normalises to "custom battery life", so the
+    // multi-word fragment "battery life" still finds it via the token.
+    expect(keysOf("battery life")).toEqual(["battery_life"]);
+    // The leading namespace + dot is matchable as "custom battery".
+    expect(keysOf("custom battery")).toEqual(["battery_life"]);
+  });
+
+  it("matches the namespace prefix shared by several definitions", () => {
+    expect(keysOf("custom")).toEqual(["battery_life", "chipset"]);
+  });
+
+  it("is case-insensitive", () => {
+    expect(keysOf("CHIPSET")).toEqual(keysOf("chipset"));
+    expect(keysOf("Weight")).toEqual(["weight_grams"]);
+  });
+
+  it("trims surrounding whitespace before matching", () => {
+    expect(keysOf("  chipset  ")).toEqual(["chipset"]);
+  });
+
+  it("returns an empty array when nothing matches", () => {
+    expect(filterMetafieldDefinitions(DEFINITIONS, "zzz")).toEqual([]);
+  });
+
+  it("returns an empty array for an empty source list", () => {
+    expect(filterMetafieldDefinitions([], "battery")).toEqual([]);
+  });
+
+  it("does not mutate the source array", () => {
+    const before = DEFINITIONS.map((d) => d.key);
+    filterMetafieldDefinitions(DEFINITIONS, "battery");
+    filterMetafieldDefinitions(DEFINITIONS, "");
+    expect(DEFINITIONS.map((d) => d.key)).toEqual(before);
+  });
+
+  it("returns a fresh array for the empty-query identity view", () => {
+    expect(filterMetafieldDefinitions(DEFINITIONS, "")).not.toBe(DEFINITIONS);
   });
 });
