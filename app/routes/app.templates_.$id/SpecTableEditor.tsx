@@ -9,6 +9,7 @@ import {
   useCallback,
   useEffect,
   useLayoutEffect,
+  useMemo,
   useReducer,
   useRef,
   useState,
@@ -17,15 +18,19 @@ import { useFetcher, useRevalidator } from "react-router";
 import { SaveBar, useAppBridge } from "@shopify/app-bridge-react";
 import {
   DndContext,
+  KeyboardSensor,
   PointerSensor,
   closestCenter,
   useSensor,
   useSensors,
+  type Announcements,
   type DragEndEvent,
+  type DraggableAttributes,
   type DraggableSyntheticListeners,
 } from "@dnd-kit/core";
 import {
   SortableContext,
+  sortableKeyboardCoordinates,
   useSortable,
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
@@ -64,6 +69,13 @@ import {
   filterNativeFields,
   findNativeField,
 } from "../../utils/shopifyFields";
+import {
+  announceReorderCancel,
+  announceReorderEnd,
+  announceReorderOver,
+  announceReorderStart,
+  describeRow,
+} from "../../utils/reorderAnnouncements";
 import styles from "./SpecTableEditor.module.css";
 
 // The field the merchant has picked in the "Insert field" modal (Step 9). A
@@ -115,6 +127,15 @@ const SECTION_COLUMNS = `${GUTTER} 1fr`;
 // Modal API (`shopify.modal.show/hide`).
 const INSERT_FIELD_MODAL_ID = "insert-field-modal";
 
+// Spoken once when a drag handle is focused (Step 11). dnd-kit renders this into
+// the auto-generated `aria-describedby` instructions element the handle points at.
+const REORDER_INSTRUCTIONS = {
+  draggable:
+    "To reorder a row, press space or enter on its drag handle to pick it up, " +
+    "use the arrow keys to move it, then press space or enter to drop it, or " +
+    "press escape to cancel.",
+};
+
 // The pill the merchant is editing (Step 6.3): the row and the value-part index
 // of the clicked token. `null` means the modal is in create mode (Insert drops a
 // new pill at the saved caret); non-null means edit mode (Update swaps this pill's
@@ -142,34 +163,49 @@ function readValue(event: Event): string {
 const RowGutter = memo(function RowGutter({
   rowNumber,
   onDelete,
+  reorderLabel,
+  dragAttributes,
   dragListeners,
   setActivatorNodeRef,
   isDragging,
 }: {
   rowNumber: number;
   onDelete: () => void;
-  // dnd-kit pointer listeners + activator ref for the ⠿ handle (Step 10). Mouse
-  // drag only: we spread the sensor `listeners` (pointer handlers) but NOT the
-  // dnd-kit `attributes` (role/tabIndex) — the handle stays aria-hidden and
-  // non-focusable this step; keyboard reorder + a11y are Step 11.
+  // The drag handle's accessible name, e.g. "Reorder Battery Life row" (Step 11).
+  // The handle is icon-only, so without this it would announce as a nameless
+  // button. Derived from the row label via `describeRow`.
+  reorderLabel: string;
+  // dnd-kit drag wiring for the ⠿ handle. `attributes` (role=button, tabIndex=0,
+  // aria-roledescription, aria-describedby, aria-pressed) make it a real
+  // keyboard-focusable, screen-reader-operable control (Step 11 — Step 10
+  // withheld these and kept the handle aria-hidden for mouse-only drag).
+  // `listeners` are the sensor (pointer + keyboard) activation handlers.
+  dragAttributes?: DraggableAttributes;
   dragListeners?: DraggableSyntheticListeners;
   setActivatorNodeRef?: (element: HTMLElement | null) => void;
   isDragging?: boolean;
 }) {
   return (
     <s-stack direction="block" gap="small-300" alignItems="center">
-      {/* Drag-to-reorder handle (Step 10, mouse only). Still aria-hidden and not
-          keyboard-focusable — Step 11 adds the keyboard sensor + announcements
-          and makes this reachable before App Store review. */}
-      <span
+      {/* Drag-to-reorder handle. A real <button> (dnd-kit's recommended, most
+          accessible activator) — keyboard-focusable and operable: Space/Enter to
+          pick up, arrow keys to move, Space/Enter to drop, Escape to cancel
+          (Step 11). Its native chrome is reset in the CSS module so it still
+          reads as the muted ⠿ affordance. `attributes` + `listeners` +
+          `setActivatorNodeRef` must all sit on this one element. */}
+      <button
+        type="button"
         className={styles.dragHandle}
         data-dragging={isDragging ? "true" : undefined}
-        aria-hidden="true"
+        aria-label={reorderLabel}
         ref={setActivatorNodeRef}
+        {...dragAttributes}
         {...dragListeners}
       >
-        <s-icon type="drag-handle" color="subdued"></s-icon>
-      </span>
+        {/* Decorative: the button's aria-label is the accessible name, so hide
+            the icon from assistive tech to avoid a double-announcement. */}
+        <s-icon type="drag-handle" color="subdued" aria-hidden="true"></s-icon>
+      </button>
       <s-button
         variant="tertiary"
         tone="critical"
@@ -545,12 +581,13 @@ const EditorRowItem = memo(function EditorRowItem({
   // per-frame transform re-renders only this row from within the hook (React.memo
   // gates parent-prop re-renders, not hook-driven ones). The transform/transition
   // are applied to the plain wrapper <div>; the Polaris `<s-*>` hosts are left
-  // untouched. `listeners`/`setActivatorNodeRef` go to the ⠿ handle only, so the
-  // value cell keeps its caret/selection behaviour. `attributes` are deliberately
-  // NOT spread (mouse only — see RowGutter).
+  // untouched. `attributes`/`listeners`/`setActivatorNodeRef` go to the ⠿ handle
+  // only (Step 11 adds `attributes` so the handle is keyboard-focusable; Step 10
+  // had withheld them), so the value cell keeps its caret/selection behaviour.
   const {
     setNodeRef,
     setActivatorNodeRef,
+    attributes,
     listeners,
     transform,
     transition,
@@ -563,6 +600,10 @@ const EditorRowItem = memo(function EditorRowItem({
 
   const rowClass = isActive ? `${styles.row} ${styles.rowActive}` : styles.row;
   const isSection = row.rowType === "SECTION_HEADER";
+  // Accessible name for the drag handle (Step 11). Reuses the same descriptor as
+  // the screen-reader announcements so the handle and the live region agree
+  // ("Battery Life row", "Display section", or a positional fallback).
+  const reorderLabel = `Reorder ${describeRow(row, index)}`;
 
   return (
     // Activation is a focus side effect: clicking any cell/control focuses it,
@@ -588,6 +629,8 @@ const EditorRowItem = memo(function EditorRowItem({
           <RowGutter
             rowNumber={rowNumber}
             onDelete={handleDelete}
+            reorderLabel={reorderLabel}
+            dragAttributes={attributes}
             dragListeners={listeners}
             setActivatorNodeRef={setActivatorNodeRef}
             isDragging={isDragging}
@@ -693,15 +736,17 @@ export function SpecTableEditor({
   useCapturedTokenColor();
   const shopify = useAppBridge();
 
-  // --- Drag reorder (Step 10) ----------------------------------------------
-  // Mouse only: a single PointerSensor with a small activation distance so a
-  // click on the ⠿ handle (e.g. nothing happens) is not mistaken for a drag and
-  // a real drag starts cleanly. No KeyboardSensor — keyboard reorder + a11y are
-  // Step 11. On drop, translate the dragged/target row ids into a pure array-move
-  // via MOVE_ROW; the reducer no-ops a drop onto the origin, so a same-spot drag
-  // never flips the dirty flag.
+  // --- Drag reorder (Steps 10–11) ------------------------------------------
+  // Two sensors on one DndContext: a PointerSensor (mouse/touch, Step 10) with a
+  // small activation distance so a click on the ⠿ handle is not mistaken for a
+  // drag, and a KeyboardSensor (Step 11) whose `sortableKeyboardCoordinates` lets
+  // the arrow keys step this vertical list (Space/Enter pick up & drop, Escape
+  // cancels). Both produce the SAME onDragEnd, so the keyboard drop reuses the
+  // Step 10 MOVE_ROW path unchanged; the reducer no-ops a drop onto the origin,
+  // so a same-spot drag never flips the dirty flag.
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
   );
   const handleDragEnd = useCallback((event: DragEndEvent) => {
     const { active, over } = event;
@@ -712,6 +757,36 @@ export function SpecTableEditor({
       overId: String(over.id),
     });
   }, []);
+
+  // Screen-reader announcements for the keyboard drag (Step 11). dnd-kit renders
+  // the hidden live region; we supply row-aware copy (its label + 1-based
+  // position) from the pure `reorderAnnouncements` helper. The callbacks read
+  // CURRENT rows via a ref so they never close over a stale array — the array
+  // does not change mid-drag (MOVE_ROW only fires on drop), and the pre-move
+  // `over` position is the slot the dragged row lands in (see the helper's note).
+  const rowsRef = useRef(rows);
+  rowsRef.current = rows;
+  const dndAnnouncements = useMemo<Announcements>(
+    () => ({
+      onDragStart: ({ active }) =>
+        announceReorderStart(rowsRef.current, String(active.id)),
+      onDragOver: ({ active, over }) =>
+        announceReorderOver(
+          rowsRef.current,
+          String(active.id),
+          over ? String(over.id) : null,
+        ),
+      onDragEnd: ({ active, over }) =>
+        announceReorderEnd(
+          rowsRef.current,
+          String(active.id),
+          over ? String(over.id) : null,
+        ),
+      onDragCancel: ({ active }) =>
+        announceReorderCancel(rowsRef.current, String(active.id)),
+    }),
+    [],
+  );
 
   // --- Save (Step 9.5) -----------------------------------------------------
   // Persist the row array (plus name + status, ridden along unchanged for now) to
@@ -1177,6 +1252,10 @@ export function SpecTableEditor({
             sensors={sensors}
             collisionDetection={closestCenter}
             onDragEnd={handleDragEnd}
+            accessibility={{
+              announcements: dndAnnouncements,
+              screenReaderInstructions: REORDER_INSTRUCTIONS,
+            }}
           >
             <SortableContext
               items={rows.map((row) => row.id)}

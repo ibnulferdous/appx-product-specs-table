@@ -68,12 +68,24 @@
   );
 }
 
-/* Persistent, muted reorder affordance (Step 10, mouse drag). `touch-action: none`
+/* Persistent, muted reorder affordance (Step 10 mouse drag; Step 11 made it a
+ * real, keyboard-focusable <button> for accessible reorder). `touch-action: none`
  * hands the gesture to dnd-kit's pointer sensor instead of the scroller, so a drag
- * starting on the handle is not stolen by touch scrolling. */
+ * starting on the handle is not stolen by touch scrolling. The native <button>
+ * chrome is reset so the control still reads as the bare ⠿ icon, not a UA/Polaris
+ * button — no hex; color/font inherit, the icon supplies its own subdued tone. */
 .dragHandle {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
+  appearance: none;
+  background: none;
+  border: none;
+  margin: 0;
+  padding: 0;
+  font: inherit;
+  color: inherit;
+  border-radius: 0.25rem;
   cursor: grab;
   opacity: 0.5;
   touch-action: none;
@@ -81,6 +93,16 @@
 
 .dragHandle[data-dragging="true"] {
   cursor: grabbing;
+}
+
+/* Keyboard focus ring (Step 11). The value surface sets outline:none, so the
+ * handle needs its own visible focus indicator; it must be reachable and clearly
+ * focused for keyboard reorder. currentColor keeps it hex-free, and lifting the
+ * muted opacity to full avoids a faint-but-focused control. */
+.dragHandle:focus-visible {
+  outline: 0.125rem solid currentColor;
+  outline-offset: 0.125rem;
+  opacity: 1;
 }
 
 .row {
