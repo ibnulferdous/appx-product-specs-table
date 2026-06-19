@@ -4,6 +4,8 @@ import {
   countTemplatesForShop,
   createTemplateForShop,
   getTemplateByIdForShop,
+  saveTemplateForShop,
+  setTemplateMetaobjectRef,
 } from "./template.server";
 
 // Replace the Prisma client (app/db.server.ts default export) with in-memory
@@ -19,6 +21,8 @@ const { prismaMock } = vi.hoisted(() => ({
       count: vi.fn(),
       create: vi.fn(),
       findFirst: vi.fn(),
+      update: vi.fn(),
+      updateMany: vi.fn(),
     },
   },
 }));
@@ -183,5 +187,151 @@ describe("getTemplateByIdForShop — shop isolation (priority #1)", () => {
       where: { id: "t1", shopId: "shop_A" },
     });
     expect(result).toBe(owned);
+  });
+});
+
+describe("saveTemplateForShop", () => {
+  const aRow = {
+    id: "r1",
+    key: "row",
+    rowType: "DATA",
+    label: "Battery Life",
+    valueParts: [{ type: "TEXT", text: "Up to " }],
+    hideWhenEmpty: true,
+  };
+
+  it("reads the template shop-scoped first (shop isolation, priority #1) and does not write when unowned", async () => {
+    prismaMock.template.findFirst.mockResolvedValue(null);
+
+    const result = await saveTemplateForShop("shop_B", "tmpl_owned_by_A", {
+      rows: [aRow],
+    });
+
+    expect(prismaMock.template.findFirst).toHaveBeenCalledWith({
+      where: { id: "tmpl_owned_by_A", shopId: "shop_B" },
+    });
+    expect(prismaMock.template.update).not.toHaveBeenCalled();
+    expect(result).toEqual({ ok: false, error: "Template not found" });
+  });
+
+  it("rejects an over-cap payload server-side without reading or writing", async () => {
+    const tooMany = Array.from({ length: 201 }, (_, i) => ({
+      ...aRow,
+      id: `r${i}`,
+      key: `row_${i}`,
+    }));
+
+    const result = await saveTemplateForShop("shop_A", "t1", { rows: tooMany });
+
+    expect(result.ok).toBe(false);
+    expect(prismaMock.template.findFirst).not.toHaveBeenCalled();
+    expect(prismaMock.template.update).not.toHaveBeenCalled();
+  });
+
+  it("finalizes a brand-new row's provisional key from its label and updates by id", async () => {
+    prismaMock.template.findFirst.mockResolvedValue({
+      id: "t1",
+      shopId: "shop_A",
+      rows: [], // nothing persisted yet -> r1 is provisional
+    });
+    prismaMock.template.update.mockResolvedValue({ id: "t1" });
+
+    const result = await saveTemplateForShop("shop_A", "t1", { rows: [aRow] });
+
+    expect(result.ok).toBe(true);
+    const updateArg = prismaMock.template.update.mock.calls[0][0];
+    expect(updateArg.where).toEqual({ id: "t1" });
+    // `row` provisional key was finalized to a slug of the label.
+    expect(updateArg.data.rows[0].key).toBe("battery_life");
+    // name/status omitted from the payload are not written.
+    expect(updateArg.data.name).toBeUndefined();
+    expect(updateArg.data.status).toBeUndefined();
+  });
+
+  it("never re-derives a key already persisted, even if the label changed", async () => {
+    prismaMock.template.findFirst.mockResolvedValue({
+      id: "t1",
+      shopId: "shop_A",
+      // r1 was already finalized to `battery_life` on a prior save.
+      rows: [{ ...aRow, key: "battery_life" }],
+    });
+    prismaMock.template.update.mockResolvedValue({ id: "t1" });
+
+    // Client sends a stale provisional key AND a relabel.
+    await saveTemplateForShop("shop_A", "t1", {
+      rows: [{ ...aRow, key: "row", label: "Cell Life" }],
+    });
+
+    const updateArg = prismaMock.template.update.mock.calls[0][0];
+    expect(updateArg.data.rows[0].key).toBe("battery_life");
+  });
+
+  it("validates and writes name + status when provided", async () => {
+    prismaMock.template.findFirst.mockResolvedValue({
+      id: "t1",
+      shopId: "shop_A",
+      rows: [],
+    });
+    prismaMock.template.update.mockResolvedValue({ id: "t1" });
+
+    await saveTemplateForShop("shop_A", "t1", {
+      rows: [],
+      name: "  Renamed  ",
+      status: "ACTIVE",
+    });
+
+    const updateArg = prismaMock.template.update.mock.calls[0][0];
+    expect(updateArg.data.name).toBe("Renamed");
+    expect(updateArg.data.status).toBe("ACTIVE");
+  });
+
+  it("rejects an invalid name without writing", async () => {
+    prismaMock.template.findFirst.mockResolvedValue({
+      id: "t1",
+      shopId: "shop_A",
+      rows: [],
+    });
+
+    const result = await saveTemplateForShop("shop_A", "t1", {
+      rows: [],
+      name: "   ",
+    });
+
+    expect(result).toEqual({ ok: false, error: "Name is required" });
+    expect(prismaMock.template.update).not.toHaveBeenCalled();
+  });
+
+  it("returns ok:false (not a throw) when the write fails", async () => {
+    prismaMock.template.findFirst.mockResolvedValue({
+      id: "t1",
+      shopId: "shop_A",
+      rows: [],
+    });
+    prismaMock.template.update.mockRejectedValue(new Error("db down"));
+
+    const result = await saveTemplateForShop("shop_A", "t1", { rows: [] });
+
+    expect(result).toEqual({ ok: false, error: "Could not save template" });
+  });
+});
+
+describe("setTemplateMetaobjectRef", () => {
+  it("writes the GID + handle scoped to the shop's own template", async () => {
+    prismaMock.template.updateMany.mockResolvedValue({ count: 1 });
+
+    await setTemplateMetaobjectRef(
+      "shop_A",
+      "t1",
+      "gid://shopify/Metaobject/9",
+      "template-t1",
+    );
+
+    expect(prismaMock.template.updateMany).toHaveBeenCalledWith({
+      where: { id: "t1", shopId: "shop_A" },
+      data: {
+        shopifyMetaobjectGid: "gid://shopify/Metaobject/9",
+        shopifyMetaobjectHandle: "template-t1",
+      },
+    });
   });
 });

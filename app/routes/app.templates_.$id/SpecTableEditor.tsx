@@ -13,9 +13,10 @@ import {
   useRef,
   useState,
 } from "react";
-import { useFetcher } from "react-router";
-import { useAppBridge } from "@shopify/app-bridge-react";
+import { useFetcher, useRevalidator } from "react-router";
+import { SaveBar, useAppBridge } from "@shopify/app-bridge-react";
 import type { loader as metafieldDefinitionsLoader } from "../app.metafield-definitions";
+import type { action as templateAction } from "./route";
 import {
   MAX_TEMPLATE_ROWS,
   newRowId,
@@ -564,41 +565,6 @@ const EditorRowItem = memo(function EditorRowItem({
   );
 });
 
-// Step 4 verification scaffolding: with no Save path yet, every template loads
-// with an empty rows array, so there is no complete pill or multiline value to
-// exercise the token/caret behavior. In development only, seed a finished sample
-// (a METAFIELD token inside "Up to … hours" and a two-line value) so the surface
-// is verifiable on its own. Fixed ids keep server and client renders identical
-// (no hydration mismatch). Removed when Step 5's modal lands the real insert path.
-function devSampleRows(): EditorRow[] {
-  return [
-    {
-      id: "sample-battery-life",
-      key: "battery_life",
-      rowType: "DATA",
-      label: "Battery Life",
-      valueParts: [
-        { type: "TEXT", text: "Up to " },
-        { type: "METAFIELD", namespace: "custom", key: "battery_life" },
-        { type: "TEXT", text: " hours" },
-      ],
-      hideWhenEmpty: true,
-    },
-    {
-      id: "sample-features",
-      key: "features",
-      rowType: "DATA",
-      label: "Features",
-      valueParts: [
-        { type: "TEXT", text: "1000 nits max brightness (typical)" },
-        { type: "LINE_BREAK" },
-        { type: "TEXT", text: "1600 nits peak brightness (HDR)" },
-      ],
-      hideWhenEmpty: true,
-    },
-  ];
-}
-
 // Polaris's `s-*` color tokens live inside each component's shadow DOM and are
 // NOT exposed as light-DOM CSS custom properties (confirmed in-browser:
 // `--p-color-*` / `--s-color-*` all resolve empty on the document, body, and even
@@ -638,15 +604,89 @@ function useCapturedTokenColor() {
   }, []);
 }
 
+// The App Bridge contextual save bar (the "Unsaved changes" bar at the top of the
+// embedded app). Addressed by id, shown while the editor is dirty.
+const SAVE_BAR_ID = "template-save-bar";
+
 // --- Editor container -------------------------------------------------------
-export function SpecTableEditor({ initialRows }: { initialRows: EditorRow[] }) {
-  const [rows, dispatch] = useReducer(rowsReducer, initialRows, (rows) =>
-    rows.length === 0 && import.meta.env.DEV ? devSampleRows() : rows,
-  );
+export function SpecTableEditor({
+  initialRows,
+  initialName,
+  initialStatus,
+  onDiscard,
+}: {
+  initialRows: EditorRow[];
+  initialName: string;
+  initialStatus: string;
+  // Remount the editor (parent bumps a key) so Discard resets the reducer to the
+  // persisted rows without a dedicated reset action.
+  onDiscard: () => void;
+}) {
+  const [rows, dispatch] = useReducer(rowsReducer, initialRows);
   const [activeRowId, setActiveRowId] = useState<string | null>(null);
   const atCap = rows.length >= MAX_TEMPLATE_ROWS;
   useCapturedTokenColor();
   const shopify = useAppBridge();
+
+  // --- Save (Step 9.5) -----------------------------------------------------
+  // Persist the row array (plus name + status, ridden along unchanged for now) to
+  // Postgres + the storefront metaobject via the route action. The editor sends
+  // JSON so the structured valueParts survive (FormData would stringify them).
+  const saveFetcher = useFetcher<typeof templateAction>();
+  const revalidator = useRevalidator();
+  const saving = saveFetcher.state !== "idle";
+
+  // Dirty-tracking against the last-saved baseline. Rows are the only editable
+  // surface here, so a JSON compare of the row array is the dirty signal.
+  const currentRowsJson = JSON.stringify(rows);
+  const rowsJsonRef = useRef(currentRowsJson);
+  rowsJsonRef.current = currentRowsJson;
+  const [savedRowsJson, setSavedRowsJson] = useState(currentRowsJson);
+  const isDirty = currentRowsJson !== savedRowsJson;
+
+  const handleSave = useCallback(() => {
+    // The payload is valid JSON at runtime; the cast satisfies SubmitTarget,
+    // which the EditorRow interface union does not match structurally (interfaces
+    // carry no implicit index signature).
+    saveFetcher.submit(
+      { rows, name: initialName, status: initialStatus } as unknown as Parameters<
+        typeof saveFetcher.submit
+      >[0],
+      { method: "post", encType: "application/json" },
+    );
+  }, [saveFetcher, rows, initialName, initialStatus]);
+
+  const handleDiscard = useCallback(() => {
+    // Clear dirty immediately (hides the bar), then remount to the persisted rows.
+    setSavedRowsJson(rowsJsonRef.current);
+    onDiscard();
+  }, [onDiscard]);
+
+  // Process a completed save exactly once (guard on the data identity): reset the
+  // dirty baseline, refresh the loader so a later Discard reverts to the saved
+  // rows, and toast the outcome (incl. the metaobject round-trip result).
+  const handledSaveRef = useRef<unknown>(null);
+  useEffect(() => {
+    if (saveFetcher.state !== "idle") return;
+    const data = saveFetcher.data;
+    if (!data || data === handledSaveRef.current) return;
+    handledSaveRef.current = data;
+    if (data.ok) {
+      setSavedRowsJson(rowsJsonRef.current);
+      revalidator.revalidate();
+      if (data.syncError) {
+        shopify.toast.show(data.syncError, { isError: true });
+      } else if (data.roundTripOk) {
+        shopify.toast.show("Saved — storefront round-trip verified");
+      } else {
+        shopify.toast.show("Saved");
+      }
+    } else {
+      shopify.toast.show(data.error ?? "Could not save template", {
+        isError: true,
+      });
+    }
+  }, [saveFetcher.state, saveFetcher.data, revalidator, shopify]);
 
   // --- Metafield definitions fetch (Step 8) --------------------------------
   // The shop's product metafield definitions are fetched lazily from the
@@ -1184,6 +1224,16 @@ export function SpecTableEditor({ initialRows }: { initialRows: EditorRow[] }) {
           Cancel
         </s-button>
       </s-modal>
+
+      {/* The App Bridge contextual save bar (Step 9.5). Shown while the row array
+          differs from the last-saved baseline; Save persists to Postgres + the
+          storefront metaobject, Discard remounts the editor to the saved rows. */}
+      <SaveBar id={SAVE_BAR_ID} open={isDirty}>
+        <button variant="primary" onClick={handleSave} loading={saving}>
+          Save
+        </button>
+        <button onClick={handleDiscard}>Discard</button>
+      </SaveBar>
     </s-stack>
   );
 }

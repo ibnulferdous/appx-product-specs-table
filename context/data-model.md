@@ -630,6 +630,19 @@ Liquid flow:
 
 Exact Liquid syntax should be verified during Theme App Extension implementation, but the architecture goal is clear: product metafield points to metaobject handle.
 
+> **Verified (Editor Step 9.5, 2026-06-19).** The metaobject round trip
+> (React → Postgres → metaobject → read back) was proven via the **Admin GraphQL
+> API** (`metaobjectByHandle`), not Liquid, because the storefront/assignment slice
+> that deploys the Theme App Extension is not built yet. The storefront read syntax
+> is the global `metaobjects` object: `{{ metaobjects[type][handle] }}` (or
+> `metaobjects.type.handle`), with the `rows` json field iterable as
+> `metaobject.rows.value`. **Caveat for the storefront slice:** because the
+> definition is **app-reserved** (`$app:appx_spec_table`, see §10), the bare
+> `shop.metaobjects.appx_spec_table[handle]` sketch above will need the resolved
+> app type — lean toward a **metaobject-reference product metafield** (which
+> auto-resolves an app-owned metaobject in Liquid) rather than a raw handle-string
+> lookup. Finalize this when the Theme App Extension is built.
+
 ### Assignment resolution
 
 For each product, the app resolves assignment candidates before writing the Shopify product metafield or updating `ProductAssignmentIndex`:
@@ -711,6 +724,27 @@ Recommended fields:
 | `rows`        | json              | Storefront-ready rows.              |
 | `styling`     | json              | Storefront-ready styling.           |
 | `updated_at`  | date time or text | Optional debugging/sync visibility. |
+
+> **Verified (Editor Step 9.5, 2026-06-19).** Implemented and round-trip-tested
+> live. Decisions, now locked:
+> - **The definition type is app-reserved: `$app:appx_spec_table`** (resolves to
+>   `app--<app-id>--appx_spec_table`), not a bare `appx_spec_table`. The `$app:`
+>   prefix reserves the definition for this app's exclusive use so neither the
+>   merchant nor another app can alter its structure (data safety, priority #1).
+>   `access: { admin: MERCHANT_READ_WRITE, storefront: PUBLIC_READ }`.
+> - **Field types:** `template_id` / `status` / `updated_at` =
+>   `single_line_text_field`; `rows` / `styling` = `json` (the value is a JSON
+>   **string**, e.g. `JSON.stringify(rows)`). The `rows` JSON is the **same**
+>   `EditorRow[]` shape — no storefront-only reshape was needed (the round-trip
+>   confirmed the row contract survives unchanged).
+> - **Mutations** (all validated with `validate_graphql_codeblocks` at 2025-10,
+>   in `app/shopify/metaobjects.server.ts`): create the definition once per shop
+>   with `metaobjectDefinitionCreate` (store the GID on `Shop.metaobjectDefinitionGid`;
+>   `metaobjectDefinitionByType` is the idempotent lookup/race-recovery); upsert
+>   each template's entry by handle `template-{templateId}` with `metaobjectUpsert`
+>   (store the returned GID + handle on the `Template`); read back with
+>   `metaobjectByHandle`. Sync runs for every status; the storefront gates
+>   visibility on `status == ACTIVE`.
 
 ### Store both GID and handle
 

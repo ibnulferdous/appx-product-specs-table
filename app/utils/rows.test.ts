@@ -3,7 +3,6 @@ import {
   isAtomicPart,
   MAX_TEMPLATE_ROWS,
   newRowId,
-  normalizeRows,
   normalizeValueParts,
   rowsReducer,
   slugifyKey,
@@ -135,24 +134,6 @@ describe("normalizeValueParts", () => {
       lineBreak,
       { type: "TEXT", text: "" },
     ]);
-  });
-});
-
-// ---------------------------------------------------------------------------
-// Loaded-rows normalization
-// ---------------------------------------------------------------------------
-
-describe("normalizeRows", () => {
-  it("passes an array through unchanged", () => {
-    const rows = [dataRow("1", "row")];
-    expect(normalizeRows(rows)).toBe(rows);
-  });
-
-  it("returns [] for any non-array input", () => {
-    expect(normalizeRows(null)).toEqual([]);
-    expect(normalizeRows(undefined)).toEqual([]);
-    expect(normalizeRows("not-an-array")).toEqual([]);
-    expect(normalizeRows({})).toEqual([]);
   });
 });
 

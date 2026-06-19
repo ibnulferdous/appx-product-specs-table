@@ -33,6 +33,21 @@ export async function upsertShop(session: Session) {
   }
 }
 
+/**
+ * Persist the app-owned `appx_spec_table` metaobject definition GID on the shop
+ * (Editor Step 9.5). The definition is created once per shop; this records its
+ * GID so later saves skip the create + lookup. Scoped to the shop's own row.
+ */
+export async function setShopMetaobjectDefinitionGid(
+  shopId: string,
+  gid: string,
+) {
+  return prisma.shop.updateMany({
+    where: { id: shopId },
+    data: { metaobjectDefinitionGid: gid },
+  });
+}
+
 // Mark a shop as uninstalled. Called from the app/uninstalled webhook.
 export async function markShopUninstalled(shopDomain: string) {
   return prisma.shop.updateMany({

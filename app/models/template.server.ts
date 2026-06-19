@@ -1,5 +1,7 @@
 import { Prisma, TemplateStatus } from "@prisma/client";
 import prisma from "../db.server";
+import { MAX_TEMPLATE_ROWS, type EditorRow } from "../utils/rows";
+import { parseRows, reconcileRowKeys } from "../utils/rowsSerialize";
 
 export const TEMPLATE_STATUSES = ["ACTIVE", "DRAFT", "ARCHIVED"];
 
@@ -8,6 +10,32 @@ const NAME_MAX_LENGTH = 100;
 
 function getRowCount(rows: unknown): number {
   return Array.isArray(rows) ? rows.length : 0;
+}
+
+// Shared name validation, used by both create and save so the two paths can never
+// drift apart. Returns the trimmed name, or an error string for the caller to
+// surface in the standard `{ ok: false, error }` shape.
+function validateName(name: unknown):
+  | { ok: true; name: string }
+  | { ok: false; error: string } {
+  const trimmed = typeof name === "string" ? name.trim() : "";
+  if (trimmed.length === 0) {
+    return { ok: false, error: "Name is required" };
+  }
+  if (trimmed.length > NAME_MAX_LENGTH) {
+    return {
+      ok: false,
+      error: `Name must be ${NAME_MAX_LENGTH} characters or fewer`,
+    };
+  }
+  return { ok: true, name: trimmed };
+}
+
+// Coerce an untrusted status into a known TemplateStatus, defaulting to DRAFT.
+function resolveStatus(status: unknown): TemplateStatus {
+  return typeof status === "string" && TEMPLATE_STATUS_SET.has(status)
+    ? (status as TemplateStatus)
+    : TemplateStatus.DRAFT;
 }
 
 export async function listTemplatesForShop(
@@ -41,30 +69,17 @@ export async function createTemplateForShop(
   shopId: string,
   { name, status }: { name?: unknown; status?: unknown },
 ) {
-  const trimmedName = typeof name === "string" ? name.trim() : "";
-
-  if (trimmedName.length === 0) {
-    return { ok: false as const, error: "Name is required" };
+  const nameResult = validateName(name);
+  if (!nameResult.ok) {
+    return { ok: false as const, error: nameResult.error };
   }
-
-  if (trimmedName.length > NAME_MAX_LENGTH) {
-    return {
-      ok: false as const,
-      error: `Name must be ${NAME_MAX_LENGTH} characters or fewer`,
-    };
-  }
-
-  const resolvedStatus =
-    typeof status === "string" && TEMPLATE_STATUS_SET.has(status)
-      ? (status as TemplateStatus)
-      : TemplateStatus.DRAFT;
 
   try {
     const template = await prisma.template.create({
       data: {
         shopId,
-        name: trimmedName,
-        status: resolvedStatus,
+        name: nameResult.name,
+        status: resolveStatus(status),
         rows: [],
       },
     });
@@ -82,5 +97,92 @@ export async function getTemplateByIdForShop(shopId: string, id?: string) {
 
   return prisma.template.findFirst({
     where: { id, shopId },
+  });
+}
+
+/**
+ * Persist an existing template's editor state (Editor Step 9.5). Shop isolation
+ * (priority #1) is enforced by reading the row through `where: { id, shopId }`
+ * first — one shop can never save into another's template; an unowned/unknown id
+ * returns `{ ok: false }` and writes nothing.
+ *
+ * Server-side re-validation, never trusting the client:
+ *  - the untrusted `rows` payload is narrowed with `parseRows`;
+ *  - the row count is re-checked against the shared `MAX_TEMPLATE_ROWS` (the
+ *    editor's UI cap is UX; this is the real gate, like the reducer);
+ *  - provisional row keys are finalized server-authoritatively against the
+ *    persisted rows (`reconcileRowKeys`): a row already in the saved template
+ *    keeps its finalized key; a brand-new row's key is slugged from its label.
+ *
+ * `name` / `status` are optional — updated only when provided (and valid), so the
+ * editor can save rows alone without disturbing them.
+ */
+export async function saveTemplateForShop(
+  shopId: string,
+  id: string,
+  {
+    rows,
+    name,
+    status,
+  }: { rows?: unknown; name?: unknown; status?: unknown },
+) {
+  const incoming = parseRows(rows);
+  if (incoming.length > MAX_TEMPLATE_ROWS) {
+    return {
+      ok: false as const,
+      error: `A template can have at most ${MAX_TEMPLATE_ROWS} rows`,
+    };
+  }
+
+  // Read the owned row first — both the ownership gate and the source of the
+  // persisted keys the finalization reconciles against.
+  const existing = await prisma.template.findFirst({ where: { id, shopId } });
+  if (!existing) {
+    return { ok: false as const, error: "Template not found" };
+  }
+
+  const finalizedRows: EditorRow[] = reconcileRowKeys(
+    incoming,
+    parseRows(existing.rows),
+  );
+
+  const data: Prisma.TemplateUpdateInput = {
+    rows: finalizedRows as unknown as Prisma.InputJsonValue,
+  };
+
+  if (name !== undefined) {
+    const nameResult = validateName(name);
+    if (!nameResult.ok) {
+      return { ok: false as const, error: nameResult.error };
+    }
+    data.name = nameResult.name;
+  }
+  if (status !== undefined) {
+    data.status = resolveStatus(status);
+  }
+
+  try {
+    // Ownership is already confirmed above; update by the unique id.
+    const template = await prisma.template.update({ where: { id }, data });
+    return { ok: true as const, data: template };
+  } catch {
+    return { ok: false as const, error: "Could not save template" };
+  }
+}
+
+/**
+ * Store the Shopify metaobject GID + handle on a template after a successful
+ * sync (Editor Step 9.5). Shop-scoped via `updateMany` so the write itself
+ * carries `shopId` (priority #1) — a no-op if the template is not this shop's.
+ */
+export async function setTemplateMetaobjectRef(
+  shopId: string,
+  id: string,
+  gid: string,
+  handle: string,
+) {
+  return prisma.template.updateMany({
+    where: { id, shopId },
+    data: { shopifyMetaobjectGid: gid, shopifyMetaobjectHandle: handle },
   });
 }

@@ -1,3 +1,4 @@
+import { useState } from "react";
 import type {
   ActionFunctionArgs,
   HeadersFunction,
@@ -13,12 +14,19 @@ import {
 import type { TemplateStatus } from "@prisma/client";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import { authenticate } from "../../shopify.server";
-import { upsertShop } from "../../models/shop.server";
+import { setShopMetaobjectDefinitionGid, upsertShop } from "../../models/shop.server";
 import {
   createTemplateForShop,
   getTemplateByIdForShop,
+  saveTemplateForShop,
+  setTemplateMetaobjectRef,
 } from "../../models/template.server";
-import { normalizeRows } from "../../utils/rows";
+import {
+  ensureSpecTableDefinition,
+  readSpecTableMetaobjectRows,
+  upsertSpecTableMetaobject,
+} from "../../shopify/metaobjects.server";
+import { parseRows } from "../../utils/rowsSerialize";
 import { SpecTableEditor } from "./SpecTableEditor";
 
 const STATUS_OPTIONS = [
@@ -52,34 +60,81 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
 };
 
 export const action = async ({ request, params }: ActionFunctionArgs) => {
-  const { session } = await authenticate.admin(request);
+  const { session, admin } = await authenticate.admin(request);
   const shop = await upsertShop(session);
 
-  // Only template creation is wired up for now. The edit/update + rows-save
-  // path (with server-side row-count validation and metaobject sync) lands with
-  // the Save wiring in Step 6 — Step 1 keeps row edits in local React state.
-  if (params.id !== "new") {
-    return { ok: false as const, error: "Editing is not available yet" };
+  // Creating a new template still comes from the FormData create form.
+  if (params.id === "new") {
+    const formData = await request.formData();
+    const name = formData.get("name");
+    const status = formData.get("status");
+
+    const result = await createTemplateForShop(shop.id, { name, status });
+
+    if (!result.ok) {
+      return {
+        ok: false as const,
+        error: result.error,
+        values: {
+          name: typeof name === "string" ? name : "",
+          status: typeof status === "string" ? status : "DRAFT",
+        },
+      };
+    }
+
+    return redirect(`/app/templates/${result.data.id}`);
   }
 
-  const formData = await request.formData();
-  const name = formData.get("name");
-  const status = formData.get("status");
+  // Editing an existing template: the editor submits the row array (plus name +
+  // status) as JSON so the structured valueParts are not flattened by FormData.
+  const payload = (await request.json()) as {
+    rows?: unknown;
+    name?: unknown;
+    status?: unknown;
+  };
 
-  const result = await createTemplateForShop(shop.id, { name, status });
-
+  // Step 1 — save to Postgres (the source of truth). Shop isolation, the 200-row
+  // cap, per-row validation, and key finalization are all enforced server-side
+  // inside saveTemplateForShop.
+  const result = await saveTemplateForShop(shop.id, params.id as string, payload);
   if (!result.ok) {
-    return {
-      ok: false as const,
-      error: result.error,
-      values: {
-        name: typeof name === "string" ? name : "",
-        status: typeof status === "string" ? status : "DRAFT",
-      },
-    };
+    return { ok: false as const, error: result.error };
   }
 
-  return redirect(`/app/templates/${result.data.id}`);
+  // Step 2 — sync the storefront delivery copy to the app-owned metaobject. This
+  // runs AFTER the durable Postgres write; a failure here warns but never loses
+  // the saved rows. Step 3 reads it back to confirm the row JSON round-tripped.
+  let syncError: string | null = null;
+  let roundTripOk: boolean | null = null;
+  try {
+    const definitionGid = await ensureSpecTableDefinition(
+      admin,
+      shop.metaobjectDefinitionGid,
+    );
+    if (definitionGid !== shop.metaobjectDefinitionGid) {
+      await setShopMetaobjectDefinitionGid(shop.id, definitionGid);
+    }
+
+    const savedRows = parseRows(result.data.rows);
+    const { gid, handle } = await upsertSpecTableMetaobject(admin, {
+      templateId: result.data.id,
+      status: result.data.status,
+      rows: savedRows,
+      updatedAt: new Date().toISOString(),
+    });
+    await setTemplateMetaobjectRef(shop.id, result.data.id, gid, handle);
+
+    const readback = await readSpecTableMetaobjectRows(admin, result.data.id);
+    roundTripOk =
+      readback !== null &&
+      JSON.stringify(readback) === JSON.stringify(savedRows);
+  } catch (error) {
+    console.error("[template save] metaobject sync failed", error);
+    syncError =
+      "Saved to the database, but storefront sync failed. Try saving again.";
+  }
+
+  return { ok: true as const, status: result.data.status, syncError, roundTripOk };
 };
 
 function NewTemplateForm() {
@@ -151,8 +206,12 @@ function NewTemplateForm() {
 function TemplateOverview({
   template,
 }: {
-  template: { name: string; status: TemplateStatus; rows: unknown };
+  template: { id: string; name: string; status: TemplateStatus; rows: unknown };
 }) {
+  // Bumped to remount the editor (resetting its reducer to the persisted rows)
+  // when the merchant discards unsaved changes — no reducer reset action needed.
+  const [editorNonce, setEditorNonce] = useState(0);
+
   return (
     <s-page heading={template.name}>
       <s-link slot="breadcrumb-actions" href="/app/templates">
@@ -170,7 +229,13 @@ function TemplateOverview({
       </s-section>
 
       <s-section heading="Rows">
-        <SpecTableEditor initialRows={normalizeRows(template.rows)} />
+        <SpecTableEditor
+          key={editorNonce}
+          initialName={template.name}
+          initialStatus={template.status}
+          initialRows={parseRows(template.rows)}
+          onDiscard={() => setEditorNonce((nonce) => nonce + 1)}
+        />
       </s-section>
     </s-page>
   );

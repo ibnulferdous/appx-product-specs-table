@@ -172,15 +172,6 @@ export function normalizeValueParts(parts: ValuePart[]): ValuePart[] {
 }
 
 /**
- * Normalize a persisted/loaded `rows` value into the editor array. Step 1 only
- * needs the array shape; full per-row validation lands with the Save wiring in
- * Step 6.
- */
-export function normalizeRows(value: unknown): EditorRow[] {
-  return Array.isArray(value) ? (value as EditorRow[]) : [];
-}
-
-/**
  * Insert `row` directly below the row with id `afterId` (the active row). Falls
  * back to appending when there is no active row, or the active row is gone. Used
  * by every toolbar row-creating action so new rows land next to the merchant's
