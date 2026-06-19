@@ -535,6 +535,146 @@ describe("rowsReducer", () => {
     });
   });
 
+  describe("MOVE_ROW (drag reorder)", () => {
+    const four = (): EditorRow[] => [
+      dataRow("a", "a"),
+      dataRow("b", "b"),
+      dataRow("c", "c"),
+      dataRow("d", "d"),
+    ];
+
+    it("moves a row down (drop the first row onto the last)", () => {
+      expect(
+        rowsReducer(four(), {
+          type: "MOVE_ROW",
+          activeId: "a",
+          overId: "d",
+        }).map((r) => r.id),
+      ).toEqual(["b", "c", "d", "a"]);
+    });
+
+    it("moves a row up (drop the last row onto the first)", () => {
+      expect(
+        rowsReducer(four(), {
+          type: "MOVE_ROW",
+          activeId: "d",
+          overId: "a",
+        }).map((r) => r.id),
+      ).toEqual(["d", "a", "b", "c"]);
+    });
+
+    it("swaps with an adjacent neighbour", () => {
+      expect(
+        rowsReducer(four(), {
+          type: "MOVE_ROW",
+          activeId: "b",
+          overId: "c",
+        }).map((r) => r.id),
+      ).toEqual(["a", "c", "b", "d"]);
+    });
+
+    it("moves a middle row to the first position", () => {
+      expect(
+        rowsReducer(four(), {
+          type: "MOVE_ROW",
+          activeId: "c",
+          overId: "a",
+        }).map((r) => r.id),
+      ).toEqual(["c", "a", "b", "d"]);
+    });
+
+    it("moves a middle row to the last position", () => {
+      expect(
+        rowsReducer(four(), {
+          type: "MOVE_ROW",
+          activeId: "b",
+          overId: "d",
+        }).map((r) => r.id),
+      ).toEqual(["a", "c", "d", "b"]);
+    });
+
+    it("no-ops (same reference) when dropped back onto itself", () => {
+      const rows = four();
+      expect(
+        rowsReducer(rows, { type: "MOVE_ROW", activeId: "b", overId: "b" }),
+      ).toBe(rows);
+    });
+
+    it("no-ops (same reference) when the active id is unknown", () => {
+      const rows = four();
+      expect(
+        rowsReducer(rows, { type: "MOVE_ROW", activeId: "ghost", overId: "a" }),
+      ).toBe(rows);
+    });
+
+    it("no-ops (same reference) when the over id is unknown", () => {
+      const rows = four();
+      expect(
+        rowsReducer(rows, { type: "MOVE_ROW", activeId: "a", overId: "ghost" }),
+      ).toBe(rows);
+    });
+
+    it("moves a SECTION_HEADER row like any other row (sections are not groups)", () => {
+      const rows: EditorRow[] = [
+        sectionRow("s", "display"),
+        dataRow("a", "a"),
+        dataRow("b", "b"),
+      ];
+      // Drag the section header down below the two data rows.
+      expect(
+        rowsReducer(rows, { type: "MOVE_ROW", activeId: "s", overId: "b" }).map(
+          (r) => r.id,
+        ),
+      ).toEqual(["a", "b", "s"]);
+    });
+
+    it("moves a data row past a section without absorbing it (the section stays put)", () => {
+      const rows: EditorRow[] = [
+        dataRow("a", "a"),
+        sectionRow("s", "display"),
+        dataRow("b", "b"),
+      ];
+      // Drag 'b' above the section; only 'b' moves, the section is untouched.
+      const result = rowsReducer(rows, {
+        type: "MOVE_ROW",
+        activeId: "b",
+        overId: "s",
+      });
+      expect(result.map((r) => r.id)).toEqual(["a", "b", "s"]);
+      expect(result.find((r) => r.id === "s")?.rowType).toBe("SECTION_HEADER");
+    });
+
+    it("never changes any row's id or key (reorder is not re-keying — data-model §12)", () => {
+      const rows: EditorRow[] = [
+        dataRow("a", "battery_life"),
+        sectionRow("s", "performance"),
+        dataRow("c", "chipset"),
+      ];
+      const result = rowsReducer(rows, {
+        type: "MOVE_ROW",
+        activeId: "c",
+        overId: "a",
+      });
+      // The same id↔key pairing survives the move, just reordered.
+      expect(result.map((r) => [r.id, r.key])).toEqual([
+        ["c", "chipset"],
+        ["a", "battery_life"],
+        ["s", "performance"],
+      ]);
+    });
+
+    it("does not mutate the input array (the reducer is pure)", () => {
+      const rows = four();
+      const result = rowsReducer(rows, {
+        type: "MOVE_ROW",
+        activeId: "a",
+        overId: "d",
+      });
+      expect(rows.map((r) => r.id)).toEqual(["a", "b", "c", "d"]);
+      expect(result).not.toBe(rows);
+    });
+  });
+
   describe("the 200-row cap", () => {
     it("refuses ADD_ROW / ADD_SECTION / DUPLICATE_ROW at the cap (the reducer is the real gate, not the disabled button)", () => {
       const full: EditorRow[] = Array.from(

@@ -191,6 +191,21 @@ function insertRowAfter(
   return next;
 }
 
+/**
+ * Move the element at `from` to index `to`, returning a fresh array (the source
+ * is never mutated). Pure and framework-free on purpose: the reducer module owns
+ * the array-move so `rows.ts` stays free of any UI dependency (`@dnd-kit` lives in
+ * the editor component, not here). Matches `@dnd-kit/sortable`'s `arrayMove`
+ * semantics — `to` is the target index in the original array — so the editor can
+ * hand the reducer the dragged row's destination index directly.
+ */
+function arrayMove<T>(list: T[], from: number, to: number): T[] {
+  const next = list.slice();
+  const [moved] = next.splice(from, 1);
+  next.splice(to, 0, moved);
+  return next;
+}
+
 export type RowsAction =
   // `afterId` inserts the new row below the active row; omit/null to append.
   | { type: "ADD_ROW"; id: string; afterId?: string | null }
@@ -219,7 +234,15 @@ export type RowsAction =
       partIndex: number;
       offset: number;
       part: ValuePart;
-    };
+    }
+  // Reorder (Step 10): move the row with id `activeId` to the array position of
+  // the row with id `overId`. Display order IS the array index (data-model §6/§11),
+  // so reordering is a pure array-move and nothing else: row `key`/`id` are left
+  // untouched (data-model §12 — a finalized key is never re-derived, and order is
+  // not identity). Keyed by id, not index, because @dnd-kit reports the dragged and
+  // target row ids; the reducer resolves the indices at apply time so a stale index
+  // can never slip in. No cap check — a reorder can never grow the array.
+  | { type: "MOVE_ROW"; activeId: string; overId: string };
 
 export function rowsReducer(
   rows: EditorRow[],
@@ -356,6 +379,19 @@ export function rowsReducer(
         // keeps the ≥1-TEXT guarantee; it never strips the new atomic part.
         return { ...row, valueParts: normalizeValueParts(next) };
       });
+
+    case "MOVE_ROW": {
+      const from = rows.findIndex((row) => row.id === action.activeId);
+      const to = rows.findIndex((row) => row.id === action.overId);
+      // No-op on an unknown id or a drop back onto the origin: return the SAME
+      // array reference so a same-spot drag never flips the editor's dirty flag.
+      // The moved element keeps its identity (id) and meaning (key); only its
+      // array position — i.e. its display order — changes.
+      if (from === -1 || to === -1 || from === to) {
+        return rows;
+      }
+      return arrayMove(rows, from, to);
+    }
 
     default:
       return rows;

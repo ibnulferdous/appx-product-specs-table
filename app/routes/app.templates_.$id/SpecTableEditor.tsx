@@ -15,6 +15,21 @@ import {
 } from "react";
 import { useFetcher, useRevalidator } from "react-router";
 import { SaveBar, useAppBridge } from "@shopify/app-bridge-react";
+import {
+  DndContext,
+  PointerSensor,
+  closestCenter,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+  type DraggableSyntheticListeners,
+} from "@dnd-kit/core";
+import {
+  SortableContext,
+  useSortable,
+  verticalListSortingStrategy,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 import type { loader as metafieldDefinitionsLoader } from "../app.metafield-definitions";
 import type { action as templateAction } from "./route";
 import {
@@ -127,14 +142,32 @@ function readValue(event: Event): string {
 const RowGutter = memo(function RowGutter({
   rowNumber,
   onDelete,
+  dragListeners,
+  setActivatorNodeRef,
+  isDragging,
 }: {
   rowNumber: number;
   onDelete: () => void;
+  // dnd-kit pointer listeners + activator ref for the ⠿ handle (Step 10). Mouse
+  // drag only: we spread the sensor `listeners` (pointer handlers) but NOT the
+  // dnd-kit `attributes` (role/tabIndex) — the handle stays aria-hidden and
+  // non-focusable this step; keyboard reorder + a11y are Step 11.
+  dragListeners?: DraggableSyntheticListeners;
+  setActivatorNodeRef?: (element: HTMLElement | null) => void;
+  isDragging?: boolean;
 }) {
   return (
     <s-stack direction="block" gap="small-300" alignItems="center">
-      {/* Drag-to-reorder is wired in Step 4; inert + hidden from AT for now. */}
-      <span className={styles.dragHandle} aria-hidden="true">
+      {/* Drag-to-reorder handle (Step 10, mouse only). Still aria-hidden and not
+          keyboard-focusable — Step 11 adds the keyboard sensor + announcements
+          and makes this reachable before App Store review. */}
+      <span
+        className={styles.dragHandle}
+        data-dragging={isDragging ? "true" : undefined}
+        aria-hidden="true"
+        ref={setActivatorNodeRef}
+        {...dragListeners}
+      >
         <s-icon type="drag-handle" color="subdued"></s-icon>
       </span>
       <s-button
@@ -508,6 +541,26 @@ const EditorRowItem = memo(function EditorRowItem({
     [onCaretChange, row.id],
   );
 
+  // Sortable wiring (Step 10). `useSortable` is called inside the row so its
+  // per-frame transform re-renders only this row from within the hook (React.memo
+  // gates parent-prop re-renders, not hook-driven ones). The transform/transition
+  // are applied to the plain wrapper <div>; the Polaris `<s-*>` hosts are left
+  // untouched. `listeners`/`setActivatorNodeRef` go to the ⠿ handle only, so the
+  // value cell keeps its caret/selection behaviour. `attributes` are deliberately
+  // NOT spread (mouse only — see RowGutter).
+  const {
+    setNodeRef,
+    setActivatorNodeRef,
+    listeners,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: row.id });
+  const dragStyle = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+  };
+
   const rowClass = isActive ? `${styles.row} ${styles.rowActive}` : styles.row;
   const isSection = row.rowType === "SECTION_HEADER";
 
@@ -515,7 +568,13 @@ const EditorRowItem = memo(function EditorRowItem({
     // Activation is a focus side effect: clicking any cell/control focuses it,
     // and keyboard tabbing focuses it too — both bubble to onFocusCapture. A
     // bare onClick here would be a non-interactive-div a11y violation.
-    <div id={`row-${row.id}`} className={rowClass} onFocusCapture={handleActivate}>
+    <div
+      id={`row-${row.id}`}
+      ref={setNodeRef}
+      style={dragStyle}
+      className={isDragging ? `${rowClass} ${styles.rowDragging}` : rowClass}
+      onFocusCapture={handleActivate}
+    >
       <s-box
         padding="small-200"
         borderRadius="base"
@@ -526,7 +585,13 @@ const EditorRowItem = memo(function EditorRowItem({
           gap="base"
           alignItems="center"
         >
-          <RowGutter rowNumber={rowNumber} onDelete={handleDelete} />
+          <RowGutter
+            rowNumber={rowNumber}
+            onDelete={handleDelete}
+            dragListeners={listeners}
+            setActivatorNodeRef={setActivatorNodeRef}
+            isDragging={isDragging}
+          />
 
           {isSection ? (
             <s-box background="subdued" borderRadius="base" padding="small-200">
@@ -627,6 +692,26 @@ export function SpecTableEditor({
   const atCap = rows.length >= MAX_TEMPLATE_ROWS;
   useCapturedTokenColor();
   const shopify = useAppBridge();
+
+  // --- Drag reorder (Step 10) ----------------------------------------------
+  // Mouse only: a single PointerSensor with a small activation distance so a
+  // click on the ⠿ handle (e.g. nothing happens) is not mistaken for a drag and
+  // a real drag starts cleanly. No KeyboardSensor — keyboard reorder + a11y are
+  // Step 11. On drop, translate the dragged/target row ids into a pure array-move
+  // via MOVE_ROW; the reducer no-ops a drop onto the origin, so a same-spot drag
+  // never flips the dirty flag.
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
+  );
+  const handleDragEnd = useCallback((event: DragEndEvent) => {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+    dispatch({
+      type: "MOVE_ROW",
+      activeId: String(active.id),
+      overId: String(over.id),
+    });
+  }, []);
 
   // --- Save (Step 9.5) -----------------------------------------------------
   // Persist the row array (plus name + status, ridden along unchanged for now) to
@@ -1083,20 +1168,36 @@ export function SpecTableEditor({
             <s-text type="strong">Value</s-text>
           </s-grid>
 
-          {rows.map((row, index) => (
-            <EditorRowItem
-              key={row.id}
-              row={row}
-              index={index}
-              isActive={row.id === activeRowId}
-              onActivate={onActivate}
-              onDelete={onDelete}
-              dispatch={dispatch}
-              onCaretChange={onCaretChange}
-              onEditPart={handleEditPart}
-              pendingCaret={pendingCaretByRowRef.current}
-            />
-          ))}
+          {/* DndContext/SortableContext render no DOM of their own, so the rows
+              stay direct children of the <s-stack> and its gap is preserved.
+              Sortable items are keyed by row id (stable identity), so React
+              preserves each row's instance — and its caret/focus state — across a
+              reorder. */}
+          <DndContext
+            sensors={sensors}
+            collisionDetection={closestCenter}
+            onDragEnd={handleDragEnd}
+          >
+            <SortableContext
+              items={rows.map((row) => row.id)}
+              strategy={verticalListSortingStrategy}
+            >
+              {rows.map((row, index) => (
+                <EditorRowItem
+                  key={row.id}
+                  row={row}
+                  index={index}
+                  isActive={row.id === activeRowId}
+                  onActivate={onActivate}
+                  onDelete={onDelete}
+                  dispatch={dispatch}
+                  onCaretChange={onCaretChange}
+                  onEditPart={handleEditPart}
+                  pendingCaret={pendingCaretByRowRef.current}
+                />
+              ))}
+            </SortableContext>
+          </DndContext>
         </s-stack>
       )}
 
