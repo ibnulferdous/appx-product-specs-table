@@ -76,6 +76,12 @@ import {
   announceReorderStart,
   describeRow,
 } from "../../utils/reorderAnnouncements";
+import {
+  cellCount,
+  gridToPastedRows,
+  parseClipboardTable,
+} from "../../utils/clipboardTable";
+import { extractHtmlTableGrid } from "../../utils/clipboardTableDom";
 import styles from "./SpecTableEditor.module.css";
 
 // The field the merchant has picked in the "Insert field" modal (Step 9). A
@@ -1156,6 +1162,80 @@ export function SpecTableEditor({
     setSearchQuery("");
   }, [shopify]);
 
+  // --- Bulk table paste → rows (Steps 12–13) -------------------------------
+  // Capture a multi-cell table pasted into the editor (Excel / Google Sheets / a
+  // web <table>), parse it to a 2-D grid (Step 12), and bulk-insert it as rows
+  // (Step 13): first column → Label, remaining columns → a TEXT/LINE_BREAK Value
+  // (`gridToPastedRows`), appended via PASTE_ROWS with the 200-row cap enforced
+  // on paste (truncate to the room remaining + tell the merchant what was
+  // dropped). The in-cell single-value paste (Step 4) is left untouched:
+  // ValueCell.handlePaste calls preventDefault() unconditionally, so this bubbled
+  // container handler sees event.defaultPrevented and skips it; a paste into a
+  // Label/Section field (or the modal search field, if it bubbles here at all) is
+  // skipped by its target.
+  const handleContainerPaste = useCallback(
+    (event: ClipboardEvent<HTMLDivElement>) => {
+      const data = event.clipboardData;
+      if (!data) return; // no clipboard payload (e.g. a programmatic paste)
+      if (event.defaultPrevented) return; // an in-cell value paste already ran
+      const target = event.target as Element | null;
+      if (
+        target?.closest?.(
+          "s-text-field, s-search-field, input, textarea, [contenteditable]",
+        )
+      ) {
+        return; // a single-field edit, not a bulk-table gesture
+      }
+      const grid = parseClipboardTable({
+        htmlGrid: extractHtmlTableGrid(data.getData("text/html")),
+        text: data.getData("text/plain"),
+      });
+      // A bulk gesture needs an actual multi-cell table (>1 cell — more than one
+      // row OR column); ignore an empty or degenerate 1×1 grid (a lone value is
+      // not a bulk paste). A single-column, many-row paste IS admitted.
+      if (cellCount(grid) <= 1) return;
+
+      // We are consuming this paste now (after the skip-guards above).
+      event.preventDefault();
+
+      const room = MAX_TEMPLATE_ROWS - rowsRef.current.length;
+      if (room <= 0) {
+        shopify.toast.show(
+          `Row limit reached — no rows added (max ${MAX_TEMPLATE_ROWS})`,
+          { isError: true },
+        );
+        return;
+      }
+
+      const built = gridToPastedRows(grid);
+      const toInsert = built.slice(0, room);
+      const dropped = built.length - toInsert.length;
+      const pasted = toInsert.map((row) => ({ id: newRowId(), ...row }));
+      dispatch({ type: "PASTE_ROWS", rows: pasted });
+
+      // Focus affordance: set the last inserted row active and scroll it into
+      // view so the merchant sees where the pasted block landed.
+      const lastId = pasted[pasted.length - 1]?.id;
+      if (lastId) {
+        scrollTargetRef.current = lastId;
+        setActiveRowId(lastId);
+      }
+
+      const added = toInsert.length;
+      const rowWord = added === 1 ? "row" : "rows";
+      if (dropped > 0) {
+        shopify.toast.show(
+          `Added ${added} ${rowWord} — ${dropped} over the ${MAX_TEMPLATE_ROWS}-row limit ${
+            dropped === 1 ? "wasn't" : "weren't"
+          } added`,
+        );
+      } else {
+        shopify.toast.show(`Added ${added} ${rowWord}`);
+      }
+    },
+    [shopify],
+  );
+
   const canDuplicate = activeRowId !== null && !atCap;
   // The native fields visible in the modal for the current search query (Step 7).
   // Cheap over 13 entries, so computed inline each render rather than memoized.
@@ -1186,125 +1266,129 @@ export function SpecTableEditor({
     visibleMetafields.length === 0;
 
   return (
-    <s-stack direction="block" gap="base">
-      <s-grid gridTemplateColumns="1fr auto" gap="base" alignItems="center">
-        {/* `<s-stack direction="inline">`, not `<s-button-group>`: the group's
+    // Plain wrapper purely to capture a bulk table paste over the whole editor
+    // subtree (Step 12). `onPaste` is not a typed prop on <s-stack>, and a plain
+    // <div> gives full React ClipboardEvent typing; it adds no layout of its own.
+    <div onPaste={handleContainerPaste}>
+      <s-stack direction="block" gap="base">
+        <s-grid gridTemplateColumns="1fr auto" gap="base" alignItems="center">
+          {/* `<s-stack direction="inline">`, not `<s-button-group>`: the group's
             shadow root has no <slot> in the current Polaris CDN build, so its
             child buttons render at 0×0 / vanish. Do not switch to a button
             group — it regresses (confirmed in-browser, Step 2). */}
-        <s-stack direction="inline" gap="base" alignItems="center">
-          <s-button
-            variant="primary"
-            icon="plus"
-            onClick={handleAddRow}
-            {...(atCap ? { disabled: true } : {})}
-          >
-            Add row
-          </s-button>
-          <s-button
-            variant="secondary"
-            icon="layout-section"
-            onClick={handleAddSection}
-            {...(atCap ? { disabled: true } : {})}
-          >
-            Add section
-          </s-button>
-          <s-button
-            variant="secondary"
-            icon="duplicate"
-            onClick={handleDuplicate}
-            {...(canDuplicate ? {} : { disabled: true })}
-          >
-            Duplicate
-          </s-button>
-          {/* Disabled until a value cell has an active caret — a pill can only be
+          <s-stack direction="inline" gap="base" alignItems="center">
+            <s-button
+              variant="primary"
+              icon="plus"
+              onClick={handleAddRow}
+              {...(atCap ? { disabled: true } : {})}
+            >
+              Add row
+            </s-button>
+            <s-button
+              variant="secondary"
+              icon="layout-section"
+              onClick={handleAddSection}
+              {...(atCap ? { disabled: true } : {})}
+            >
+              Add section
+            </s-button>
+            <s-button
+              variant="secondary"
+              icon="duplicate"
+              onClick={handleDuplicate}
+              {...(canDuplicate ? {} : { disabled: true })}
+            >
+              Duplicate
+            </s-button>
+            {/* Disabled until a value cell has an active caret — a pill can only be
               dropped into a value, never a label. Opens the Insert field modal. */}
-          <s-button
-            variant="secondary"
-            icon="metafields"
-            onClick={handleOpenInsertField}
-            {...(hasActiveCaret ? {} : { disabled: true })}
+            <s-button
+              variant="secondary"
+              icon="metafields"
+              onClick={handleOpenInsertField}
+              {...(hasActiveCaret ? {} : { disabled: true })}
+            >
+              Insert field
+            </s-button>
+          </s-stack>
+          <s-text
+            color={atCap ? undefined : "subdued"}
+            tone={atCap ? "critical" : undefined}
+            fontVariantNumeric="tabular-nums"
           >
-            Insert field
-          </s-button>
-        </s-stack>
-        <s-text
-          color={atCap ? undefined : "subdued"}
-          tone={atCap ? "critical" : undefined}
-          fontVariantNumeric="tabular-nums"
-        >
-          Rows: {rows.length} / {MAX_TEMPLATE_ROWS}
-        </s-text>
-      </s-grid>
+            Rows: {rows.length} / {MAX_TEMPLATE_ROWS}
+          </s-text>
+        </s-grid>
 
-      {atCap ? (
-        <s-banner tone="warning">
-          You have reached the {MAX_TEMPLATE_ROWS} row limit. Delete a row
-          before adding, duplicating, or adding a section.
-        </s-banner>
-      ) : null}
+        {atCap ? (
+          <s-banner tone="warning">
+            You have reached the {MAX_TEMPLATE_ROWS} row limit. Delete a row
+            before adding, duplicating, or adding a section.
+          </s-banner>
+        ) : null}
 
-      {rows.length === 0 ? (
-        <s-box padding="base" borderWidth="base" borderRadius="base">
-          <s-paragraph>
-            No rows yet. Choose Add row to start building your spec table.
-          </s-paragraph>
-        </s-box>
-      ) : (
-        <s-stack direction="block" gap="small-300">
-          <s-grid gridTemplateColumns={DATA_COLUMNS} gap="base">
-            <s-text> </s-text>
-            <s-text type="strong">Label</s-text>
-            <s-text type="strong">Value</s-text>
-          </s-grid>
+        {rows.length === 0 ? (
+          <s-box padding="base" borderWidth="base" borderRadius="base">
+            <s-paragraph>
+              No rows yet. Choose Add row to start building your spec table.
+            </s-paragraph>
+          </s-box>
+        ) : (
+          <s-stack direction="block" gap="small-300">
+            <s-grid gridTemplateColumns={DATA_COLUMNS} gap="base">
+              <s-text> </s-text>
+              <s-text type="strong">Label</s-text>
+              <s-text type="strong">Value</s-text>
+            </s-grid>
 
-          {/* DndContext/SortableContext render no DOM of their own, so the rows
+            {/* DndContext/SortableContext render no DOM of their own, so the rows
               stay direct children of the <s-stack> and its gap is preserved.
               Sortable items are keyed by row id (stable identity), so React
               preserves each row's instance — and its caret/focus state — across a
               reorder. */}
-          <DndContext
-            sensors={sensors}
-            collisionDetection={closestCenter}
-            onDragEnd={handleDragEnd}
-            accessibility={{
-              announcements: dndAnnouncements,
-              screenReaderInstructions: REORDER_INSTRUCTIONS,
-            }}
-          >
-            <SortableContext
-              items={rows.map((row) => row.id)}
-              strategy={verticalListSortingStrategy}
+            <DndContext
+              sensors={sensors}
+              collisionDetection={closestCenter}
+              onDragEnd={handleDragEnd}
+              accessibility={{
+                announcements: dndAnnouncements,
+                screenReaderInstructions: REORDER_INSTRUCTIONS,
+              }}
             >
-              {rows.map((row, index) => (
-                <EditorRowItem
-                  key={row.id}
-                  row={row}
-                  index={index}
-                  isActive={row.id === activeRowId}
-                  onActivate={onActivate}
-                  onDelete={onDelete}
-                  dispatch={dispatch}
-                  onCaretChange={onCaretChange}
-                  onEditPart={handleEditPart}
-                  pendingCaret={pendingCaretByRowRef.current}
-                />
-              ))}
-            </SortableContext>
-          </DndContext>
-        </s-stack>
-      )}
+              <SortableContext
+                items={rows.map((row) => row.id)}
+                strategy={verticalListSortingStrategy}
+              >
+                {rows.map((row, index) => (
+                  <EditorRowItem
+                    key={row.id}
+                    row={row}
+                    index={index}
+                    isActive={row.id === activeRowId}
+                    onActivate={onActivate}
+                    onDelete={onDelete}
+                    dispatch={dispatch}
+                    onCaretChange={onCaretChange}
+                    onEditPart={handleEditPart}
+                    pendingCaret={pendingCaretByRowRef.current}
+                  />
+                ))}
+              </SortableContext>
+            </DndContext>
+          </s-stack>
+        )}
 
-      <s-button
-        variant="secondary"
-        icon="plus"
-        onClick={handleAppendRow}
-        {...(atCap ? { disabled: true } : {})}
-      >
-        Add row
-      </s-button>
+        <s-button
+          variant="secondary"
+          icon="plus"
+          onClick={handleAppendRow}
+          {...(atCap ? { disabled: true } : {})}
+        >
+          Add row
+        </s-button>
 
-      {/* One editor-level Insert field modal serving both create and edit (Step
+        {/* One editor-level Insert field modal serving both create and edit (Step
           6). Hidden until `shopify.modal.show` is called — from the toolbar
           button (create) or a pill click (edit); <s-modal> provides the focus
           trap, Esc, and outside-click dismiss natively. The body is a search box
@@ -1312,121 +1396,126 @@ export function SpecTableEditor({
           (Step 9); the primary button is disabled until a field is selected and
           commits create (Insert at the saved caret) or edit (Update the clicked
           pill in place). Cancel / Esc / outside-click commit nothing. */}
-      <s-modal
-        id={INSERT_FIELD_MODAL_ID}
-        heading={editTarget ? "Edit field" : "Insert field"}
-      >
-        {/* Search box (Step 7): filters BOTH lists as the merchant types. Pure
+        <s-modal
+          id={INSERT_FIELD_MODAL_ID}
+          heading={editTarget ? "Edit field" : "Insert field"}
+        >
+          {/* Search box (Step 7): filters BOTH lists as the merchant types. Pure
             presentation — it never changes `selection`, so a pick that scrolls
             out of the filtered view stays committable. */}
-        <s-stack direction="block" gap="base">
-          <s-search-field
-            ref={searchFieldRef}
-            label="Search fields"
-            labelAccessibilityVisibility="exclusive"
-            placeholder="Search fields"
-            value={searchQuery}
-            onInput={handleSearchInput}
-          />
-          {/* Native fields (Step 6). No per-section empty message: an empty
+          <s-stack direction="block" gap="base">
+            <s-search-field
+              ref={searchFieldRef}
+              label="Search fields"
+              labelAccessibilityVisibility="exclusive"
+              placeholder="Search fields"
+              value={searchQuery}
+              onInput={handleSearchInput}
+            />
+            {/* Native fields (Step 6). No per-section empty message: an empty
               native list is silent, and the single combined empty state below
               covers the case where BOTH lists are empty. */}
-          {visibleFields.length > 0 ? (
-            <s-choice-list
-              label="Product field"
-              labelAccessibilityVisibility="exclusive"
-              values={selection?.kind === "native" ? [selection.field] : []}
-              onChange={handleSelectNative}
-            >
-              {visibleFields.map((nativeField) => (
-                <s-choice key={nativeField.field} value={nativeField.field}>
-                  {nativeField.label}
-                </s-choice>
-              ))}
-            </s-choice-list>
-          ) : null}
+            {visibleFields.length > 0 ? (
+              <s-choice-list
+                label="Product field"
+                labelAccessibilityVisibility="exclusive"
+                values={selection?.kind === "native" ? [selection.field] : []}
+                onChange={handleSelectNative}
+              >
+                {visibleFields.map((nativeField) => (
+                  <s-choice key={nativeField.field} value={nativeField.field}>
+                    {nativeField.label}
+                  </s-choice>
+                ))}
+              </s-choice-list>
+            ) : null}
 
-          {/* Metafield section (Step 9): the shop's product metafield
+            {/* Metafield section (Step 9): the shop's product metafield
               definitions as a selectable list below the native fields, filtered
               by the same search box. Loading / error+Retry / empty-store states
               are carried from Step 8. The heading stays visible whenever the
               section has been requested so it is always discoverable. */}
-          {metafieldsRequested ? (
-            <s-stack direction="block" gap="small-200">
-              <s-divider />
-              <s-text type="strong">Metafields</s-text>
-              {metafieldsLoading ? (
-                <s-stack direction="inline" gap="small-200" alignItems="center">
-                  <s-spinner accessibilityLabel="Loading metafields"></s-spinner>
-                  <s-text color="subdued">Loading metafields…</s-text>
-                </s-stack>
-              ) : !metafieldsData!.ok ? (
-                <s-stack direction="block" gap="small-200">
-                  <s-banner tone="critical">{metafieldsData!.error}</s-banner>
-                  <s-stack direction="inline">
-                    <s-button onClick={loadMetafieldDefinitions}>
-                      Retry
-                    </s-button>
+            {metafieldsRequested ? (
+              <s-stack direction="block" gap="small-200">
+                <s-divider />
+                <s-text type="strong">Metafields</s-text>
+                {metafieldsLoading ? (
+                  <s-stack
+                    direction="inline"
+                    gap="small-200"
+                    alignItems="center"
+                  >
+                    <s-spinner accessibilityLabel="Loading metafields"></s-spinner>
+                    <s-text color="subdued">Loading metafields…</s-text>
                   </s-stack>
-                </s-stack>
-              ) : metafieldCount === 0 ? (
-                <s-text color="subdued">
-                  This store has no product metafield definitions.
-                </s-text>
-              ) : visibleMetafields.length > 0 ? (
-                <s-choice-list
-                  label="Metafield"
-                  labelAccessibilityVisibility="exclusive"
-                  values={
-                    selection?.kind === "metafield"
-                      ? [metafieldChoiceValue(selection)]
-                      : []
-                  }
-                  onChange={handleSelectMetafield}
-                >
-                  {visibleMetafields.map((definition) => (
-                    <s-choice
-                      key={definition.id || metafieldChoiceValue(definition)}
-                      value={metafieldChoiceValue(definition)}
-                    >
-                      {definition.name}
-                    </s-choice>
-                  ))}
-                </s-choice-list>
-              ) : null}
-            </s-stack>
-          ) : null}
+                ) : !metafieldsData!.ok ? (
+                  <s-stack direction="block" gap="small-200">
+                    <s-banner tone="critical">{metafieldsData!.error}</s-banner>
+                    <s-stack direction="inline">
+                      <s-button onClick={loadMetafieldDefinitions}>
+                        Retry
+                      </s-button>
+                    </s-stack>
+                  </s-stack>
+                ) : metafieldCount === 0 ? (
+                  <s-text color="subdued">
+                    This store has no product metafield definitions.
+                  </s-text>
+                ) : visibleMetafields.length > 0 ? (
+                  <s-choice-list
+                    label="Metafield"
+                    labelAccessibilityVisibility="exclusive"
+                    values={
+                      selection?.kind === "metafield"
+                        ? [metafieldChoiceValue(selection)]
+                        : []
+                    }
+                    onChange={handleSelectMetafield}
+                  >
+                    {visibleMetafields.map((definition) => (
+                      <s-choice
+                        key={definition.id || metafieldChoiceValue(definition)}
+                        value={metafieldChoiceValue(definition)}
+                      >
+                        {definition.name}
+                      </s-choice>
+                    ))}
+                  </s-choice-list>
+                ) : null}
+              </s-stack>
+            ) : null}
 
-          {/* Single combined empty state (Step 9): only when a query filters
+            {/* Single combined empty state (Step 9): only when a query filters
               both loaded lists to nothing. */}
-          {showCombinedEmpty ? (
-            <s-paragraph color="subdued">
-              No fields match “{searchQuery.trim()}”.
-            </s-paragraph>
-          ) : null}
-        </s-stack>
-        <s-button
-          slot="primary-action"
-          variant="primary"
-          onClick={handleCommit}
-          {...(selection ? {} : { disabled: true })}
-        >
-          {editTarget ? "Update" : "Insert"}
-        </s-button>
-        <s-button slot="secondary-actions" onClick={handleCancelInsertField}>
-          Cancel
-        </s-button>
-      </s-modal>
+            {showCombinedEmpty ? (
+              <s-paragraph color="subdued">
+                No fields match “{searchQuery.trim()}”.
+              </s-paragraph>
+            ) : null}
+          </s-stack>
+          <s-button
+            slot="primary-action"
+            variant="primary"
+            onClick={handleCommit}
+            {...(selection ? {} : { disabled: true })}
+          >
+            {editTarget ? "Update" : "Insert"}
+          </s-button>
+          <s-button slot="secondary-actions" onClick={handleCancelInsertField}>
+            Cancel
+          </s-button>
+        </s-modal>
 
-      {/* The App Bridge contextual save bar (Step 9.5). Shown while the row array
+        {/* The App Bridge contextual save bar (Step 9.5). Shown while the row array
           differs from the last-saved baseline; Save persists to Postgres + the
           storefront metaobject, Discard remounts the editor to the saved rows. */}
-      <SaveBar id={SAVE_BAR_ID} open={isDirty}>
-        <button variant="primary" onClick={handleSave} loading={saving}>
-          Save
-        </button>
-        <button onClick={handleDiscard}>Discard</button>
-      </SaveBar>
-    </s-stack>
+        <SaveBar id={SAVE_BAR_ID} open={isDirty}>
+          <button variant="primary" onClick={handleSave} loading={saving}>
+            Save
+          </button>
+          <button onClick={handleDiscard}>Discard</button>
+        </SaveBar>
+      </s-stack>
+    </div>
   );
 }

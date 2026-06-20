@@ -242,7 +242,20 @@ export type RowsAction =
   // not identity). Keyed by id, not index, because @dnd-kit reports the dragged and
   // target row ids; the reducer resolves the indices at apply time so a stale index
   // can never slip in. No cap check — a reorder can never grow the array.
-  | { type: "MOVE_ROW"; activeId: string; overId: string };
+  | { type: "MOVE_ROW"; activeId: string; overId: string }
+  // Bulk-insert rows from a clipboard paste (Step 13). The component parses the
+  // clipboard to a grid (Step 12), maps it to `{ label, valueParts }` content via
+  // `gridToPastedRows`, and mints a fresh `id` per row (the lone non-deterministic
+  // input, kept out of the reducer like every other row-creating action). The
+  // reducer appends them in order as DATA rows, seeding a *provisional* key per
+  // row exactly like ADD_ROW (`row`, `row_2`, … — finalized from the label at
+  // Save, never here), and CAP-TRUNCATES defensively: only `MAX_TEMPLATE_ROWS -
+  // length` rows are added (the handler computes the dropped-count for its toast;
+  // this truncation is the belt-and-suspenders gate, like ADD_ROW's cap refusal).
+  | {
+      type: "PASTE_ROWS";
+      rows: Array<{ id: string; label: string; valueParts: ValuePart[] }>;
+    };
 
 export function rowsReducer(
   rows: EditorRow[],
@@ -395,6 +408,38 @@ export function rowsReducer(
         return rows;
       }
       return arrayMove(rows, from, to);
+    }
+
+    case "PASTE_ROWS": {
+      // Cap is the gate (truncate, don't refuse): take only the room remaining.
+      // When nothing fits (at the cap) or there is nothing to paste, return the
+      // SAME array reference so an at-cap paste never flips the editor's dirty
+      // flag — mirroring MOVE_ROW's same-reference no-op.
+      const room = MAX_TEMPLATE_ROWS - rows.length;
+      if (room <= 0 || action.rows.length === 0) {
+        return rows;
+      }
+      // Provisional keys, accumulated: seed each new row's key from the shared
+      // fallback base and add it to the working set as we go, so the batch's keys
+      // are mutually unique AND unique against the existing rows (`row`, `row_2`,
+      // …). No slugifyKey here — finalization from the label happens at Save
+      // (reconcileRowKeys, server-side). All pasted rows are DATA rows; a grid
+      // cannot express a SECTION_HEADER, so paste never creates one.
+      const taken = collectKeys(rows);
+      const next = rows.slice();
+      for (const pasted of action.rows.slice(0, room)) {
+        const key = uniqueKey(FALLBACK_KEY_BASE, taken);
+        taken.add(key);
+        next.push({
+          id: pasted.id,
+          key,
+          rowType: "DATA",
+          label: pasted.label,
+          valueParts: normalizeValueParts(pasted.valueParts),
+          hideWhenEmpty: true,
+        });
+      }
+      return next;
     }
 
     default:

@@ -691,6 +691,126 @@ describe("rowsReducer", () => {
     });
   });
 
+  describe("PASTE_ROWS (bulk insert from paste)", () => {
+    const pastedRow = (
+      id: string,
+      label: string,
+      valueParts: ValuePart[] = [{ type: "TEXT", text: "" }],
+    ) => ({ id, label, valueParts });
+
+    it("appends the pasted rows in order as DATA rows with hideWhenEmpty", () => {
+      const result = rowsReducer([], {
+        type: "PASTE_ROWS",
+        rows: [
+          pastedRow("p1", "RAM", [{ type: "TEXT", text: "16 GB" }]),
+          pastedRow("p2", "Storage", [{ type: "TEXT", text: "1 TB" }]),
+        ],
+      });
+      expect(result).toEqual([
+        {
+          id: "p1",
+          key: "row",
+          rowType: "DATA",
+          label: "RAM",
+          valueParts: [{ type: "TEXT", text: "16 GB" }],
+          hideWhenEmpty: true,
+        },
+        {
+          id: "p2",
+          key: "row_2",
+          rowType: "DATA",
+          label: "Storage",
+          valueParts: [{ type: "TEXT", text: "1 TB" }],
+          hideWhenEmpty: true,
+        },
+      ]);
+    });
+
+    it("preserves the action's row ids verbatim", () => {
+      const result = rowsReducer([], {
+        type: "PASTE_ROWS",
+        rows: [pastedRow("uuid-1", "A"), pastedRow("uuid-2", "B")],
+      });
+      expect(result.map((r) => r.id)).toEqual(["uuid-1", "uuid-2"]);
+    });
+
+    it("seeds provisional keys (row, row_2, …) — not label slugs — unique against existing rows and within the batch", () => {
+      const existing = [dataRow("a", "row"), dataRow("b", "ram")];
+      const result = rowsReducer(existing, {
+        type: "PASTE_ROWS",
+        rows: [pastedRow("p1", "RAM"), pastedRow("p2", "Storage")],
+      });
+      // The new keys step past the existing `row`/`ram` AND each other; they are
+      // NOT slugged from the labels (RAM would slug to `ram`, which already exists).
+      expect(result.slice(2).map((r) => r.key)).toEqual(["row_2", "row_3"]);
+    });
+
+    it("normalizes each pasted row's valueParts (merges adjacent TEXT, keeps line breaks)", () => {
+      const result = rowsReducer([], {
+        type: "PASTE_ROWS",
+        rows: [
+          pastedRow("p1", "L", [
+            { type: "TEXT", text: "a" },
+            { type: "TEXT", text: "b" },
+          ]),
+          pastedRow("p2", "M", [
+            { type: "TEXT", text: "x" },
+            lineBreak,
+            { type: "TEXT", text: "y" },
+          ]),
+        ],
+      }) as DataRow[];
+      expect(result[0].valueParts).toEqual([{ type: "TEXT", text: "ab" }]);
+      expect(result[1].valueParts).toEqual([
+        { type: "TEXT", text: "x" },
+        lineBreak,
+        { type: "TEXT", text: "y" },
+      ]);
+    });
+
+    it("truncates to the room remaining under the cap", () => {
+      const almost: EditorRow[] = Array.from(
+        { length: MAX_TEMPLATE_ROWS - 2 },
+        (_, i) => dataRow(String(i), `row_${i}`),
+      );
+      const result = rowsReducer(almost, {
+        type: "PASTE_ROWS",
+        rows: [
+          pastedRow("p1", "A"),
+          pastedRow("p2", "B"),
+          pastedRow("p3", "C"), // over the cap — dropped
+        ],
+      });
+      expect(result).toHaveLength(MAX_TEMPLATE_ROWS);
+      expect(result.slice(-2).map((r) => r.id)).toEqual(["p1", "p2"]);
+    });
+
+    it("returns the SAME array reference at the cap (nothing fits → never dirty)", () => {
+      const full: EditorRow[] = Array.from(
+        { length: MAX_TEMPLATE_ROWS },
+        (_, i) => dataRow(String(i), `row_${i}`),
+      );
+      expect(
+        rowsReducer(full, { type: "PASTE_ROWS", rows: [pastedRow("p1", "A")] }),
+      ).toBe(full);
+    });
+
+    it("returns the SAME array reference for an empty paste", () => {
+      const rows = [dataRow("a", "a")];
+      expect(rowsReducer(rows, { type: "PASTE_ROWS", rows: [] })).toBe(rows);
+    });
+
+    it("does not mutate the input array (the reducer is pure)", () => {
+      const rows: EditorRow[] = [dataRow("a", "a")];
+      const result = rowsReducer(rows, {
+        type: "PASTE_ROWS",
+        rows: [pastedRow("p1", "A")],
+      });
+      expect(rows).toHaveLength(1);
+      expect(result).not.toBe(rows);
+    });
+  });
+
   describe("the 200-row cap", () => {
     it("refuses ADD_ROW / ADD_SECTION / DUPLICATE_ROW at the cap (the reducer is the real gate, not the disabled button)", () => {
       const full: EditorRow[] = Array.from(
