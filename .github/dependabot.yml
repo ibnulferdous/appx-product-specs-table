@@ -1,0 +1,26 @@
+# Dependabot keeps dependencies and CI actions patched automatically.
+# Security-relevant for an App Store app: surfaces vulnerable transitive deps
+# (Shopify SDK, Prisma, React Router) as PRs rather than silent risk.
+# Docs: https://docs.github.com/code-security/dependabot/dependabot-version-updates
+version: 2
+updates:
+  # Application dependencies (npm)
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+    groups:
+      # Bundle routine minor/patch bumps into a single PR to cut review load
+      # for a solo maintainer. Majors still arrive as individual PRs.
+      minor-and-patch:
+        update-types:
+          - "minor"
+          - "patch"
+
+  # CI workflow action versions (actions/checkout, actions/setup-node, …)
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
