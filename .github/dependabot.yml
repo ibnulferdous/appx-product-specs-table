@@ -17,6 +17,14 @@ updates:
         update-types:
           - "minor"
           - "patch"
+    ignore:
+      # Pinned to the v6 major by maintainer decision (2026-06-20). The minimatch
+      # ReDoS fix only exists in the breaking v8 line; risk accepted because this
+      # is dev-only lint tooling that never ships to production. v6.x patch/minor
+      # bumps are still offered. Revisit alongside an ESLint config migration.
+      - dependency-name: "@typescript-eslint/*"
+        update-types:
+          - "version-update:semver-major"
 
   # CI workflow action versions (actions/checkout, actions/setup-node, …)
   - package-ecosystem: "github-actions"
