@@ -122,7 +122,10 @@ export function mapDefinitionsResponse(
 }
 
 /** Narrow a single response's `pageInfo` for the pagination loop. */
-function readPageInfo(json: unknown): { hasNextPage: boolean; endCursor: string | null } {
+function readPageInfo(json: unknown): {
+  hasNextPage: boolean;
+  endCursor: string | null;
+} {
   if (!isRecord(json)) return { hasNextPage: false, endCursor: null };
   const data = json.data;
   if (!isRecord(data)) return { hasNextPage: false, endCursor: null };

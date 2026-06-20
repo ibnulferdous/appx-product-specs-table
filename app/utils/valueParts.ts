@@ -139,7 +139,8 @@ export function planSelectionDelete(
       const delEnd = Math.min(to, end);
       if (delEnd > delStart) {
         const kept =
-          part.text.slice(0, delStart - start) + part.text.slice(delEnd - start);
+          part.text.slice(0, delStart - start) +
+          part.text.slice(delEnd - start);
         textEdits.push({ partIndex: i, text: kept });
       }
       pos = end;

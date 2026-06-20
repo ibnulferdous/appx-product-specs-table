@@ -14,7 +14,10 @@ import {
 import type { TemplateStatus } from "@prisma/client";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import { authenticate } from "../../shopify.server";
-import { setShopMetaobjectDefinitionGid, upsertShop } from "../../models/shop.server";
+import {
+  setShopMetaobjectDefinitionGid,
+  upsertShop,
+} from "../../models/shop.server";
 import {
   createTemplateForShop,
   getTemplateByIdForShop,
@@ -96,7 +99,11 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
   // Step 1 — save to Postgres (the source of truth). Shop isolation, the 200-row
   // cap, per-row validation, and key finalization are all enforced server-side
   // inside saveTemplateForShop.
-  const result = await saveTemplateForShop(shop.id, params.id as string, payload);
+  const result = await saveTemplateForShop(
+    shop.id,
+    params.id as string,
+    payload,
+  );
   if (!result.ok) {
     return { ok: false as const, error: result.error };
   }
@@ -134,7 +141,12 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
       "Saved to the database, but storefront sync failed. Try saving again.";
   }
 
-  return { ok: true as const, status: result.data.status, syncError, roundTripOk };
+  return {
+    ok: true as const,
+    status: result.data.status,
+    syncError,
+    roundTripOk,
+  };
 };
 
 function NewTemplateForm() {

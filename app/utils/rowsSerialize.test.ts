@@ -1,9 +1,5 @@
 import { describe, it, expect } from "vitest";
-import {
-  finalizeRowKeys,
-  parseRows,
-  reconcileRowKeys,
-} from "./rowsSerialize";
+import { finalizeRowKeys, parseRows, reconcileRowKeys } from "./rowsSerialize";
 import type { DataRow, EditorRow, SectionHeaderRow } from "./rows";
 
 // --- fixtures ---------------------------------------------------------------
@@ -188,7 +184,9 @@ describe("reconcileRowKeys", () => {
   });
 
   it("restores the persisted key for an existing row, ignoring a stale client key and a changed label", () => {
-    const persisted: EditorRow[] = [dataRow("r1", "battery_life", "Battery Life")];
+    const persisted: EditorRow[] = [
+      dataRow("r1", "battery_life", "Battery Life"),
+    ];
     // Client still carries the pre-finalization provisional key AND a new label.
     const incoming: EditorRow[] = [dataRow("r1", "row", "Cell Life")];
     const result = reconcileRowKeys(incoming, persisted);

@@ -133,8 +133,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     product: responseJson!.data!.productCreate!.product,
     variant:
       variantResponseJson!.data!.productVariantsBulkUpdate!.productVariants,
-    metaobject:
-      metaobjectResponseJson!.data!.metaobjectUpsert!.metaobject,
+    metaobject: metaobjectResponseJson!.data!.metaobjectUpsert!.metaobject,
   };
 };
 

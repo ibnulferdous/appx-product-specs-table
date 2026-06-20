@@ -53,7 +53,10 @@ function describeById(
 }
 
 /** "Picked up …" — the drag has started; tell the user how to drive it. */
-export function announceReorderStart(rows: EditorRow[], activeId: string): string {
+export function announceReorderStart(
+  rows: EditorRow[],
+  activeId: string,
+): string {
   const active = describeById(rows, activeId);
   return `Picked up ${active.text}. Use the arrow keys to move it, then press space or enter to drop it, or escape to cancel.`;
 }
@@ -65,9 +68,7 @@ export function announceReorderOver(
   overId: string | null,
 ): string {
   const active = describeById(rows, activeId);
-  const overIndex = overId
-    ? rows.findIndex((row) => row.id === overId)
-    : -1;
+  const overIndex = overId ? rows.findIndex((row) => row.id === overId) : -1;
   if (overIndex === -1) {
     return `${capitalize(active.text)} is no longer over a drop position.`;
   }
@@ -81,9 +82,7 @@ export function announceReorderEnd(
   overId: string | null,
 ): string {
   const active = describeById(rows, activeId);
-  const overIndex = overId
-    ? rows.findIndex((row) => row.id === overId)
-    : -1;
+  const overIndex = overId ? rows.findIndex((row) => row.id === overId) : -1;
   if (overIndex === -1) {
     return `${capitalize(active.text)} was dropped.`;
   }

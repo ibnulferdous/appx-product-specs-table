@@ -39,7 +39,9 @@ const rows: EditorRow[] = [
 
 describe("describeRow", () => {
   it("describes a labelled data row as '<label> row'", () => {
-    expect(describeRow(dataRow("r1", "Battery Life"), 2)).toBe("Battery Life row");
+    expect(describeRow(dataRow("r1", "Battery Life"), 2)).toBe(
+      "Battery Life row",
+    );
   });
 
   it("describes a labelled section as '<label> section'", () => {
@@ -67,7 +69,9 @@ describe("announceReorderStart", () => {
   });
 
   it("uses the section descriptor for a section row", () => {
-    expect(announceReorderStart(rows, "s1")).toContain("Picked up Display section.");
+    expect(announceReorderStart(rows, "s1")).toContain(
+      "Picked up Display section.",
+    );
   });
 });
 

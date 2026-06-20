@@ -248,11 +248,7 @@ function ValueCell({
   // cell resolves the token's part index from the live DOM and reports it plus the
   // clicked value part itself, so the container can pre-select the right field —
   // native OR metafield (Step 9).
-  onEditPart: (
-    rowId: string,
-    partIndex: number,
-    part: ValuePart,
-  ) => void;
+  onEditPart: (rowId: string, partIndex: number, part: ValuePart) => void;
   // Caret positions queued by the modal Insert, keyed by row id. Consumed once.
   pendingCaret: Map<string, number>;
 }) {
@@ -315,7 +311,12 @@ function ValueCell({
           current.type === "TEXT" &&
           part.text !== current.text
         ) {
-          dispatch({ type: "SET_VALUE_TEXT", id: row.id, partIndex, text: part.text });
+          dispatch({
+            type: "SET_VALUE_TEXT",
+            id: row.id,
+            partIndex,
+            text: part.text,
+          });
         }
       });
     } else {
@@ -367,7 +368,10 @@ function ValueCell({
           applyRangeDelete(range.from, range.to);
           return;
         }
-        const { partIndex, offset } = linearToPartOffset(valueParts, range.from);
+        const { partIndex, offset } = linearToPartOffset(
+          valueParts,
+          range.from,
+        );
         pendingCaretRef.current = range.from + 1; // after the new break
         dispatch({
           type: "INSERT_VALUE_PART_AT",
@@ -400,7 +404,11 @@ function ValueCell({
       if (!plan) return;
       event.preventDefault();
       pendingCaretRef.current = plan.caretLinear;
-      dispatch({ type: "REMOVE_VALUE_PART", id: row.id, partIndex: plan.removeIndex });
+      dispatch({
+        type: "REMOVE_VALUE_PART",
+        id: row.id,
+        partIndex: plan.removeIndex,
+      });
     },
     [applyRangeDelete, dispatch, row.id, valueParts],
   );
@@ -448,7 +456,10 @@ function ValueCell({
       const partIndex = partIndexOfElement(host, tokenEl);
       if (partIndex === null) return;
       const part = valueParts[partIndex];
-      if (!part || (part.type !== "SHOPIFY_FIELD" && part.type !== "METAFIELD")) {
+      if (
+        !part ||
+        (part.type !== "SHOPIFY_FIELD" && part.type !== "METAFIELD")
+      ) {
         return;
       }
       onEditPart(row.id, partIndex, part);
@@ -693,7 +704,9 @@ function useCapturedTokenColor() {
     const read = () => {
       const shadow = (probe as HTMLElement & { shadowRoot?: ShadowRoot })
         .shadowRoot;
-      for (const node of shadow ? Array.from(shadow.querySelectorAll("*")) : []) {
+      for (const node of shadow
+        ? Array.from(shadow.querySelectorAll("*"))
+        : []) {
         const color = getComputedStyle(node).color;
         const rgb = color.match(/\d+/g);
         // Skip the inherited near-black; the link text node carries the blue.
@@ -746,7 +759,9 @@ export function SpecTableEditor({
   // so a same-spot drag never flips the dirty flag.
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
-    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates,
+    }),
   );
   const handleDragEnd = useCallback((event: DragEndEvent) => {
     const { active, over } = event;
@@ -809,9 +824,11 @@ export function SpecTableEditor({
     // which the EditorRow interface union does not match structurally (interfaces
     // carry no implicit index signature).
     saveFetcher.submit(
-      { rows, name: initialName, status: initialStatus } as unknown as Parameters<
-        typeof saveFetcher.submit
-      >[0],
+      {
+        rows,
+        name: initialName,
+        status: initialStatus,
+      } as unknown as Parameters<typeof saveFetcher.submit>[0],
       { method: "post", encType: "application/json" },
     );
   }, [saveFetcher, rows, initialName, initialStatus]);
@@ -910,18 +927,15 @@ export function SpecTableEditor({
   // its reconcile effect. Created once.
   const pendingCaretByRowRef = useRef<Map<string, number>>(new Map());
 
-  const onCaretChange = useCallback(
-    (rowId: string, linear: number | null) => {
-      if (linear === null) {
-        activeCaretRef.current = null;
-        setHasActiveCaret(false);
-      } else {
-        activeCaretRef.current = { rowId, linear };
-        setHasActiveCaret(true);
-      }
-    },
-    [],
-  );
+  const onCaretChange = useCallback((rowId: string, linear: number | null) => {
+    if (linear === null) {
+      activeCaretRef.current = null;
+      setHasActiveCaret(false);
+    } else {
+      activeCaretRef.current = { rowId, linear };
+      setHasActiveCaret(true);
+    }
+  }, []);
 
   // A freshly created row should scroll into view once it has rendered.
   const scrollTargetRef = useRef<string | null>(null);
@@ -953,15 +967,12 @@ export function SpecTableEditor({
 
   // Toolbar inserts land directly below the active row (append when none); the
   // new row becomes active and is scrolled into view.
-  const insertActive = useCallback(
-    (action: (newId: string) => RowsAction) => {
-      const id = newRowId();
-      scrollTargetRef.current = id;
-      dispatch(action(id));
-      setActiveRowId(id);
-    },
-    [],
-  );
+  const insertActive = useCallback((action: (newId: string) => RowsAction) => {
+    const id = newRowId();
+    scrollTargetRef.current = id;
+    dispatch(action(id));
+    setActiveRowId(id);
+  }, []);
 
   const handleAddRow = useCallback(
     () => insertActive((id) => ({ type: "ADD_ROW", id, afterId: activeRowId })),
@@ -976,7 +987,11 @@ export function SpecTableEditor({
     if (!activeRowId) {
       return;
     }
-    insertActive((id) => ({ type: "DUPLICATE_ROW", id: activeRowId, newId: id }));
+    insertActive((id) => ({
+      type: "DUPLICATE_ROW",
+      id: activeRowId,
+      newId: id,
+    }));
   }, [insertActive, activeRowId]);
 
   // The bottom button always appends to the end, regardless of the active row.
@@ -1224,8 +1239,8 @@ export function SpecTableEditor({
 
       {atCap ? (
         <s-banner tone="warning">
-          You have reached the {MAX_TEMPLATE_ROWS} row limit. Delete a row before
-          adding, duplicating, or adding a section.
+          You have reached the {MAX_TEMPLATE_ROWS} row limit. Delete a row
+          before adding, duplicating, or adding a section.
         </s-banner>
       ) : null}
 
@@ -1341,11 +1356,7 @@ export function SpecTableEditor({
               <s-divider />
               <s-text type="strong">Metafields</s-text>
               {metafieldsLoading ? (
-                <s-stack
-                  direction="inline"
-                  gap="small-200"
-                  alignItems="center"
-                >
+                <s-stack direction="inline" gap="small-200" alignItems="center">
                   <s-spinner accessibilityLabel="Loading metafields"></s-spinner>
                   <s-text color="subdued">Loading metafields…</s-text>
                 </s-stack>
@@ -1353,7 +1364,9 @@ export function SpecTableEditor({
                 <s-stack direction="block" gap="small-200">
                   <s-banner tone="critical">{metafieldsData!.error}</s-banner>
                   <s-stack direction="inline">
-                    <s-button onClick={loadMetafieldDefinitions}>Retry</s-button>
+                    <s-button onClick={loadMetafieldDefinitions}>
+                      Retry
+                    </s-button>
                   </s-stack>
                 </s-stack>
               ) : metafieldCount === 0 ? (

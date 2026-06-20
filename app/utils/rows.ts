@@ -256,7 +256,11 @@ export function rowsReducer(
         return rows;
       }
       const key = uniqueKey(FALLBACK_KEY_BASE, collectKeys(rows));
-      return insertRowAfter(rows, createDataRow(action.id, key), action.afterId);
+      return insertRowAfter(
+        rows,
+        createDataRow(action.id, key),
+        action.afterId,
+      );
     }
 
     case "ADD_SECTION": {

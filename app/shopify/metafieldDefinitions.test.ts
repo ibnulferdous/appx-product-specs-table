@@ -71,9 +71,9 @@ describe("mapDefinitionsResponse", () => {
 
   it("returns [] when metafieldDefinitions / edges are missing", () => {
     expect(mapDefinitionsResponse({ data: {} })).toEqual([]);
-    expect(mapDefinitionsResponse({ data: { metafieldDefinitions: {} } })).toEqual(
-      [],
-    );
+    expect(
+      mapDefinitionsResponse({ data: { metafieldDefinitions: {} } }),
+    ).toEqual([]);
   });
 
   it("returns [] for non-object input (null, string, array, undefined)", () => {
@@ -86,7 +86,12 @@ describe("mapDefinitionsResponse", () => {
   it("drops a node missing namespace or key (the value-part contract fields)", () => {
     const json = responseWith([
       node("custom", "ok", "Ok", "single_line_text_field"),
-      { id: "x", key: "no_namespace", name: "No namespace", type: { name: "t" } },
+      {
+        id: "x",
+        key: "no_namespace",
+        name: "No namespace",
+        type: { name: "t" },
+      },
       { id: "y", namespace: "custom", name: "No key", type: { name: "t" } },
       { id: "z", namespace: "", key: "", name: "Empty", type: { name: "t" } },
     ]);
@@ -97,7 +102,13 @@ describe("mapDefinitionsResponse", () => {
   it("falls back name to `namespace.key` when name is missing or empty", () => {
     const json = responseWith([
       { id: "a", namespace: "custom", key: "ram", type: { name: "t" } },
-      { id: "b", namespace: "custom", key: "rom", name: "", type: { name: "t" } },
+      {
+        id: "b",
+        namespace: "custom",
+        key: "rom",
+        name: "",
+        type: { name: "t" },
+      },
     ]);
 
     expect(mapDefinitionsResponse(json).map((d) => d.name)).toEqual([

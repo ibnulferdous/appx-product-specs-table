@@ -20,11 +20,24 @@ function dataRow(
   key: string,
   valueParts: ValuePart[] = [{ type: "TEXT", text: "" }],
 ): DataRow {
-  return { id, key, rowType: "DATA", label: "", valueParts, hideWhenEmpty: true };
+  return {
+    id,
+    key,
+    rowType: "DATA",
+    label: "",
+    valueParts,
+    hideWhenEmpty: true,
+  };
 }
 
 function sectionRow(id: string, key: string): SectionHeaderRow {
-  return { id, key, rowType: "SECTION_HEADER", label: "", hideWhenEmpty: false };
+  return {
+    id,
+    key,
+    rowType: "SECTION_HEADER",
+    label: "",
+    hideWhenEmpty: false,
+  };
 }
 
 const metafield: ValuePart = {
@@ -518,7 +531,10 @@ describe("rowsReducer", () => {
         offset: 0,
         part: metafield,
       }) as DataRow[];
-      expect(result[0].valueParts).toEqual([{ type: "TEXT", text: "x" }, metafield]);
+      expect(result[0].valueParts).toEqual([
+        { type: "TEXT", text: "x" },
+        metafield,
+      ]);
     });
 
     it("does nothing to SECTION_HEADER rows (they have no value cell)", () => {
@@ -693,9 +709,9 @@ describe("rowsReducer", () => {
         { length: MAX_TEMPLATE_ROWS - 1 },
         (_, i) => dataRow(String(i), `row_${i}`),
       );
-      expect(
-        rowsReducer(almost, { type: "ADD_ROW", id: "last" }),
-      ).toHaveLength(MAX_TEMPLATE_ROWS);
+      expect(rowsReducer(almost, { type: "ADD_ROW", id: "last" })).toHaveLength(
+        MAX_TEMPLATE_ROWS,
+      );
     });
   });
 

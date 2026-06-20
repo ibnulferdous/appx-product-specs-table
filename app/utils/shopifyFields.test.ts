@@ -48,7 +48,10 @@ describe("NATIVE_SHOPIFY_FIELDS", () => {
 
 describe("findNativeField", () => {
   it("returns the matching entry for a known token", () => {
-    expect(findNativeField("price")).toEqual({ field: "price", label: "Price" });
+    expect(findNativeField("price")).toEqual({
+      field: "price",
+      label: "Price",
+    });
     expect(findNativeField("compare_at_price")).toEqual({
       field: "compare_at_price",
       label: "Compare-at price",

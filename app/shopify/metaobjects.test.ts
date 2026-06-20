@@ -62,7 +62,9 @@ describe("readDefinitionCreateId", () => {
       readDefinitionCreateId({
         data: {
           metaobjectDefinitionCreate: {
-            metaobjectDefinition: { id: "gid://shopify/MetaobjectDefinition/9" },
+            metaobjectDefinition: {
+              id: "gid://shopify/MetaobjectDefinition/9",
+            },
             userErrors: [],
           },
         },
@@ -142,7 +144,9 @@ describe("readMetaobjectRows", () => {
   });
 
   it("returns null when the metaobject, field, or JSON is missing/broken", () => {
-    expect(readMetaobjectRows({ data: { metaobjectByHandle: null } })).toBeNull();
+    expect(
+      readMetaobjectRows({ data: { metaobjectByHandle: null } }),
+    ).toBeNull();
     expect(
       readMetaobjectRows({
         data: { metaobjectByHandle: { rows: null } },

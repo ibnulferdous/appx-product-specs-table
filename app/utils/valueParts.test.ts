@@ -10,7 +10,11 @@ import type { ValuePart } from "./rows";
 
 // "Up to [token] hours": the canonical multi-part value. The token occupies one
 // linear slot, so the linear length is 6 + 1 + 6 = 13.
-const token: ValuePart = { type: "METAFIELD", namespace: "custom", key: "battery_life" };
+const token: ValuePart = {
+  type: "METAFIELD",
+  namespace: "custom",
+  key: "battery_life",
+};
 const upToHours: ValuePart[] = [
   { type: "TEXT", text: "Up to " },
   token,
@@ -34,10 +38,16 @@ describe("linearLength", () => {
 describe("partOffsetToLinear / linearToPartOffset round-trip", () => {
   it("maps a TEXT caret to its linear index and back", () => {
     expect(partOffsetToLinear(upToHours, 0, 3)).toBe(3);
-    expect(linearToPartOffset(upToHours, 3)).toEqual({ partIndex: 0, offset: 3 });
+    expect(linearToPartOffset(upToHours, 3)).toEqual({
+      partIndex: 0,
+      offset: 3,
+    });
     // Start of the trailing TEXT (just after the token) is linear 7.
     expect(partOffsetToLinear(upToHours, 2, 0)).toBe(7);
-    expect(linearToPartOffset(upToHours, 7)).toEqual({ partIndex: 2, offset: 0 });
+    expect(linearToPartOffset(upToHours, 7)).toEqual({
+      partIndex: 2,
+      offset: 0,
+    });
   });
 });
 
@@ -45,7 +55,10 @@ describe("linearToPartOffset", () => {
   it("resolves the end of a TEXT run into that run (so the TEXT is split, not skipped)", () => {
     // Linear 6 is both the end of "Up to " and the boundary before the token;
     // it must resolve into the TEXT (offset 6) so an insert splits there.
-    expect(linearToPartOffset(upToHours, 6)).toEqual({ partIndex: 0, offset: 6 });
+    expect(linearToPartOffset(upToHours, 6)).toEqual({
+      partIndex: 0,
+      offset: 6,
+    });
   });
 
   it("resolves a caret inside an empty TEXT run that sits after a token", () => {
@@ -59,7 +72,10 @@ describe("linearToPartOffset", () => {
   });
 
   it("returns the end position (partIndex === length) past the last slot", () => {
-    expect(linearToPartOffset(upToHours, 13)).toEqual({ partIndex: 2, offset: 6 });
+    expect(linearToPartOffset(upToHours, 13)).toEqual({
+      partIndex: 2,
+      offset: 6,
+    });
   });
 });
 

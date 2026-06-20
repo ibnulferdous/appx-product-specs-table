@@ -15,9 +15,9 @@ function getRowCount(rows: unknown): number {
 // Shared name validation, used by both create and save so the two paths can never
 // drift apart. Returns the trimmed name, or an error string for the caller to
 // surface in the standard `{ ok: false, error }` shape.
-function validateName(name: unknown):
-  | { ok: true; name: string }
-  | { ok: false; error: string } {
+function validateName(
+  name: unknown,
+): { ok: true; name: string } | { ok: false; error: string } {
   const trimmed = typeof name === "string" ? name.trim() : "";
   if (trimmed.length === 0) {
     return { ok: false, error: "Name is required" };
@@ -120,11 +120,7 @@ export async function getTemplateByIdForShop(shopId: string, id?: string) {
 export async function saveTemplateForShop(
   shopId: string,
   id: string,
-  {
-    rows,
-    name,
-    status,
-  }: { rows?: unknown; name?: unknown; status?: unknown },
+  { rows, name, status }: { rows?: unknown; name?: unknown; status?: unknown },
 ) {
   const incoming = parseRows(rows);
   if (incoming.length > MAX_TEMPLATE_ROWS) {

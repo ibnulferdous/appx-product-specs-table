@@ -42,8 +42,7 @@ export function tokenLabels(part: FieldPart): TokenLabels {
 
 function isTokenElement(node: Node): node is HTMLElement {
   return (
-    node.nodeType === 1 &&
-    (node as HTMLElement).dataset?.token !== undefined
+    node.nodeType === 1 && (node as HTMLElement).dataset?.token !== undefined
   );
 }
 
@@ -368,7 +367,10 @@ function needsTrailingFiller(parts: ValuePart[]): boolean {
  * otherwise matches state) so the filler never lingers to paint a phantom line
  * once the merchant types on the new line.
  */
-export function syncTrailingFiller(host: HTMLElement, parts: ValuePart[]): void {
+export function syncTrailingFiller(
+  host: HTMLElement,
+  parts: ValuePart[],
+): void {
   const last = host.lastChild;
   const hasFiller = last != null && isFiller(last);
   const need = needsTrailingFiller(parts);
@@ -388,9 +390,7 @@ export function syncTrailingFiller(host: HTMLElement, parts: ValuePart[]): void 
  * selection is ranged or not adjacent to an atomic.
  */
 export function updateCaretOnState(host: HTMLElement): void {
-  for (const marked of Array.from(
-    host.querySelectorAll("[data-caret-on]"),
-  )) {
+  for (const marked of Array.from(host.querySelectorAll("[data-caret-on]"))) {
     marked.removeAttribute("data-caret-on");
   }
   const range = getSelectionLinearRange(host);

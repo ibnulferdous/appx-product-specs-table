@@ -247,7 +247,12 @@ export async function upsertSpecTableMetaobject(
     status,
     rows,
     updatedAt,
-  }: { templateId: string; status: string; rows: EditorRow[]; updatedAt: string },
+  }: {
+    templateId: string;
+    status: string;
+    rows: EditorRow[];
+    updatedAt: string;
+  },
 ): Promise<{ gid: string; handle: string }> {
   const handle = specTableHandle(templateId);
   const response = await admin.graphql(METAOBJECT_UPSERT_MUTATION, {

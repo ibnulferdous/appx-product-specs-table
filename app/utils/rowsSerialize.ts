@@ -121,9 +121,7 @@ function parseRow(value: unknown): EditorRow | null {
  */
 export function parseRows(value: unknown): EditorRow[] {
   if (!Array.isArray(value)) return [];
-  return value
-    .map(parseRow)
-    .filter((row): row is EditorRow => row !== null);
+  return value.map(parseRow).filter((row): row is EditorRow => row !== null);
 }
 
 // --- Key finalization -----------------------------------------------------
