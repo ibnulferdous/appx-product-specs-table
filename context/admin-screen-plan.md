@@ -1,13 +1,17 @@
 # Appx — MVP Admin Screen Plan
 
+> **Design reference.** The Template Editor (Screen 3) is visually specified by the mockup at `design/spec-editor-mockup.html` (rendered preview: `design/specs editor design.jpg`). This plan was reconciled against that mockup on **2026-06-21** (the _Spec-Editor Mockup sync_, referenced inline below). Where the mockup's **Style** and **Settings** panel _contents_ appear, treat them as **illustrative placeholders** that convey the editor's look and feel — the real, schema-backed specs are the prose in each tab section, and several panel controls are not yet functionally defined (see open questions in `progress-tracker.md`).
+
 ## Route Map
 
 ```
 /app                          → Dashboard (onboarding / status overview)
 /app/templates                → Templates List
-/app/templates/:id            → Template Editor (one route; :id = "new" to create, any template id to edit)
-/app/templates/:id/assign     → Product Assignment
+/app/templates/:id            → Template Editor — Content · Style · Settings tabs (:id = "new" to create, any template id to edit)
+/app/templates/:id/assign     → Product Assignment † (under reconsideration — see note)
 ```
+
+> † **Assignment is moving into the editor's Settings tab** (design direction, _Spec-Editor Mockup sync 2026-06-21_ — not yet fully locked). The goal is to let merchants manage a template and its assignment from a single place. Whether the standalone `/app/templates/:id/assign` route is fully **retired** (everything folds into the Settings tab) or **kept** as a deep view for the conflict warning + assignment summary is an open question (tracked in `progress-tracker.md`). The assignment **functionality** (Screen 4 below) still applies wherever it ultimately lives.
 
 ---
 
@@ -116,55 +120,69 @@ Shown when `Shop.onboardingStatus` is `DISMISSED`. This is the permanent dashboa
 
 **Purpose:** The core screen. Build or edit the template — rows, section headers, data sources, and styling — in a WYSIWYG editor that renders exactly like the storefront table.
 
-**Layout:** Single full-width WYSIWYG editor. The editing table renders with the current `TableStyling` at all times. A single view toggle has four mutually-exclusive segments — **Edit** (pencil + label), a divider, then **Desktop / Tablet / Mobile**. **Edit** is the only editable view; **Desktop / Tablet / Mobile** are read-only previews of how the table renders for shoppers at that width (mobile shows the stacked label-over-value layout). In a device view all editor chrome is hidden (toolbar, hint, gutter, add-row, edit box, field picker) and the gutter column collapses. No separate preview panel. _(View Toggle Decision, Session 2026-06-14 — supersedes the earlier "fully editable in every viewport" wording.)_
+**Layout:** A WYSIWYG editor card whose **control row** carries the tab group on the left — **Content · Style · Settings** — and the view toggle on the right. The editing table renders with the current `TableStyling` at all times and is itself the live preview.
 
-**Primary Polaris components:** `Page`, `Layout`, `Card`, `Tabs`, `TextField`, `Select`, `Button`, `Banner`
+- **Content** tab → the table fills the full width of the card (no side panel).
+- **Style** and **Settings** tabs → a **left controls panel (~300px)** appears beside the **still-live table**, so the merchant sees changes reflected in the real table as they work. This is a _controls_ rail, not a separate read-only preview — the editing table remains the preview surface.
 
-### Top bar
+The view toggle has four mutually-exclusive segments — **Edit** (pencil + label), a divider, then **Desktop / Tablet / Mobile**. **Edit** is the only editable view; **Desktop / Tablet / Mobile** are read-only previews of how the table renders for shoppers at that width (mobile shows the stacked label-over-value layout). In a device view all editor chrome is hidden (toolbar, hint, gutter, add-row, edit box, field picker) and the gutter column collapses. _(View Toggle Decision, Session 2026-06-14 — supersedes the earlier "fully editable in every viewport" wording; the mockup's CSS confirms the read-only device previews.)_
 
-- Editable template name (inline `TextField`)
-- Status badge (clickable to change between DRAFT ↔ ACTIVE)
-- Actions: Save (primary) | Save as draft | Discard
-- Unsaved changes indicator
+**Primary components:** App Bridge **contextual Save Bar** (`ui-save-bar`), Polaris web components for the page header / tab group / segmented toggle / panel controls (`s-page`, `s-button`, `s-select`, `s-menu`, `s-banner`, …), and the custom React spec-table grid.
+
+### Top bar _(Spec-Editor Mockup sync 2026-06-21 — adopts the mockup's save/status model)_
+
+- **Page header:** breadcrumb (Home → **Templates** → template name) with the template **name as the page title (H1)**. Renaming is offered as an inline title edit / a **Rename** action in the ⋯ menu (exact affordance is a small open detail).
+- **Status dropdown** (page header, right): a button showing the current status with a colored dot — **Draft / Active / Archived** — opening a menu to change it. Status is now **independent of saving** (no "Save as draft").
+- **⋯ More-actions menu** (page header, right): overflow for actions such as Duplicate, Archive, Delete, Rename.
+- **Contextual Save Bar** (App Bridge): when there are unsaved edits, the admin's contextual save bar shows **"Unsaved changes"** with **Discard** and **Save** — this _is_ the unsaved-changes indicator. In-page Save buttons and the separate **"Save as draft"** button are removed.
 
 ### Tab 1 — Content (default tab)
 
 The rows-and-sections editor — where most of the work happens. (Labeled **Content** in the editor tab bar.)
 
-- Custom React editor grid — each data row is **Label | Value**; the row's gutter pairs a persistent ⠿ drag-handle with an ✕ delete. There is no separate "Type" column — row type is conveyed visually.
-- Row types: `DATA` and `SECTION_HEADER` — visually distinct (a section renders as a single full-width header).
+- Custom React editor grid under a sticky header row (**gutter · Label · Value**) — each data row is **Label | Value**; the row's gutter pairs a persistent ⠿ drag-handle with an ✕ delete (both muted at rest, revealed on row hover/focus). There is no separate "Type" column — row type is conveyed visually.
+- Row types: `DATA` and `SECTION_HEADER` — visually distinct. A section renders as a single full-width, uppercase header with a small leading ▸ caret that is **decorative only** — sections are not collapsible groups and do not carry child rows (see the drag note below).
 - Inline editing of the label per row; the value is an inline token editor (below).
 - **Value editing — manual text + dynamic-field pills on one shared surface.** The value cell is a single inline editable surface holding plain `TEXT` and atomic dynamic-field **pills** (`SHOPIFY_FIELD` / `METAFIELD`). Manual text is typed directly. Dynamic fields are added with **pick-then-insert**, not a per-row picker:
-  - Place the caret in a value, then click **Insert field** in the toolbar (disabled when there is no active caret in a value cell). This opens a focus-trapped **modal** listing native Shopify fields and the shop's metafields.
+  - Place the caret in a value, then click **Insert field** in the toolbar (disabled when there is no active caret in a value cell). This opens a focus-trapped **modal** listing native Shopify fields and the shop's metafields, with a search box over both. _(The mockup groups the choices as **Product / Variant / Metafield**; the shipped build renders the native fields as one flat searchable list followed by a metafields section — the grouping is a design reference, not a hard requirement.)_
   - Pick a field, then **Insert** → a complete pill drops at the saved caret. **Cancel / Esc / outside-click** inserts nothing.
   - **Click an existing pill** to reopen the same modal pre-filled → **Update** replaces the field (Cancel leaves it untouched). One modal serves create and edit.
-- **Toolbar above the table** — **Add row**, **Add section**, **Duplicate** (each inserts directly below the active row, appends if none, scrolls it into view; the active row, set on click/focus, is shown with a left accent), a separator, then **Insert field** and the row-count indicator.
+- **Toolbar above the table** — **Add row** (primary), **Add section**, **Duplicate** (each inserts directly below the active row, appends if none, scrolls it into view; the active row, set on click/focus, is shown with a left accent), a separator, then **Insert field** and the row-count indicator. A one-line **hint** under the toolbar summarizes the core gestures (click a value to edit · Insert field · click a pill to change it · drag ⠿ to reorder).
 - A full-width "+ Add row" at the bottom always appends to the end.
 - Drag-and-drop row reordering (via @dnd-kit, keyboard-accessible). Sections are ordinary rows in the same array and drag exactly like data rows — a section is **not** a group, so moving it does not carry child rows with it.
 - Paste a multi-cell table copied from any website, Excel, or Google Sheets to bulk-create rows — first pasted column → label, remaining columns → manual TEXT value; 200-row cap enforced on paste.
-- Dynamic-field tokens render as **link-styled smart pills** while editing — blue link-like text, a light background on hover and when the caret sits beside the token, and a tooltip carrying `namespace · key` (METAFIELD) or the field source (SHOPIFY_FIELD). A pill is deleted **as one unit** with **Backspace / Delete** — there is no ✕ on the pill.
+- Dynamic-field tokens render as **link-styled smart pills** while editing — blue link-like text reading **"Metafield · {key}"** or **"Field · {name}"**, a light background on hover and when the caret sits beside the token, and a tooltip carrying the fuller source (`namespace · key` for METAFIELD, the product/variant field path for SHOPIFY_FIELD). A pill is deleted **as one unit** with **Backspace / Delete** — there is no ✕ on the pill.
 - Values may contain **author-intended hard line breaks** (`LINE_BREAK` parts) on top of automatic soft-wrap, rendered identically in the editor and on the storefront.
 - Row count indicator — `Rows: N / 200`; hard-block at the 200-row cap (no early-warning threshold).
 - **Undo / Redo (MVP)** — available while editing.
 
 ### Tab 2 — Style
 
-- Color pickers (Polaris `ColorPicker` or hex `TextField`): header background, label background, value background, border color, label text color, value text color
-- Font size selector (dropdown: Small / Medium / Large / Inherit)
-- Font style toggle: Normal / Bold
-- Column width ratio slider or two numeric inputs (label % + value % = 100%)
-- "Reset to theme defaults" link
-- All styling changes apply live to the WYSIWYG editor table — no save required
+Rendered in the **left controls panel** beside the live table (see Layout). The control widgets shown in the mockup are **illustrative** — the schema-backed spec (mapped to `TableStyling`) is:
 
-### Tab 3 — Settings
+- Color controls: **section-header background**, label background, value background, border color, label text color, value text color (six independent colors). _(Mockup shows these as swatch rows; "Section header" maps to `TableStyling.headerBgColor`.)_
+- Font size — Small / Medium / Large, with **theme-inherit as the unset default** (`fontSize` null = inherit). _(Mockup shows an S / M / L segmented control; it omits an explicit "Inherit" segment because inherit is the default state.)_
+- Font weight / style — `TableStyling.fontWeight` / `fontStyle`. _(Mockup shows a "Label weight" Regular / Medium / Bold segmented control; whether weight applies to the label only or label + value is not yet locked.)_
+- Column width — a single **label-width %** slider (value % = 100 − label %), persisted as `TableStyling.labelWidthPct`.
+- "Reset to theme defaults" link — retained from the original spec (not drawn in the mockup); confirm before building.
+- All styling changes apply live to the WYSIWYG editor table — no save required (saving persists `TableStyling`).
 
-Reserved tab present in the editor mockup; its contents are **not yet defined**. Define before building (tracked as an open question) — do not implement placeholder controls.
+### Tab 3 — Settings _(Spec-Editor Mockup sync 2026-06-21)_
+
+Rendered in the **left controls panel** beside the live table (see Layout). The mockup populates it with two groups; treat the specific controls as **illustrative placeholders** pending real definition:
+
+- **Product assignment** — the planned home for assignment (see Screen 4). Design direction: let merchants assign a template (to specific products or by product type) from inside the editor, so a template and its assignment are managed in one place. _(Not fully locked — whether this fully replaces the standalone `/assign` screen or coexists with it for conflicts + summary is an open question; tracked in `progress-tracker.md`.)_
+- **Display rules** — toggles shown in the mockup (e.g., _hide rows with empty values_, _show section dividers_, _show on mobile_). These are **dummy/illustrative** and **not yet specified or schema-backed**. Note: row-level empty-hiding already exists as the per-row `hideWhenEmpty` flag (`data-model.md` §7) plus the PRD's storefront auto-hide — a template-level toggle would need its own definition. Do not build these until defined (open questions in `progress-tracker.md`).
+
+A note in the panel reminds that **template status (Draft / Active) lives in the page header**, not in Settings.
 
 **State to read/write:** `Template` (rows JSON, status, name), `TableStyling`
 
 ---
 
 ## Screen 4 — Product Assignment `/app/templates/:id/assign`
+
+> **Planned relocation (Spec-Editor Mockup sync 2026-06-21).** The design direction is to surface this assignment UI **inside the editor's Settings tab** (Screen 3 → Tab 3) so merchants manage a template and its assignment in one place. This is **not fully locked**: the open question is whether the standalone `/assign` route is **retired** (everything folds into the Settings tab) or **kept** as a deep view for the conflict warning + assignment summary, which are awkward to fit in the compact Settings panel. The **functionality below still applies wherever it lands.**
 
 **Purpose:** Assign the template to products or product types, and see what is currently assigned.
 
@@ -214,6 +232,6 @@ Reserved tab present in the editor mockup; its contents are **not yet defined**.
 | 4    | Save template to Postgres               | Makes data real                               |
 | 5    | Sync to Shopify metaobject              | Unlocks storefront rendering                  |
 | 6    | Theme App Extension — render table      | Completes the vertical slice                  |
-| 7    | Product Assignment screen               | Connects template to products                 |
+| 7    | Product Assignment (editor **Settings** tab; see Screen 4 note) | Connects template to products                 |
 | 8    | Template Editor — Style tab             | Polish after slice is working                 |
 | 9    | Dashboard + onboarding checklist        | Only useful once everything above works       |
