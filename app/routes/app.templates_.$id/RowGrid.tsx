@@ -5,7 +5,7 @@ import {
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
 import { EditorRowItem } from "./EditorRowItem";
-import { REORDER_INSTRUCTIONS } from "./editorShared";
+import { DATA_COLUMNS, REORDER_INSTRUCTIONS } from "./editorShared";
 import { useScrollRegionHeight } from "./useScrollRegionHeight";
 import type { RowEngine } from "./useRowEngine";
 import styles from "./SpecTableEditor.module.css";
@@ -17,8 +17,9 @@ import styles from "./SpecTableEditor.module.css";
 // `overflow-y: auto` + the min-height floor. Because the rows now live inside this
 // `overflow-y: auto` scroller, the engine's `scrollIntoView` on a freshly added
 // row scrolls THIS list, not the iframe — the core A3 win, now on the real engine.
-// No Label/Value header: column alignment is carried by the shared grid templates
-// on each row (header removed to free vertical space). Presentational.
+// A Label/Value header tops the list — it shares the DATA_COLUMNS template +
+// inline padding with each row so the columns line up, and scrolls with the rows.
+// Presentational.
 export function RowGrid({ engine }: { engine: RowEngine }) {
   const {
     rows,
@@ -45,48 +46,66 @@ export function RowGrid({ engine }: { engine: RowEngine }) {
       className={styles.rowsScroller}
       style={{ maxHeight }}
     >
-      <s-stack direction="block" gap="base">
-        {/* DndContext/SortableContext render no DOM of their own, so the rows
-            stay direct children of the <s-stack> and its gap is preserved.
-            Sortable items are keyed by row id (stable identity), so React
-            preserves each row's instance — and its caret/focus state — across a
-            reorder. */}
-        <s-stack direction="block" gap="small-300">
-          <DndContext
-            sensors={sensors}
-            collisionDetection={closestCenter}
-            onDragEnd={handleDragEnd}
-            accessibility={{
-              announcements: dndAnnouncements,
-              screenReaderInstructions: REORDER_INSTRUCTIONS,
-            }}
+      {/* Column header — anchors the grid (Label / Value) and tells the eye it's a
+          table. The `.colHeader` div carries the hairline (Polaris `s-*` reject
+          `className`); it scrolls with the rows. Shares DATA_COLUMNS + inline
+          padding with each row so the two columns line up; the empty first cell
+          spans the gutter. */}
+      <div className={styles.colHeader}>
+        <s-box paddingBlock="small-200" paddingInline="small-200">
+          <s-grid
+            gridTemplateColumns={DATA_COLUMNS}
+            gap="base"
+            alignItems="center"
           >
-            <SortableContext
-              items={rows.map((row) => row.id)}
-              strategy={verticalListSortingStrategy}
-            >
-              {rows.map((row, index) => (
-                <EditorRowItem
-                  key={row.id}
-                  row={row}
-                  index={index}
-                  isActive={row.id === activeRowId}
-                  onActivate={onActivate}
-                  onDelete={onDelete}
-                  dispatch={dispatch}
-                  onCaretChange={onCaretChange}
-                  onEditPart={handleEditPart}
-                  pendingCaret={pendingCaret}
-                />
-              ))}
-            </SortableContext>
-          </DndContext>
-        </s-stack>
+            <span aria-hidden="true"></span>
+            <s-text color="subdued">Label</s-text>
+            <s-text color="subdued">Value</s-text>
+          </s-grid>
+        </s-box>
+      </div>
 
-        {/* Bottom add-row: a dashed full-width affordance (mockup-faithful). It
-            scrolls WITH the rows; the toolbar's primary Add row stays fixed and
-            always reachable. Always appends to the end regardless of the active
-            row. */}
+      {/* Reorderable rows. DndContext/SortableContext render no DOM of their own,
+          so each row's `.row` wrapper is a direct, flush child of the scroller —
+          rows are separated by their hairline bottom borders, not a gap. Keyed by
+          row id (stable identity) so React preserves each row's instance — and its
+          caret/focus state — across a reorder. */}
+      <DndContext
+        sensors={sensors}
+        collisionDetection={closestCenter}
+        onDragEnd={handleDragEnd}
+        accessibility={{
+          announcements: dndAnnouncements,
+          screenReaderInstructions: REORDER_INSTRUCTIONS,
+        }}
+      >
+        <SortableContext
+          items={rows.map((row) => row.id)}
+          strategy={verticalListSortingStrategy}
+        >
+          {rows.map((row, index) => (
+            <EditorRowItem
+              key={row.id}
+              row={row}
+              index={index}
+              isActive={row.id === activeRowId}
+              onActivate={onActivate}
+              onDelete={onDelete}
+              dispatch={dispatch}
+              onCaretChange={onCaretChange}
+              onEditPart={handleEditPart}
+              pendingCaret={pendingCaret}
+            />
+          ))}
+        </SortableContext>
+      </DndContext>
+
+      {/* Bottom add-row: a dashed full-width affordance (mockup-faithful), with
+          breathing room above so it doesn't butt against the last row's divider.
+          Scrolls WITH the rows; the toolbar's primary Add row stays fixed and
+          always reachable. Always appends to the end regardless of the active
+          row. */}
+      <s-box paddingBlock="base">
         <s-box
           borderStyle="dashed"
           borderWidth="base"
@@ -105,7 +124,7 @@ export function RowGrid({ engine }: { engine: RowEngine }) {
             </s-button>
           </div>
         </s-box>
-      </s-stack>
+      </s-box>
     </div>
   );
 }

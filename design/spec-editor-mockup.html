@@ -267,7 +267,6 @@ svg{display:block}
   grid-column:2 / -1;font-weight:700;letter-spacing:.01em;color:#303030;align-items:center;
   text-transform:uppercase;font-size:11.5px;color:#5c5f62
 }
-.row.section .disc{margin-right:6px}
 
 /* dynamic-field token — Claude-style inline "smart pill" (Step 4).
    Link-styled: blue text on a subtle tint, NO border, NO ✕. Text-forward to
@@ -609,7 +608,6 @@ svg{display:block}
                   <button class="btn" id="insertFieldBtn" title="Place your cursor in a value, then insert a field (disabled when no value is being edited)"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M8.5 3.5C6 3.5 6.8 8 4.5 10c2.3 2 1.5 6.5 4 6.5M11.5 3.5c2.5 0 1.7 4.5 4 6.5-2.3 2-1.5 6.5-4 6.5"/></svg>Insert field</button>
                   <span class="count">Rows: <b id="rowCount">8</b> / 200</span>
                 </div>
-                <div class="hint">Click a value to edit · place your cursor and press <b>Insert field</b> in the toolbar to drop a product field or metafield (pick-then-insert in a modal) · <b>click a pill</b> to change it · a pill is removed as one unit with <code>Backspace</code> / <code>Delete</code> (no ✕) · drag the <b>⠿</b> handle to reorder · <b>Add row</b> drops a new row below the one you're on.</div>
 
                 <div class="grid" id="grid">
                   <div class="grid-head">
@@ -621,7 +619,7 @@ svg{display:block}
                   <!-- SECTION: Display -->
                   <div class="row section" data-type="section">
                     <div class="gutter"><button class="handle" title="Drag to reorder"><svg viewBox="0 0 20 20" fill="currentColor"><circle cx="7" cy="5" r="1.3"/><circle cx="13" cy="5" r="1.3"/><circle cx="7" cy="10" r="1.3"/><circle cx="13" cy="10" r="1.3"/><circle cx="7" cy="15" r="1.3"/><circle cx="13" cy="15" r="1.3"/></svg></button></div>
-                    <div class="cell section"><svg class="disc" viewBox="0 0 20 20" width="12" height="12" fill="currentColor"><path d="M6 5l6 5-6 5z"/></svg>Display</div>
+                    <div class="cell section">Display</div>
                   </div>
 
                   <div class="row" data-type="data">
@@ -651,7 +649,7 @@ svg{display:block}
                   <!-- SECTION: Performance -->
                   <div class="row section" data-type="section">
                     <div class="gutter"><button class="handle"><svg viewBox="0 0 20 20" fill="currentColor"><circle cx="7" cy="5" r="1.3"/><circle cx="13" cy="5" r="1.3"/><circle cx="7" cy="10" r="1.3"/><circle cx="13" cy="10" r="1.3"/><circle cx="7" cy="15" r="1.3"/><circle cx="13" cy="15" r="1.3"/></svg></button></div>
-                    <div class="cell section"><svg class="disc" viewBox="0 0 20 20" width="12" height="12" fill="currentColor"><path d="M6 5l6 5-6 5z"/></svg>Performance</div>
+                    <div class="cell section">Performance</div>
                   </div>
 
                   <div class="row" data-type="data">
@@ -677,7 +675,7 @@ svg{display:block}
                   <!-- SECTION: Battery -->
                   <div class="row section" data-type="section">
                     <div class="gutter"><button class="handle"><svg viewBox="0 0 20 20" fill="currentColor"><circle cx="7" cy="5" r="1.3"/><circle cx="13" cy="5" r="1.3"/><circle cx="7" cy="10" r="1.3"/><circle cx="13" cy="10" r="1.3"/><circle cx="7" cy="15" r="1.3"/><circle cx="13" cy="15" r="1.3"/></svg></button></div>
-                    <div class="cell section"><svg class="disc" viewBox="0 0 20 20" width="12" height="12" fill="currentColor"><path d="M6 5l6 5-6 5z"/></svg>Battery</div>
+                    <div class="cell section">Battery</div>
                   </div>
 
                   <!-- EDITING ROW: shows valueParts composition + @-mention picker open -->

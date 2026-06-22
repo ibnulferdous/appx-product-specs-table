@@ -101,7 +101,6 @@
   color: inherit;
   border-radius: 0.25rem;
   cursor: grab;
-  opacity: 0.5;
   touch-action: none;
 }
 
@@ -109,18 +108,48 @@
   cursor: grabbing;
 }
 
+/* Delete control — same chrome-reset native <button> as the drag handle, so the
+ * ✕ icon reads as a bare affordance rather than a UA/Polaris button. Muted vs
+ * critical color is the s-icon tone (swapped in RowGutter); this rule only resets
+ * the button and supplies the hit area + pointer. */
+.deleteButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  appearance: none;
+  background: none;
+  border: none;
+  margin: 0;
+  padding: 0;
+  font: inherit;
+  color: inherit;
+  border-radius: 0.25rem;
+  cursor: pointer;
+}
+
+.deleteButton:focus-visible {
+  outline: 0.125rem solid currentColor;
+  outline-offset: 0.125rem;
+}
+
 /* Keyboard focus ring (Step 11). The value surface sets outline:none, so the
  * handle needs its own visible focus indicator; it must be reachable and clearly
- * focused for keyboard reorder. currentColor keeps it hex-free, and lifting the
- * muted opacity to full avoids a faint-but-focused control. */
+ * focused for keyboard reorder. currentColor keeps it hex-free; the `.gutter`
+ * container lifts the muted opacity to full on `:focus-within`, so a focused
+ * handle is never faint. */
 .dragHandle:focus-visible {
   outline: 0.125rem solid currentColor;
   outline-offset: 0.125rem;
-  opacity: 1;
 }
 
+/* Rows are flush table rows separated by a single hairline rule (not a gap), so
+ * the list reads as one dense grid rather than a stack of floating cards. Polaris
+ * border tokens are sealed in shadow DOM and not exposed to light-DOM CSS, so the
+ * divider is currentColor at a low alpha — a subtle grey on the card's light ink,
+ * with no hardcoded hex. */
 .row {
-  border-radius: 0.5rem;
+  border-block-end: 0.0625rem solid
+    color-mix(in srgb, currentColor 12%, transparent);
 }
 
 /* The row currently being dragged: lift it above its siblings so its transform
@@ -133,9 +162,39 @@
   cursor: grabbing;
 }
 
-/* Left accent marks the active row — the target the toolbar inserts below. */
+/* Active row — the target the toolbar inserts below. A blue left accent bar plus
+ * a light full-bleed tint (painted on the full-width .row box so it respects the
+ * hairline dividers), instead of a floating grey card. Reuses the captured Polaris
+ * link blue so the accent matches the value-cell tokens; both degrade to
+ * currentColor when the capture is unavailable. */
 .rowActive {
-  box-shadow: inset 0.1875rem 0 0 0 currentColor;
+  box-shadow: inset 0.1875rem 0 0 0 var(--appx-token-color, currentColor);
+  background: color-mix(
+    in srgb,
+    var(--appx-token-color, currentColor) 6%,
+    transparent
+  );
+}
+
+/* The gutter (drag handle + delete) is muted at rest to keep the column quiet,
+ * then reveals fully when the row is hovered, active, or holds keyboard focus —
+ * the controls are there when wanted without adding visual noise to every row. */
+.gutter {
+  opacity: 0.55;
+  transition: opacity 0.1s ease;
+}
+
+.row:hover .gutter,
+.rowActive .gutter,
+.gutter:focus-within {
+  opacity: 1;
+}
+
+/* Column header — the Label / Value headings that anchor the grid. Scrolls with
+ * the rows (non-sticky); the hairline matches the row dividers. */
+.colHeader {
+  border-block-end: 0.0625rem solid
+    color-mix(in srgb, currentColor 12%, transparent);
 }
 
 /* --- EditorShell chrome (reshell A2) --------------------------------------

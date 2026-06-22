@@ -96,11 +96,10 @@ export const EditorRowItem = memo(function EditorRowItem({
       className={isDragging ? `${rowClass} ${styles.rowDragging}` : rowClass}
       onFocusCapture={handleActivate}
     >
-      <s-box
-        padding="small-200"
-        borderRadius="base"
-        {...(isActive ? { background: "subdued" } : {})}
-      >
+      {/* Tight vertical padding for a dense, table-like row; the active state is
+          the .rowActive accent + tint on the full-width wrapper above, not a
+          floating grey card here. */}
+      <s-box paddingBlock="small-300" paddingInline="small-200">
         <s-grid
           gridTemplateColumns={isSection ? SECTION_COLUMNS : DATA_COLUMNS}
           gap="base"

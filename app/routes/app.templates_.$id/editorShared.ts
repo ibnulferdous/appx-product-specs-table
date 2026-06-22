@@ -48,8 +48,9 @@ export const useBrowserLayoutEffect =
   typeof document === "undefined" ? useEffect : useLayoutEffect;
 
 // Shared grid template so the column header, data rows, and section rows all
-// line up. First track is the fixed-width gutter (drag handle + delete).
-export const GUTTER = "2.75rem";
+// line up. First track is the fixed-width gutter holding the drag handle and
+// delete button side by side (inline), so it must fit both controls plus gap.
+export const GUTTER = "4rem";
 export const DATA_COLUMNS = `${GUTTER} 1fr 1.6fr`;
 export const SECTION_COLUMNS = `${GUTTER} 1fr`;
 
