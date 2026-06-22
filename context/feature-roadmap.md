@@ -69,12 +69,14 @@ Based on App Store competitor research (2026-06-12: Bear Specs & Compare, Equate
 
 ### Styling Upgrades
 
+These extend the MVP Style tab. They build on the **single source of truth** — every color is a CSS variable, admin and storefront alike (see `code-standards.md` → Color & Theming) — so each item below is a new themeable surface / variable, not a new hardcoded value.
+
 - Header row styling (separate from body rows)
 - Alternating row colors (zebra striping)
 - Rounded corners toggle
 - Custom CSS input for advanced users
 - Per-section styling overrides
-- Style presets (save a style and reuse across templates)
+- Style presets / saved themes (save a palette once, reuse across templates; room for dark-mode-aware token sets)
 
 ### Onboarding Upgrades
 

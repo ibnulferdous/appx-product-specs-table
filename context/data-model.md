@@ -354,6 +354,8 @@ model TableStyling {
   extraStyles      Json     @default("{}")
 }
 
+> **Color fields are merchant overrides, not the whole palette.** Each `*Color` field is nullable: `null` means "inherit the theme," a value means the merchant set it in the Style tab. On the storefront these resolve to **CSS custom properties on the `.appx-spec-table` wrapper** — the same variables that carry the inherited-theme defaults — so saved and default colors flow through one source of truth (see `code-standards.md` → Color & Theming). The app is not colorless: color is centralized in variables, not scattered as hex literals. `extraStyles` is the forward-compatible escape hatch for new themeable surfaces (presets, dark-mode tokens, additional surfaces) added post-MVP without a migration per color.
+
 model AppSubscription {
   id                       String   @id @default(cuid())
   shopId                   String

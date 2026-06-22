@@ -160,7 +160,7 @@ The rows-and-sections editor — where most of the work happens. (Labeled **Cont
 
 Rendered in the **left controls panel** beside the live table (see Layout). The control widgets shown in the mockup are **illustrative** — the schema-backed spec (mapped to `TableStyling`) is:
 
-- Color controls: **section-header background**, label background, value background, border color, label text color, value text color (six independent colors). _(Mockup shows these as swatch rows; "Section header" maps to `TableStyling.headerBgColor`.)_
+- Color controls: **section-header background**, label background, value background, border color, label text color, value text color (six independent colors). _(Mockup shows these as swatch rows; "Section header" maps to `TableStyling.headerBgColor`.)_ Each writes a `TableStyling` color that resolves to a CSS variable on the storefront table — `null` inherits the theme, a set value overrides it — so the palette stays a single source of truth and the control set can grow post-MVP (more surfaces, presets) without new hardcoded values. See `code-standards.md` → Color & Theming.
 - Font size — Small / Medium / Large, with **theme-inherit as the unset default** (`fontSize` null = inherit). _(Mockup shows an S / M / L segmented control; it omits an explicit "Inherit" segment because inherit is the default state.)_
 - Font weight / style — `TableStyling.fontWeight` / `fontStyle`. _(Mockup shows a "Label weight" Regular / Medium / Bold segmented control; whether weight applies to the label only or label + value is not yet locked.)_
 - Column width — a single **label-width %** slider (value % = 100 − label %), persisted as `TableStyling.labelWidthPct`.
@@ -219,6 +219,7 @@ A note in the panel reminds that **template status (Draft / Active) lives in the
 - Polaris `AppProvider` + `Frame` wrapping all screens
 - Left `Navigation` with two items: Dashboard | Templates
 - No custom navigation design — use Polaris defaults entirely
+- The whole admin reflects Shopify's Polaris design system — color comes from Polaris tokens, not an invented palette — so merchants feel they are inside Shopify, not a third-party app (see `code-standards.md` → Color & Theming)
 
 ---
 

@@ -123,3 +123,86 @@
 .rowActive {
   box-shadow: inset 0.1875rem 0 0 0 currentColor;
 }
+
+/* --- EditorShell chrome (reshell A2) --------------------------------------
+ * The shell card, control row, and segmented tabs/device-toggle are built from
+ * Polaris <s-box>/<s-grid>/<s-text>/<s-icon> (surfaces, borders, spacing, and
+ * the gray-track / white-active-pill colors all come from Polaris tokens —
+ * `subdued` track, `base` active pill — so there is no hardcoded color here).
+ * These few rules cover only what Polaris primitives cannot express: the
+ * space-between control-row layout, the segmented row of buttons, and the
+ * native <button> reset + focus ring (Polaris has no segmented-control and
+ * <s-button-group> renders no slot — see [[polaris-web-component-gotchas]]).
+ * No hex: layout/sizing in rem; the only color is `currentColor` on the focus
+ * ring (Polaris focus tokens are not exposed to light-DOM CSS). */
+
+/* Control row: tabs pinned left, device toggle pinned right; wraps on a narrow
+ * iframe so neither group is clipped. */
+.controlrow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+/* The radiogroup track's inner row of segment buttons. */
+.segGroup {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+/* Each segment is a real <button> (keyboard-focusable, role=radio); its visible
+ * pill — padding + the active `base` background — is the nested <s-box>, so the
+ * button itself is chrome-reset and only contributes hit area + the focus ring. */
+.segBtn {
+  display: inline-flex;
+  appearance: none;
+  background: none;
+  border: none;
+  margin: 0;
+  padding: 0;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  border-radius: 0.5rem;
+}
+
+/* The value surface sets outline:none on the document, so give the segment its
+ * own visible keyboard-focus ring. currentColor keeps it hex-free. */
+.segBtn:focus-visible {
+  outline: 0.125rem solid currentColor;
+  outline-offset: 0.125rem;
+}
+
+/* --- Bounded inner-scroll (reshell A3) ------------------------------------
+ * Only the rows list scrolls: the control row, toolbar, and hint stay fixed
+ * ABOVE this scroller, whose `max-height` is JS-measured by
+ * `useScrollRegionHeight` to fill the remaining iframe viewport. This fixes the
+ * core UX pain — today the whole admin iframe scrolls, so on a long table the
+ * merchant must scroll back to the top to reach Add row / Insert field.
+ * Layout/sizing only — no color (the sticky header's opaque surface is a Polaris
+ * <s-box background="base">, not a CSS color). */
+
+/* The rows region. `max-height` comes from the hook; this supplies the scroll
+ * and the floor. `min-height` (mirrors MIN_SCROLLER_HEIGHT_REM in the hook) keeps
+ * the list usable if an early/raced measurement under-reports the available
+ * height. `overscroll-behavior: contain` stops a scroll past the list's top/bottom
+ * from chaining to the admin behind the iframe. */
+.rowsScroller {
+  overflow-y: auto;
+  min-height: 12rem;
+  overscroll-behavior: contain;
+}
+
+/* The Label/Value column header pins to the top of the scroller so the columns
+ * stay labelled as the rows scroll under it. It lives INSIDE the scroller (not as
+ * a fixed sibling above) so a vertical-scrollbar gutter narrows it by the SAME
+ * amount as the rows and the columns stay aligned. The opaque surface that hides
+ * rows scrolling under it is supplied by a Polaris <s-box background="base">. */
+.stickyHeader {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}

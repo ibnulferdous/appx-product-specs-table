@@ -54,10 +54,13 @@ Shopify's native product pages have no structured way to display specifications.
 
 ### Styling & Customization
 
+The app uses color deliberately and keeps it organized: every color — admin dashboard and storefront alike — flows from CSS variables as a single source of truth, so the palette can be retuned centrally and the Style tab can grow new themeable surfaces without scattering hardcoded values. The admin UI mirrors Shopify's Polaris design system so merchants feel they are inside Shopify, not a third-party app.
+
 - Inherit theme styles by default — zero configuration needed
 - Full color control: label background, value background, header row background, border color, text colors — each individually
 - Font size and font style control
 - Column width ratio (label % vs value %)
+- Colors resolve through CSS variables (one source of truth across admin + storefront), leaving room to extend the Style tab post-MVP with more surfaces, presets, or saved themes
 
 ### Onboarding
 

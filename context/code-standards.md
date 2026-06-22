@@ -36,15 +36,24 @@
 - Polaris web components do not need to be imported; they are globally registered custom HTML elements.
 - Do not override Polaris component internals or styles with custom CSS unless Polaris provides no reasonable alternative.
 - When custom CSS is needed, scope it tightly to the component file and add a comment explaining why Polaris alone was insufficient.
-- Do not hardcode hex color values — use Polaris design tokens or CSS custom properties.
+- Do not hardcode hex color literals in components — pull color from Polaris design tokens or shared CSS custom properties (see **Color & Theming**). This is not an anti-color rule: the app uses color, it just keeps every color in one source of truth.
 - Accessibility is non-negotiable: all interactive Polaris components must be keyboard navigable and screen-reader labelled.
+
+## Color & Theming
+
+The app uses color deliberately — this is **not** a colorless, grayscale, or "neutral-only" app. The rule has always been _organization, not abstinence_: every color comes from a single source of truth so the whole palette — admin dashboard **and** storefront — can be retuned from one place. When an older note says "no hex," read it as "no scattered hex literals," never "no color."
+
+- **One source of truth.** Define colors as CSS custom properties (variables) in one place and reference them everywhere via `var(--…)`. The thing to avoid is a raw `#rrggbb` baked into a component, not color itself — changing a brand color should mean editing one declaration, not hunting through files.
+- **Admin = Polaris-faithful.** The admin dashboard must look and feel like Shopify's own admin so merchants feel they are _inside_ Shopify, not in a third-party app. Drive admin color from **Polaris design tokens** (`--p-color-*` / `--s-color-*`); do not invent an off-brand palette. (Polaris `s-*` tokens are not exposed to light-DOM CSS in the web-components build — capture the value from a Polaris component once and republish it as an app CSS variable; see [[polaris-web-component-gotchas]] and the editor's `--appx-token-color` pattern.)
+- **Storefront = theme-inherit by default, merchant-overridable.** Storefront colors inherit the merchant's active theme with zero configuration, and the **Style tab** (`TableStyling`) lets the merchant override each surface (header / label / value backgrounds, border, label / value text). Overrides are emitted as the same kind of CSS variables on the table's scope wrapper, so a saved color and a default color flow through one mechanism.
+- **Built to extend.** The palette and the Style-tab controls are expected to grow (more themeable surfaces, presets / saved themes, dark-mode-aware tokens). Keep colors centralized so adding a new themeable surface is a new variable, not a new hardcoded literal.
 
 ## Spec Table Editor (Admin)
 
 - The editor is a custom React component — no AG Grid or other heavy data-grid library. The value cell is a token editor (manual text + dynamic-field pills), which a generic grid cannot model cleanly.
 - Keep the rows array in a single source of truth (a reducer over `rows`); array index is display order. Reordering, insert, delete, and duplicate are array operations on that one source.
 - Use `@dnd-kit` for drag-and-drop row reordering. Keep reordering keyboard-accessible (`@dnd-kit` supports this) — do not ship mouse-only drag.
-- Render rows with semantic HTML and Polaris design tokens — no hardcoded hex (see Polaris rules above). Scope any custom editor CSS tightly to the component file.
+- Render rows with semantic HTML and centralized color — Polaris design tokens / shared CSS variables, never hardcoded hex literals (see **Color & Theming**). Scope any custom editor CSS tightly to the component file.
 - Memoize derived data and stable callbacks so a single cell edit does not re-render every row.
 - Enforce the 200-row cap in the UI (warn near the limit, block at 200); the server re-validates row count on save. UI and server must both read the same exported constant — the cap is an MVP value that may increase post-MVP, so never hardcode the literal value.
 
@@ -53,7 +62,7 @@
 - Storefront code is Shopify Liquid + plain JavaScript only — no React, no build tools, no npm packages
 - Keep Liquid logic minimal — resolve data in the metaobject payload before rendering, not inside Liquid templates
 - Plain JavaScript on the storefront must work without a bundler — write vanilla ES6 that browsers support natively
-- Scope all storefront CSS under a unique namespace wrapper (`.appx-spec-table`) to avoid clashing with the merchant's active theme
+- Scope all storefront CSS under a unique namespace wrapper (`.appx-spec-table`) to avoid clashing with the merchant's active theme. Drive table colors through CSS custom properties set on that wrapper — defaults inherit the theme, `TableStyling` overrides set the same variables — so the storefront palette stays a single source of truth (see **Color & Theming**)
 - Do not read Appx Postgres data from the storefront — all storefront data must come from Shopify metaobjects and product metafields
 
 ## Data and Storage

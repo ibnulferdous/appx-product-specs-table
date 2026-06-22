@@ -153,7 +153,8 @@ dnd-kit **`attributes`** and an **accessible label**, then:
 ### 4. Focus-ring CSS (`.dragHandle`)
 
 - Add a visible **`:focus-visible`** outline to `.dragHandle` (Polaris token / `currentColor`,
-  **no hex** — the surrounding cell sets `outline: none`, so the handle needs its own ring).
+  **no hardcoded hex literal** — centralized color, see `code-standards.md` → Color & Theming; the
+  surrounding cell sets `outline: none`, so the handle needs its own ring).
   Bump the handle's `opacity: 0.5` toward full when focused (a faint focused control is a contrast
   smell). Add the `<button>` chrome reset described in §2. The Step 10 `cursor: grab/grabbing`,
   `touch-action: none`, and `.rowDragging` rules are unchanged.
@@ -243,7 +244,7 @@ only. The reducer, value surface, modal, and persistence boundary are all untouc
 - Pure announcement copy (position/label resolution + the four message builders) →
   **`app/utils/reorderAnnouncements.ts`** (+ tests in **`app/utils/reorderAnnouncements.test.ts`**).
 - Focus-ring + `<button>` reset on the handle → **`app/routes/app.templates_.$id/SpecTableEditor.module.css`**
-  (`.dragHandle`). **Polaris tokens / `currentColor` / rem only — no hex.**
+  (`.dragHandle`). **Polaris tokens / `currentColor` / rem only — no hardcoded hex literal** (centralized color, see `code-standards.md` → Color & Theming).
 - `package.json` — **no change** (no new dependency).
 
 ## Open questions
