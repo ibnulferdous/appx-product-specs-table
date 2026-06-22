@@ -240,7 +240,9 @@ describe("saveTemplateForShop", () => {
 
     expect(result.ok).toBe(true);
     const updateArg = prismaMock.template.update.mock.calls[0][0];
-    expect(updateArg.where).toEqual({ id: "t1" });
+    // The write is shop-scoped itself (defense in depth, priority #1), not only
+    // the ownership read above — `shopId` rides along as an extended where filter.
+    expect(updateArg.where).toEqual({ id: "t1", shopId: "shop_A" });
     // `row` provisional key was finalized to a slug of the label.
     expect(updateArg.data.rows[0].key).toBe("battery_life");
     // name/status omitted from the payload are not written.

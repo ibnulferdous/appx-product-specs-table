@@ -37,12 +37,6 @@ const STATUS_OPTIONS = [
   { label: "Active", value: "ACTIVE" },
 ];
 
-const BADGE_TONES = {
-  ACTIVE: "success",
-  DRAFT: "warning",
-  ARCHIVED: "neutral",
-} as const;
-
 export const loader = async ({ request, params }: LoaderFunctionArgs) => {
   const { session } = await authenticate.admin(request);
   const shop = await upsertShop(session);
@@ -229,26 +223,17 @@ function TemplateOverview({
       <s-link slot="breadcrumb-actions" href="/app/templates">
         Templates
       </s-link>
-      <s-section heading="Overview">
-        <s-stack direction="block" gap="base">
-          <s-stack direction="inline" gap="base" alignItems="center">
-            <s-text type="strong">Status</s-text>
-            <s-badge tone={BADGE_TONES[template.status]}>
-              {template.status}
-            </s-badge>
-          </s-stack>
-        </s-stack>
-      </s-section>
-
-      <s-section heading="Rows">
-        <SpecTableEditor
-          key={editorNonce}
-          initialName={template.name}
-          initialStatus={template.status}
-          initialRows={parseRows(template.rows)}
-          onDiscard={() => setEditorNonce((nonce) => nonce + 1)}
-        />
-      </s-section>
+      {/* The editor is a full-bleed mockup card (its own EditorShell), not wrapped
+          in <s-section heading="Rows"> — the reshell A2 locked decision. The
+          editorNonce key remounts it (resetting the reducer to the persisted rows)
+          when the merchant discards unsaved changes. */}
+      <SpecTableEditor
+        key={editorNonce}
+        initialName={template.name}
+        initialStatus={template.status}
+        initialRows={parseRows(template.rows)}
+        onDiscard={() => setEditorNonce((nonce) => nonce + 1)}
+      />
     </s-page>
   );
 }

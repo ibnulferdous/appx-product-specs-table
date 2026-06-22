@@ -102,9 +102,11 @@ export async function getTemplateByIdForShop(shopId: string, id?: string) {
 
 /**
  * Persist an existing template's editor state (Editor Step 9.5). Shop isolation
- * (priority #1) is enforced by reading the row through `where: { id, shopId }`
- * first — one shop can never save into another's template; an unowned/unknown id
- * returns `{ ok: false }` and writes nothing.
+ * (priority #1) is enforced twice over: the row is read through
+ * `where: { id, shopId }` first (an unowned/unknown id returns `{ ok: false }`
+ * and writes nothing), AND the write itself is shop-scoped via the same
+ * `{ id, shopId }` filter — so one shop can never save into another's template
+ * even if the prior read were ever bypassed.
  *
  * Server-side re-validation, never trusting the client:
  *  - the untrusted `rows` payload is narrowed with `parseRows`;
@@ -158,8 +160,16 @@ export async function saveTemplateForShop(
   }
 
   try {
-    // Ownership is already confirmed above; update by the unique id.
-    const template = await prisma.template.update({ where: { id }, data });
+    // Defense in depth (priority #1): the write is shop-scoped itself, not only
+    // via the ownership read above. `id` is the unique key and `shopId` is an
+    // extended where-unique filter (Prisma 5+, GA), so even a future regression
+    // that weakened the read can never cross-write into another shop's template.
+    // Mirrors setTemplateMetaobjectRef's shop-scoped write. A shopId mismatch
+    // makes the record "not found" → P2025, caught below.
+    const template = await prisma.template.update({
+      where: { id, shopId },
+      data,
+    });
     return { ok: true as const, data: template };
   } catch {
     return { ok: false as const, error: "Could not save template" };

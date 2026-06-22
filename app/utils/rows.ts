@@ -80,6 +80,12 @@ const SECTION_KEY_BASE = "section";
  * cross-product / cross-template alignment mechanism, so it must end up
  * human-readable, not an opaque `row_N`). This is the Step 6 serialization tool,
  * kept on purpose — not dead code.
+ *
+ * Not called by the editor reducer — rows stay on their provisional keys until
+ * Save. Its callers both live in `rowsSerialize.ts`: `finalizeRowKeys` (via
+ * `reconcileRowKeys`, run server-side in `updateTemplateRows` /
+ * `template.server.ts`) for Save-time finalization, and `parseRow` as a fallback
+ * to repair a persisted/posted row whose `key` is missing.
  */
 export function slugifyKey(label: string): string {
   const slug = label

@@ -23,6 +23,20 @@
   cursor: text;
 }
 
+/* Keyboard focus ring for the value surface. The default outline is dropped above
+ * so the caret/token chrome reads as plain inline text, but a focusable editing
+ * host (`tabIndex=0`, `role="textbox"`) still needs a clear focus indicator: the
+ * `.rowActive` accent marks the whole ROW, not which of the row's two fields
+ * (Label vs Value) has focus, and the blinking caret alone is too faint — most so
+ * on an empty cell. This restores a visible ring on focus, matching the
+ * handle/segment pattern. currentColor stays hex-free; the offset sits the ring in
+ * the wrapping box's padding. */
+.surface:focus-visible {
+  outline: 0.125rem solid currentColor;
+  outline-offset: 0.125rem;
+  border-radius: 0.25rem;
+}
+
 /* contenteditable has no native placeholder; paint one for an empty cell and drop
  * it as soon as the merchant focuses or types. */
 .surface[data-empty="true"]:not(:focus)::before {
@@ -177,13 +191,11 @@
 }
 
 /* --- Bounded inner-scroll (reshell A3) ------------------------------------
- * Only the rows list scrolls: the control row, toolbar, and hint stay fixed
- * ABOVE this scroller, whose `max-height` is JS-measured by
- * `useScrollRegionHeight` to fill the remaining iframe viewport. This fixes the
- * core UX pain — today the whole admin iframe scrolls, so on a long table the
- * merchant must scroll back to the top to reach Add row / Insert field.
- * Layout/sizing only — no color (the sticky header's opaque surface is a Polaris
- * <s-box background="base">, not a CSS color). */
+ * Only the rows list scrolls: the control row and toolbar stay fixed ABOVE this
+ * scroller, whose `max-height` is JS-measured by `useScrollRegionHeight` to fill
+ * the remaining iframe viewport. This fixes the core UX pain — today the whole
+ * admin iframe scrolls, so on a long table the merchant must scroll back to the
+ * top to reach Add row / Insert field. Layout/sizing only — no color. */
 
 /* The rows region. `max-height` comes from the hook; this supplies the scroll
  * and the floor. `min-height` (mirrors MIN_SCROLLER_HEIGHT_REM in the hook) keeps
@@ -194,15 +206,4 @@
   overflow-y: auto;
   min-height: 12rem;
   overscroll-behavior: contain;
-}
-
-/* The Label/Value column header pins to the top of the scroller so the columns
- * stay labelled as the rows scroll under it. It lives INSIDE the scroller (not as
- * a fixed sibling above) so a vertical-scrollbar gutter narrows it by the SAME
- * amount as the rows and the columns stay aligned. The opaque surface that hides
- * rows scrolling under it is supplied by a Polaris <s-box background="base">. */
-.stickyHeader {
-  position: sticky;
-  top: 0;
-  z-index: 1;
 }

@@ -2,12 +2,11 @@ import type { RefObject } from "react";
 import { useEffect, useState } from "react";
 
 // Reshell A3 — bounded inner-scroll. Measures and maintains the rows scroller's
-// available height so that ONLY the rows list scrolls: the control row, toolbar,
-// and hint stay fixed above it while the scroller fills the rest of the embedded
-// iframe viewport. The component applies the returned px as `style={{ maxHeight }}`
-// and the `.rowsScroller` class supplies `overflow-y: auto` + the matching
-// `min-height` floor. Durable: the throwaway sandbox `DummyGrid` uses it now; the
-// real `RowGrid` adopts it at A1. See
+// available height so that ONLY the rows list scrolls: the control row and toolbar
+// stay fixed above it while the scroller fills the rest of the embedded iframe
+// viewport. The component applies the returned px as `style={{ maxHeight }}` and
+// the `.rowsScroller` class supplies `overflow-y: auto` + the matching
+// `min-height` floor. Consumed by `RowGrid` (reshell A1). See
 // `context/features/17-reshell-a3-bounded-inner-scroll.md`.
 //
 // `maxHeight`, not `height`: a short table stays short (no empty gap below the

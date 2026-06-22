@@ -10,10 +10,11 @@ import styles from "./SpecTableEditor.module.css";
 // full-bleed Polaris card with a control row (segmented tabs + device toggle)
 // above a stage-wrap (a sidebar shown only on Style/Settings + the always-present
 // stage). This component is PRESENTATIONAL — it owns only `activeTab`/`activeView`
-// and renders slots. The editing engine is wired one level up (A1:
-// `stage={<ContentTab engine={engine} />}`); the sandbox route passes a dummy
-// stage so the chrome can be proven without the engine. See
-// `context/features/16-reshell-a2-editor-shell.md`.
+// and renders slots. The editing engine is wired one level up by the
+// `SpecTableEditor` wrapper (`stage={<ContentTab engine={engine} />}`); the shell
+// itself never touches the engine. See
+// `context/features/16-reshell-a2-editor-shell.md` and
+// `context/features/18-reshell-a1-extract-row-engine.md`.
 
 // The icon-name union accepted by <s-icon type>, derived from the element's own
 // props so the segmented options stay in lockstep with Polaris (no separate
