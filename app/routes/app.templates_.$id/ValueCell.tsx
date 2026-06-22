@@ -317,34 +317,35 @@ export function ValueCell({
     [handleSelectionChange],
   );
 
+  // The contenteditable host carries its own field chrome (border/radius/padding
+  // via `.surface` → `.cellField`) so it matches the Label/Section inputs and the
+  // border can recolor on `:focus` — no `s-box` wrapper needed.
   return (
-    <s-box border="base" borderRadius="base" padding="small-200">
-      <div
-        ref={hostRef}
-        className={styles.surface}
-        contentEditable
-        suppressContentEditableWarning
-        role="textbox"
-        tabIndex={0}
-        aria-multiline="true"
-        aria-label={`Value for ${rowName}`}
-        spellCheck={false}
-        data-empty={isEmpty ? "true" : undefined}
-        data-placeholder="Value"
-        onInput={handleInput}
-        onKeyDown={handleKeyDown}
-        onPaste={handlePaste}
-        onClick={handleClick}
-        onCompositionStart={() => {
-          composingRef.current = true;
-        }}
-        onCompositionEnd={() => {
-          composingRef.current = false;
-          handleInput();
-        }}
-        onFocus={handleFocus}
-        onBlur={handleBlur}
-      />
-    </s-box>
+    <div
+      ref={hostRef}
+      className={styles.surface}
+      contentEditable
+      suppressContentEditableWarning
+      role="textbox"
+      tabIndex={0}
+      aria-multiline="true"
+      aria-label={`Value for ${rowName}`}
+      spellCheck={false}
+      data-empty={isEmpty ? "true" : undefined}
+      data-placeholder="Value"
+      onInput={handleInput}
+      onKeyDown={handleKeyDown}
+      onPaste={handlePaste}
+      onClick={handleClick}
+      onCompositionStart={() => {
+        composingRef.current = true;
+      }}
+      onCompositionEnd={() => {
+        composingRef.current = false;
+        handleInput();
+      }}
+      onFocus={handleFocus}
+      onBlur={handleBlur}
+    />
   );
 }

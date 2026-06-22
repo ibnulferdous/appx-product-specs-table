@@ -1,10 +1,10 @@
-import type { Dispatch } from "react";
+import type { ChangeEvent, Dispatch } from "react";
 import { memo, useCallback } from "react";
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import type { EditorRow, RowsAction, ValuePart } from "../../utils/rows";
 import { describeRow } from "../../utils/reorderAnnouncements";
-import { DATA_COLUMNS, SECTION_COLUMNS, readValue } from "./editorShared";
+import { DATA_COLUMNS, SECTION_COLUMNS } from "./editorShared";
 import { RowGutter } from "./RowGutter";
 import { ValueCell } from "./ValueCell";
 import styles from "./SpecTableEditor.module.css";
@@ -40,8 +40,12 @@ export const EditorRowItem = memo(function EditorRowItem({
   const rowNumber = index + 1;
 
   const handleLabel = useCallback(
-    (event: Event) =>
-      dispatch({ type: "SET_LABEL", id: row.id, label: readValue(event) }),
+    (event: ChangeEvent<HTMLInputElement>) =>
+      dispatch({
+        type: "SET_LABEL",
+        id: row.id,
+        label: event.currentTarget.value,
+      }),
     [dispatch, row.id],
   );
   const handleDelete = useCallback(() => onDelete(row.id), [onDelete, row.id]);
@@ -116,24 +120,28 @@ export const EditorRowItem = memo(function EditorRowItem({
           />
 
           {isSection ? (
-            <s-box background="subdued" borderRadius="base" padding="small-200">
-              <s-text-field
-                label={`Section title for row ${rowNumber}`}
-                labelAccessibilityVisibility="exclusive"
-                placeholder="Section title"
-                value={row.label}
-                onInput={handleLabel}
-                onFocus={handleLabelFocus}
-              />
-            </s-box>
+            // Native single-line <input> styled to match the value surface (same
+            // border/radius/padding via `.cellInput`), so all three editable cells
+            // read as one control. `aria-label` carries the accessible name the
+            // former `s-text-field` `label` provided.
+            <input
+              type="text"
+              className={styles.cellInput}
+              aria-label={`Section title for row ${rowNumber}`}
+              placeholder="Section title"
+              value={row.label}
+              onChange={handleLabel}
+              onFocus={handleLabelFocus}
+            />
           ) : (
             <>
-              <s-text-field
-                label={`Label for row ${rowNumber}`}
-                labelAccessibilityVisibility="exclusive"
+              <input
+                type="text"
+                className={styles.cellInput}
+                aria-label={`Label for row ${rowNumber}`}
                 placeholder="Label"
                 value={row.label}
-                onInput={handleLabel}
+                onChange={handleLabel}
                 onFocus={handleLabelFocus}
               />
               <ValueCell

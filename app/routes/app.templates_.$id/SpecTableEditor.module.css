@@ -10,31 +10,51 @@
  * No hardcoded hex: colors are Polaris color tokens (CSS custom properties) or
  * `currentColor`; everything else is spacing/sizing in rem. */
 
-/* The one contenteditable host. Borderless and content-shaped so "Up to [token]
- * hours" reads as a single value, not a row of separate fields. `pre-wrap` honors
- * author-intended LINE_BREAK `<br>`s and soft-wraps long text for free. */
-.surface {
+/* Shared cell-field chrome for ALL three editable cells — the Label <input>, the
+ * Section <input>, and the Value contenteditable. One look so the columns read as
+ * the same control: identical border, radius, padding, and single-line height.
+ * Selecting a cell to edit swaps only the border COLOR (no width change → no
+ * layout shift), giving a spreadsheet-style "active cell" outline. Hex-free: the
+ * resting edge is a low-alpha `currentColor`; the active edge reuses the
+ * runtime-captured Polaris link blue (`--appx-token-color`, the same accent the
+ * active row and the value tokens use), degrading to `currentColor` when the
+ * capture is unavailable. `box-sizing: border-box` keeps both columns flush. */
+.cellField {
+  width: 100%;
+  box-sizing: border-box;
   font: inherit;
+  line-height: 1.25rem;
   color: inherit;
+  background: transparent;
+  border: 0.0625rem solid color-mix(in srgb, currentColor 16%, transparent);
+  border-radius: 0.5rem;
+  padding: 0.375rem 0.625rem;
   outline: none;
+}
+
+/* The active-cell indicator: border color only (width held constant per design),
+ * on plain `:focus` so it shows for both mouse-click and keyboard entry — the
+ * merchant is "in" the cell the moment it takes focus, Google-Sheets style. */
+.cellField:focus {
+  border-color: var(--appx-token-color, currentColor);
+}
+
+/* The Label / Section single-line native <input>. */
+.cellInput {
+  composes: cellField;
+}
+
+/* The one contenteditable value host. Shares the field chrome above so it matches
+ * the Label/Section inputs, then adds what a multiline editing surface needs:
+ * `pre-wrap` honors author-intended LINE_BREAK `<br>`s and soft-wraps long text,
+ * `min-height` keeps an empty cell one line tall, and `cursor: text` reads as
+ * editable. */
+.surface {
+  composes: cellField;
   min-height: 1.25rem;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
   cursor: text;
-}
-
-/* Keyboard focus ring for the value surface. The default outline is dropped above
- * so the caret/token chrome reads as plain inline text, but a focusable editing
- * host (`tabIndex=0`, `role="textbox"`) still needs a clear focus indicator: the
- * `.rowActive` accent marks the whole ROW, not which of the row's two fields
- * (Label vs Value) has focus, and the blinking caret alone is too faint — most so
- * on an empty cell. This restores a visible ring on focus, matching the
- * handle/segment pattern. currentColor stays hex-free; the offset sits the ring in
- * the wrapping box's padding. */
-.surface:focus-visible {
-  outline: 0.125rem solid currentColor;
-  outline-offset: 0.125rem;
-  border-radius: 0.25rem;
 }
 
 /* contenteditable has no native placeholder; paint one for an empty cell and drop
