@@ -192,10 +192,20 @@ export function useRowEngine({
   const [savedRowsJson, setSavedRowsJson] = useState(currentRowsJson);
   const isDirty = currentRowsJson !== savedRowsJson;
 
+  // Snapshot of the rows JSON actually sent to the server, captured at click
+  // time. The completion effect resets the dirty baseline to THIS value, never to
+  // the live rows — so any edit made while the save is in flight stays dirty (the
+  // save bar remains open) instead of being silently marked saved and dropped.
+  // The editor is also frozen during the save (see SpecTableEditor), making this
+  // defense in depth against the edit-during-save race.
+  const submittedRowsJsonRef = useRef<string | null>(null);
+
   const handleSave = useCallback(() => {
+    if (saveFetcher.state !== "idle") return; // a save is already in flight
     // The payload is valid JSON at runtime; the cast satisfies SubmitTarget,
     // which the EditorRow interface union does not match structurally (interfaces
     // carry no implicit index signature).
+    submittedRowsJsonRef.current = JSON.stringify(rows);
     saveFetcher.submit(
       {
         rows,
@@ -222,7 +232,11 @@ export function useRowEngine({
     if (!data || data === handledSaveRef.current) return;
     handledSaveRef.current = data;
     if (data.ok) {
-      setSavedRowsJson(rowsJsonRef.current);
+      // Reset the baseline to exactly what was persisted (the submitted
+      // snapshot), NOT the live rows — otherwise an edit made during the in-flight
+      // save would be marked saved and lost. Falls back to the live rows if the
+      // snapshot is somehow missing.
+      setSavedRowsJson(submittedRowsJsonRef.current ?? rowsJsonRef.current);
       revalidator.revalidate();
       if (data.syncError) {
         shopify.toast.show(data.syncError, { isError: true });
@@ -237,6 +251,18 @@ export function useRowEngine({
       });
     }
   }, [saveFetcher.state, saveFetcher.data, revalidator, shopify]);
+
+  // Close the "Insert field" modal when a save begins. The modal portals its
+  // content (including its Insert/Update primary button) into the admin chrome,
+  // OUTSIDE the editor's inert freeze wrapper — exactly like the SaveBar — so a
+  // save that starts while the modal is open would otherwise leave that button
+  // live, a path to mutate rows mid-save that the freeze cannot reach. Hiding the
+  // modal here, plus the hard `saving` guard in handleCommit, blocks it from both
+  // ends. Hiding an already-hidden modal is a no-op, so this is safe to run on any
+  // render where a save is in flight.
+  useEffect(() => {
+    if (saving) shopify.modal.hide(INSERT_FIELD_MODAL_ID);
+  }, [saving, shopify]);
 
   // --- Metafield definitions fetch (Step 8) --------------------------------
   // The shop's product metafield definitions are fetched lazily from the
@@ -467,6 +493,7 @@ export function useRowEngine({
   // caret lands just after the committed pill via pendingCaretByRowRef, and all
   // modal state is reset so create and edit can't leak into each other.
   const handleCommit = useCallback(() => {
+    if (saving) return; // a save is in flight — the editor is frozen
     if (!selection) return; // primary button is disabled in this state
     const part: ValuePart =
       selection.kind === "native"
@@ -519,7 +546,7 @@ export function useRowEngine({
     setEditTarget(null);
     setSelection(null);
     setSearchQuery("");
-  }, [editTarget, rows, selection, shopify]);
+  }, [editTarget, rows, saving, selection, shopify]);
 
   const handleCancelInsertField = useCallback(() => {
     shopify.modal.hide(INSERT_FIELD_MODAL_ID);

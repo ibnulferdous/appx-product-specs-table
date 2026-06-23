@@ -355,6 +355,21 @@
   outline-offset: 0.125rem;
 }
 
+/* --- Editor freeze (in-flight save) ---------------------------------------
+ * While a save is running, SpecTableEditor sets `inert` on this wrapper to block
+ * ALL interaction with the editor card (pointer, keyboard, focus). The dim +
+ * progress cursor are the visible "frozen, saving…" cue so the merchant does not
+ * try to keep editing — edits made during the in-flight save could not reach it
+ * and would be lost. No color: just an opacity drop and a wait cursor. */
+.stageFreeze {
+  transition: opacity 0.12s ease;
+}
+
+.stageFreeze[inert] {
+  opacity: 0.55;
+  cursor: progress;
+}
+
 /* --- Bounded inner-scroll (reshell A3) ------------------------------------
  * Only the rows list scrolls: the control row and toolbar stay fixed ABOVE this
  * scroller, whose `max-height` is JS-measured by `useScrollRegionHeight` to fill
