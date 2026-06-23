@@ -55,12 +55,16 @@ export function RowGrid({ engine }: { engine: RowEngine }) {
         <s-box paddingBlock="small-200" paddingInline="small-200">
           <s-grid
             gridTemplateColumns={DATA_COLUMNS}
-            gap="base"
+            gap="none"
             alignItems="center"
           >
             <span aria-hidden="true"></span>
-            <s-text color="subdued">Label</s-text>
-            <s-text color="subdued">Value</s-text>
+            <div className={styles.headerCell}>
+              <s-text color="subdued">Label</s-text>
+            </div>
+            <div className={`${styles.headerCell} ${styles.headerCellLast}`}>
+              <s-text color="subdued">Value</s-text>
+            </div>
           </s-grid>
         </s-box>
       </div>

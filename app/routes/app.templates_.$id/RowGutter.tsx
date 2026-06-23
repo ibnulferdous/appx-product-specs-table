@@ -42,7 +42,7 @@ export const RowGutter = memo(function RowGutter({
     // rest and reveal them on row hover/active/focus — Polaris `s-*` elements
     // reject `className`, so the muting lives on this div, not the <s-stack>.
     <div className={styles.gutter}>
-      <s-stack direction="inline" gap="small-300" alignItems="center">
+      <s-stack direction="inline" gap="small-200" alignItems="center">
         {/* Drag-to-reorder handle. A real <button> (dnd-kit's recommended, most
             accessible activator) — keyboard-focusable and operable: Space/Enter to
             pick up, arrow keys to move, Space/Enter to drop, Escape to cancel

@@ -7,8 +7,10 @@
  * accent. This is the custom token editor that `code-standards.md` ("Spec Table
  * Editor") anticipates Polaris cannot model cleanly.
  *
- * No hardcoded hex: colors are Polaris color tokens (CSS custom properties) or
- * `currentColor`; everything else is spacing/sizing in rem. */
+ * Colors are Polaris color tokens (CSS custom properties) or `currentColor`, with
+ * one deliberate exception: the section-header band uses an explicit `#f6f7f9`
+ * (see `.rowSection`) because Polaris's surface colors are not exposed to light-DOM
+ * CSS. Everything else is spacing/sizing in rem. */
 
 /* Shared cell-field chrome for ALL three editable cells — the Label <input>, the
  * Section <input>, and the Value contenteditable. One look so the columns read as
@@ -22,26 +24,49 @@
 .cellField {
   width: 100%;
   box-sizing: border-box;
+  /* Stretch to the full grid-row height instead of inheriting the grid's
+     `alignItems="center"`. The row's track height is set by the tallest cell —
+     the multi-line Value contenteditable — so stretching the Value cell makes its
+     Label|Value divider (`border-inline-start` on `.surface`) span the full row
+     height, lining the vertical ticks up across rows. `align-self` overrides only
+     these cells (the gutter + borderless `.cellSection` stay centered). The
+     single-line Label <input> still vertically centers its text within the taller
+     box, so the Label reads centered as before. */
+  align-self: stretch;
   font: inherit;
   line-height: 1.25rem;
   color: inherit;
   background: transparent;
-  border: 0.0625rem solid color-mix(in srgb, currentColor 16%, transparent);
-  border-radius: 0.5rem;
+  /* Borderless data cell. The row divider is now a single full-width hairline on
+     the `.row` wrapper (so it spans the gutter too), and the only vertical line is
+     the Label|Value divider drawn by the Value cell (`.surface`). The Label cell
+     and both outer column edges carry no border. Padding stays as the text inset. */
+  border: 0;
   padding: 0.375rem 0.625rem;
   outline: none;
 }
 
-/* The active-cell indicator: border color only (width held constant per design),
- * on plain `:focus` so it shows for both mouse-click and keyboard entry — the
- * merchant is "in" the cell the moment it takes focus, Google-Sheets style. */
-.cellField:focus {
-  border-color: var(--appx-token-color, currentColor);
+/* The active-cell indicator (Google-Sheets style): an inset 2px ring painted with
+ * box-shadow rather than a border swap. `box-shadow` adds no box size, so there is
+ * zero layout shift, and because it is inset it fills the whole cell — the entire
+ * cell reads as the active input with no separate field inside. On plain `:focus`
+ * so it shows for both mouse-click and keyboard entry. Reuses the captured Polaris
+ * link blue (`--appx-token-color`), degrading to currentColor when unavailable.
+ * `.cellSection` opts in here too (it does not compose `.cellField`). */
+.cellField:focus,
+.cellSection:focus {
+  box-shadow: inset 0 0 0 0.125rem var(--appx-token-color, currentColor);
 }
 
 /* The Label / Section single-line native <input>. */
 .cellInput {
   composes: cellField;
+  /* Top-align the single-line Label text with the Value cell's first line and the
+     gutter controls (the StarTech-style reference), instead of vertically centering
+     it in a tall multi-line row. `start` overrides the inherited `stretch` so the
+     input box stays one line tall at the row's top; the Value cell keeps `stretch`
+     for its full-height Label|Value divider. */
+  align-self: start;
 }
 
 /* The one contenteditable value host. Shares the field chrome above so it matches
@@ -51,10 +76,51 @@
  * editable. */
 .surface {
   composes: cellField;
+  /* The only vertical line in a data row: the Label|Value column divider (the
+     Value cell's left edge). The outer right edge carries no border. */
+  border-inline-start: var(--appx-cell-line);
   min-height: 1.25rem;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
   cursor: text;
+}
+
+/* Section-header cell. Unlike Label/Value it is NOT a bordered grid cell — the
+ * full-width grey band (`.rowSection` on the row wrapper) is the separator. So
+ * this is borderless text only: uppercase, tracked and semibold so the section
+ * reads as a heading, but at the SAME full-strength ink as the Label/Value cells
+ * (`color: inherit`) rather than a muted tint — the heading is conveyed by weight
+ * and case, not by dimming. Becomes editable (with the same blue ring) on focus;
+ * text-transform is display-only — the stored label keeps its case. */
+.cellSection {
+  width: 100%;
+  box-sizing: border-box;
+  font: inherit;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  line-height: 1.25rem;
+  background: transparent;
+  border: 0;
+  outline: none;
+  padding: 0.375rem 0.625rem;
+  color: inherit;
+}
+
+/* Column header cells (Label / Value). The header/rows divider is a single
+ * full-width hairline on `.colHeader` (spanning the gutter too), and the only
+ * vertical line is the Label|Value divider on the Value header (`.headerCellLast`)
+ * — matching the data rows below. So the cells themselves are borderless; padding
+ * matches `.cellField` so the column divider lines up vertically with the rows. */
+.headerCell {
+  padding: 0.375rem 0.625rem;
+}
+
+/* The Value header carries the Label|Value column divider (its left edge); the
+ * outer right edge has no border, mirroring `.surface` in the data rows. */
+.headerCellLast {
+  border-inline-start: var(--appx-cell-line);
 }
 
 /* contenteditable has no native placeholder; paint one for an empty cell and drop
@@ -162,14 +228,26 @@
   outline-offset: 0.125rem;
 }
 
-/* Rows are flush table rows separated by a single hairline rule (not a gap), so
- * the list reads as one dense grid rather than a stack of floating cards. Polaris
- * border tokens are sealed in shadow DOM and not exposed to light-DOM CSS, so the
- * divider is currentColor at a low alpha — a subtle grey on the card's light ink,
- * with no hardcoded hex. */
+/* Rows are flush table rows. The horizontal divider beneath every row is one
+ * full-width hairline on this wrapper, so it spans the gutter (drag handle +
+ * delete) as well as the data cells — the same treatment a section header row
+ * gets, giving one continuous edge-to-edge rule between rows. */
 .row {
-  border-block-end: 0.0625rem solid
-    color-mix(in srgb, currentColor 12%, transparent);
+  position: relative;
+  border-block-end: var(--appx-cell-line);
+}
+
+/* Section-header row: a full-width grey band (spanning the gutter too) that makes
+ * the section unmistakable from the data rows. The band, not a bordered cell, is
+ * the separator — `.cellSection` inside is borderless; the hairline beneath comes
+ * from `.row`. The band tint is an explicit `#f6f7f9` (Polaris's surface-secondary
+ * grey) — a deliberate exception to the module's currentColor/token rule, since
+ * Polaris's color tokens are not exposed to light-DOM CSS (see
+ * [[polaris-web-component-gotchas]]); note it is a fixed light grey and will not
+ * adapt to a dark admin theme. When a section row is also the active row,
+ * `.rowActive`'s blue tint wins (declared later). */
+.rowSection {
+  background: #f6f7f9;
 }
 
 /* The row currently being dragged: lift it above its siblings so its transform
@@ -202,6 +280,12 @@
 .gutter {
   opacity: 0.55;
   transition: opacity 0.1s ease;
+  /* Top-align the drag handle + delete with the Label/Value first line on a tall
+     multi-line row (they were vertically centered via the grid's `alignItems`). The
+     top inset matches the data cells' `padding` top (0.375rem) so the ⠿ / ✕ icons
+     sit on the first text line rather than floating above it. */
+  align-self: start;
+  padding-block-start: 0.375rem;
 }
 
 .row:hover .gutter,
@@ -210,11 +294,13 @@
   opacity: 1;
 }
 
-/* Column header — the Label / Value headings that anchor the grid. Scrolls with
- * the rows (non-sticky); the hairline matches the row dividers. */
+/* Column header wrapper. Carries the full-width hairline that divides the header
+ * from the first row — spanning the gutter too, matching every row's bottom
+ * divider (`.row`). The cells inside are borderless except the Value header's
+ * Label|Value column divider. Scrolls with the rows. */
 .colHeader {
-  border-block-end: 0.0625rem solid
-    color-mix(in srgb, currentColor 12%, transparent);
+  position: relative;
+  border-block-end: var(--appx-cell-line);
 }
 
 /* --- EditorShell chrome (reshell A2) --------------------------------------
@@ -285,4 +371,9 @@
   overflow-y: auto;
   min-height: 12rem;
   overscroll-behavior: contain;
+  /* Shared grid hairline for every cell and header edge, published here so all
+     descendants inherit one source of truth. Hex-free per the module rule: a
+     low-alpha `currentColor` reads as a subtle grey on the card's light ink. */
+  --appx-cell-line: 0.0625rem solid
+    color-mix(in srgb, currentColor 14%, transparent);
 }

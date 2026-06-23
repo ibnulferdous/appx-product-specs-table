@@ -82,8 +82,13 @@ export const EditorRowItem = memo(function EditorRowItem({
     transition,
   };
 
-  const rowClass = isActive ? `${styles.row} ${styles.rowActive}` : styles.row;
   const isSection = row.rowType === "SECTION_HEADER";
+  // Compose the row's classes: every row is a `.row`; a section adds the grey
+  // full-width band; the active row adds the blue accent + tint (declared last so
+  // it wins the background on an active section).
+  let rowClass = styles.row;
+  if (isSection) rowClass += ` ${styles.rowSection}`;
+  if (isActive) rowClass += ` ${styles.rowActive}`;
   // Accessible name for the drag handle (Step 11). Reuses the same descriptor as
   // the screen-reader announcements so the handle and the live region agree
   // ("Battery Life row", "Display section", or a positional fallback).
@@ -106,7 +111,7 @@ export const EditorRowItem = memo(function EditorRowItem({
       <s-box paddingBlock="small-300" paddingInline="small-200">
         <s-grid
           gridTemplateColumns={isSection ? SECTION_COLUMNS : DATA_COLUMNS}
-          gap="base"
+          gap="none"
           alignItems="center"
         >
           <RowGutter
@@ -120,13 +125,13 @@ export const EditorRowItem = memo(function EditorRowItem({
           />
 
           {isSection ? (
-            // Native single-line <input> styled to match the value surface (same
-            // border/radius/padding via `.cellInput`), so all three editable cells
-            // read as one control. `aria-label` carries the accessible name the
-            // former `s-text-field` `label` provided.
+            // Native single-line <input> styled as a heading via `.cellSection`
+            // (borderless uppercase text; the row's grey band is the separator),
+            // becoming editable with the shared blue ring on focus. `aria-label`
+            // carries the accessible name the former `s-text-field` `label` provided.
             <input
               type="text"
-              className={styles.cellInput}
+              className={styles.cellSection}
               aria-label={`Section title for row ${rowNumber}`}
               placeholder="Section title"
               value={row.label}
