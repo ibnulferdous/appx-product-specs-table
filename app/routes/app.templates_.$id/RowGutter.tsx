@@ -60,7 +60,11 @@ export const RowGutter = memo(function RowGutter({
         >
           {/* Decorative: the button's aria-label is the accessible name, so hide
               the icon from assistive tech to avoid a double-announcement. */}
-          <s-icon type="drag-handle" color="subdued" aria-hidden="true"></s-icon>
+          <s-icon
+            type="drag-handle"
+            color="subdued"
+            aria-hidden="true"
+          ></s-icon>
         </button>
         {/* Delete control — a native <button> (matching the drag handle) holding a
             muted ✕ that turns critical red on hover/focus. `onPointerEnter/Leave`
