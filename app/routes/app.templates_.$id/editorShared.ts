@@ -93,3 +93,11 @@ export function readValue(event: Event): string {
 // The App Bridge contextual save bar (the "Unsaved changes" bar at the top of the
 // embedded app). Addressed by id, shown while the editor is dirty.
 export const SAVE_BAR_ID = "template-save-bar";
+
+// The header "More actions" <s-menu> and its two lifecycle <s-modal>s (feature
+// 20). The menu is opened declaratively (the trigger button's `commandFor`); the
+// modals are driven imperatively via the App Bridge Modal API
+// (`shopify.modal.show/hide`), like the Insert-field modal.
+export const MORE_ACTIONS_MENU_ID = "template-more-actions";
+export const RENAME_MODAL_ID = "rename-template-modal";
+export const DELETE_MODAL_ID = "delete-template-modal";

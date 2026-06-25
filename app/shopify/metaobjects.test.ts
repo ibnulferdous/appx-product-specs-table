@@ -1,7 +1,11 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
+import type { AdminApiContext } from "@shopify/shopify-app-react-router/server";
 import {
+  deleteSpecTableMetaobject,
   readDefinitionByTypeId,
   readDefinitionCreateId,
+  readMetaobjectDeleteId,
+  readMetaobjectIdByHandle,
   readMetaobjectRows,
   readUpsertResult,
   readUserErrors,
@@ -162,5 +166,154 @@ describe("readMetaobjectRows", () => {
         data: { metaobjectByHandle: { rows: { value: '{"not":"array"}' } } },
       }),
     ).toBeNull();
+  });
+});
+
+describe("readMetaobjectIdByHandle", () => {
+  it("reads the metaobject GID when present", () => {
+    expect(
+      readMetaobjectIdByHandle({
+        data: { metaobjectByHandle: { id: "gid://shopify/Metaobject/7" } },
+      }),
+    ).toBe("gid://shopify/Metaobject/7");
+  });
+
+  it("returns null when the metaobject is absent", () => {
+    expect(
+      readMetaobjectIdByHandle({ data: { metaobjectByHandle: null } }),
+    ).toBeNull();
+    expect(readMetaobjectIdByHandle({})).toBeNull();
+    expect(readMetaobjectIdByHandle("nope")).toBeNull();
+  });
+});
+
+describe("readMetaobjectDeleteId", () => {
+  it("reads the deletedId from a metaobjectDelete payload", () => {
+    expect(
+      readMetaobjectDeleteId({
+        data: {
+          metaobjectDelete: {
+            deletedId: "gid://shopify/Metaobject/7",
+            userErrors: [],
+          },
+        },
+      }),
+    ).toBe("gid://shopify/Metaobject/7");
+  });
+
+  it("returns null when nothing was deleted (e.g. user errors, no deletedId)", () => {
+    expect(
+      readMetaobjectDeleteId({
+        data: {
+          metaobjectDelete: {
+            deletedId: null,
+            userErrors: [{ message: "nope" }],
+          },
+        },
+      }),
+    ).toBeNull();
+    expect(readMetaobjectDeleteId({})).toBeNull();
+  });
+});
+
+// A fake AdminApiContext whose `graphql` returns a queued JSON payload per call
+// (each wrapped in the `{ json() }` Response shape the real client returns).
+function mockAdmin(payloads: unknown[]) {
+  const graphql = vi.fn();
+  for (const payload of payloads) {
+    graphql.mockResolvedValueOnce({ json: async () => payload });
+  }
+  return { admin: { graphql } as unknown as AdminApiContext, graphql };
+}
+
+describe("deleteSpecTableMetaobject — best-effort", () => {
+  it("deletes by the provided GID without a handle lookup", async () => {
+    const { admin, graphql } = mockAdmin([
+      {
+        data: { metaobjectDelete: { deletedId: "gid://x/9", userErrors: [] } },
+      },
+    ]);
+
+    await expect(
+      deleteSpecTableMetaobject(admin, { gid: "gid://x/9", templateId: "t1" }),
+    ).resolves.toBeUndefined();
+
+    // One call only: the delete mutation, with the provided id.
+    expect(graphql).toHaveBeenCalledTimes(1);
+    expect(graphql.mock.calls[0][1]).toEqual({
+      variables: { id: "gid://x/9" },
+    });
+  });
+
+  it("looks the GID up by handle when none is provided, then deletes it", async () => {
+    const { admin, graphql } = mockAdmin([
+      { data: { metaobjectByHandle: { id: "gid://x/looked-up" } } },
+      {
+        data: {
+          metaobjectDelete: { deletedId: "gid://x/looked-up", userErrors: [] },
+        },
+      },
+    ]);
+
+    await deleteSpecTableMetaobject(admin, { gid: null, templateId: "t1" });
+
+    expect(graphql).toHaveBeenCalledTimes(2);
+    // The lookup uses the template's handle…
+    expect(graphql.mock.calls[0][1]).toEqual({
+      variables: {
+        handle: { type: "$app:appx_spec_table", handle: "template-t1" },
+      },
+    });
+    // …and the delete uses the looked-up id.
+    expect(graphql.mock.calls[1][1]).toEqual({
+      variables: { id: "gid://x/looked-up" },
+    });
+  });
+
+  it("is a clean no-op when there is no GID and no metaobject to look up", async () => {
+    const { admin, graphql } = mockAdmin([
+      { data: { metaobjectByHandle: null } },
+    ]);
+
+    await expect(
+      deleteSpecTableMetaobject(admin, { gid: null, templateId: "t1" }),
+    ).resolves.toBeUndefined();
+
+    // Only the lookup ran; no delete attempted.
+    expect(graphql).toHaveBeenCalledTimes(1);
+  });
+
+  it("swallows + logs a thrown request (never bubbles)", async () => {
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const graphql = vi.fn().mockRejectedValue(new Error("network down"));
+    const admin = { graphql } as unknown as AdminApiContext;
+
+    await expect(
+      deleteSpecTableMetaobject(admin, { gid: "gid://x/9", templateId: "t1" }),
+    ).resolves.toBeUndefined();
+    expect(errorSpy).toHaveBeenCalled();
+
+    errorSpy.mockRestore();
+  });
+
+  it("swallows + logs a userErrors response (never bubbles)", async () => {
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const { admin } = mockAdmin([
+      {
+        data: {
+          metaobjectDelete: {
+            deletedId: null,
+            userErrors: [{ message: "Cannot delete" }],
+          },
+        },
+      },
+    ]);
+
+    await expect(
+      deleteSpecTableMetaobject(admin, { gid: "gid://x/9", templateId: "t1" }),
+    ).resolves.toBeUndefined();
+    expect(errorSpy).toHaveBeenCalled();
+
+    errorSpy.mockRestore();
   });
 });

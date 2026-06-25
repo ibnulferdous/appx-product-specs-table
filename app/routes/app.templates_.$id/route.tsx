@@ -19,11 +19,14 @@ import {
 import {
   createTemplateForShop,
   DEFAULT_TEMPLATE_NAME,
+  deleteTemplateForShop,
+  duplicateTemplateForShop,
   getTemplateByIdForShop,
   saveTemplateForShop,
   setTemplateMetaobjectRef,
 } from "../../models/template.server";
 import {
+  deleteSpecTableMetaobject,
   ensureSpecTableDefinition,
   readSpecTableMetaobjectRows,
   upsertSpecTableMetaobject,
@@ -31,6 +34,8 @@ import {
 import { createInitialRows } from "../../utils/rows";
 import { parseRows } from "../../utils/rowsSerialize";
 import { SpecTableEditor } from "./SpecTableEditor";
+import { TemplateHeaderActions } from "./TemplateHeaderActions";
+import { useRowEngine } from "./useRowEngine";
 
 /**
  * Sync a template's storefront delivery copy to its app-owned Shopify metaobject
@@ -114,10 +119,13 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
     rows?: unknown;
     name?: unknown;
     status?: unknown;
+    intent?: unknown;
   };
 
   // Create-on-first-save: the editor submits the seed + edits as JSON (the same
   // shape as an edit save), so the create branch reads JSON too — not FormData.
+  // Lifecycle actions (duplicate/delete) are disabled on /new, so this branch
+  // always creates regardless of intent.
   if (params.id === "new") {
     const result = await createTemplateForShop(shop.id, {
       name: payload.name,
@@ -140,14 +148,40 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
     return redirect(`/app/templates/${result.data.id}?created=1`);
   }
 
+  const templateId = params.id as string;
+
+  // Duplicate (feature 20): clone the SAVED template (DRAFT, fresh row ids) and
+  // navigate to the copy's editor. The duplicateFetcher follows this redirect, the
+  // same mechanism the create flow uses. No metaobject sync — the copy is DRAFT.
+  if (payload.intent === "duplicate") {
+    const result = await duplicateTemplateForShop(shop.id, templateId);
+    if (!result.ok) {
+      return { ok: false as const, error: result.error };
+    }
+    return redirect(`/app/templates/${result.data.id}?duplicated=1`);
+  }
+
+  // Delete (feature 20): remove the storefront metaobject FIRST (best-effort) so
+  // it can't outlive its template (priority #2), THEN delete the durable Postgres
+  // row, then navigate to the list. Reads the owned template shop-scoped first for
+  // the metaobject GID; a cross-shop/unknown id reads nothing and is a clean
+  // redirect (deleteMany is a no-op for it anyway — priority #1).
+  if (payload.intent === "delete") {
+    const existing = await getTemplateByIdForShop(shop.id, templateId);
+    if (existing) {
+      await deleteSpecTableMetaobject(admin, {
+        gid: existing.shopifyMetaobjectGid,
+        templateId: existing.id,
+      });
+      await deleteTemplateForShop(shop.id, templateId);
+    }
+    return redirect("/app/templates");
+  }
+
   // Editing an existing template: persist to Postgres (the source of truth).
   // Shop isolation, the 200-row cap, per-row validation, and key finalization are
   // all enforced server-side inside saveTemplateForShop.
-  const result = await saveTemplateForShop(
-    shop.id,
-    params.id as string,
-    payload,
-  );
+  const result = await saveTemplateForShop(shop.id, templateId, payload);
   if (!result.ok) {
     return { ok: false as const, error: result.error };
   }
@@ -168,50 +202,59 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
   };
 };
 
+// The page-level engine owner (feature 20). It calls `useRowEngine` so the
+// `<s-page>` header — the status badge, the More-actions menu, and the lifecycle
+// modals (all rendered ABOVE the editor's inert freeze) — reads the SAME
+// saving/dirty/name state the editor body does, and the heading binds to the live
+// `engine.name` so a rename updates the H1 immediately (and Discard reverts it).
+// Remounted by its parent's key on a discard (nonce bump) and on the
+// create-on-first-save id change, which reseeds the engine from the persisted
+// rows/name/status — preserving the reshell's "no reducer reset action" decision.
 function TemplateOverview({
   template,
+  onDiscard,
 }: {
   template: { id: string; name: string; status: TemplateStatus; rows: unknown };
+  onDiscard: () => void;
 }) {
-  // Bumped to remount the editor (resetting its reducer to the persisted rows)
-  // when the merchant discards unsaved changes — no reducer reset action needed.
-  const [editorNonce, setEditorNonce] = useState(0);
+  const engine = useRowEngine({
+    initialRows: parseRows(template.rows),
+    initialName: template.name,
+    initialStatus: template.status,
+    onDiscard,
+  });
   const [searchParams, setSearchParams] = useSearchParams();
   const shopify = useAppBridge();
 
-  // After create-on-first-save redirects here with ?created=1, toast once and
-  // strip the param so a refresh or back/forward navigation does not re-toast.
+  // After create-on-first-save (?created=1) or duplicate (?duplicated=1) redirects
+  // here, toast once and strip the param so a refresh or back/forward navigation
+  // does not re-toast. Idempotent across the discard remount: the param is already
+  // gone by then.
   useEffect(() => {
-    if (searchParams.get("created") !== "1") return;
-    shopify.toast.show("Template created");
+    const created = searchParams.get("created") === "1";
+    const duplicated = searchParams.get("duplicated") === "1";
+    if (!created && !duplicated) return;
+    shopify.toast.show(created ? "Template created" : "Template duplicated");
     const next = new URLSearchParams(searchParams);
     next.delete("created");
+    next.delete("duplicated");
     setSearchParams(next, { replace: true });
   }, [searchParams, setSearchParams, shopify]);
 
   return (
-    <s-page heading={template.name}>
+    <s-page heading={engine.name}>
       <s-link slot="breadcrumb-actions" href="/app/templates">
         Templates
       </s-link>
+      {/* Status badge + More-actions menu + lifecycle modals. Direct children of
+          <s-page> (via slot=…) so they portal into the page header, above the
+          editor's freeze wrapper. */}
+      <TemplateHeaderActions engine={engine} template={template} />
       {/* The editor is a full-bleed mockup card (its own EditorShell), not wrapped
-          in <s-section heading="Rows"> — the reshell A2 locked decision. The key
-          carries BOTH the template id and the editorNonce:
-            - the id forces a remount when create-on-first-save redirects from the
-              "new" sentinel to the real cuid (same route, only the param changes,
-              so React would otherwise reuse the editor instance and keep the seed
-              rows + stale dirty baseline — leaving "Unsaved changes" up after the
-              create save); remounting reseeds the reducer from the persisted rows
-              so the SaveBar correctly closes;
-            - the nonce remounts it (resetting the reducer to the persisted rows)
-              when the merchant discards unsaved changes. */}
-      <SpecTableEditor
-        key={`${template.id}:${editorNonce}`}
-        initialName={template.name}
-        initialStatus={template.status}
-        initialRows={parseRows(template.rows)}
-        onDiscard={() => setEditorNonce((nonce) => nonce + 1)}
-      />
+          in <s-section heading="Rows"> — the reshell A2 locked decision. It now
+          takes the shared engine as a prop (the engine lift moved the remount key
+          up to TemplateEditorPage, onto this component). */}
+      <SpecTableEditor engine={engine} />
     </s-page>
   );
 }
@@ -219,9 +262,27 @@ function TemplateOverview({
 export default function TemplateEditorPage() {
   const { template } = useLoaderData<typeof loader>();
 
+  // Bumped to remount the engine owner (TemplateOverview) — resetting its reducer
+  // to the persisted rows and reseeding name/status — when the merchant discards
+  // unsaved changes; no reducer reset action needed.
+  const [editorNonce, setEditorNonce] = useState(0);
+
+  // The key carries BOTH the template id and the editorNonce:
+  //   - the id forces a remount when create-on-first-save redirects from the "new"
+  //     sentinel to the real cuid (same route, only the param changes, so React
+  //     would otherwise reuse the instance and keep the seed rows + stale dirty
+  //     baseline — leaving "Unsaved changes" up after the create save); remounting
+  //     reseeds the engine from the persisted rows so the SaveBar correctly closes;
+  //   - the nonce remounts it (resetting to the persisted state) on Discard.
   // Both "new" (a synthetic seeded scaffold) and an existing template render the
-  // same editor; the create-vs-update split lives entirely in the action.
-  return <TemplateOverview template={template} />;
+  // same page; the create-vs-update split lives entirely in the action.
+  return (
+    <TemplateOverview
+      key={`${template.id}:${editorNonce}`}
+      template={template}
+      onDiscard={() => setEditorNonce((nonce) => nonce + 1)}
+    />
+  );
 }
 
 export const headers: HeadersFunction = (headersArgs) => {

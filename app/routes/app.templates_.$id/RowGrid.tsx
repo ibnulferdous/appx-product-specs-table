@@ -120,7 +120,7 @@ export function RowGrid({ engine }: { engine: RowEngine }) {
           <div style={{ display: "flex", justifyContent: "center" }}>
             <s-button
               variant="tertiary"
-              icon="plus"
+              icon="layout-footer"
               onClick={handleAppendRow}
               {...(atCap ? { disabled: true } : {})}
             >

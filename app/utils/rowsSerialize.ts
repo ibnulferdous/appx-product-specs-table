@@ -124,6 +124,25 @@ export function parseRows(value: unknown): EditorRow[] {
   return value.map(parseRow).filter((row): row is EditorRow => row !== null);
 }
 
+// --- Duplication ----------------------------------------------------------
+
+/**
+ * Clone a row array for a duplicated template, minting a FRESH `id` for every row
+ * via `mkId`. Row `id`s are the technical identity reserved for relational
+ * references / translations (data-model.md §7, §12: "id must never be reused"), so
+ * a copy must not share its source's ids. Every other field (key, label,
+ * valueParts, …) is carried over verbatim; the caller re-finalizes keys against
+ * `[]` afterwards (a copy is a brand-new row set). Pure: returns a fresh array,
+ * mutates neither the input nor its rows. `mkId` is injected (not called inside)
+ * so the helper stays deterministic under test, matching `createInitialRows`.
+ */
+export function cloneRowsWithNewIds(
+  rows: EditorRow[],
+  mkId: () => string,
+): EditorRow[] {
+  return rows.map((row) => ({ ...row, id: mkId() }));
+}
+
 // --- Key finalization -----------------------------------------------------
 
 /**

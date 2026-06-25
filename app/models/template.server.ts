@@ -1,12 +1,16 @@
 import { Prisma, TemplateStatus } from "@prisma/client";
 import prisma from "../db.server";
-import { MAX_TEMPLATE_ROWS, type EditorRow } from "../utils/rows";
-import { parseRows, reconcileRowKeys } from "../utils/rowsSerialize";
+import { MAX_TEMPLATE_ROWS, newRowId, type EditorRow } from "../utils/rows";
+import {
+  cloneRowsWithNewIds,
+  parseRows,
+  reconcileRowKeys,
+} from "../utils/rowsSerialize";
+import { copyName, validateTemplateName } from "../utils/templateName";
 
 export const TEMPLATE_STATUSES = ["ACTIVE", "DRAFT", "ARCHIVED"];
 
 const TEMPLATE_STATUS_SET = new Set(TEMPLATE_STATUSES);
-const NAME_MAX_LENGTH = 100;
 
 // Default name for a template created via the editor's create-on-first-save flow
 // (the merchant lands in the editor, not a name form). Renaming is a later slice;
@@ -36,25 +40,6 @@ function parseRowsWithinCap(
     };
   }
   return { ok: true, rows: incoming };
-}
-
-// Shared name validation, used by both create and save so the two paths can never
-// drift apart. Returns the trimmed name, or an error string for the caller to
-// surface in the standard `{ ok: false, error }` shape.
-function validateName(
-  name: unknown,
-): { ok: true; name: string } | { ok: false; error: string } {
-  const trimmed = typeof name === "string" ? name.trim() : "";
-  if (trimmed.length === 0) {
-    return { ok: false, error: "Name is required" };
-  }
-  if (trimmed.length > NAME_MAX_LENGTH) {
-    return {
-      ok: false,
-      error: `Name must be ${NAME_MAX_LENGTH} characters or fewer`,
-    };
-  }
-  return { ok: true, name: trimmed };
 }
 
 // Coerce an untrusted status into a known TemplateStatus, defaulting to DRAFT.
@@ -95,7 +80,7 @@ export async function createTemplateForShop(
   shopId: string,
   { name, status, rows }: { name?: unknown; status?: unknown; rows?: unknown },
 ) {
-  const nameResult = validateName(name);
+  const nameResult = validateTemplateName(name);
   if (!nameResult.ok) {
     return { ok: false as const, error: nameResult.error };
   }
@@ -181,7 +166,7 @@ export async function saveTemplateForShop(
   };
 
   if (name !== undefined) {
-    const nameResult = validateName(name);
+    const nameResult = validateTemplateName(name);
     if (!nameResult.ok) {
       return { ok: false as const, error: nameResult.error };
     }
@@ -228,4 +213,74 @@ export async function setTemplateMetaobjectRef(
     where: { id, shopId },
     data: { shopifyMetaobjectGid: gid, shopifyMetaobjectHandle: handle },
   });
+}
+
+/**
+ * Duplicate an owned template (feature 20). Shop isolation (priority #1): the
+ * source is read shop-scoped (`findFirst({ where: { id, shopId } })`), so a
+ * foreign id reads nothing and the copy is never created — a cross-shop duplicate
+ * is blocked, not a leak.
+ *
+ * The copy:
+ *  - is named `"{source} (copy)"` (length-safe via `copyName`),
+ *  - starts as **DRAFT** — a fresh copy must never be live on the storefront,
+ *  - gets a fresh row `id` per row (`cloneRowsWithNewIds`; ids must never be
+ *    reused, data-model.md §7) and finalizes keys against `[]` like
+ *    `createTemplateForShop` (a brand-new row set).
+ *
+ * No metaobject sync here — the copy defaults to DRAFT (not storefront-rendered),
+ * so the next Save syncs it; this avoids an extra Admin API call on duplicate.
+ */
+export async function duplicateTemplateForShop(
+  shopId: string,
+  templateId: string,
+) {
+  const source = await prisma.template.findFirst({
+    where: { id: templateId, shopId },
+  });
+  if (!source) {
+    return { ok: false as const, error: "Template not found" };
+  }
+
+  // `source.name` is already a valid persisted name, so `copyName` always yields
+  // a valid one; the validate call keeps every name on the one validator path.
+  const nameResult = validateTemplateName(copyName(source.name));
+  if (!nameResult.ok) {
+    return { ok: false as const, error: nameResult.error };
+  }
+
+  const clonedRows = cloneRowsWithNewIds(parseRows(source.rows), newRowId);
+  const finalizedRows: EditorRow[] = reconcileRowKeys(clonedRows, []);
+
+  try {
+    const template = await prisma.template.create({
+      data: {
+        shopId,
+        name: nameResult.name,
+        status: TemplateStatus.DRAFT,
+        rows: finalizedRows as unknown as Prisma.InputJsonValue,
+      },
+    });
+    return { ok: true as const, data: template };
+  } catch {
+    return { ok: false as const, error: "Could not duplicate template" };
+  }
+}
+
+/**
+ * Delete an owned template (feature 20). Shop-scoped via `deleteMany({ where: {
+ * id, shopId } })`: a cross-shop id matches nothing and is a no-op (`count === 0`)
+ * — never a leak (priority #1). Postgres is the source of truth; the route
+ * performs the best-effort metaobject cleanup BEFORE this call so a
+ * storefront-readable metaobject can't outlive its template. Returns the affected
+ * `count` so the caller can tell a real delete from a no-op.
+ */
+export async function deleteTemplateForShop(
+  shopId: string,
+  templateId: string,
+) {
+  const result = await prisma.template.deleteMany({
+    where: { id: templateId, shopId },
+  });
+  return { ok: true as const, count: result.count };
 }

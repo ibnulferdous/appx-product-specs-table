@@ -54,12 +54,12 @@ import {
   type SavedCaret,
 } from "./editorShared";
 
-export interface SpecTableEditorProps {
+export interface UseRowEngineArgs {
   initialRows: EditorRow[];
   initialName: string;
   initialStatus: string;
-  // Remount the editor (parent bumps a key) so Discard resets the reducer to the
-  // persisted rows without a dedicated reset action.
+  // Remount the engine owner (parent bumps a key) so Discard resets the reducer to
+  // the persisted rows — and reseeds name/status — without a dedicated reset action.
   onDiscard: () => void;
 }
 
@@ -115,12 +115,20 @@ export function useRowEngine({
   initialName,
   initialStatus,
   onDiscard,
-}: SpecTableEditorProps) {
+}: UseRowEngineArgs) {
   const [rows, dispatch] = useReducer(rowsReducer, initialRows);
   const [activeRowId, setActiveRowId] = useState<string | null>(null);
   const atCap = rows.length >= MAX_TEMPLATE_ROWS;
   useCapturedTokenColor();
   const shopify = useAppBridge();
+
+  // Template-level editable fields tracked alongside rows in the dirty model
+  // (feature 20). `name` has a setter wired to the header Rename action; `status`
+  // is read-only this slice (no setter) but rides the dirty snapshot so the
+  // editable-status slice is a drop-in. Both reseed from props on remount (the
+  // engine owner is keyed on `${id}:${nonce}`), so Discard reverts a rename.
+  const [name, setName] = useState(initialName);
+  const [status] = useState(initialStatus);
 
   // --- Drag reorder (Steps 10–11) ------------------------------------------
   // Two sensors on one DndContext: a PointerSensor (mouse/touch, Step 10) with a
@@ -184,41 +192,48 @@ export function useRowEngine({
   const revalidator = useRevalidator();
   const saving = saveFetcher.state !== "idle";
 
-  // Dirty-tracking against the last-saved baseline. Rows are the only editable
-  // surface here, so a JSON compare of the row array is the dirty signal.
-  const currentRowsJson = JSON.stringify(rows);
-  const rowsJsonRef = useRef(currentRowsJson);
-  rowsJsonRef.current = currentRowsJson;
-  const [savedRowsJson, setSavedRowsJson] = useState(currentRowsJson);
-  const isDirty = currentRowsJson !== savedRowsJson;
+  // Dirty-tracking against the last-saved baseline. The baseline is a
+  // META-SNAPSHOT of every editable surface — the row array AND the template
+  // name/status — so a rename (name) flips isDirty and opens the SaveBar, not just
+  // a row edit (feature 20). `status` has no editor yet but is in the snapshot so
+  // the editable-status slice needs no change here. The key order is fixed so the
+  // JSON compare is stable.
+  const currentMetaJson = JSON.stringify({ rows, name, status });
+  const metaJsonRef = useRef(currentMetaJson);
+  metaJsonRef.current = currentMetaJson;
+  const [savedMetaJson, setSavedMetaJson] = useState(currentMetaJson);
+  const isDirty = currentMetaJson !== savedMetaJson;
 
-  // Snapshot of the rows JSON actually sent to the server, captured at click
+  // Snapshot of the meta-JSON actually sent to the server, captured at click
   // time. The completion effect resets the dirty baseline to THIS value, never to
-  // the live rows — so any edit made while the save is in flight stays dirty (the
+  // the live state — so any edit made while the save is in flight stays dirty (the
   // save bar remains open) instead of being silently marked saved and dropped.
   // The editor is also frozen during the save (see SpecTableEditor), making this
   // defense in depth against the edit-during-save race.
-  const submittedRowsJsonRef = useRef<string | null>(null);
+  const submittedMetaJsonRef = useRef<string | null>(null);
 
   const handleSave = useCallback(() => {
     if (saveFetcher.state !== "idle") return; // a save is already in flight
     // The payload is valid JSON at runtime; the cast satisfies SubmitTarget,
     // which the EditorRow interface union does not match structurally (interfaces
-    // carry no implicit index signature).
-    submittedRowsJsonRef.current = JSON.stringify(rows);
+    // carry no implicit index signature). name/status are sent from STATE, so a
+    // rename rides the existing Save payload (saveTemplateForShop updates them
+    // only when provided + valid — no server change needed).
+    submittedMetaJsonRef.current = JSON.stringify({ rows, name, status });
     saveFetcher.submit(
       {
         rows,
-        name: initialName,
-        status: initialStatus,
+        name,
+        status,
       } as unknown as Parameters<typeof saveFetcher.submit>[0],
       { method: "post", encType: "application/json" },
     );
-  }, [saveFetcher, rows, initialName, initialStatus]);
+  }, [saveFetcher, rows, name, status]);
 
   const handleDiscard = useCallback(() => {
-    // Clear dirty immediately (hides the bar), then remount to the persisted rows.
-    setSavedRowsJson(rowsJsonRef.current);
+    // Clear dirty immediately (hides the bar), then remount to the persisted
+    // state (rows + name + status).
+    setSavedMetaJson(metaJsonRef.current);
     onDiscard();
   }, [onDiscard]);
 
@@ -233,10 +248,10 @@ export function useRowEngine({
     handledSaveRef.current = data;
     if (data.ok) {
       // Reset the baseline to exactly what was persisted (the submitted
-      // snapshot), NOT the live rows — otherwise an edit made during the in-flight
-      // save would be marked saved and lost. Falls back to the live rows if the
-      // snapshot is somehow missing.
-      setSavedRowsJson(submittedRowsJsonRef.current ?? rowsJsonRef.current);
+      // snapshot), NOT the live state — otherwise an edit made during the
+      // in-flight save would be marked saved and lost. Falls back to the live
+      // snapshot if the submitted one is somehow missing.
+      setSavedMetaJson(submittedMetaJsonRef.current ?? metaJsonRef.current);
       revalidator.revalidate();
       if (data.syncError) {
         shopify.toast.show(data.syncError, { isError: true });
@@ -670,6 +685,10 @@ export function useRowEngine({
     sensors,
     handleDragEnd,
     dndAnnouncements,
+    // Template-level fields (feature 20)
+    name,
+    setName,
+    status,
     // Save / dirty
     isDirty,
     saving,

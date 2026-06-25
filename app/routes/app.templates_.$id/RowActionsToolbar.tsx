@@ -26,7 +26,7 @@ export function RowActionsToolbar({ engine }: { engine: RowEngine }) {
       <s-stack direction="inline" gap="base" alignItems="center">
         <s-button
           variant="primary"
-          icon="plus"
+          icon="layout-footer"
           onClick={handleAddRow}
           {...(atCap ? { disabled: true } : {})}
         >
@@ -34,7 +34,7 @@ export function RowActionsToolbar({ engine }: { engine: RowEngine }) {
         </s-button>
         <s-button
           variant="secondary"
-          icon="layout-section"
+          icon="layout-header"
           onClick={handleAddSection}
           {...(atCap ? { disabled: true } : {})}
         >

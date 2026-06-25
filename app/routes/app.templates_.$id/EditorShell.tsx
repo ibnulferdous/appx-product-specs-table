@@ -34,8 +34,8 @@ interface SegOption<T extends string> {
 }
 
 const TABS: ReadonlyArray<SegOption<TabId>> = [
-  { value: "content", label: "Content", icon: "edit" },
-  { value: "style", label: "Style", icon: "wand" },
+  { value: "content", label: "Content", icon: "compose" },
+  { value: "style", label: "Style", icon: "paint-brush-flat" },
   { value: "settings", label: "Settings", icon: "settings" },
 ];
 

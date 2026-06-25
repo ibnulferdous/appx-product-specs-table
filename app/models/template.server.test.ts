@@ -3,6 +3,8 @@ import {
   listTemplatesForShop,
   countTemplatesForShop,
   createTemplateForShop,
+  deleteTemplateForShop,
+  duplicateTemplateForShop,
   getTemplateByIdForShop,
   saveTemplateForShop,
   setTemplateMetaobjectRef,
@@ -24,6 +26,7 @@ const { prismaMock } = vi.hoisted(() => ({
       findFirst: vi.fn(),
       update: vi.fn(),
       updateMany: vi.fn(),
+      deleteMany: vi.fn(),
     },
   },
 }));
@@ -432,5 +435,113 @@ describe("setTemplateMetaobjectRef", () => {
     await expect(
       setTemplateMetaobjectRef("shop_A", "t1", "gid://x", "h"),
     ).rejects.toThrow();
+  });
+});
+
+describe("duplicateTemplateForShop", () => {
+  const sourceRows = [
+    {
+      id: "s1",
+      key: "display",
+      rowType: "SECTION_HEADER",
+      label: "Display",
+      hideWhenEmpty: false,
+    },
+    {
+      id: "r1",
+      key: "screen_size",
+      rowType: "DATA",
+      label: "Screen Size",
+      valueParts: [{ type: "TEXT", text: "13.6 inch" }],
+      hideWhenEmpty: true,
+    },
+  ];
+
+  it("blocks a cross-shop duplicate: a foreign id reads nothing and creates nothing (priority #1)", async () => {
+    prismaMock.template.findFirst.mockResolvedValue(null);
+
+    const result = await duplicateTemplateForShop("shop_B", "tmpl_owned_by_A");
+
+    expect(prismaMock.template.findFirst).toHaveBeenCalledWith({
+      where: { id: "tmpl_owned_by_A", shopId: "shop_B" },
+    });
+    expect(prismaMock.template.create).not.toHaveBeenCalled();
+    expect(result).toEqual({ ok: false, error: "Template not found" });
+  });
+
+  it("creates a DRAFT copy named '(copy)', shop-scoped, with fresh row ids and keys reconciled from labels", async () => {
+    prismaMock.template.findFirst.mockResolvedValue({
+      id: "t1",
+      shopId: "shop_A",
+      name: "Laptop Specs",
+      status: "ACTIVE",
+      rows: sourceRows,
+    });
+    prismaMock.template.create.mockResolvedValue({ id: "t2" });
+
+    const result = await duplicateTemplateForShop("shop_A", "t1");
+
+    expect(result.ok).toBe(true);
+    const createArg = prismaMock.template.create.mock.calls[0][0];
+    // Shop isolation: the copy is created under the caller's shop.
+    expect(createArg.data.shopId).toBe("shop_A");
+    // A fresh copy is never live on the storefront.
+    expect(createArg.data.status).toBe("DRAFT");
+    // " (copy)" courtesy suffix.
+    expect(createArg.data.name).toBe("Laptop Specs (copy)");
+    // Keys are reconciled against [] (re-derived from labels) — same as the source
+    // here since the labels slug identically.
+    expect(createArg.data.rows.map((r: { key: string }) => r.key)).toEqual([
+      "display",
+      "screen_size",
+    ]);
+    // Row ids are re-minted: no source id survives into the copy (ids never reused).
+    const newIds = createArg.data.rows.map((r: { id: string }) => r.id);
+    expect(newIds).not.toContain("s1");
+    expect(newIds).not.toContain("r1");
+  });
+
+  it("returns ok:false (not a throw) when the create write fails", async () => {
+    prismaMock.template.findFirst.mockResolvedValue({
+      id: "t1",
+      shopId: "shop_A",
+      name: "Specs",
+      status: "DRAFT",
+      rows: [],
+    });
+    prismaMock.template.create.mockRejectedValue(new Error("db down"));
+
+    const result = await duplicateTemplateForShop("shop_A", "t1");
+
+    expect(result).toEqual({
+      ok: false,
+      error: "Could not duplicate template",
+    });
+  });
+});
+
+describe("deleteTemplateForShop — shop isolation (priority #1)", () => {
+  it("scopes the delete by id AND shopId", async () => {
+    prismaMock.template.deleteMany.mockResolvedValue({ count: 1 });
+
+    const result = await deleteTemplateForShop("shop_A", "t1");
+
+    expect(prismaMock.template.deleteMany).toHaveBeenCalledWith({
+      where: { id: "t1", shopId: "shop_A" },
+    });
+    expect(result).toEqual({ ok: true, count: 1 });
+  });
+
+  it("is a no-op for a cross-shop id (count 0) — deletes nothing from the other shop", async () => {
+    // The id belongs to shop_A; shop_B asks to delete it. The shopId filter means
+    // deleteMany matches no row and removes nothing.
+    prismaMock.template.deleteMany.mockResolvedValue({ count: 0 });
+
+    const result = await deleteTemplateForShop("shop_B", "tmpl_owned_by_A");
+
+    expect(prismaMock.template.deleteMany).toHaveBeenCalledWith({
+      where: { id: "tmpl_owned_by_A", shopId: "shop_B" },
+    });
+    expect(result).toEqual({ ok: true, count: 0 });
   });
 });

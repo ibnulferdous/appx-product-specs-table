@@ -8,6 +8,7 @@ import {
   listTemplatesForShop,
   TEMPLATE_STATUSES,
 } from "../models/template.server";
+import { BADGE_TONES } from "../utils/templateStatus";
 
 const STATUS_FILTERS = [
   { label: "All", value: "ALL", href: "/app/templates" },
@@ -19,12 +20,6 @@ const STATUS_FILTERS = [
     href: "/app/templates?status=ARCHIVED",
   },
 ];
-
-const BADGE_TONES = {
-  ACTIVE: "success",
-  DRAFT: "warning",
-  ARCHIVED: "neutral",
-} as const;
 
 type TemplateListItem = Awaited<
   ReturnType<typeof listTemplatesForShop>
@@ -160,9 +155,13 @@ export default function TemplatesPage() {
 
   return (
     <s-page heading="Templates">
-      <s-link slot="secondary-actions" href="/app/templates/new">
+      <s-button
+        slot="primary-action"
+        variant="primary"
+        href="/app/templates/new"
+      >
         Create template
-      </s-link>
+      </s-button>
 
       {!hasTemplates ? (
         <EmptyTemplatesState />

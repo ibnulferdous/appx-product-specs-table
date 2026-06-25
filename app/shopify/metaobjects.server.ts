@@ -80,6 +80,25 @@ const METAOBJECT_BY_HANDLE_QUERY = `#graphql
     }
   }`;
 
+const METAOBJECT_ID_BY_HANDLE_QUERY = `#graphql
+  query SpecTableIdByHandle($handle: MetaobjectHandleInput!) {
+    metaobjectByHandle(handle: $handle) {
+      id
+    }
+  }`;
+
+const METAOBJECT_DELETE_MUTATION = `#graphql
+  mutation DeleteSpecTable($id: ID!) {
+    metaobjectDelete(id: $id) {
+      deletedId
+      userErrors {
+        field
+        message
+        code
+      }
+    }
+  }`;
+
 // The field definitions for the appx_spec_table metaobject (data-model.md §10).
 const SPEC_TABLE_FIELD_DEFINITIONS = [
   { name: "Template ID", key: "template_id", type: "single_line_text_field" },
@@ -171,6 +190,28 @@ export function readMetaobjectRows(json: unknown): EditorRow[] | null {
   } catch {
     return null;
   }
+}
+
+/** Read the metaobject GID from a metaobjectByHandle response (id-only query). */
+export function readMetaobjectIdByHandle(json: unknown): string | null {
+  if (!isRecord(json)) return null;
+  const data = json.data;
+  if (!isRecord(data)) return null;
+  const metaobject = data.metaobjectByHandle;
+  if (!isRecord(metaobject)) return null;
+  const id = asString(metaobject.id);
+  return id || null;
+}
+
+/** Read the deleted metaobject GID from a metaobjectDelete payload, or null. */
+export function readMetaobjectDeleteId(json: unknown): string | null {
+  if (!isRecord(json)) return null;
+  const data = json.data;
+  if (!isRecord(data)) return null;
+  const payload = data.metaobjectDelete;
+  if (!isRecord(payload)) return null;
+  const id = asString(payload.deletedId);
+  return id || null;
 }
 
 // --- Live Admin API calls (mocked at the boundary in tests) -----------------
@@ -302,4 +343,54 @@ export async function readSpecTableMetaobjectRows(
     },
   });
   return readMetaobjectRows(await response.json());
+}
+
+/**
+ * Best-effort delete of a template's storefront metaobject (feature 20). Called
+ * by the delete route action BEFORE the Postgres row is removed, so a
+ * storefront-readable metaobject can never outlive its template (priority #2,
+ * storefront correctness). Postgres is the source of truth, so this is best-effort
+ * by design: any failure (a thrown request, GraphQL userErrors) is logged and
+ * swallowed — it never throws, so it cannot block the durable Postgres delete.
+ *
+ * Resolves the metaobject GID from the template's stored `shopifyMetaobjectGid`
+ * when present; otherwise looks it up by handle (`template-{id}`). A template that
+ * was never synced has no metaobject, so a null GID is a clean no-op.
+ */
+export async function deleteSpecTableMetaobject(
+  admin: AdminApiContext,
+  { gid, templateId }: { gid: string | null; templateId: string },
+): Promise<void> {
+  try {
+    let id = gid;
+    if (!id) {
+      const found = await admin.graphql(METAOBJECT_ID_BY_HANDLE_QUERY, {
+        variables: {
+          handle: {
+            type: SPEC_TABLE_METAOBJECT_TYPE,
+            handle: specTableHandle(templateId),
+          },
+        },
+      });
+      id = readMetaobjectIdByHandle(await found.json());
+    }
+    if (!id) return; // never synced — nothing to delete
+
+    const response = await admin.graphql(METAOBJECT_DELETE_MUTATION, {
+      variables: { id },
+    });
+    const json: unknown = await response.json();
+    if (readMetaobjectDeleteId(json)) return; // deleted
+
+    const errors = isRecord(json)
+      ? readUserErrors(isRecord(json.data) ? json.data.metaobjectDelete : null)
+      : [];
+    console.error(
+      `[template delete] metaobject delete reported errors${
+        errors.length ? `: ${errors.join("; ")}` : ""
+      }`,
+    );
+  } catch (error) {
+    console.error("[template delete] metaobject delete failed", error);
+  }
 }

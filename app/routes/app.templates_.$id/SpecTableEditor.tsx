@@ -3,19 +3,20 @@ import { SaveBar } from "@shopify/app-bridge-react";
 import { EditorShell } from "./EditorShell";
 import { ContentTab } from "./ContentTab";
 import { SAVE_BAR_ID } from "./editorShared";
-import { useRowEngine, type SpecTableEditorProps } from "./useRowEngine";
+import type { RowEngine } from "./useRowEngine";
 import styles from "./SpecTableEditor.module.css";
 
-// The spec-table editor entry point (reshell A1). Once a 1,521-line monolith, now
-// a thin wrapper: `useRowEngine` owns all state/refs/handlers/effects, the
-// presentational `EditorShell` card hosts the engine-driven `ContentTab` in its
-// `stage` slot, and the App Bridge `<SaveBar>` rides the engine's dirty/saving
-// state. Behavior is unchanged from the pre-reshell editor; the layout is the
-// agreed mockup (tabbed card + bounded inner-scroll). See
-// `context/features/18-reshell-a1-extract-row-engine.md`.
-export function SpecTableEditor(props: SpecTableEditorProps) {
-  const engine = useRowEngine(props);
-
+// The spec-table editor card (reshell A1; engine lifted in feature 20). The
+// `useRowEngine` instance is now owned one level up by the page component
+// (`TemplateOverview`) so the `<s-page>` header can read the same saving/dirty/
+// name state and drive header actions; this component takes that single `engine`
+// as a prop and renders only the editor body. The presentational `EditorShell`
+// card hosts the engine-driven `ContentTab` in its `stage` slot, and the App
+// Bridge `<SaveBar>` rides the engine's dirty/saving state. Behavior is unchanged
+// from the pre-reshell editor; the layout is the agreed mockup (tabbed card +
+// bounded inner-scroll). See `context/features/18-reshell-a1-extract-row-engine.md`
+// and `context/features/20-template-lifecycle-actions.md`.
+export function SpecTableEditor({ engine }: { engine: RowEngine }) {
   // Freeze the whole editor card while a save is in flight. `inert` blocks
   // pointer, keyboard, and focus across the entire subtree — the contenteditable
   // value cells, the toolbar, drag/paste, and the tab controls — and removes it

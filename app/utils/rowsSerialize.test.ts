@@ -1,5 +1,10 @@
 import { describe, it, expect } from "vitest";
-import { finalizeRowKeys, parseRows, reconcileRowKeys } from "./rowsSerialize";
+import {
+  cloneRowsWithNewIds,
+  finalizeRowKeys,
+  parseRows,
+  reconcileRowKeys,
+} from "./rowsSerialize";
 import type { DataRow, EditorRow, SectionHeaderRow } from "./rows";
 
 // --- fixtures ---------------------------------------------------------------
@@ -209,5 +214,41 @@ describe("reconcileRowKeys", () => {
     reconcileRowKeys(incoming, persisted);
     expect(incoming[0].key).toBe("row");
     expect(persisted[0].key).toBe("battery_life");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// cloneRowsWithNewIds — fresh row ids for a duplicate
+// ---------------------------------------------------------------------------
+
+describe("cloneRowsWithNewIds", () => {
+  it("mints a fresh id per row from the injected generator, preserving everything else", () => {
+    const rows: EditorRow[] = [
+      sectionRow("s1", "display", "Display"),
+      dataRow("r1", "screen_size", "Screen Size", [
+        { type: "TEXT", text: "13.6 inch" },
+      ]),
+    ];
+    let n = 0;
+    const result = cloneRowsWithNewIds(rows, () => `new_${++n}`);
+
+    expect(result.map((r) => r.id)).toEqual(["new_1", "new_2"]);
+    // No source id survives into the copy (ids must never be reused).
+    expect(result.map((r) => r.id)).not.toContain("s1");
+    expect(result.map((r) => r.id)).not.toContain("r1");
+    // Every other field is carried over verbatim.
+    expect(result[0]).toMatchObject({ key: "display", label: "Display" });
+    expect(result[1]).toMatchObject({
+      key: "screen_size",
+      label: "Screen Size",
+      valueParts: [{ type: "TEXT", text: "13.6 inch" }],
+    });
+  });
+
+  it("does not mutate the source rows and returns a fresh array", () => {
+    const rows: EditorRow[] = [dataRow("r1", "k", "L")];
+    const result = cloneRowsWithNewIds(rows, () => "x");
+    expect(rows[0].id).toBe("r1");
+    expect(result).not.toBe(rows);
   });
 });
