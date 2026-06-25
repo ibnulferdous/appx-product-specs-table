@@ -210,8 +210,13 @@ export async function saveTemplateForShop(
 
 /**
  * Store the Shopify metaobject GID + handle on a template after a successful
- * sync (Editor Step 9.5). Shop-scoped via `updateMany` so the write itself
- * carries `shopId` (priority #1) — a no-op if the template is not this shop's.
+ * sync (Editor Step 9.5). Shop-scoped via the `{ id, shopId }` where-unique
+ * (Prisma 5+ extended where-unique) so the write itself carries `shopId`
+ * (priority #1). Uses `update`, not `updateMany`: a missing row or a `shopId`
+ * mismatch is a real bug at this point (the caller just persisted the template
+ * for this shop), so it must surface as P2025 — never silently no-op. Mirrors
+ * `updateTemplate`'s shop-scoped write; the caller (`syncTemplateToMetaobject`)
+ * catches the throw and reports it as a storefront-sync warning.
  */
 export async function setTemplateMetaobjectRef(
   shopId: string,
@@ -219,7 +224,7 @@ export async function setTemplateMetaobjectRef(
   gid: string,
   handle: string,
 ) {
-  return prisma.template.updateMany({
+  return prisma.template.update({
     where: { id, shopId },
     data: { shopifyMetaobjectGid: gid, shopifyMetaobjectHandle: handle },
   });

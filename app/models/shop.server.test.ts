@@ -1,7 +1,11 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { Prisma } from "@prisma/client";
 import type { Session } from "@shopify/shopify-app-react-router/server";
-import { upsertShop, markShopUninstalled } from "./shop.server";
+import {
+  upsertShop,
+  markShopUninstalled,
+  setShopMetaobjectDefinitionGid,
+} from "./shop.server";
 
 // Same mocking approach as template.server.test.ts: swap the real Prisma client
 // for spies so we can test the install/uninstall logic — including the P2002
@@ -137,5 +141,28 @@ describe("markShopUninstalled", () => {
       data: { isInstalled: false, uninstalledAt: expect.any(Date) },
     });
     expect(result).toEqual({ count: 0 });
+  });
+});
+
+describe("setShopMetaobjectDefinitionGid", () => {
+  it("writes the definition GID scoped to the shop's own row", async () => {
+    prismaMock.shop.update.mockResolvedValue({ id: "shop_A" });
+
+    await setShopMetaobjectDefinitionGid("shop_A", "gid://shopify/Metaobject/1");
+
+    // `update` (not `updateMany`): a vanished shop row surfaces as P2025 rather
+    // than a silent no-op, since shopId came from a row loaded this request.
+    expect(prismaMock.shop.update).toHaveBeenCalledWith({
+      where: { id: "shop_A" },
+      data: { metaobjectDefinitionGid: "gid://shopify/Metaobject/1" },
+    });
+  });
+
+  it("propagates the throw when the shop row no longer exists", async () => {
+    prismaMock.shop.update.mockRejectedValue(new Error("P2025"));
+
+    await expect(
+      setShopMetaobjectDefinitionGid("shop_A", "gid://x"),
+    ).rejects.toThrow();
   });
 });

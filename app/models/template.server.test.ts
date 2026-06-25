@@ -406,7 +406,7 @@ describe("saveTemplateForShop", () => {
 
 describe("setTemplateMetaobjectRef", () => {
   it("writes the GID + handle scoped to the shop's own template", async () => {
-    prismaMock.template.updateMany.mockResolvedValue({ count: 1 });
+    prismaMock.template.update.mockResolvedValue({ id: "t1" });
 
     await setTemplateMetaobjectRef(
       "shop_A",
@@ -415,12 +415,22 @@ describe("setTemplateMetaobjectRef", () => {
       "template-t1",
     );
 
-    expect(prismaMock.template.updateMany).toHaveBeenCalledWith({
+    // `update` (not `updateMany`): the `{ id, shopId }` where-unique surfaces a
+    // missing/cross-shop row as P2025 instead of silently no-opping.
+    expect(prismaMock.template.update).toHaveBeenCalledWith({
       where: { id: "t1", shopId: "shop_A" },
       data: {
         shopifyMetaobjectGid: "gid://shopify/Metaobject/9",
         shopifyMetaobjectHandle: "template-t1",
       },
     });
+  });
+
+  it("propagates the throw when no row matches (id/shopId mismatch)", async () => {
+    prismaMock.template.update.mockRejectedValue(new Error("P2025"));
+
+    await expect(
+      setTemplateMetaobjectRef("shop_A", "t1", "gid://x", "h"),
+    ).rejects.toThrow();
   });
 });

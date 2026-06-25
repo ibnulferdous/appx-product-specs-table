@@ -80,9 +80,9 @@ export function InsertFieldModal({ engine }: { engine: RowEngine }) {
                 <s-spinner accessibilityLabel="Loading metafields"></s-spinner>
                 <s-text color="subdued">Loading metafields…</s-text>
               </s-stack>
-            ) : !metafieldsData!.ok ? (
+            ) : metafieldsData && !metafieldsData.ok ? (
               <s-stack direction="block" gap="small-200">
-                <s-banner tone="critical">{metafieldsData!.error}</s-banner>
+                <s-banner tone="critical">{metafieldsData.error}</s-banner>
                 <s-stack direction="inline">
                   <s-button onClick={loadMetafieldDefinitions}>Retry</s-button>
                 </s-stack>
