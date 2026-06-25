@@ -8,8 +8,34 @@ export const TEMPLATE_STATUSES = ["ACTIVE", "DRAFT", "ARCHIVED"];
 const TEMPLATE_STATUS_SET = new Set(TEMPLATE_STATUSES);
 const NAME_MAX_LENGTH = 100;
 
+// Default name for a template created via the editor's create-on-first-save flow
+// (the merchant lands in the editor, not a name form). Renaming is a later slice;
+// until then a new template carries this name. See
+// `context/features/19-template-create-on-first-save.md`.
+export const DEFAULT_TEMPLATE_NAME = "Untitled template";
+
 function getRowCount(rows: unknown): number {
   return Array.isArray(rows) ? rows.length : 0;
+}
+
+// Shared row-payload handling for create and save: narrow the untrusted `rows`
+// into the typed EditorRow[] contract (`parseRows`) and enforce the shared
+// MAX_TEMPLATE_ROWS cap server-side (the editor's UI cap is UX; this is the real
+// gate). Both paths run this so the cap message can never drift apart — mirrors
+// why `validateName` is shared. Key finalization differs by path (create
+// reconciles against `[]`, save against the persisted rows), so it stays at the
+// call site.
+function parseRowsWithinCap(
+  rows: unknown,
+): { ok: true; rows: EditorRow[] } | { ok: false; error: string } {
+  const incoming = parseRows(rows);
+  if (incoming.length > MAX_TEMPLATE_ROWS) {
+    return {
+      ok: false,
+      error: `A template can have at most ${MAX_TEMPLATE_ROWS} rows`,
+    };
+  }
+  return { ok: true, rows: incoming };
 }
 
 // Shared name validation, used by both create and save so the two paths can never
@@ -67,12 +93,21 @@ export async function countTemplatesForShop(shopId: string) {
 
 export async function createTemplateForShop(
   shopId: string,
-  { name, status }: { name?: unknown; status?: unknown },
+  { name, status, rows }: { name?: unknown; status?: unknown; rows?: unknown },
 ) {
   const nameResult = validateName(name);
   if (!nameResult.ok) {
     return { ok: false as const, error: nameResult.error };
   }
+
+  // Mirror saveTemplateForShop's row handling: narrow + cap the untrusted rows,
+  // then finalize keys. A brand-new template has nothing persisted, so every
+  // row's key is finalized from its label (reconcile against []).
+  const rowsResult = parseRowsWithinCap(rows);
+  if (!rowsResult.ok) {
+    return { ok: false as const, error: rowsResult.error };
+  }
+  const finalizedRows: EditorRow[] = reconcileRowKeys(rowsResult.rows, []);
 
   try {
     const template = await prisma.template.create({
@@ -80,7 +115,7 @@ export async function createTemplateForShop(
         shopId,
         name: nameResult.name,
         status: resolveStatus(status),
-        rows: [],
+        rows: finalizedRows as unknown as Prisma.InputJsonValue,
       },
     });
 
@@ -124,12 +159,9 @@ export async function saveTemplateForShop(
   id: string,
   { rows, name, status }: { rows?: unknown; name?: unknown; status?: unknown },
 ) {
-  const incoming = parseRows(rows);
-  if (incoming.length > MAX_TEMPLATE_ROWS) {
-    return {
-      ok: false as const,
-      error: `A template can have at most ${MAX_TEMPLATE_ROWS} rows`,
-    };
+  const rowsResult = parseRowsWithinCap(rows);
+  if (!rowsResult.ok) {
+    return { ok: false as const, error: rowsResult.error };
   }
 
   // Read the owned row first — both the ownership gate and the source of the
@@ -140,7 +172,7 @@ export async function saveTemplateForShop(
   }
 
   const finalizedRows: EditorRow[] = reconcileRowKeys(
-    incoming,
+    rowsResult.rows,
     parseRows(existing.rows),
   );
 

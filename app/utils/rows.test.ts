@@ -1,5 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
+  createInitialRows,
+  INITIAL_DATA_ROW_COUNT,
   isAtomicPart,
   MAX_TEMPLATE_ROWS,
   newRowId,
@@ -841,5 +843,96 @@ describe("rowsReducer", () => {
       // @ts-expect-error — exercising the reducer's defensive default branch
       expect(rowsReducer(rows, { type: "NOPE" })).toBe(rows);
     });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// createInitialRows — the starter scaffold for a brand-new template
+// ---------------------------------------------------------------------------
+
+describe("createInitialRows", () => {
+  // Inject deterministic ids so the factory is reproducible under test (the only
+  // non-deterministic input is the id, supplied by the caller — see the doc note).
+  function sequentialIds() {
+    let n = 0;
+    return () => `id_${(n += 1)}`;
+  }
+
+  it("returns one SECTION_HEADER followed by INITIAL_DATA_ROW_COUNT DATA rows", () => {
+    const rows = createInitialRows(sequentialIds());
+
+    expect(rows).toHaveLength(1 + INITIAL_DATA_ROW_COUNT);
+    expect(rows[0].rowType).toBe("SECTION_HEADER");
+    expect(rows.slice(1).every((row) => row.rowType === "DATA")).toBe(true);
+    // The section comes first, then exactly five data rows.
+    expect(rows.filter((row) => row.rowType === "DATA")).toHaveLength(
+      INITIAL_DATA_ROW_COUNT,
+    );
+  });
+
+  it("seeds every row blank (no label, data rows hold one empty TEXT part)", () => {
+    const rows = createInitialRows(sequentialIds());
+
+    expect(rows.every((row) => row.label === "")).toBe(true);
+    for (const row of rows) {
+      if (row.rowType === "DATA") {
+        expect(row.valueParts).toEqual([{ type: "TEXT", text: "" }]);
+        expect(row.hideWhenEmpty).toBe(true);
+      } else {
+        expect(row.hideWhenEmpty).toBe(false);
+      }
+    }
+  });
+
+  it("assigns the documented provisional keys (section, row, row_2 … row_5)", () => {
+    const rows = createInitialRows(sequentialIds());
+
+    expect(rows.map((row) => row.key)).toEqual([
+      "section",
+      "row",
+      "row_2",
+      "row_3",
+      "row_4",
+      "row_5",
+    ]);
+  });
+
+  it("gives every row a unique key and a unique id", () => {
+    const rows = createInitialRows(sequentialIds());
+
+    expect(new Set(rows.map((row) => row.key)).size).toBe(rows.length);
+    expect(new Set(rows.map((row) => row.id)).size).toBe(rows.length);
+  });
+
+  it("is deterministic for the same injected id sequence", () => {
+    expect(createInitialRows(sequentialIds())).toEqual(
+      createInitialRows(sequentialIds()),
+    );
+  });
+
+  it("uses the injected ids in order", () => {
+    const rows = createInitialRows(sequentialIds());
+
+    expect(rows.map((row) => row.id)).toEqual([
+      "id_1",
+      "id_2",
+      "id_3",
+      "id_4",
+      "id_5",
+      "id_6",
+    ]);
+  });
+
+  it("defaults to newRowId (uuid) when no id factory is injected", () => {
+    const rows = createInitialRows();
+
+    expect(rows).toHaveLength(1 + INITIAL_DATA_ROW_COUNT);
+    // Distinct, non-empty ids minted by the default newRowId.
+    expect(new Set(rows.map((row) => row.id)).size).toBe(rows.length);
+    expect(rows.every((row) => row.id.length > 0)).toBe(true);
+  });
+
+  it("never exceeds the row cap (the scaffold is well under it)", () => {
+    expect(1 + INITIAL_DATA_ROW_COUNT).toBeLessThanOrEqual(MAX_TEMPLATE_ROWS);
   });
 });

@@ -7,6 +7,7 @@ import {
   saveTemplateForShop,
   setTemplateMetaobjectRef,
 } from "./template.server";
+import { MAX_TEMPLATE_ROWS } from "../utils/rows";
 
 // Replace the Prisma client (app/db.server.ts default export) with in-memory
 // spies. `vi.hoisted` defines the mock before `vi.mock`'s factory runs, and
@@ -153,6 +154,92 @@ describe("createTemplateForShop", () => {
     const result = await createTemplateForShop("shop_A", { name: "Specs" });
 
     expect(result).toEqual({ ok: false, error: "Could not create template" });
+  });
+
+  // --- create-on-first-save: rows accepted on create ----------------------
+
+  it("accepts seed rows, finalizes provisional keys from labels, and scopes the write to the shop", async () => {
+    prismaMock.template.create.mockResolvedValue({ id: "t1" });
+
+    await createTemplateForShop("shop_A", {
+      name: "Specs",
+      status: "DRAFT",
+      rows: [
+        {
+          id: "s1",
+          key: "section", // provisional
+          rowType: "SECTION_HEADER",
+          label: "Display",
+          hideWhenEmpty: false,
+        },
+        {
+          id: "r1",
+          key: "row", // provisional
+          rowType: "DATA",
+          label: "Screen Size",
+          valueParts: [{ type: "TEXT", text: "" }],
+          hideWhenEmpty: true,
+        },
+      ],
+    });
+
+    const createArg = prismaMock.template.create.mock.calls[0][0];
+    // Shop isolation (priority #1): the write always carries the caller's shopId,
+    // so one shop can never create a template under another's id.
+    expect(createArg.data.shopId).toBe("shop_A");
+    // A brand-new template reconciles against [], so every provisional key is
+    // finalized from its label.
+    expect(createArg.data.rows.map((r: { key: string }) => r.key)).toEqual([
+      "display",
+      "screen_size",
+    ]);
+    // Ids are preserved (never reminted server-side).
+    expect(createArg.data.rows.map((r: { id: string }) => r.id)).toEqual([
+      "s1",
+      "r1",
+    ]);
+  });
+
+  it("rejects an over-cap rows payload without writing", async () => {
+    const tooMany = Array.from({ length: MAX_TEMPLATE_ROWS + 1 }, (_, i) => ({
+      id: `r${i}`,
+      key: `row_${i}`,
+      rowType: "DATA",
+      label: "x",
+      valueParts: [{ type: "TEXT", text: "" }],
+      hideWhenEmpty: true,
+    }));
+
+    const result = await createTemplateForShop("shop_A", {
+      name: "Specs",
+      rows: tooMany,
+    });
+
+    expect(result.ok).toBe(false);
+    expect(prismaMock.template.create).not.toHaveBeenCalled();
+  });
+
+  it("drops malformed rows from an untrusted payload before writing", async () => {
+    prismaMock.template.create.mockResolvedValue({ id: "t1" });
+
+    await createTemplateForShop("shop_A", {
+      name: "Specs",
+      rows: [
+        {
+          id: "r1",
+          rowType: "DATA",
+          label: "Brand",
+          valueParts: [],
+          hideWhenEmpty: true,
+        },
+        { rowType: "DATA", label: "no id" }, // dropped: no id
+        "garbage", // dropped: not an object
+      ],
+    });
+
+    const createArg = prismaMock.template.create.mock.calls[0][0];
+    expect(createArg.data.rows).toHaveLength(1);
+    expect(createArg.data.rows[0].id).toBe("r1");
   });
 });
 

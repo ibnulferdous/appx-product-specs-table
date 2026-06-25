@@ -30,18 +30,32 @@
 Shown when `Shop.onboardingStatus` is `NOT_STARTED` or `IN_PROGRESS`.
 
 - Welcome banner at the top (not dismissible until onboarding is complete)
-- Onboarding checklist — three steps rendered as a `VerticalStack` of `Card` rows:
-  1. ✅ / ⬜ Create your first template → links to `/app/templates/new`
-  2. ✅ / ⬜ Assign template to a product → links to `/app/templates/:id/assign`
-  3. ✅ / ⬜ Add the app block to your theme → opens Shopify theme editor deep link
+- Onboarding checklist — four steps rendered as a `VerticalStack` of `Card` rows, in first-run execution order:
+  1. ✅ / ⬜ **Create your first template** → opens the editor at `/app/templates/new`
+  2. ✅ / ⬜ **Save the template** → persists the first `Template` row (create-on-first-save; see completion signals)
+  3. ✅ / ⬜ **Assign the template to a product** → opens the assignment UI (destination intentionally **unlinked** until the route is locked — see note)
+  4. ✅ / ⬜ **Add the app block to your theme** → opens the Shopify theme editor deep link
 - Each completed step shows a green checkmark and is non-interactive
-- Progress indicator: "2 of 3 steps complete"
+- Progress indicator: "X of 4 steps complete"
+
+> **Step order rationale.** This follows the PRD core user flow (create → save → assign → add app block → live). The app block step is **last** because the storefront table renders nothing until a template is `ACTIVE` and assigned — front-loading it would show the merchant an empty block.
+
+**Completion signals** — each checkmark must be driven by a real, server-verifiable state, never by mere intent (e.g. "clicked Create"):
+
+| Step                       | Marked ✅ when                                                                                                                                                                                                                |
+| -------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Create your first template | `Shop.onboardingStatus` has advanced to `IN_PROGRESS` — set the first time the merchant opens the editor (`/app/templates/new`). This is the lone "intent" step and gates nothing downstream.                                |
+| Save the template          | The shop has **at least one persisted `Template`** (`Template` count ≥ 1). Under **create-on-first-save** the DB row exists only after the first Save, so this — not opening the editor — is the real "a template exists" signal. |
+| Assign the template to a product | At least one `ProductAssignment` exists for the shop (equivalently, one `ProductAssignmentIndex` row with `status = APPLIED`).                                                                                          |
+| Add the app block to your theme | `Shop.isAppBlockActive` is `true`.                                                                                                                                                                                       |
+
+> **Assignment step — deferred deep link.** Step 3 deliberately does **not** hard-link to `/app/templates/:id/assign`. Assignment is moving into the editor's **Settings tab**, and whether the standalone `/assign` route survives is still an open question (see the Route Map note above, Screen 4, and `progress-tracker.md`). Wire this step's destination only **after** that question is locked, to avoid pointing onboarding at a route that may be retired.
 
 ---
 
 ### State B — Onboarding just completed (one-time transition state)
 
-Shown once when all three steps are marked done and `Shop.onboardingStatus` flips to `COMPLETED`.
+Shown once when all four steps are marked done and `Shop.onboardingStatus` flips to `COMPLETED`.
 
 - One-time success `Banner` (dismissible): _"Your first spec table is live. Here's what you can do next."_
 - Two `CalloutCard` suggestions below the banner:

@@ -13,6 +13,12 @@
 // server must both read this constant — never hardcode the literal.
 export const MAX_TEMPLATE_ROWS = 200;
 
+// Starter-scaffold size for a brand-new template: how many blank DATA rows open
+// below the single seed section header (see `createInitialRows`). A named
+// constant, never a hardcoded literal, so the scaffold can be retuned in one
+// place — same convention as MAX_TEMPLATE_ROWS.
+export const INITIAL_DATA_ROW_COUNT = 5;
+
 export type ValuePart =
   | { type: "TEXT"; text: string }
   | { type: "SHOPIFY_FIELD"; field: string }
@@ -451,4 +457,25 @@ export function rowsReducer(
     default:
       return rows;
   }
+}
+
+/**
+ * Build the starter scaffold for a brand-new template: one SECTION_HEADER
+ * followed by `INITIAL_DATA_ROW_COUNT` blank DATA rows. Folds the canonical
+ * `rowsReducer` from `[]` (one ADD_SECTION, then N ADD_ROW) so the seed reuses
+ * the exact same provisional-key logic, cap behavior, and row shape as
+ * interactive creation — there is no second construction path to drift. The
+ * provisional keys come out as `section`, `row`, `row_2`, … `row_5`; they are
+ * finalized from labels at Save like any other new row (rowsSerialize.ts).
+ *
+ * `mkId` is injectable (defaults to `newRowId`) so the factory is deterministic
+ * under test — the only non-deterministic input (the row ids) is supplied by the
+ * caller, keeping this pure like the reducer it folds.
+ */
+export function createInitialRows(mkId: () => string = newRowId): EditorRow[] {
+  let rows = rowsReducer([], { type: "ADD_SECTION", id: mkId() });
+  for (let i = 0; i < INITIAL_DATA_ROW_COUNT; i += 1) {
+    rows = rowsReducer(rows, { type: "ADD_ROW", id: mkId() });
+  }
+  return rows;
 }
