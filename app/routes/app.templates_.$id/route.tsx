@@ -221,6 +221,10 @@ function TemplateOverview({
     initialRows: parseRows(template.rows),
     initialName: template.name,
     initialStatus: template.status,
+    // The "new" sentinel id (loader) marks a never-saved template; the engine uses
+    // it to gate the file-23 first-paste scaffold replace. A real cuid is never
+    // "new", and the create-on-first-save remount reseeds this to false.
+    isNew: template.id === "new",
     onDiscard,
   });
   const [searchParams, setSearchParams] = useSearchParams();

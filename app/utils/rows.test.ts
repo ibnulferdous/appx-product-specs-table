@@ -3,6 +3,7 @@ import {
   createInitialRows,
   INITIAL_DATA_ROW_COUNT,
   isAtomicPart,
+  isPristineScaffold,
   MAX_TEMPLATE_ROWS,
   newRowId,
   normalizeValueParts,
@@ -896,6 +897,93 @@ describe("rowsReducer", () => {
       expect(rows).toHaveLength(1);
       expect(result).not.toBe(rows);
     });
+
+    describe("replace mode (file 23 — new-template scaffold swap)", () => {
+      it("replaces the whole array with the pasted rows (the scaffold goes)", () => {
+        const scaffold = createInitialRows(() => newRowId());
+        const result = rowsReducer(scaffold, {
+          type: "PASTE_ROWS",
+          rows: [
+            pastedRow("p1", "Processor", [{ type: "TEXT", text: "M5" }]),
+            pastedRow("p2", "RAM", [{ type: "TEXT", text: "16 GB" }]),
+          ],
+          replace: true,
+        });
+        // Only the pasted rows remain — no leftover section or blank DATA rows.
+        expect(result).toHaveLength(2);
+        expect(result.map((r) => r.id)).toEqual(["p1", "p2"]);
+        expect(result.every((r) => r.rowType === "DATA")).toBe(true);
+        expect(result.map((r) => r.label)).toEqual(["Processor", "RAM"]);
+      });
+
+      it("seeds provisional keys from empty (row, row_2, …), unique within the batch", () => {
+        const scaffold = createInitialRows(() => newRowId());
+        const result = rowsReducer(scaffold, {
+          type: "PASTE_ROWS",
+          rows: [
+            pastedRow("p1", "A"),
+            pastedRow("p2", "B"),
+            pastedRow("p3", "C"),
+          ],
+          replace: true,
+        });
+        // Keys start clean at `row` (the scaffold's `section`/`row` keys are gone).
+        expect(result.map((r) => r.key)).toEqual(["row", "row_2", "row_3"]);
+        expect(new Set(result.map((r) => r.key)).size).toBe(result.length);
+      });
+
+      it("ignores afterId on the replace path (rows become the whole array)", () => {
+        const scaffold = createInitialRows(() => newRowId());
+        const result = rowsReducer(scaffold, {
+          type: "PASTE_ROWS",
+          rows: [pastedRow("p1", "A")],
+          // A stray afterId must not splice — replace bases on [].
+          afterId: scaffold[0].id,
+          replace: true,
+        });
+        expect(result.map((r) => r.id)).toEqual(["p1"]);
+      });
+
+      it("cap-truncates to MAX_TEMPLATE_ROWS (a full table fits from empty)", () => {
+        const scaffold = createInitialRows(() => newRowId());
+        const many = Array.from({ length: MAX_TEMPLATE_ROWS + 5 }, (_, i) =>
+          pastedRow(`p${i}`, `L${i}`),
+        );
+        const result = rowsReducer(scaffold, {
+          type: "PASTE_ROWS",
+          rows: many,
+          replace: true,
+        });
+        expect(result).toHaveLength(MAX_TEMPLATE_ROWS);
+        // The first MAX rows are kept; the overflow is dropped.
+        expect(result[0].id).toBe("p0");
+        expect(result.some((r) => r.id === `p${MAX_TEMPLATE_ROWS}`)).toBe(
+          false,
+        );
+      });
+
+      it("returns the SAME array reference for an empty replace (never wipes the scaffold)", () => {
+        const scaffold = createInitialRows(() => newRowId());
+        expect(
+          rowsReducer(scaffold, {
+            type: "PASTE_ROWS",
+            rows: [],
+            replace: true,
+          }),
+        ).toBe(scaffold);
+      });
+
+      it("does not mutate the source rows array (the reducer is pure)", () => {
+        const scaffold = createInitialRows(() => newRowId());
+        const before = scaffold.length;
+        rowsReducer(scaffold, {
+          type: "PASTE_ROWS",
+          rows: [pastedRow("p1", "A")],
+          replace: true,
+        });
+        expect(scaffold).toHaveLength(before);
+      });
+    });
   });
 
   describe("the 200-row cap", () => {
@@ -1019,5 +1107,113 @@ describe("createInitialRows", () => {
 
   it("never exceeds the row cap (the scaffold is well under it)", () => {
     expect(1 + INITIAL_DATA_ROW_COUNT).toBeLessThanOrEqual(MAX_TEMPLATE_ROWS);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// isPristineScaffold — recognizing the untouched starter scaffold (file 23)
+// ---------------------------------------------------------------------------
+
+describe("isPristineScaffold", () => {
+  // A fresh, never-edited scaffold for each case (real uuids — keys are not
+  // inspected, only the merchant-visible blank shape).
+  const fresh = (): EditorRow[] => createInitialRows(() => newRowId());
+
+  it("is true for the freshly seeded scaffold (createInitialRows)", () => {
+    expect(isPristineScaffold(fresh())).toBe(true);
+  });
+
+  it("is false once a DATA row's label is typed", () => {
+    const scaffold = fresh();
+    const edited = rowsReducer(scaffold, {
+      type: "SET_LABEL",
+      id: scaffold[1].id,
+      label: "Processor",
+    });
+    expect(isPristineScaffold(edited)).toBe(false);
+  });
+
+  it("is false once the SECTION_HEADER label is typed", () => {
+    const scaffold = fresh();
+    const edited = rowsReducer(scaffold, {
+      type: "SET_LABEL",
+      id: scaffold[0].id,
+      label: "Display",
+    });
+    expect(isPristineScaffold(edited)).toBe(false);
+  });
+
+  it("is false once a DATA row's value is non-empty", () => {
+    const scaffold = fresh();
+    const edited = rowsReducer(scaffold, {
+      type: "SET_VALUE_TEXT",
+      id: scaffold[1].id,
+      partIndex: 0,
+      text: "M5",
+    });
+    expect(isPristineScaffold(edited)).toBe(false);
+  });
+
+  it("is false after a row is added (wrong length)", () => {
+    const edited = rowsReducer(fresh(), { type: "ADD_ROW", id: "extra" });
+    expect(isPristineScaffold(edited)).toBe(false);
+  });
+
+  it("is false after a row is deleted (wrong length)", () => {
+    const scaffold = fresh();
+    const edited = rowsReducer(scaffold, {
+      type: "DELETE_ROW",
+      id: scaffold[1].id,
+    });
+    expect(isPristineScaffold(edited)).toBe(false);
+  });
+
+  it("is false after a reorder that moves the section out of the lead position", () => {
+    const scaffold = fresh();
+    // Drag the section header down below the first data row → rows[0] is now DATA.
+    const edited = rowsReducer(scaffold, {
+      type: "MOVE_ROW",
+      activeId: scaffold[0].id,
+      overId: scaffold[1].id,
+    });
+    expect(isPristineScaffold(edited)).toBe(false);
+  });
+
+  it("is false when the leading row is not a SECTION_HEADER", () => {
+    // Six DATA rows: right length, wrong leading type.
+    const rows: EditorRow[] = Array.from(
+      { length: INITIAL_DATA_ROW_COUNT + 1 },
+      (_, i) => dataRow(String(i), `row_${i}`),
+    );
+    expect(isPristineScaffold(rows)).toBe(false);
+  });
+
+  it("is false when a DATA row carries an atomic value part (not a lone empty TEXT)", () => {
+    const scaffold = fresh();
+    const edited = rowsReducer(scaffold, {
+      type: "INSERT_VALUE_PART_AT",
+      id: scaffold[1].id,
+      partIndex: 0,
+      offset: 0,
+      part: metafield,
+    });
+    expect(isPristineScaffold(edited)).toBe(false);
+  });
+
+  it("is false for an empty array and other wrong lengths", () => {
+    expect(isPristineScaffold([])).toBe(false);
+    expect(isPristineScaffold([sectionRow("s", "section")])).toBe(false);
+  });
+
+  it("does not inspect keys — a scaffold with finalized keys is still pristine", () => {
+    const scaffold = fresh();
+    // Simulate Save-time key finalization (labels are blank, so slugs fall back to
+    // `row`, but uniqueness would differ); force arbitrary keys to prove keys are
+    // ignored. The blank merchant-visible shape is unchanged → still pristine.
+    const rekeyed: EditorRow[] = scaffold.map((row, i) => ({
+      ...row,
+      key: `finalized_${i}`,
+    }));
+    expect(isPristineScaffold(rekeyed)).toBe(true);
   });
 });

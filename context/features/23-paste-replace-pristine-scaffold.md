@@ -171,8 +171,9 @@ Pass `isNew` from the route; gate the replace in `pasteGrid`.
   rule.
 - **Undo after a replace.** A replace is a single reducer transition, so it composes with undo/redo
   when that lands (deferred); until then, Discard (remount to persisted state — i.e. back to the
-  scaffold, since nothing was saved) is the escape hatch. Confirm Discard restores the scaffold in
-  23.2.
+  scaffold, since nothing was saved) is the escape hatch. **Confirmed in 23.2 (browser, 2026-06-26):**
+  after a replace (and after an edit-then-insert), Discard remounts the new template back to the
+  untouched 1-section + 5-blank scaffold (Rows: 6 / 200, Save bar closed).
 
 ## Done when
 

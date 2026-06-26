@@ -21,6 +21,7 @@ import { sortableKeyboardCoordinates } from "@dnd-kit/sortable";
 import type { loader as metafieldDefinitionsLoader } from "../app.metafield-definitions";
 import type { action as templateAction } from "./route";
 import {
+  isPristineScaffold,
   MAX_TEMPLATE_ROWS,
   newRowId,
   rowsReducer,
@@ -54,6 +55,11 @@ export interface UseRowEngineArgs {
   initialRows: EditorRow[];
   initialName: string;
   initialStatus: string;
+  // True only for the `/app/templates/new` sentinel mount (route.tsx). A stable
+  // per-mount fact: after the first Save the URL flips to the real cuid and the
+  // engine remounts with `isNew = false`, so the scaffold-replace (file 23) can
+  // fire at most once. Read in `pasteGrid` to gate the pristine-scaffold replace.
+  isNew: boolean;
   // Remount the engine owner (parent bumps a key) so Discard resets the reducer to
   // the persisted rows — and reseeds name/status — without a dedicated reset action.
   onDiscard: () => void;
@@ -110,6 +116,7 @@ export function useRowEngine({
   initialRows,
   initialName,
   initialStatus,
+  isNew,
   onDiscard,
 }: UseRowEngineArgs) {
   const [rows, dispatch] = useReducer(rowsReducer, initialRows);
@@ -573,15 +580,16 @@ export function useRowEngine({
     setSearchQuery("");
   }, [shopify]);
 
-  // --- Bulk table paste → rows (Steps 12–13, refined files 21–22) ----------
+  // --- Bulk table paste → rows (Steps 12–13, refined files 21–23) ----------
   // Capture a multi-cell table pasted into the editor (Excel / Google Sheets / a
   // web <table>), parse it to a 2-D grid (Step 12), and bulk-insert it as rows
   // (Step 13): first column → Label, remaining columns → a TEXT/LINE_BREAK Value
   // (`gridToPastedRows`), inserted via PASTE_ROWS with the 200-row cap enforced
   // on paste (truncate to the room remaining + tell the merchant what was
   // dropped). The block lands directly after the active row (file 22; appends
-  // when none); the new-template scaffold replace is still untouched here
-  // (file 23).
+  // when none) — EXCEPT on a brand-new template still showing the untouched
+  // starter scaffold, where the first bulk paste REPLACES the whole scaffold
+  // (file 23; the empty section + 5 blanks go, leaving only the pasted rows).
 
   // Shared bulk-insert core (file 21): build pasted rows from a normalized grid,
   // cap to the room remaining, dispatch PASTE_ROWS, focus + scroll the last
@@ -591,7 +599,15 @@ export function useRowEngine({
   // the value cell can route a table here instead of flattening it.
   const pasteGrid = useCallback(
     (grid: string[][]) => {
-      const room = MAX_TEMPLATE_ROWS - rowsRef.current.length;
+      // file 23: on a brand-new template whose rows are still the untouched
+      // scaffold (1 section + 5 blanks), the first bulk paste REPLACES the whole
+      // scaffold. Compute room/dropped against an empty base (`MAX_TEMPLATE_ROWS`,
+      // matching the reducer's base-`[]` replace path); every other state keeps
+      // the file-22 insert-after-active math (`MAX − current length`).
+      const replace = isNew && isPristineScaffold(rowsRef.current);
+      const room = replace
+        ? MAX_TEMPLATE_ROWS
+        : MAX_TEMPLATE_ROWS - rowsRef.current.length;
       if (room <= 0) {
         shopify.toast.show(
           `Row limit reached — no rows added (max ${MAX_TEMPLATE_ROWS})`,
@@ -604,15 +620,20 @@ export function useRowEngine({
       const toInsert = built.slice(0, room);
       const dropped = built.length - toInsert.length;
       const pasted = toInsert.map((row) => ({ id: newRowId(), ...row }));
-      // Insert the block directly after the active row (file 22); the reducer
-      // appends when nothing is selected or the active row is gone. The last
-      // pasted row becomes active below, so a second consecutive paste stacks
-      // right under the first block.
-      dispatch({
-        type: "PASTE_ROWS",
-        rows: pasted,
-        afterId: activeRowIdRef.current,
-      });
+      // Replace → the pasted rows become the whole array (reducer bases on `[]`,
+      // ignoring `afterId`). Otherwise splice the block directly after the active
+      // row (file 22); the reducer appends when nothing is selected or the active
+      // row is gone. The last pasted row becomes active below, so a second
+      // consecutive paste stacks right under the first block.
+      dispatch(
+        replace
+          ? { type: "PASTE_ROWS", rows: pasted, replace: true }
+          : {
+              type: "PASTE_ROWS",
+              rows: pasted,
+              afterId: activeRowIdRef.current,
+            },
+      );
 
       // Focus affordance: set the last inserted row active and scroll it into
       // view so the merchant sees where the pasted block landed.
@@ -634,7 +655,7 @@ export function useRowEngine({
         shopify.toast.show(`Added ${added} ${rowWord}`);
       }
     },
-    [shopify],
+    [shopify, isNew],
   );
 
   // Content-first intent (file 21): the bulk-vs-in-cell decision comes from the

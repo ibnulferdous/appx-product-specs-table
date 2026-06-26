@@ -269,10 +269,20 @@ export type RowsAction =
   // mirroring ADD_ROW / ADD_SECTION; omit/null (or an unknown id) → append at the
   // end (the Step 13 fallback). A SECTION_HEADER is a valid `afterId` — the pasted
   // DATA rows land right under the section.
+  //
+  // `replace` (file 23) is the new-template scaffold swap: when true, the result is
+  // built on `[]` instead of the existing rows (and `afterId` is ignored), so the
+  // pasted rows become the WHOLE array — used by the paste handler, gated on
+  // `isNew && isPristineScaffold(...)`, to drop the untouched starter scaffold
+  // (the empty section + 5 blanks) on the merchant's first bulk paste. An empty
+  // paste with `replace` is a same-reference no-op (never wipe the scaffold to
+  // nothing). The row-building loop, provisional keying, and cap are shared with
+  // the non-replace path — only the BASE array (`[]` vs `rows`) differs.
   | {
       type: "PASTE_ROWS";
       rows: Array<{ id: string; label: string; valueParts: ValuePart[] }>;
       afterId?: string | null;
+      replace?: boolean;
     };
 
 export function rowsReducer(
@@ -429,23 +439,32 @@ export function rowsReducer(
     }
 
     case "PASTE_ROWS": {
-      // Cap is the gate (truncate, don't refuse): take only the room remaining.
-      // When nothing fits (at the cap) or there is nothing to paste, return the
-      // SAME array reference so an at-cap paste never flips the editor's dirty
-      // flag — mirroring MOVE_ROW's same-reference no-op.
-      const room = MAX_TEMPLATE_ROWS - rows.length;
+      // `replace` (file 23) rebuilds from an empty base so the pasted rows become
+      // the whole array — swapping out a brand-new template's untouched scaffold
+      // (the empty section + 5 blanks). The non-replace path (file 22) builds on
+      // the existing rows and splices after `afterId`. Only the BASE array differs;
+      // the keying loop and the cap below are shared, so there is no second path.
+      const base = action.replace ? [] : rows;
+      // Cap is the gate (truncate, don't refuse): take only the room remaining on
+      // the base. When nothing fits (at the cap) or there is nothing to paste,
+      // return the SAME original array reference so the paste never flips the
+      // editor's dirty flag — mirroring MOVE_ROW's same-reference no-op. For
+      // `replace` this is also the "empty paste never wipes the scaffold" rule:
+      // replace only when there is something to replace it with.
+      const room = MAX_TEMPLATE_ROWS - base.length;
       if (room <= 0 || action.rows.length === 0) {
         return rows;
       }
       // Provisional keys, accumulated: seed each new row's key from the shared
       // fallback base and add it to the working set as we go, so the batch's keys
-      // are mutually unique AND unique against the existing rows (`row`, `row_2`,
-      // …). Keys are seeded from ALL existing rows (position is irrelevant to
-      // uniqueness), so a mid-table insert can never collide. No slugifyKey here —
-      // finalization from the label happens at Save (reconcileRowKeys,
-      // server-side). All pasted rows are DATA rows; a grid cannot express a
-      // SECTION_HEADER, so paste never creates one.
-      const taken = collectKeys(rows);
+      // are mutually unique AND unique against the base rows (`row`, `row_2`, …).
+      // Keys are seeded from ALL base rows (position is irrelevant to uniqueness),
+      // so a mid-table insert can never collide; on the replace path the base is
+      // empty, so they start clean at `row`. No slugifyKey here — finalization from
+      // the label happens at Save (reconcileRowKeys, server-side). All pasted rows
+      // are DATA rows; a grid cannot express a SECTION_HEADER, so paste never
+      // creates one.
+      const taken = collectKeys(base);
       const pastedRows: DataRow[] = action.rows.slice(0, room).map((pasted) => {
         const key = uniqueKey(FALLBACK_KEY_BASE, taken);
         taken.add(key);
@@ -461,11 +480,12 @@ export function rowsReducer(
       // Splice the whole batch in directly after the active row (file 22),
       // mirroring insertRowAfter's single-row semantics: an unknown/absent
       // `afterId` falls back to append at the end. A SECTION_HEADER `afterId` is
-      // valid — the DATA rows land right under the section.
+      // valid — the DATA rows land right under the section. On the replace path the
+      // base is `[]`, so the lookup misses and the rows become the whole array.
       const index = action.afterId
-        ? rows.findIndex((row) => row.id === action.afterId)
+        ? base.findIndex((row) => row.id === action.afterId)
         : -1;
-      const next = rows.slice();
+      const next = base.slice();
       if (index === -1) {
         next.push(...pastedRows);
       } else {
@@ -498,4 +518,43 @@ export function createInitialRows(mkId: () => string = newRowId): EditorRow[] {
     rows = rowsReducer(rows, { type: "ADD_ROW", id: mkId() });
   }
   return rows;
+}
+
+/**
+ * True iff `rows` is the untouched starter scaffold a brand-new template opens on
+ * — exactly the shape `createInitialRows()` seeds and nothing the merchant has yet
+ * typed into:
+ *   - length is `INITIAL_DATA_ROW_COUNT + 1`;
+ *   - `rows[0]` is a SECTION_HEADER with an empty label;
+ *   - every other row is a DATA row with an empty label whose `valueParts` is
+ *     exactly one empty TEXT part.
+ *
+ * It is a structural, merchant-visible blank check on purpose: it does NOT inspect
+ * keys (provisional keys are an implementation detail), and it deliberately does
+ * NOT use the editor's dirty flag — the dirty baseline also covers name/status, so
+ * a rename-then-paste on a new template would read "dirty" while the rows are still
+ * the blank scaffold the merchant clearly wants replaced. This captures exactly the
+ * rows state.
+ *
+ * Used by the paste handler (file 23), gated by `isNew`, so the first bulk paste on
+ * a never-saved template REPLACES this scaffold (via `PASTE_ROWS { replace: true }`)
+ * instead of inserting below it. The `isNew` gate is what keeps a
+ * coincidentally-all-blank SAVED template from ever being treated as pristine.
+ */
+export function isPristineScaffold(rows: EditorRow[]): boolean {
+  if (rows.length !== INITIAL_DATA_ROW_COUNT + 1) {
+    return false;
+  }
+  const [header, ...dataRows] = rows;
+  if (header.rowType !== "SECTION_HEADER" || header.label !== "") {
+    return false;
+  }
+  return dataRows.every(
+    (row) =>
+      row.rowType === "DATA" &&
+      row.label === "" &&
+      row.valueParts.length === 1 &&
+      row.valueParts[0].type === "TEXT" &&
+      row.valueParts[0].text === "",
+  );
 }
