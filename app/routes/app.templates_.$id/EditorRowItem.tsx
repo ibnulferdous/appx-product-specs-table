@@ -19,12 +19,13 @@ interface RowItemProps {
   dispatch: Dispatch<RowsAction>;
   onCaretChange: (rowId: string, linear: number | null) => void;
   onEditPart: (rowId: string, partIndex: number, part: ValuePart) => void;
+  onBulkPaste: (grid: string[][]) => void;
   pendingCaret: Map<string, number>;
 }
 
 // Memoized so a single cell edit re-renders only that row. `dispatch`,
-// `onActivate`, `onDelete`, `onCaretChange`, and `onEditPart` are stable;
-// `pendingCaret` is a stable ref-held Map; `isActive` is a boolean, so
+// `onActivate`, `onDelete`, `onCaretChange`, `onEditPart`, and `onBulkPaste` are
+// stable; `pendingCaret` is a stable ref-held Map; `isActive` is a boolean, so
 // non-edited, non-(de)activated rows skip re-rendering entirely.
 export const EditorRowItem = memo(function EditorRowItem({
   row,
@@ -35,6 +36,7 @@ export const EditorRowItem = memo(function EditorRowItem({
   dispatch,
   onCaretChange,
   onEditPart,
+  onBulkPaste,
   pendingCaret,
 }: RowItemProps) {
   const rowNumber = index + 1;
@@ -155,6 +157,7 @@ export const EditorRowItem = memo(function EditorRowItem({
                 dispatch={dispatch}
                 onCaretChange={onCaretChange}
                 onEditPart={onEditPart}
+                onBulkPaste={onBulkPaste}
                 pendingCaret={pendingCaret}
               />
             </>

@@ -5,6 +5,8 @@
 // env and jsdom is not a project dependency — see the testing strategy); its grid
 // output flows through the unit-tested `normalizeGrid`.
 
+import { parseClipboardTable } from "./clipboardTable";
+
 /**
  * Extract the first HTML `<table>` from a clipboard `text/html` string into a raw
  * 2-D grid of cell strings, or `null` when there is no usable table (so the caller
@@ -28,6 +30,24 @@ export function extractHtmlTableGrid(html: string): string[][] | null {
     grid.push(cells.map(cellText));
   }
   return grid.length > 0 ? grid : null;
+}
+
+/**
+ * Turn a paste payload into a normalized grid (file 21) — the single place both
+ * paste entry points (the container handler and the value cell) call, so they can
+ * never disagree on what counts as a table. Null-guards `data`, then composes the
+ * frozen parsers: `extractHtmlTableGrid` (HTML `<table>`) + the plain-text TSV
+ * fallback through `parseClipboardTable`. Lives here (not in the pure module)
+ * because it reads `DataTransfer.getData` + `DOMParser`; browser-verified, like
+ * `extractHtmlTableGrid`. The callers decide bulk-vs-in-cell via `cellCount` on
+ * the returned grid.
+ */
+export function readClipboardGrid(data: DataTransfer | null): string[][] {
+  if (!data) return [];
+  return parseClipboardTable({
+    htmlGrid: extractHtmlTableGrid(data.getData("text/html")),
+    text: data.getData("text/plain"),
+  });
 }
 
 /** Cell text with `<br>` rendered as a newline (other markup flattened to text). */

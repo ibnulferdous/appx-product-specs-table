@@ -39,12 +39,8 @@ import {
   announceReorderOver,
   announceReorderStart,
 } from "../../utils/reorderAnnouncements";
-import {
-  cellCount,
-  gridToPastedRows,
-  parseClipboardTable,
-} from "../../utils/clipboardTable";
-import { extractHtmlTableGrid } from "../../utils/clipboardTableDom";
+import { cellCount, gridToPastedRows } from "../../utils/clipboardTable";
+import { readClipboardGrid } from "../../utils/clipboardTableDom";
 import {
   INSERT_FIELD_MODAL_ID,
   metafieldChoiceValue,
@@ -162,6 +158,12 @@ export function useRowEngine({
   // `over` position is the slot the dragged row lands in (see the helper's note).
   const rowsRef = useRef(rows);
   rowsRef.current = rows;
+  // Mirror the active row id into a ref so the paste closure (file 22) can read
+  // the LIVE selection without depending on `activeRowId` — keeping `pasteGrid`
+  // stable across selection changes (memoization-safe), the same pattern as
+  // `rowsRef`.
+  const activeRowIdRef = useRef(activeRowId);
+  activeRowIdRef.current = activeRowId;
   const dndAnnouncements = useMemo<Announcements>(
     () => ({
       onDragStart: ({ active }) =>
@@ -571,42 +573,24 @@ export function useRowEngine({
     setSearchQuery("");
   }, [shopify]);
 
-  // --- Bulk table paste → rows (Steps 12–13) -------------------------------
+  // --- Bulk table paste → rows (Steps 12–13, refined files 21–22) ----------
   // Capture a multi-cell table pasted into the editor (Excel / Google Sheets / a
   // web <table>), parse it to a 2-D grid (Step 12), and bulk-insert it as rows
   // (Step 13): first column → Label, remaining columns → a TEXT/LINE_BREAK Value
-  // (`gridToPastedRows`), appended via PASTE_ROWS with the 200-row cap enforced
+  // (`gridToPastedRows`), inserted via PASTE_ROWS with the 200-row cap enforced
   // on paste (truncate to the room remaining + tell the merchant what was
-  // dropped). The in-cell single-value paste (Step 4) is left untouched:
-  // ValueCell.handlePaste calls preventDefault() unconditionally, so this bubbled
-  // container handler sees event.defaultPrevented and skips it; a paste into a
-  // Label/Section field (or the modal search field, if it bubbles here at all) is
-  // skipped by its target.
-  const handleContainerPaste = useCallback(
-    (event: ClipboardEvent<HTMLDivElement>) => {
-      const data = event.clipboardData;
-      if (!data) return; // no clipboard payload (e.g. a programmatic paste)
-      if (event.defaultPrevented) return; // an in-cell value paste already ran
-      const target = event.target as Element | null;
-      if (
-        target?.closest?.(
-          "s-text-field, s-search-field, input, textarea, [contenteditable]",
-        )
-      ) {
-        return; // a single-field edit, not a bulk-table gesture
-      }
-      const grid = parseClipboardTable({
-        htmlGrid: extractHtmlTableGrid(data.getData("text/html")),
-        text: data.getData("text/plain"),
-      });
-      // A bulk gesture needs an actual multi-cell table (>1 cell — more than one
-      // row OR column); ignore an empty or degenerate 1×1 grid (a lone value is
-      // not a bulk paste). A single-column, many-row paste IS admitted.
-      if (cellCount(grid) <= 1) return;
+  // dropped). The block lands directly after the active row (file 22; appends
+  // when none); the new-template scaffold replace is still untouched here
+  // (file 23).
 
-      // We are consuming this paste now (after the skip-guards above).
-      event.preventDefault();
-
+  // Shared bulk-insert core (file 21): build pasted rows from a normalized grid,
+  // cap to the room remaining, dispatch PASTE_ROWS, focus + scroll the last
+  // inserted row, and toast the summary. Reads `rowsRef.current` /
+  // `activeRowIdRef.current`, so it needs no `rows`/`activeRowId` dep — the
+  // closure stays stable across selection changes. Exposed as `onBulkPaste` so
+  // the value cell can route a table here instead of flattening it.
+  const pasteGrid = useCallback(
+    (grid: string[][]) => {
       const room = MAX_TEMPLATE_ROWS - rowsRef.current.length;
       if (room <= 0) {
         shopify.toast.show(
@@ -620,7 +604,15 @@ export function useRowEngine({
       const toInsert = built.slice(0, room);
       const dropped = built.length - toInsert.length;
       const pasted = toInsert.map((row) => ({ id: newRowId(), ...row }));
-      dispatch({ type: "PASTE_ROWS", rows: pasted });
+      // Insert the block directly after the active row (file 22); the reducer
+      // appends when nothing is selected or the active row is gone. The last
+      // pasted row becomes active below, so a second consecutive paste stacks
+      // right under the first block.
+      dispatch({
+        type: "PASTE_ROWS",
+        rows: pasted,
+        afterId: activeRowIdRef.current,
+      });
 
       // Focus affordance: set the last inserted row active and scroll it into
       // view so the merchant sees where the pasted block landed.
@@ -643,6 +635,42 @@ export function useRowEngine({
       }
     },
     [shopify],
+  );
+
+  // Content-first intent (file 21): the bulk-vs-in-cell decision comes from the
+  // clipboard SHAPE, not where focus is. The value cell already handles its own
+  // paste (table → onBulkPaste, single value → text-at-caret) and always
+  // preventDefaults, so a value-cell paste arrives here defaultPrevented and is
+  // skipped. For every other target (a Label/Section <input>, a focused
+  // button/handle, the inter-cell padding), only a genuine multi-cell table is a
+  // bulk gesture; a lone value falls through to the native field/text paste. This
+  // replaces the old focus/target skip-guard — which is why a focused button or
+  // the grey margin no longer triggers a surprise insert.
+  const handleContainerPaste = useCallback(
+    (event: ClipboardEvent<HTMLDivElement>) => {
+      const data = event.clipboardData;
+      if (!data) return; // no clipboard payload (e.g. a programmatic paste)
+      if (event.defaultPrevented) return; // the value cell already handled this
+      // The Insert-field modal's <s-search-field> is a field PICKER, not table
+      // data. In this App Bridge build it renders inside the editor wrapper, so
+      // its paste bubbles here (file 21 assumed it portaled out — browser-verified
+      // false). A table pasted to filter that field list must not bulk-create
+      // rows, so skip it. This is the ONLY target guard kept from Step 13; the
+      // value-cell / label-input / contenteditable skips were intentionally
+      // dropped so a table bulk-inserts from those (file 21, content-first).
+      if ((event.target as Element | null)?.closest?.("s-search-field")) return;
+      const grid = readClipboardGrid(data);
+      // A bulk gesture needs an actual multi-cell table (>1 cell — more than one
+      // row OR column); a lone value (or empty grid) is not. A single value
+      // pasted into a Label/Section <input> falls through to the native input
+      // paste; pasted with a button/padding focused, it does nothing.
+      if (cellCount(grid) <= 1) return;
+      // We are consuming a table now — this also stops the native flatten when a
+      // table is pasted into a Label/Section <input>.
+      event.preventDefault();
+      pasteGrid(grid);
+    },
+    [pasteGrid],
   );
 
   const canDuplicate = activeRowId !== null && !atCap;
@@ -728,6 +756,7 @@ export function useRowEngine({
     showCombinedEmpty,
     // Bulk paste
     handleContainerPaste,
+    onBulkPaste: pasteGrid,
   };
 }
 

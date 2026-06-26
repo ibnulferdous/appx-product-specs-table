@@ -18,6 +18,7 @@
 
 import type { AdminApiContext } from "@shopify/shopify-app-react-router/server";
 import type { EditorRow } from "../utils/rows";
+import { parseRows } from "../utils/rowsSerialize";
 
 // The app-reserved metaobject type (data-model.md §10). `$app:` resolves to
 // `app--<app-id>--appx_spec_table` server-side within this app's context, so the
@@ -171,8 +172,15 @@ export function readUpsertResult(
 /**
  * Read the `rows` field value (a JSON string) back out of a metaobjectByHandle
  * response, parsed into the editor row array. Returns `null` when the metaobject
- * or field is absent, or the JSON does not parse — the round-trip check treats
- * any of those as "did not survive".
+ * or field is absent, the JSON does not parse, or the payload is not a clean
+ * EditorRow[] — the round-trip check treats any of those as "did not survive".
+ *
+ * Every element is narrowed through the shared `parseRows` rather than cast, so a
+ * malformed payload (`[42]`, `[{ rowType: "NOPE" }]`) can never masquerade as
+ * `EditorRow[]`. `parseRows` DROPS anything that does not narrow, so a length
+ * mismatch means the stored payload was not our row shape: return `null` (did not
+ * survive) rather than a silently cleaned array, which could mask corruption and
+ * falsely pass the round-trip equality check in route.tsx.
  */
 export function readMetaobjectRows(json: unknown): EditorRow[] | null {
   if (!isRecord(json)) return null;
@@ -186,7 +194,9 @@ export function readMetaobjectRows(json: unknown): EditorRow[] | null {
   if (!value) return null;
   try {
     const parsed: unknown = JSON.parse(value);
-    return Array.isArray(parsed) ? (parsed as EditorRow[]) : null;
+    if (!Array.isArray(parsed)) return null;
+    const rows = parseRows(parsed);
+    return rows.length === parsed.length ? rows : null;
   } catch {
     return null;
   }

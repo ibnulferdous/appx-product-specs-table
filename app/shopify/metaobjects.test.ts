@@ -167,6 +167,55 @@ describe("readMetaobjectRows", () => {
       }),
     ).toBeNull();
   });
+
+  it("returns null for a JSON array that is not a clean EditorRow[]", () => {
+    // A well-formed array whose elements do not narrow must not be cast through
+    // as EditorRow[] (CodeRabbit) — parseRows drops them, the length mismatch
+    // reports the payload as "did not survive" rather than silently cleaning it.
+    expect(
+      readMetaobjectRows({
+        data: { metaobjectByHandle: { rows: { value: "[42]" } } },
+      }),
+    ).toBeNull();
+    expect(
+      readMetaobjectRows({
+        data: {
+          metaobjectByHandle: { rows: { value: '[{"rowType":"NOPE"}]' } },
+        },
+      }),
+    ).toBeNull();
+    // A mix of one good row + one junk element is rejected whole, so a corrupted
+    // metaobject can never falsely pass the round-trip check.
+    expect(
+      readMetaobjectRows({
+        data: {
+          metaobjectByHandle: {
+            rows: {
+              value: JSON.stringify([
+                {
+                  id: "r1",
+                  key: "k",
+                  rowType: "DATA",
+                  label: "L",
+                  hideWhenEmpty: true,
+                  valueParts: [{ type: "TEXT", text: "" }],
+                },
+                42,
+              ]),
+            },
+          },
+        },
+      }),
+    ).toBeNull();
+  });
+
+  it("treats an empty rows array as a valid (empty) round-trip", () => {
+    expect(
+      readMetaobjectRows({
+        data: { metaobjectByHandle: { rows: { value: "[]" } } },
+      }),
+    ).toEqual([]);
+  });
 });
 
 describe("readMetaobjectIdByHandle", () => {

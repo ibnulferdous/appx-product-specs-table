@@ -23,6 +23,8 @@ import {
   syncTrailingFiller,
   updateCaretOnState,
 } from "../../utils/valueDom";
+import { cellCount } from "../../utils/clipboardTable";
+import { readClipboardGrid } from "../../utils/clipboardTableDom";
 import { useBrowserLayoutEffect } from "./editorShared";
 import styles from "./SpecTableEditor.module.css";
 
@@ -45,6 +47,7 @@ export function ValueCell({
   dispatch,
   onCaretChange,
   onEditPart,
+  onBulkPaste,
   pendingCaret,
 }: {
   row: DataRow;
@@ -58,6 +61,9 @@ export function ValueCell({
   // clicked value part itself, so the container can pre-select the right field —
   // native OR metafield (Step 9).
   onEditPart: (rowId: string, partIndex: number, part: ValuePart) => void;
+  // Route a genuine multi-cell table pasted into this cell to the shared bulk
+  // handler (file 21) instead of flattening it into one cell. Stable useCallback.
+  onBulkPaste: (grid: string[][]) => void;
   // Caret positions queued by the modal Insert, keyed by row id. Consumed once.
   pendingCaret: Map<string, number>;
 }) {
@@ -224,9 +230,19 @@ export function ValueCell({
 
   const handlePaste = useCallback(
     (event: ClipboardEvent<HTMLDivElement>) => {
-      // Step 4 keeps the surface structurally sound: paste plain text at a
-      // collapsed caret only; multi-cell table paste is Steps 12–13.
+      // Content-first intent (file 21): the value cell owns its paste and always
+      // preventDefaults (so the container never double-handles), but the
+      // bulk-vs-in-cell choice comes from the clipboard SHAPE, not focus. A
+      // genuine multi-cell table routes to the shared bulk handler — it becomes
+      // rows, not a flattened blob in this one cell.
       event.preventDefault();
+      const grid = readClipboardGrid(event.clipboardData);
+      if (cellCount(grid) > 1) {
+        onBulkPaste(grid);
+        return;
+      }
+      // Single value: Step 4 keeps the surface structurally sound — paste plain
+      // text (newlines → spaces) at a collapsed caret only.
       const host = hostRef.current;
       if (!host) return;
       const pasted = (event.clipboardData?.getData("text/plain") ?? "").replace(
@@ -247,7 +263,7 @@ export function ValueCell({
         text: target.text.slice(0, offset) + pasted + target.text.slice(offset),
       });
     },
-    [dispatch, row.id, valueParts],
+    [dispatch, onBulkPaste, row.id, valueParts],
   );
 
   // Click an existing pill to edit it (Step 6.3). A delegated click on the host

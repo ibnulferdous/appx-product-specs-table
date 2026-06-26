@@ -736,6 +736,71 @@ describe("rowsReducer", () => {
       expect(result.map((r) => r.id)).toEqual(["uuid-1", "uuid-2"]);
     });
 
+    it("inserts the batch immediately after `afterId`, preserving order and pushing later rows down (file 22)", () => {
+      const existing = [
+        dataRow("a", "row"),
+        dataRow("b", "row_2"),
+        dataRow("c", "row_3"),
+      ];
+      const result = rowsReducer(existing, {
+        type: "PASTE_ROWS",
+        rows: [pastedRow("p1", "A"), pastedRow("p2", "B")],
+        afterId: "a",
+      });
+      // The block lands between `a` and `b`, in order; `b`/`c` slide down.
+      expect(result.map((r) => r.id)).toEqual(["a", "p1", "p2", "b", "c"]);
+    });
+
+    it("appends when `afterId` is null (the fallback)", () => {
+      const existing = [dataRow("a", "row"), dataRow("b", "row_2")];
+      const result = rowsReducer(existing, {
+        type: "PASTE_ROWS",
+        rows: [pastedRow("p1", "A")],
+        afterId: null,
+      });
+      expect(result.map((r) => r.id)).toEqual(["a", "b", "p1"]);
+    });
+
+    it("appends when `afterId` points at a row that is gone (unknown id → fallback)", () => {
+      const existing = [dataRow("a", "row"), dataRow("b", "row_2")];
+      const result = rowsReducer(existing, {
+        type: "PASTE_ROWS",
+        rows: [pastedRow("p1", "A")],
+        afterId: "ghost",
+      });
+      expect(result.map((r) => r.id)).toEqual(["a", "b", "p1"]);
+    });
+
+    it("inserts the DATA rows directly after a SECTION_HEADER `afterId`", () => {
+      const existing = [sectionRow("s", "section"), dataRow("a", "row")];
+      const result = rowsReducer(existing, {
+        type: "PASTE_ROWS",
+        rows: [pastedRow("p1", "A"), pastedRow("p2", "B")],
+        afterId: "s",
+      });
+      expect(result.map((r) => r.id)).toEqual(["s", "p1", "p2", "a"]);
+      // They land as DATA rows (a grid never creates a section), reading as the
+      // section's rows.
+      expect(result.slice(1, 3).every((r) => r.rowType === "DATA")).toBe(true);
+    });
+
+    it("seeds provisional keys unique against ALL existing rows after a mid-table splice (position is irrelevant to uniqueness)", () => {
+      const existing = [
+        dataRow("a", "row"),
+        dataRow("b", "row_2"),
+        dataRow("c", "ram"),
+      ];
+      const result = rowsReducer(existing, {
+        type: "PASTE_ROWS",
+        rows: [pastedRow("p1", "X"), pastedRow("p2", "Y")],
+        afterId: "a",
+      });
+      // Spliced between `a` and `b`, the new keys still step past the existing
+      // `row`/`row_2` AND each other — no collision despite the mid-table position.
+      const pasted = result.filter((r) => r.id === "p1" || r.id === "p2");
+      expect(pasted.map((r) => r.key)).toEqual(["row_3", "row_4"]);
+    });
+
     it("seeds provisional keys (row, row_2, …) — not label slugs — unique against existing rows and within the batch", () => {
       const existing = [dataRow("a", "row"), dataRow("b", "ram")];
       const result = rowsReducer(existing, {
@@ -785,6 +850,26 @@ describe("rowsReducer", () => {
       });
       expect(result).toHaveLength(MAX_TEMPLATE_ROWS);
       expect(result.slice(-2).map((r) => r.id)).toEqual(["p1", "p2"]);
+    });
+
+    it("truncates to the room remaining even when splicing after a mid-table `afterId`", () => {
+      const almost: EditorRow[] = Array.from(
+        { length: MAX_TEMPLATE_ROWS - 2 },
+        (_, i) => dataRow(String(i), `row_${i}`),
+      );
+      const result = rowsReducer(almost, {
+        type: "PASTE_ROWS",
+        rows: [
+          pastedRow("p1", "A"),
+          pastedRow("p2", "B"),
+          pastedRow("p3", "C"),
+        ],
+        afterId: "0",
+      });
+      expect(result).toHaveLength(MAX_TEMPLATE_ROWS);
+      // Only the first two fit (room = 2); they land right after row id "0".
+      expect(result.slice(0, 3).map((r) => r.id)).toEqual(["0", "p1", "p2"]);
+      expect(result.some((r) => r.id === "p3")).toBe(false);
     });
 
     it("returns the SAME array reference at the cap (nothing fits → never dirty)", () => {

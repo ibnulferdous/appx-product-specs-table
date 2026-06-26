@@ -259,14 +259,20 @@ export type RowsAction =
   // clipboard to a grid (Step 12), maps it to `{ label, valueParts }` content via
   // `gridToPastedRows`, and mints a fresh `id` per row (the lone non-deterministic
   // input, kept out of the reducer like every other row-creating action). The
-  // reducer appends them in order as DATA rows, seeding a *provisional* key per
+  // reducer inserts them in order as DATA rows, seeding a *provisional* key per
   // row exactly like ADD_ROW (`row`, `row_2`, … — finalized from the label at
   // Save, never here), and CAP-TRUNCATES defensively: only `MAX_TEMPLATE_ROWS -
   // length` rows are added (the handler computes the dropped-count for its toast;
   // this truncation is the belt-and-suspenders gate, like ADD_ROW's cap refusal).
+  //
+  // `afterId` (file 22) splices the whole batch directly below the active row,
+  // mirroring ADD_ROW / ADD_SECTION; omit/null (or an unknown id) → append at the
+  // end (the Step 13 fallback). A SECTION_HEADER is a valid `afterId` — the pasted
+  // DATA rows land right under the section.
   | {
       type: "PASTE_ROWS";
       rows: Array<{ id: string; label: string; valueParts: ValuePart[] }>;
+      afterId?: string | null;
     };
 
 export function rowsReducer(
@@ -434,22 +440,36 @@ export function rowsReducer(
       // Provisional keys, accumulated: seed each new row's key from the shared
       // fallback base and add it to the working set as we go, so the batch's keys
       // are mutually unique AND unique against the existing rows (`row`, `row_2`,
-      // …). No slugifyKey here — finalization from the label happens at Save
-      // (reconcileRowKeys, server-side). All pasted rows are DATA rows; a grid
-      // cannot express a SECTION_HEADER, so paste never creates one.
+      // …). Keys are seeded from ALL existing rows (position is irrelevant to
+      // uniqueness), so a mid-table insert can never collide. No slugifyKey here —
+      // finalization from the label happens at Save (reconcileRowKeys,
+      // server-side). All pasted rows are DATA rows; a grid cannot express a
+      // SECTION_HEADER, so paste never creates one.
       const taken = collectKeys(rows);
-      const next = rows.slice();
-      for (const pasted of action.rows.slice(0, room)) {
+      const pastedRows: DataRow[] = action.rows.slice(0, room).map((pasted) => {
         const key = uniqueKey(FALLBACK_KEY_BASE, taken);
         taken.add(key);
-        next.push({
+        return {
           id: pasted.id,
           key,
           rowType: "DATA",
           label: pasted.label,
           valueParts: normalizeValueParts(pasted.valueParts),
           hideWhenEmpty: true,
-        });
+        };
+      });
+      // Splice the whole batch in directly after the active row (file 22),
+      // mirroring insertRowAfter's single-row semantics: an unknown/absent
+      // `afterId` falls back to append at the end. A SECTION_HEADER `afterId` is
+      // valid — the DATA rows land right under the section.
+      const index = action.afterId
+        ? rows.findIndex((row) => row.id === action.afterId)
+        : -1;
+      const next = rows.slice();
+      if (index === -1) {
+        next.push(...pastedRows);
+      } else {
+        next.splice(index + 1, 0, ...pastedRows);
       }
       return next;
     }
