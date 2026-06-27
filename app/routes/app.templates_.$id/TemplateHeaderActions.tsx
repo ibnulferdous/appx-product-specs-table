@@ -11,6 +11,7 @@ import {
   DELETE_MODAL_ID,
   MORE_ACTIONS_MENU_ID,
   RENAME_MODAL_ID,
+  SAVE_BAR_ID,
   readValue,
 } from "./editorShared";
 import type { RowEngine } from "./useRowEngine";
@@ -112,6 +113,17 @@ export function TemplateHeaderActions({
     // The confirmation modal is the unsaved-edits guard: deleting discards any
     // pending edits by definition (the copy below warns of this). Keep the modal
     // open with the button in its loading state until the redirect navigates away.
+    //
+    // Dismiss the contextual save bar BEFORE navigating. Delete redirects to the
+    // template LIST (route.tsx), which renders no <SaveBar>, and `open` here is
+    // bound to engine.isDirty — which never flips false on delete (we discard, not
+    // save). So nothing tells the host to close the "Unsaved changes" bar, and the
+    // React <SaveBar>'s unmount-time hide() does not reliably reach the host during
+    // a programmatic redirect (the element disconnects around the hide message), so
+    // the bar would linger on the list page. Hide it imperatively; hiding an
+    // already-hidden bar is a no-op. (Duplicate has no such issue — it lands on
+    // another editor whose fresh <SaveBar> mounts with open=false.)
+    shopify.saveBar.hide(SAVE_BAR_ID);
     deleteFetcher.submit(
       { intent: "delete" },
       { method: "post", encType: "application/json" },
