@@ -58,6 +58,12 @@ export const SECTION_COLUMNS = `${GUTTER} 1fr`;
 // Modal API (`shopify.modal.show/hide`).
 export const INSERT_FIELD_MODAL_ID = "insert-field-modal";
 
+// The "some pasted rows won't fit" confirmation modal (feature 24). Shown before a
+// bulk paste that would cross the 200-row cap so the merchant can continue (add
+// what fits) or cancel (add nothing). Driven imperatively via the App Bridge Modal
+// API, like the Insert-field modal.
+export const PASTE_CAP_MODAL_ID = "paste-over-cap-modal";
+
 // Spoken once when a drag handle is focused (Step 11). dnd-kit renders this into
 // the auto-generated `aria-describedby` instructions element the handle points at.
 export const REORDER_INSTRUCTIONS = {

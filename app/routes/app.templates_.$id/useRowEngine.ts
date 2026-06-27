@@ -44,12 +44,24 @@ import { cellCount, gridToPastedRows } from "../../utils/clipboardTable";
 import { readClipboardGrid } from "../../utils/clipboardTableDom";
 import {
   INSERT_FIELD_MODAL_ID,
+  PASTE_CAP_MODAL_ID,
   metafieldChoiceValue,
   partToSelection,
   type EditTarget,
   type FieldSelection,
   type SavedCaret,
 } from "./editorShared";
+
+// A bulk paste that would cross the 200-row cap, captured for the confirmation
+// modal (feature 24). The rows are already TRUNCATED to what fits and id-stamped,
+// so confirming applies exactly what the modal previewed; `dropped` is what won't
+// fit. `replace`/`afterId` carry the file-23/file-22 dispatch decision unchanged.
+interface PendingPaste {
+  pasted: Array<{ id: string; label: string; valueParts: ValuePart[] }>;
+  dropped: number;
+  replace: boolean;
+  afterId: string | null;
+}
 
 export interface UseRowEngineArgs {
   initialRows: EditorRow[];
@@ -276,16 +288,21 @@ export function useRowEngine({
     }
   }, [saveFetcher.state, saveFetcher.data, revalidator, shopify]);
 
-  // Close the "Insert field" modal when a save begins. The modal portals its
-  // content (including its Insert/Update primary button) into the admin chrome,
-  // OUTSIDE the editor's inert freeze wrapper — exactly like the SaveBar — so a
-  // save that starts while the modal is open would otherwise leave that button
-  // live, a path to mutate rows mid-save that the freeze cannot reach. Hiding the
-  // modal here, plus the hard `saving` guard in handleCommit, blocks it from both
-  // ends. Hiding an already-hidden modal is a no-op, so this is safe to run on any
-  // render where a save is in flight.
+  // Close the editor's body modals when a save begins. Both portal their content
+  // (including their primary buttons) into the admin chrome, OUTSIDE the editor's
+  // inert freeze wrapper — exactly like the SaveBar — so a save that starts while
+  // one is open would otherwise leave that button live, a path to mutate rows
+  // mid-save that the freeze cannot reach. Hiding them here, plus the hard `saving`
+  // guards in handleCommit / handleConfirmPaste, blocks both ends. Clearing
+  // `pendingPaste` also drops the captured rows so a later reopen can't re-apply a
+  // stale paste. Hiding an already-hidden modal is a no-op, so this is safe to run
+  // on any render where a save is in flight.
   useEffect(() => {
-    if (saving) shopify.modal.hide(INSERT_FIELD_MODAL_ID);
+    if (saving) {
+      shopify.modal.hide(INSERT_FIELD_MODAL_ID);
+      shopify.modal.hide(PASTE_CAP_MODAL_ID);
+      setPendingPaste(null);
+    }
   }, [saving, shopify]);
 
   // --- Metafield definitions fetch (Step 8) --------------------------------
@@ -580,23 +597,73 @@ export function useRowEngine({
     setSearchQuery("");
   }, [shopify]);
 
-  // --- Bulk table paste → rows (Steps 12–13, refined files 21–23) ----------
+  // --- Bulk table paste → rows (Steps 12–13, refined files 21–24) ----------
   // Capture a multi-cell table pasted into the editor (Excel / Google Sheets / a
   // web <table>), parse it to a 2-D grid (Step 12), and bulk-insert it as rows
   // (Step 13): first column → Label, remaining columns → a TEXT/LINE_BREAK Value
   // (`gridToPastedRows`), inserted via PASTE_ROWS with the 200-row cap enforced
-  // on paste (truncate to the room remaining + tell the merchant what was
-  // dropped). The block lands directly after the active row (file 22; appends
+  // on paste. The block lands directly after the active row (file 22; appends
   // when none) — EXCEPT on a brand-new template still showing the untouched
   // starter scaffold, where the first bulk paste REPLACES the whole scaffold
   // (file 23; the empty section + 5 blanks go, leaving only the pasted rows).
+  // When the paste would cross the cap, the merchant is asked to confirm first
+  // (file 24) instead of silently dropping the overflow.
 
-  // Shared bulk-insert core (file 21): build pasted rows from a normalized grid,
-  // cap to the room remaining, dispatch PASTE_ROWS, focus + scroll the last
-  // inserted row, and toast the summary. Reads `rowsRef.current` /
-  // `activeRowIdRef.current`, so it needs no `rows`/`activeRowId` dep — the
-  // closure stays stable across selection changes. Exposed as `onBulkPaste` so
-  // the value cell can route a table here instead of flattening it.
+  // The over-cap paste awaiting the merchant's confirmation (feature 24). Null
+  // unless the confirmation modal is open with a paste staged.
+  const [pendingPaste, setPendingPaste] = useState<PendingPaste | null>(null);
+
+  // Apply a prepared paste: dispatch PASTE_ROWS, move the selection to the last
+  // inserted row + scroll it into view, and toast the outcome. Shared by the
+  // fits-immediately path and the post-confirmation path so the dispatch +
+  // affordance + toast live in one place. `replace` → the pasted rows become the
+  // whole array (reducer bases on `[]`, ignoring `afterId`); otherwise the block
+  // is spliced directly after the active row (file 22; the reducer appends when
+  // nothing is selected or the active row is gone).
+  const applyPaste = useCallback(
+    (prepared: PendingPaste) => {
+      dispatch(
+        prepared.replace
+          ? { type: "PASTE_ROWS", rows: prepared.pasted, replace: true }
+          : {
+              type: "PASTE_ROWS",
+              rows: prepared.pasted,
+              afterId: prepared.afterId,
+            },
+      );
+
+      // Focus affordance: set the last inserted row active and scroll it into
+      // view so the merchant sees where the pasted block landed (and a second
+      // consecutive paste stacks right under the first block).
+      const lastId = prepared.pasted[prepared.pasted.length - 1]?.id;
+      if (lastId) {
+        scrollTargetRef.current = lastId;
+        setActiveRowId(lastId);
+      }
+
+      const added = prepared.pasted.length;
+      const rowWord = added === 1 ? "row" : "rows";
+      if (prepared.dropped > 0) {
+        // The merchant already confirmed via the modal; this restates the outcome
+        // in plain language (the old terse "N over the limit weren't added" copy
+        // tested poorly with merchants).
+        const droppedWord = prepared.dropped === 1 ? "row" : "rows";
+        shopify.toast.show(
+          `Added ${added} ${rowWord} — ${prepared.dropped} ${droppedWord} didn't fit (${MAX_TEMPLATE_ROWS}-row limit)`,
+        );
+      } else {
+        shopify.toast.show(`Added ${added} ${rowWord}`);
+      }
+    },
+    [shopify],
+  );
+
+  // Prepare a bulk paste from a normalized grid, cap it to the room remaining, and
+  // either apply it (fits) or stage it for confirmation (would cross the cap,
+  // file 24). Reads `rowsRef.current` / `activeRowIdRef.current`, so it needs no
+  // `rows`/`activeRowId` dep — the closure stays stable across selection changes.
+  // Exposed as `onBulkPaste` so the value cell can route a table here instead of
+  // flattening it.
   const pasteGrid = useCallback(
     (grid: string[][]) => {
       // file 23: on a brand-new template whose rows are still the untouched
@@ -609,8 +676,10 @@ export function useRowEngine({
         ? MAX_TEMPLATE_ROWS
         : MAX_TEMPLATE_ROWS - rowsRef.current.length;
       if (room <= 0) {
+        // Already full — nothing can be added, so there is no "continue" choice to
+        // offer; just say so plainly.
         shopify.toast.show(
-          `Row limit reached — no rows added (max ${MAX_TEMPLATE_ROWS})`,
+          `This template is full (${MAX_TEMPLATE_ROWS} rows). Delete a row before pasting.`,
           { isError: true },
         );
         return;
@@ -620,43 +689,41 @@ export function useRowEngine({
       const toInsert = built.slice(0, room);
       const dropped = built.length - toInsert.length;
       const pasted = toInsert.map((row) => ({ id: newRowId(), ...row }));
-      // Replace → the pasted rows become the whole array (reducer bases on `[]`,
-      // ignoring `afterId`). Otherwise splice the block directly after the active
-      // row (file 22); the reducer appends when nothing is selected or the active
-      // row is gone. The last pasted row becomes active below, so a second
-      // consecutive paste stacks right under the first block.
-      dispatch(
-        replace
-          ? { type: "PASTE_ROWS", rows: pasted, replace: true }
-          : {
-              type: "PASTE_ROWS",
-              rows: pasted,
-              afterId: activeRowIdRef.current,
-            },
-      );
+      const prepared: PendingPaste = {
+        pasted,
+        dropped,
+        replace,
+        afterId: activeRowIdRef.current,
+      };
 
-      // Focus affordance: set the last inserted row active and scroll it into
-      // view so the merchant sees where the pasted block landed.
-      const lastId = pasted[pasted.length - 1]?.id;
-      if (lastId) {
-        scrollTargetRef.current = lastId;
-        setActiveRowId(lastId);
-      }
-
-      const added = toInsert.length;
-      const rowWord = added === 1 ? "row" : "rows";
+      // file 24: a paste that would cross the cap waits for confirmation — show
+      // the merchant how many rows fit vs. won't, and apply only on Continue. A
+      // paste that fits within the cap inserts immediately, unchanged.
       if (dropped > 0) {
-        shopify.toast.show(
-          `Added ${added} ${rowWord} — ${dropped} over the ${MAX_TEMPLATE_ROWS}-row limit ${
-            dropped === 1 ? "wasn't" : "weren't"
-          } added`,
-        );
-      } else {
-        shopify.toast.show(`Added ${added} ${rowWord}`);
+        setPendingPaste(prepared);
+        shopify.modal.show(PASTE_CAP_MODAL_ID);
+        return;
       }
+      applyPaste(prepared);
     },
-    [shopify, isNew],
+    [shopify, isNew, applyPaste],
   );
+
+  // Continue an over-cap paste (feature 24): apply exactly what the modal
+  // previewed (the truncated, id-stamped rows captured when it opened), then
+  // close + clear. Guard on `saving` — the modal portals outside the editor's
+  // inert freeze, so a save starting while it is open must not let Continue mutate
+  // rows mid-save (defense in depth alongside the hide-on-save effect).
+  const handleConfirmPaste = useCallback(() => {
+    shopify.modal.hide(PASTE_CAP_MODAL_ID);
+    if (pendingPaste && !saving) applyPaste(pendingPaste);
+    setPendingPaste(null);
+  }, [shopify, saving, pendingPaste, applyPaste]);
+
+  const handleCancelPaste = useCallback(() => {
+    shopify.modal.hide(PASTE_CAP_MODAL_ID);
+    setPendingPaste(null);
+  }, [shopify]);
 
   // Content-first intent (file 21): the bulk-vs-in-cell decision comes from the
   // clipboard SHAPE, not where focus is. The value cell already handles its own
@@ -778,6 +845,10 @@ export function useRowEngine({
     // Bulk paste
     handleContainerPaste,
     onBulkPaste: pasteGrid,
+    // Over-cap paste confirmation (feature 24)
+    pendingPaste,
+    handleConfirmPaste,
+    handleCancelPaste,
   };
 }
 
