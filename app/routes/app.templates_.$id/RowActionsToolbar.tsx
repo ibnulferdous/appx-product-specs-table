@@ -26,7 +26,7 @@ export function RowActionsToolbar({ engine }: { engine: RowEngine }) {
       <s-stack direction="inline" gap="base" alignItems="center">
         <s-button
           variant="primary"
-          icon="layout-footer"
+          icon="table"
           onClick={handleAddRow}
           {...(atCap ? { disabled: true } : {})}
         >

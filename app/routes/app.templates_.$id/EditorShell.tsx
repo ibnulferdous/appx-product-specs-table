@@ -3,7 +3,7 @@ import type {
   KeyboardEvent as ReactKeyboardEvent,
   ReactNode,
 } from "react";
-import { useRef, useState } from "react";
+import { useId, useRef, useState } from "react";
 import styles from "./SpecTableEditor.module.css";
 
 // The mockup's editor card (design/spec-editor-mockup.html → `.editor`): a
@@ -66,6 +66,16 @@ function SegmentedControl<T extends string>({
   const buttonsRef = useRef<Array<HTMLButtonElement | null>>([]);
   const activeIndex = options.findIndex((option) => option.value === value);
 
+  // Stable, instance-unique prefix so two SegmentedControls on the page don't
+  // collide on tooltip ids. Only `hideLabel` (icon-only) segments get a tooltip —
+  // labelled segments already show their text, so a tooltip would be redundant.
+  const tooltipBase = useId();
+  // `interestFor` is not in React's typings for a native <button>, so attach it via
+  // a spread (JSX spread skips excess-property checks). Empty object for labelled
+  // segments leaves the button untouched.
+  const interestProps = (option: SegOption<T>): Record<string, string> =>
+    option.hideLabel ? { interestFor: `${tooltipBase}-${option.value}` } : {};
+
   const moveTo = (rawIndex: number) => {
     const count = options.length;
     const index = ((rawIndex % count) + count) % count;
@@ -117,6 +127,11 @@ function SegmentedControl<T extends string>({
               role="radio"
               aria-checked={isActive}
               aria-label={option.hideLabel ? option.label : undefined}
+              // Icon-only segments point at a sibling <s-tooltip> so sighted mouse
+              // users get the label on hover/focus (the aria-label already covers
+              // assistive tech). `interestFor` is the same invoker family as the
+              // `commandFor` this build already ships.
+              {...interestProps(option)}
               tabIndex={isActive ? 0 : -1}
               className={styles.segBtn}
               onClick={() => onChange(option.value)}
@@ -145,6 +160,16 @@ function SegmentedControl<T extends string>({
           );
         })}
       </div>
+      {/* Tooltips for the icon-only segments. Kept OUTSIDE the radiogroup so they
+          don't sit among the role="radio" children; `interestFor` on each button
+          references these by id, so their DOM position is free. */}
+      {options
+        .filter((option) => option.hideLabel)
+        .map((option) => (
+          <s-tooltip key={option.value} id={`${tooltipBase}-${option.value}`}>
+            {option.label}
+          </s-tooltip>
+        ))}
     </s-box>
   );
 }

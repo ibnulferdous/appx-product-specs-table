@@ -87,19 +87,16 @@
 
 /* Section-header cell. Unlike Label/Value it is NOT a bordered grid cell — the
  * full-width grey band (`.rowSection` on the row wrapper) is the separator. So
- * this is borderless text only: uppercase, tracked and semibold so the section
- * reads as a heading, but at the SAME full-strength ink as the Label/Value cells
- * (`color: inherit`) rather than a muted tint — the heading is conveyed by weight
- * and case, not by dimming. Becomes editable (with the same blue ring) on focus;
- * text-transform is display-only — the stored label keeps its case. */
+ * this is borderless text only: semibold so the section reads as a heading, but
+ * at the SAME full-strength ink as the Label/Value cells (`color: inherit`)
+ * rather than a muted tint — the heading is conveyed by weight, not by case or
+ * dimming. The text renders in the merchant's own (sentence) case; no
+ * text-transform. Becomes editable with the same blue ring on focus. */
 .cellSection {
   width: 100%;
   box-sizing: border-box;
   font: inherit;
-  font-size: 0.6875rem;
   font-weight: 600;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
   line-height: 1.25rem;
   background: transparent;
   border: 0;

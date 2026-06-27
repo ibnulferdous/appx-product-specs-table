@@ -128,8 +128,8 @@ export const EditorRowItem = memo(function EditorRowItem({
 
           {isSection ? (
             // Native single-line <input> styled as a heading via `.cellSection`
-            // (borderless uppercase text; the row's grey band is the separator),
-            // becoming editable with the shared blue ring on focus. `aria-label`
+            // (borderless semibold sentence-case text; the row's grey band is the
+            // separator), editable with the shared blue ring on focus. `aria-label`
             // carries the accessible name the former `s-text-field` `label` provided.
             <input
               type="text"
