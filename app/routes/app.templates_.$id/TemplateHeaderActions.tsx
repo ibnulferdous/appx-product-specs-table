@@ -183,6 +183,7 @@ export function TemplateHeaderActions({
           label="Template name"
           value={renameValue}
           maxLength={NAME_MAX_LENGTH}
+          details="For your reference only — shoppers never see this name."
           onInput={(event: Event) => setRenameValue(readValue(event))}
           error={renameResult.ok ? undefined : renameResult.error}
         />

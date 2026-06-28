@@ -49,17 +49,13 @@ function resolveStatus(status: unknown): TemplateStatus {
     : TemplateStatus.DRAFT;
 }
 
-export async function listTemplatesForShop(
-  shopId: string,
-  { status }: { status?: string | null } = {},
-) {
-  const where: Prisma.TemplateWhereInput = { shopId };
-  if (status && TEMPLATE_STATUS_SET.has(status)) {
-    where.status = status as TemplateStatus;
-  }
-
+// Always returns ALL of the shop's templates (ordered most-recently-updated
+// first). Status filtering is a client-side concern now — the list page loads
+// the full shop list once and filters in the browser (feature 28), so this no
+// longer takes a status option.
+export async function listTemplatesForShop(shopId: string) {
   const templates = await prisma.template.findMany({
-    where,
+    where: { shopId },
     orderBy: { updatedAt: "desc" },
   });
 
@@ -68,12 +64,6 @@ export async function listTemplatesForShop(
     rowCount: getRowCount(template.rows),
     assignedProductCount: 0,
   }));
-}
-
-export async function countTemplatesForShop(shopId: string) {
-  return prisma.template.count({
-    where: { shopId },
-  });
 }
 
 export async function createTemplateForShop(

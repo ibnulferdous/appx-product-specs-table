@@ -1,7 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import {
   listTemplatesForShop,
-  countTemplatesForShop,
   createTemplateForShop,
   deleteTemplateForShop,
   duplicateTemplateForShop,
@@ -10,6 +9,7 @@ import {
   setTemplateMetaobjectRef,
 } from "./template.server";
 import { MAX_TEMPLATE_ROWS } from "../utils/rows";
+import { NAME_MAX_LENGTH } from "../utils/templateName";
 
 // Replace the Prisma client (app/db.server.ts default export) with in-memory
 // spies. `vi.hoisted` defines the mock before `vi.mock`'s factory runs, and
@@ -49,23 +49,6 @@ describe("listTemplatesForShop", () => {
     });
   });
 
-  it("adds a status filter only when the status is a known value", async () => {
-    prismaMock.template.findMany.mockResolvedValue([]);
-
-    await listTemplatesForShop("shop_A", { status: "ACTIVE" });
-    expect(prismaMock.template.findMany).toHaveBeenLastCalledWith({
-      where: { shopId: "shop_A", status: "ACTIVE" },
-      orderBy: { updatedAt: "desc" },
-    });
-
-    // An unrecognized status is ignored — the query stays shop-scoped only.
-    await listTemplatesForShop("shop_A", { status: "BOGUS" });
-    expect(prismaMock.template.findMany).toHaveBeenLastCalledWith({
-      where: { shopId: "shop_A" },
-      orderBy: { updatedAt: "desc" },
-    });
-  });
-
   it("derives rowCount from the rows array (non-arrays count as 0)", async () => {
     prismaMock.template.findMany.mockResolvedValue([
       { id: "t1", rows: [{}, {}, {}] },
@@ -76,19 +59,6 @@ describe("listTemplatesForShop", () => {
 
     expect(result.map((t) => t.rowCount)).toEqual([3, 0]);
     expect(result.every((t) => t.assignedProductCount === 0)).toBe(true);
-  });
-});
-
-describe("countTemplatesForShop", () => {
-  it("counts only the shop's templates", async () => {
-    prismaMock.template.count.mockResolvedValue(2);
-
-    const count = await countTemplatesForShop("shop_A");
-
-    expect(prismaMock.template.count).toHaveBeenCalledWith({
-      where: { shopId: "shop_A" },
-    });
-    expect(count).toBe(2);
   });
 });
 
@@ -107,14 +77,14 @@ describe("createTemplateForShop", () => {
     expect(prismaMock.template.create).not.toHaveBeenCalled();
   });
 
-  it("rejects a name longer than 100 characters", async () => {
+  it("rejects a name longer than NAME_MAX_LENGTH characters", async () => {
     const result = await createTemplateForShop("shop_A", {
-      name: "a".repeat(101),
+      name: "a".repeat(NAME_MAX_LENGTH + 1),
     });
 
     expect(result).toEqual({
       ok: false,
-      error: "Name must be 100 characters or fewer",
+      error: `Name must be ${NAME_MAX_LENGTH} characters or fewer`,
     });
     expect(prismaMock.template.create).not.toHaveBeenCalled();
   });

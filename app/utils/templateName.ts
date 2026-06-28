@@ -7,7 +7,7 @@
 // The MVP cap on a template name's length. A single shared constant so the UI
 // guard and the server re-validation enforce the same number (mirrors why
 // MAX_TEMPLATE_ROWS is shared).
-export const NAME_MAX_LENGTH = 100;
+export const NAME_MAX_LENGTH = 255;
 
 /**
  * Validate an untrusted template name. Returns the trimmed name on success, or an
