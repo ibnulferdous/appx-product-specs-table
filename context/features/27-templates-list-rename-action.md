@@ -39,7 +39,7 @@ export async function renameTemplateForShop(
   id: string,
   name: unknown,
 ) {
-  const nameResult = validateTemplateName(name); // shared validator (trim, ≤100)
+  const nameResult = validateTemplateName(name); // shared validator (trim, ≤ NAME_MAX_LENGTH = 255)
   if (!nameResult.ok) return { ok: false as const, error: nameResult.error };
   try {
     const template = await prisma.template.update({
@@ -69,17 +69,40 @@ export async function renameTemplateForShop(
 
 ### 2. New `rename` intent — list-route `action` — `app/routes/app.templates.tsx`
 
+> **Reconciliation with the landed file 26.** File 26 has shipped; the `action` now
+> exists and currently parses **only** `{ intent, id }` from the JSON payload and
+> returns an `intent`-tagged result (`{ ok: true, intent: "duplicate" }` /
+> `{ ok: true, intent: "delete" }`) that the toast `useEffect` switches on. The rename
+> branch must slot into that established shape, not the speculative `{ ok, error? }`
+> originally sketched here.
+
 Extend file 26's `action` discriminator with a third branch:
 
 ```
 // intent === "rename" → renameTemplateForShop(shop.id, id, name)
-//                       → { ok, error? }   (revalidate; the row's name + the §25
-//                         2-line clamp update in place)
+//                       → { ok: true, intent: "rename" }  (or { ok: false, error })
+//                         (revalidate; the row's name + the §25 2-line clamp update
+//                          in place)
 ```
+
+- **Extend the payload parse to read `name`.** The action today narrows only
+  `{ intent, id }`; add `name` to the parsed shape
+  (`{ intent?: unknown; id?: unknown; name?: unknown }`) and pass it through —
+  `renameTemplateForShop` does the real validation, so the action can forward the raw
+  value (mirrors how `id` is forwarded to `duplicate`/`delete`).
+- **Return the `intent` discriminator.** On success return
+  `{ ok: true as const, intent: "rename" as const }` (NOT a bare `{ ok }`) so it joins
+  the existing `data.intent` toast switch (see §3); on failure return
+  `{ ok: false as const, error: result.error }` like the other branches.
 
 Payload is `{ intent: "rename"; id: string; name: string }`. Same auth surface; the
 server **re-validates** the name (never trusts the client) and the existing list
-loader auto-revalidates after the submission.
+loader auto-revalidates after the submission. **Feature 28's `shouldRevalidate` does
+not need any rename-specific handling:** the rename fetcher submits with
+`method: "post"`, so it carries `formMethod: "POST"` and falls through to
+`defaultShouldRevalidate` — the status-only skip only catches `formMethod`-less GET
+navigations. After revalidation the loader returns all templates and the client
+re-filters; the renamed row updates in place inside the active status tab.
 
 ### 3. Rename menu item + modal — `app/routes/app.templates.tsx`
 
@@ -99,6 +122,16 @@ loader auto-revalidates after the submission.
     **"Template renamed"** (or the server error). The server re-validation is the
     real gate; the client mirror is UX.
   - Cancel / Esc / outside-click → hide + clear; renames nothing.
+- **Add the toast branch to the existing `useEffect`** (not a new effect): the landed
+  effect already switches on `data.intent` for `"duplicate"`/`"delete"`; add an
+  `else if (data.intent === "rename")` branch that hides the modal, clears
+  `pendingRename`, and toasts **"Template renamed"**. The `data.ok === false` early
+  return already covers the server-error toast for all three intents.
+- **Reuse the landed in-flight pattern** for the modal's loading/disabled state:
+  derive `const renaming = inFlightIntent === "rename"` (the route already computes
+  `inFlightIntent` from `fetcher.json` for the delete `loading` state), and use it to
+  drive the primary button's `loading` and disable Cancel mid-flight — mirroring the
+  delete modal exactly, not a parallel mechanism.
 - Reuse the field-value reader inline (a tiny `(e) => (e.target as
   HTMLInputElement).value`); **do not import** the detail route's
   `editorShared.readValue` (avoid cross-route coupling — the list is a sibling
