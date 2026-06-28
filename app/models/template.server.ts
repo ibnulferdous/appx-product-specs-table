@@ -206,6 +206,40 @@ export async function setTemplateMetaobjectRef(
 }
 
 /**
+ * Rename an owned template (feature 27). A focused, **rows-untouching** sibling of
+ * `saveTemplateForShop`: the list page has no in-memory rows to resend, so reusing
+ * `saveTemplateForShop` (which always narrows + caps `rows`, and treats
+ * `parseRows(undefined)` as `[]`) would clobber the template's rows. This writes
+ * `name` only and leaves `rows` + `status` alone.
+ *
+ * Shop isolation (priority #1): the `{ id, shopId }` where-unique scopes the write
+ * itself — a cross-shop/unknown id is "not found" (P2025), never a rename of another
+ * shop's template. Mirrors `setTemplateMetaobjectRef`'s shop-scoped write.
+ *
+ * No metaobject sync — a name is not part of the storefront delivery copy (the
+ * metaobject carries rows + status, not name), so renaming needs no Admin API call.
+ */
+export async function renameTemplateForShop(
+  shopId: string,
+  id: string,
+  name: unknown,
+) {
+  const nameResult = validateTemplateName(name);
+  if (!nameResult.ok) {
+    return { ok: false as const, error: nameResult.error };
+  }
+  try {
+    const template = await prisma.template.update({
+      where: { id, shopId },
+      data: { name: nameResult.name }, // ONLY name; rows + status untouched
+    });
+    return { ok: true as const, data: template };
+  } catch {
+    return { ok: false as const, error: "Could not rename template" };
+  }
+}
+
+/**
  * Duplicate an owned template (feature 20). Shop isolation (priority #1): the
  * source is read shop-scoped (`findFirst({ where: { id, shopId } })`), so a
  * foreign id reads nothing and the copy is never created — a cross-shop duplicate

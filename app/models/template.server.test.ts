@@ -5,6 +5,7 @@ import {
   deleteTemplateForShop,
   duplicateTemplateForShop,
   getTemplateByIdForShop,
+  renameTemplateForShop,
   saveTemplateForShop,
   setTemplateMetaobjectRef,
 } from "./template.server";
@@ -405,6 +406,65 @@ describe("setTemplateMetaobjectRef", () => {
     await expect(
       setTemplateMetaobjectRef("shop_A", "t1", "gid://x", "h"),
     ).rejects.toThrow();
+  });
+});
+
+describe("renameTemplateForShop", () => {
+  it("rejects an empty/whitespace name without writing", async () => {
+    const result = await renameTemplateForShop("shop_A", "t1", "   ");
+
+    expect(result).toEqual({ ok: false, error: "Name is required" });
+    expect(prismaMock.template.update).not.toHaveBeenCalled();
+  });
+
+  it("rejects a name longer than NAME_MAX_LENGTH without writing", async () => {
+    const result = await renameTemplateForShop(
+      "shop_A",
+      "t1",
+      "a".repeat(NAME_MAX_LENGTH + 1),
+    );
+
+    expect(result).toEqual({
+      ok: false,
+      error: `Name must be ${NAME_MAX_LENGTH} characters or fewer`,
+    });
+    expect(prismaMock.template.update).not.toHaveBeenCalled();
+  });
+
+  it("writes ONLY a trimmed name, shop-scoped (rows + status untouched)", async () => {
+    prismaMock.template.update.mockResolvedValue({ id: "t1", name: "Renamed" });
+
+    const result = await renameTemplateForShop("shop_A", "t1", "  Renamed  ");
+
+    // The write is shop-scoped itself (priority #1): `shopId` rides along as an
+    // extended where-unique filter, so a foreign id can never be renamed.
+    expect(prismaMock.template.update).toHaveBeenCalledWith({
+      where: { id: "t1", shopId: "shop_A" },
+      data: { name: "Renamed" },
+    });
+    // Only `name` is written — `rows` and `status` are absent from the payload,
+    // so they can never be clobbered by a rename.
+    const updateArg = prismaMock.template.update.mock.calls[0][0];
+    expect(updateArg.data).toEqual({ name: "Renamed" });
+    expect(result).toEqual({ ok: true, data: { id: "t1", name: "Renamed" } });
+  });
+
+  it("is a no-op cross-shop: a foreign {id, shopId} throws P2025 → ok:false (other shop untouched)", async () => {
+    // The template belongs to shop_A; shop_B asks to rename it. The {id, shopId}
+    // where-unique matches no row → Prisma throws P2025, caught as ok:false.
+    prismaMock.template.update.mockRejectedValue(new Error("P2025"));
+
+    const result = await renameTemplateForShop(
+      "shop_B",
+      "tmpl_owned_by_A",
+      "Hijacked",
+    );
+
+    expect(prismaMock.template.update).toHaveBeenCalledWith({
+      where: { id: "tmpl_owned_by_A", shopId: "shop_B" },
+      data: { name: "Hijacked" },
+    });
+    expect(result).toEqual({ ok: false, error: "Could not rename template" });
   });
 });
 

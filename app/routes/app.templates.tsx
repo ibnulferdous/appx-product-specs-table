@@ -15,9 +15,11 @@ import {
   duplicateTemplateForShop,
   getTemplateByIdForShop,
   listTemplatesForShop,
+  renameTemplateForShop,
 } from "../models/template.server";
 import { deleteSpecTableMetaobject } from "../shopify/metaobjects.server";
 import { BADGE_TONES } from "../utils/templateStatus";
+import { NAME_MAX_LENGTH, validateTemplateName } from "../utils/templateName";
 import {
   filterTemplatesByStatus,
   normalizeStatusFilter,
@@ -27,6 +29,10 @@ import {
 // One shared confirm modal for delete (not one <s-modal> per row): lighter DOM,
 // a single focus trap. The id is constant — `pendingDelete` carries which row.
 const DELETE_MODAL_ID = "templates-list-delete-modal";
+
+// One shared rename modal (mirrors the delete modal): `pendingRename` carries which
+// row, the field value is seeded from the current name on open.
+const RENAME_MODAL_ID = "templates-list-rename-modal";
 
 const STATUS_FILTERS: { label: string; value: StatusFilter }[] = [
   { label: "All", value: "ALL" },
@@ -82,10 +88,12 @@ const EmptyTemplatesState = () => (
 // state; the row only renders and calls the handlers it gets as props.
 const TemplateTableRow = ({
   template,
+  onRequestRename,
   onDuplicate,
   onRequestDelete,
 }: {
   template: TemplateListItem;
+  onRequestRename: (id: string, name: string) => void;
   onDuplicate: (id: string) => void;
   onRequestDelete: (id: string, name: string) => void;
 }) => {
@@ -122,6 +130,12 @@ const TemplateTableRow = ({
           commandFor={menuId}
         />
         <s-menu id={menuId} accessibilityLabel={`Actions for ${template.name}`}>
+          <s-button
+            icon="edit"
+            onClick={() => onRequestRename(template.id, template.name)}
+          >
+            Rename
+          </s-button>
           <s-button icon="duplicate" onClick={() => onDuplicate(template.id)}>
             Duplicate
           </s-button>
@@ -142,12 +156,14 @@ const TemplateTable = ({
   templates,
   selectedStatus,
   onSelectStatus,
+  onRequestRename,
   onDuplicate,
   onRequestDelete,
 }: {
   templates: TemplateListItem[];
   selectedStatus: StatusFilter;
   onSelectStatus: (status: StatusFilter) => void;
+  onRequestRename: (id: string, name: string) => void;
   onDuplicate: (id: string) => void;
   onRequestDelete: (id: string, name: string) => void;
 }) => (
@@ -196,6 +212,7 @@ const TemplateTable = ({
               <TemplateTableRow
                 key={template.id}
                 template={template}
+                onRequestRename={onRequestRename}
                 onDuplicate={onDuplicate}
                 onRequestDelete={onRequestDelete}
               />
@@ -258,10 +275,23 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   const payload = (await request.json()) as {
     intent?: unknown;
     id?: unknown;
+    name?: unknown;
   };
   const id = typeof payload.id === "string" ? payload.id : "";
   if (!id) {
     return { ok: false as const, error: "Missing template id" };
+  }
+
+  // Rename: touch the name only — `renameTemplateForShop` never resends rows, so a
+  // list rename (which holds no in-memory rows) can't clobber them. The server
+  // re-validates the name (never trusts the client); pass the raw payload value
+  // through. Returns `{ ok }` DATA so the list revalidates the row in place.
+  if (payload.intent === "rename") {
+    const result = await renameTemplateForShop(shop.id, id, payload.name);
+    if (!result.ok) {
+      return { ok: false as const, error: result.error };
+    }
+    return { ok: true as const, intent: "rename" as const };
   }
 
   // Duplicate: clone the SAVED template (DRAFT, fresh row ids) shop-scoped. The
@@ -325,6 +355,16 @@ export default function TemplatesPage() {
     id: string;
     name: string;
   } | null>(null);
+  // Rename modal: `pendingRename` carries the target row; `renameValue` is the
+  // controlled field, seeded from the current name on open. A client mirror of
+  // `validateTemplateName` drives the field error + disables the primary button
+  // (the server re-validation in the action is the real gate; this is UX).
+  const [pendingRename, setPendingRename] = useState<{
+    id: string;
+    name: string;
+  } | null>(null);
+  const [renameValue, setRenameValue] = useState("");
+  const renameResult = validateTemplateName(renameValue);
 
   // A JSON submission's payload lives on `fetcher.json` (not `fetcher.formData`);
   // read it to scope the loading state to a delete specifically.
@@ -333,6 +373,7 @@ export default function TemplatesPage() {
       ? (fetcher.json as { intent?: string }).intent
       : undefined;
   const deleting = inFlightIntent === "delete";
+  const renaming = inFlightIntent === "rename";
 
   // Duplicate is non-destructive on a list, so it fires immediately — no confirm.
   const handleDuplicate = (id: string) => {
@@ -360,6 +401,26 @@ export default function TemplatesPage() {
     setPendingDelete(null);
   };
 
+  // Rename persists immediately (the list has no SaveBar to ride): open the shared
+  // modal seeded with the current name; Confirm submits the trimmed name and the
+  // list revalidates the row in place. Cancel/Esc/outside-click rename nothing.
+  const handleRequestRename = (id: string, name: string) => {
+    setPendingRename({ id, name });
+    setRenameValue(name);
+    shopify.modal.show(RENAME_MODAL_ID);
+  };
+  const handleRenameConfirm = () => {
+    if (!pendingRename || renaming || !renameResult.ok) return;
+    fetcher.submit(
+      { intent: "rename", id: pendingRename.id, name: renameResult.name },
+      { method: "post", encType: "application/json" },
+    );
+  };
+  const handleRenameCancel = () => {
+    shopify.modal.hide(RENAME_MODAL_ID);
+    setPendingRename(null);
+  };
+
   // Surface the success/error toast once the submission settles. On a successful
   // delete, also close the modal + clear the pending target.
   useEffect(() => {
@@ -377,6 +438,10 @@ export default function TemplatesPage() {
       shopify.modal.hide(DELETE_MODAL_ID);
       setPendingDelete(null);
       shopify.toast.show("Template deleted");
+    } else if (data.intent === "rename") {
+      shopify.modal.hide(RENAME_MODAL_ID);
+      setPendingRename(null);
+      shopify.toast.show("Template renamed");
     }
   }, [fetcher.state, fetcher.data, shopify]);
 
@@ -397,6 +462,7 @@ export default function TemplatesPage() {
           templates={visibleTemplates}
           selectedStatus={selectedStatus}
           onSelectStatus={handleSelectStatus}
+          onRequestRename={handleRequestRename}
           onDuplicate={handleDuplicate}
           onRequestDelete={handleRequestDelete}
         />
@@ -425,6 +491,39 @@ export default function TemplatesPage() {
           slot="secondary-actions"
           onClick={handleDeleteCancel}
           {...(deleting ? { disabled: true } : {})}
+        >
+          Cancel
+        </s-button>
+      </s-modal>
+
+      {/* Single shared rename modal — immediate-persist (no SaveBar on the list).
+          Seeded with the current name; the client mirror of validateTemplateName
+          disables Rename while the name is invalid. Cancel/Esc/outside-click clear
+          and rename nothing. */}
+      <s-modal id={RENAME_MODAL_ID} heading="Rename template">
+        <s-text-field
+          label="Template name"
+          value={renameValue}
+          maxLength={NAME_MAX_LENGTH}
+          details="For your reference only — shoppers never see this name."
+          onInput={(event: Event) =>
+            setRenameValue((event.target as HTMLInputElement).value)
+          }
+          error={renameResult.ok ? undefined : renameResult.error}
+        />
+        <s-button
+          slot="primary-action"
+          variant="primary"
+          onClick={handleRenameConfirm}
+          loading={renaming}
+          {...(renameResult.ok ? {} : { disabled: true })}
+        >
+          Rename
+        </s-button>
+        <s-button
+          slot="secondary-actions"
+          onClick={handleRenameCancel}
+          {...(renaming ? { disabled: true } : {})}
         >
           Cancel
         </s-button>
