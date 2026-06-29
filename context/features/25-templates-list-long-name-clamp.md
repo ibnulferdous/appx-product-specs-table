@@ -9,8 +9,9 @@ or letting a very long name balloon the row height.
 
 ## Why this is now
 
-First, smallest item in `context/templates-list-table-suggestions.md` (§2 + the
-sequencing list): immediate polish, no server change, no new dependency. It also
+First, smallest item in the templates-list table suggestions (§2 + the sequencing
+list; that planning doc has since been removed): immediate polish, no server change,
+no new dependency. It also
 clears the visual ground before the per-row actions menu lands (file 26), so a long
 name can't crowd the trailing actions cell.
 

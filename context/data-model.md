@@ -115,24 +115,13 @@ Shop
 
 ## 4. Product Management Notes
 
-### Template status should behave like Shopify product status
+### Template status behaves like Shopify product status
 
-Important MVP behavior:
+Unsaved edits live only in React state; Save writes to Postgres and syncs the storefront delivery data for **all** statuses (`ACTIVE` / `DRAFT` / `ARCHIVED`). **Status controls storefront visibility, not whether data is synced** — Liquid renders only `ACTIVE` templates; `DRAFT` / `ARCHIVED` may exist as metaobjects but must not render. This is a simple Shopify-like model, not a versioned publishing workflow (draft versions / approval flows can come later). See §8 for the full save → status → storefront flow.
 
-- Unsaved edits live only in React state.
-- Save writes the latest template data to Postgres.
-- Save syncs the latest storefront delivery data to Shopify for `ACTIVE`, `DRAFT`, and `ARCHIVED` templates.
-- Status controls storefront visibility, not whether saved data is synced.
-- Liquid renders only templates whose status is `ACTIVE`.
-- `DRAFT` and `ARCHIVED` templates may exist in Shopify metaobjects, but Liquid must not render them.
+### Product-specific custom values use Shopify metafields
 
-This is a simple Shopify-like model, not a full versioned publishing workflow. A future enterprise workflow can add draft versions and approval flows later.
-
-### Product-specific custom values should use Shopify metafields
-
-The template defines the structure: rows, labels, sections, order, and value parts. Product-specific custom values should live in Shopify product metafields, not Appx Postgres.
-
-The PRD's "manual input" requirement maps to `TEXT` valueParts. Those values are fixed template text shared by every product using the template.
+The template defines structure (rows, labels, sections, order, value parts); product-specific values live in Shopify product metafields, not Appx Postgres. The PRD's "manual input" maps to `TEXT` valueParts — fixed template text shared by every product using the template.
 
 ---
 
@@ -709,112 +698,28 @@ When a conflict is detected, the app may upsert `ProductAssignmentIndex` with `s
 
 ### Metaobject definition
 
-Create one metaobject definition per shop during app install or first app launch.
+One metaobject definition per shop, created on first app launch. **Implemented and round-trip-tested live (Editor Step 9.5, 2026-06-19); decisions locked:**
 
-Recommended type:
+- **Type is app-reserved: `$app:appx_spec_table`** (resolves to `app--<app-id>--appx_spec_table`) — the `$app:` prefix reserves it for this app's exclusive use so neither the merchant nor another app can alter its structure (data safety, priority #1). `access: { admin: MERCHANT_READ_WRITE, storefront: PUBLIC_READ }`.
+- **Fields:**
 
-```text
-appx_spec_table
-```
+  | Key | Type | Purpose |
+  | --- | --- | --- |
+  | `template_id` | `single_line_text_field` | Internal Appx template ID. |
+  | `status` | `single_line_text_field` | `ACTIVE` / `DRAFT` / `ARCHIVED`. |
+  | `rows` | `json` | Storefront-ready rows — a JSON **string** (`JSON.stringify(rows)`); the **same** `EditorRow[]` shape, no reshape needed. |
+  | `styling` | `json` | Storefront-ready styling (JSON string). |
+  | `updated_at` | `single_line_text_field` | Debugging/sync visibility. |
 
-Recommended fields:
-
-| Key           | Type              | Purpose                             |
-| ------------- | ----------------- | ----------------------------------- |
-| `template_id` | single line text  | Internal Appx template ID.          |
-| `status`      | single line text  | `ACTIVE`, `DRAFT`, or `ARCHIVED`.   |
-| `rows`        | json              | Storefront-ready rows.              |
-| `styling`     | json              | Storefront-ready styling.           |
-| `updated_at`  | date time or text | Optional debugging/sync visibility. |
-
-> **Verified (Editor Step 9.5, 2026-06-19).** Implemented and round-trip-tested
-> live. Decisions, now locked:
-> - **The definition type is app-reserved: `$app:appx_spec_table`** (resolves to
->   `app--<app-id>--appx_spec_table`), not a bare `appx_spec_table`. The `$app:`
->   prefix reserves the definition for this app's exclusive use so neither the
->   merchant nor another app can alter its structure (data safety, priority #1).
->   `access: { admin: MERCHANT_READ_WRITE, storefront: PUBLIC_READ }`.
-> - **Field types:** `template_id` / `status` / `updated_at` =
->   `single_line_text_field`; `rows` / `styling` = `json` (the value is a JSON
->   **string**, e.g. `JSON.stringify(rows)`). The `rows` JSON is the **same**
->   `EditorRow[]` shape — no storefront-only reshape was needed (the round-trip
->   confirmed the row contract survives unchanged).
-> - **Mutations** (all validated with `validate_graphql_codeblocks` at 2025-10,
->   in `app/shopify/metaobjects.server.ts`): create the definition once per shop
->   with `metaobjectDefinitionCreate` (store the GID on `Shop.metaobjectDefinitionGid`;
->   `metaobjectDefinitionByType` is the idempotent lookup/race-recovery); upsert
->   each template's entry by handle `template-{templateId}` with `metaobjectUpsert`
->   (store the returned GID + handle on the `Template`); read back with
->   `metaobjectByHandle`. Sync runs for every status; the storefront gates
->   visibility on `status == ACTIVE`.
+- **Mutations** (validated with `validate_graphql_codeblocks` @ 2025-10, in `app/shopify/metaobjects.server.ts`): `metaobjectDefinitionCreate` once per shop (store the GID on `Shop.metaobjectDefinitionGid`; `metaobjectDefinitionByType` is the idempotent lookup/race-recovery); `metaobjectUpsert` per template by handle `template-{templateId}` (store the returned GID + handle on the `Template`); `metaobjectByHandle` to read back. Sync runs for every status; the storefront gates visibility on `status == ACTIVE`.
 
 ### Store both GID and handle
 
-`Template` stores:
-
-```text
-shopifyMetaobjectGid
-shopifyMetaobjectHandle
-```
-
-Reason:
-
-- GID is useful for Admin API updates.
-- Handle is useful for Liquid lookup.
-
-Recommended handle format:
-
-```text
-template-{templateId}
-```
-
-Example:
-
-```text
-template-clx2def456
-```
+`Template` stores `shopifyMetaobjectGid` (for Admin API updates) and `shopifyMetaobjectHandle` (for Liquid lookup). Handle format: `template-{templateId}` (e.g. `template-clx2def456`).
 
 ### Storefront serialization
 
-Rows sent to Shopify should be simplified for Liquid:
-
-```json
-{
-  "id": "2e8a4f7c-1d3b-4c9f-8b2d-6e3a1c4f7d9b",
-  "key": "battery_life",
-  "rowType": "DATA",
-  "label": "Battery Life",
-  "hideWhenEmpty": true,
-  "valueParts": [
-    {
-      "type": "TEXT",
-      "text": "Up to "
-    },
-    {
-      "type": "METAFIELD",
-      "namespace": "custom",
-      "key": "battery_life"
-    },
-    {
-      "type": "TEXT",
-      "text": " hours"
-    }
-  ]
-}
-```
-
-MVP recommendation:
-
-- Metaobject stores template structure.
-- Product metafield stores assigned template handle.
-
-Then Liquid combines:
-
-- `TEXT` parts from row JSON
-- `SHOPIFY_FIELD` parts from the Shopify product object
-- `METAFIELD` parts from Shopify product metafields
-
-Liquid or plain JavaScript should join resolved parts in order to produce the final displayed value. `LINE_BREAK` parts render as a hard line break (e.g., `<br>`) and carry no content.
+The metaobject stores template structure — the same `EditorRow[]` rows JSON (see the §6 example); the product metafield stores the assigned template handle. Liquid/JS resolves each value by joining its parts in order: `TEXT` from row JSON, `SHOPIFY_FIELD` from the Shopify product object, `METAFIELD` from product metafields, `LINE_BREAK` as a hard break (`<br>`, no content).
 
 `hideWhenEmpty` is evaluated for the **whole row, never per line**. Emptiness is judged across every part of the value together (all lines), with `LINE_BREAK` parts ignored:
 
@@ -827,79 +732,19 @@ When a row is empty and `hideWhenEmpty = true`, the storefront hides the entire 
 
 ## 11. Billing and Entitlement Strategy
 
-The PRD includes early bird pricing and review reward logic. This cannot be managed safely without database records.
-
-### Minimal MVP requirements
-
-Track:
-
-- whether the shop is early-bird eligible
-- install number if needed
-- trial period start/end
-- review reward granted date
-- review reward duration
-- Shopify subscription GID
-- subscription status
-- bonus amount
-
-### `bonusAmount Float`
-
-`bonusAmount` is intentionally stored on `ShopEntitlement` because it is promotional/business state, not the Shopify subscription itself.
-
-Example use cases:
-
-- bonus credit
-- bonus discount value
-- reward amount
-- manual goodwill credit
-- future coupon/gift tracking
+Early-bird pricing + review-reward logic (per `prd.md`) need DB records. `AppSubscription` / `ShopEntitlement` (§5) track: early-bird eligibility + install number, trial start/end, review-reward grant date + duration, Shopify subscription GID, subscription status, and `bonusAmount`. `bonusAmount` lives on `ShopEntitlement` (not the Shopify subscription) because it's promotional/business state — bonus credit, discount value, reward amount, goodwill credit, or future coupon/gift tracking.
 
 ---
 
 ## 12. Why Row Keys Matter
 
-A row already has an `id`, so why add `key`?
+`id` and `key` serve different jobs, so every row carries both:
 
-Because `id` and `key` serve different jobs.
+- **`id`** — technical database identity (relational refs, analytics, audit logs). Client-generated, never changes, never reused; the merchant never sees it.
+- **`key`** — the row's stable *meaning* (e.g. `screen_size`), used for CSV import/export matching, AI auto-fill, localization, JSON-LD/SEO, and product metafield JSON values. Generated from the label at creation, then stable: translating the label to French/Arabic leaves `key` as `screen_size`, so anything keyed on it never breaks when the label changes.
 
-### `id`: technical database identity
+See §7 for the full id/key rules.
 
-Example:
+---
 
-```text
-4a8b2d6e-3c1f-4e7a-8b9d-5c2f1a3e9b7d
-```
-
-Use it for:
-
-- relational references
-- future row-level references
-- translations
-- analytics
-- audit logs
-
-The merchant should not care about it.
-
-### `key`: stable meaning of the row
-
-Example:
-
-```text
-screen_size
-```
-
-Use it for:
-
-- CSV import/export column matching
-- AI auto-fill matching
-- localization
-- JSON-LD/SEO mapping
-- readable debugging
-- product metafield JSON values
-
-### Example
-
-A merchant creates a row with `key: "screen_size"` and `label: "Screen Size"`. Later they translate the label to French or Arabic — the `key` stays `screen_size`. CSV imports, AI mappings, and product value lookups all target the key, not the label, so they never break when the label changes.
-
-
-Use Shopify metaobjects for template structure and product metafields for assignment visibility. Store both Shopify GID and handle. Resolve one effective spec table per product with `ProductAssignment.priority`, write the resolved result to `ProductAssignmentIndex`, and prevent unresolved assignment conflicts from changing storefront metafields. Include product create/update webhooks for product-type assignment sync. Keep variant-sensitive Shopify field mapping limited to selected/default variant behavior until the product rules are clearer.
+**Architecture summary.** Postgres is the source of truth; Shopify metaobjects (template structure) + product metafields (assignment handle) are the storefront delivery layer. Store both metaobject GID and handle. Resolve one effective spec table per product via `ProductAssignment.priority`, record the result in `ProductAssignmentIndex`, and never change a storefront metafield while a conflict is unresolved. Use product create/update webhooks for product-type sync. Keep variant-sensitive field mapping to selected/default-variant behavior for MVP.

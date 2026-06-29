@@ -36,7 +36,7 @@
 - Polaris web components do not need to be imported; they are globally registered custom HTML elements.
 - Do not override Polaris component internals or styles with custom CSS unless Polaris provides no reasonable alternative.
 - When custom CSS is needed, scope it tightly to the component file and add a comment explaining why Polaris alone was insufficient.
-- Do not hardcode hex color literals in components — pull color from Polaris design tokens or shared CSS custom properties (see **Color & Theming**). This is not an anti-color rule: the app uses color, it just keeps every color in one source of truth.
+- Do not hardcode hex color literals in components — pull color from Polaris design tokens or shared CSS custom properties (see **Color & Theming**).
 - Accessibility is non-negotiable: all interactive Polaris components must be keyboard navigable and screen-reader labelled.
 
 ## Color & Theming

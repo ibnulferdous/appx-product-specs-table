@@ -105,7 +105,7 @@ E (assignment) → F (top-bar status/save model + cleanup)** continue alongside.
 
 1. **Product assignment + Theme App Extension storefront renderer** (the first-slice finish): assign a template to one product → write the product metafield → build + deploy the app block that renders the table on the storefront (incl. the Liquid readback deferred from Step 9.5.4; verified read syntax + app-reserved-metaobject access caveat in `data-model.md` §9). Rides Reshell Phase E onward.
 2. **Reshell Phases B–F**: B (Style tab) → C (Settings) → D (device previews — read-only Desktop/Tablet/Mobile) → E (assignment) → F (top-bar status+save model + cleanup).
-3. **Templates-list Phase 2** (from `context/templates-list-table-suggestions.md`): search / sort / pagination — server-side filtering returns *with* pagination when the list can grow large. Multi-select bulk actions later.
+3. **Templates-list Phase 2**: search / sort / pagination — server-side filtering returns *with* pagination when the list can grow large. Multi-select bulk actions later.
 
 **Deferred / no longer numbered editor steps:** undo/redo, WYSIWYG storefront styling, and the Desktop/Tablet/Mobile viewport toggle move to the later styling/persistence slice. Editor bulk-delete deferrals: undo/redo (next slice — `DELETE_ROWS` is one clean undoable step), range-select (Shift+click), Delete/Backspace shortcut.
 
