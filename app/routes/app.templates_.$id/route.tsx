@@ -77,7 +77,7 @@ async function syncTemplateToMetaobject(
   } catch (error) {
     console.error("[template save] metaobject sync failed", error);
     syncError =
-      "Saved to the database, but storefront sync failed. Try saving again.";
+      "Saved, but we couldn't update your storefront. Please save again.";
   }
   return { syncError, roundTripOk };
 }

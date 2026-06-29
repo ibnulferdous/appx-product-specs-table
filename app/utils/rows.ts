@@ -224,6 +224,13 @@ export type RowsAction =
   | { type: "ADD_SECTION"; id: string; afterId?: string | null }
   | { type: "DUPLICATE_ROW"; id: string; newId: string }
   | { type: "DELETE_ROW"; id: string }
+  // Bulk delete (feature 29): remove every row whose id is in `ids` in one pure,
+  // same-reference-safe step. Sits alongside the single `DELETE_ROW` (the per-row
+  // ✕ is unchanged) and powers the multi-select bulk-action bar; Select all →
+  // Delete passes every id and so empties the template. No cap check — like
+  // MOVE_ROW, a delete can never grow the array. Designed as exactly ONE undoable
+  // step so the upcoming undo/redo slice can capture a bulk delete cleanly.
+  | { type: "DELETE_ROWS"; ids: string[] }
   | { type: "SET_LABEL"; id: string; label: string }
   // partIndex targets one TEXT segment of valueParts (Step 1 only had index 0).
   | { type: "SET_VALUE_TEXT"; id: string; partIndex: number; text: string }
@@ -240,12 +247,17 @@ export type RowsAction =
   // position instead. The editor computes (partIndex, offset) from the DOM caret
   // and passes plain numbers, so the reducer stays pure and DOM-free. Used by
   // 4.4's LINE_BREAK and reused by Step 5 to drop a picked pill at the caret.
+  // `spaceAfter` (Claude-style smart-pill UX) appends a single TEXT space right
+  // after the inserted part so the merchant can keep typing without it sticking
+  // to the pill; normalizeValueParts merges it with the trailing text. Used only
+  // by the modal's create-mode pill insert — the LINE_BREAK path leaves it off.
   | {
       type: "INSERT_VALUE_PART_AT";
       id: string;
       partIndex: number;
       offset: number;
       part: ValuePart;
+      spaceAfter?: boolean;
     }
   // Reorder (Step 10): move the row with id `activeId` to the array position of
   // the row with id `overId`. Display order IS the array index (data-model §6/§11),
@@ -347,6 +359,16 @@ export function rowsReducer(
     case "DELETE_ROW":
       return rows.filter((row) => row.id !== action.id);
 
+    case "DELETE_ROWS": {
+      if (action.ids.length === 0) return rows; // nothing selected — same-ref no-op
+      const remove = new Set(action.ids);
+      const next = rows.filter((row) => !remove.has(row.id));
+      // Return the SAME array reference when nothing matched, so a stale/foreign id
+      // set never flips the editor's dirty flag — mirroring MOVE_ROW / PASTE_ROWS
+      // no-ops. Surviving rows keep their id/key and order untouched (set-filter).
+      return next.length === rows.length ? rows : next;
+    }
+
     case "SET_LABEL":
       // Label only — the key is fixed at creation and must not change here.
       return rows.map((row) =>
@@ -404,9 +426,14 @@ export function rowsReducer(
         if (row.id !== action.id || row.rowType !== "DATA") {
           return row;
         }
-        const { partIndex, offset, part } = action;
+        const { partIndex, offset, part, spaceAfter } = action;
         const parts = row.valueParts;
         const target = parts[partIndex];
+        // Optional trailing space dropped right after the inserted part (smart-pill
+        // UX); normalizeValueParts merges it with whatever TEXT follows.
+        const tail: ValuePart[] = spaceAfter
+          ? [{ type: "TEXT" as const, text: " " }]
+          : [];
         // Split the targeted TEXT run at the caret offset and drop the new part
         // between the halves; if the caret sits at an atomic boundary (or past
         // the last part) there is no TEXT to split, so splice the part in place.
@@ -416,10 +443,16 @@ export function rowsReducer(
                 ...parts.slice(0, partIndex),
                 { type: "TEXT" as const, text: target.text.slice(0, offset) },
                 part,
+                ...tail,
                 { type: "TEXT" as const, text: target.text.slice(offset) },
                 ...parts.slice(partIndex + 1),
               ]
-            : [...parts.slice(0, partIndex), part, ...parts.slice(partIndex)];
+            : [
+                ...parts.slice(0, partIndex),
+                part,
+                ...tail,
+                ...parts.slice(partIndex),
+              ];
         // normalizeValueParts merges any adjacent TEXT the split produced and
         // keeps the ≥1-TEXT guarantee; it never strips the new atomic part.
         return { ...row, valueParts: normalizeValueParts(next) };

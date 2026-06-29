@@ -25,7 +25,7 @@ import {
 } from "../../utils/valueDom";
 import { cellCount } from "../../utils/clipboardTable";
 import { readClipboardGrid } from "../../utils/clipboardTableDom";
-import { useBrowserLayoutEffect } from "./editorShared";
+import { MODAL_TRANSITION_MS, useBrowserLayoutEffect } from "./editorShared";
 import styles from "./SpecTableEditor.module.css";
 
 // --- Value cell: one inline contenteditable surface -------------------------
@@ -96,16 +96,27 @@ export function ValueCell({
     // the DOM already matches state (e.g. the merchant just typed on the new
     // line), so the filler is removed before it can paint a phantom line.
     syncTrailingFiller(host, valueParts);
-    // An external (modal) Insert queued a caret for this row: focus the host
-    // (focus is in the modal at this point) and place the caret after the freshly
-    // inserted pill. Takes precedence over a pending internal caret for this pass.
+    // An external (modal) Insert queued a caret for this row: focus the host and
+    // place the caret after the freshly inserted pill, so the merchant can keep
+    // typing. The pill render above is synchronous (no visible lag); only the
+    // focus is DEFERRED. App Bridge restores focus to the modal's invoker (the
+    // "Insert field" toolbar button) AFTER its close transition settles — after
+    // this layout effect — so a synchronous host.focus() here is immediately
+    // overwritten and the cell never holds the caret (confirmed in-browser). We
+    // defer past the transition (the same window as the modal's open-side
+    // focusSearchField) so App Bridge restores focus to the button first and we
+    // then move it to the cell, winning the race. Takes precedence over a pending
+    // internal caret for this pass.
     const external = pendingCaret.get(row.id);
     if (external !== undefined) {
       pendingCaret.delete(row.id);
-      host.focus();
-      setCaretLinear(host, external);
-      updateCaretOnState(host);
-      onCaretChange(row.id, external);
+      setTimeout(() => {
+        if (hostRef.current !== host) return; // cell unmounted / row swapped out
+        host.focus();
+        setCaretLinear(host, external);
+        updateCaretOnState(host);
+        onCaretChange(row.id, external);
+      }, MODAL_TRANSITION_MS);
     } else if (!inSync && pendingCaretRef.current !== null) {
       setCaretLinear(host, pendingCaretRef.current);
       updateCaretOnState(host);

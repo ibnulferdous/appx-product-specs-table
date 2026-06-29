@@ -287,8 +287,22 @@
 
 .row:hover .gutter,
 .rowActive .gutter,
-.gutter:focus-within {
+.gutter:focus-within,
+/* A selected row keeps its gutter fully visible (feature 29) so a ticked
+   checkbox can't fade out while scrolling — selection must stay legible. */
+.gutter[data-selected="true"] {
   opacity: 1;
+}
+
+/* Per-row select checkbox (feature 29). Sits left of the drag handle in the
+   muted gutter; tinted with the captured Polaris link blue (the same accent the
+   active row + value tokens use) so it reads as a real admin control, degrading
+   to currentColor when the capture is unavailable. Hex-free, like the rest of
+   the module. */
+.selectCheckbox {
+  margin: 0;
+  cursor: pointer;
+  accent-color: var(--appx-token-color, currentColor);
 }
 
 /* Column header wrapper. Carries the full-width hairline that divides the header
@@ -388,4 +402,32 @@
      low-alpha `currentColor` reads as a subtle grey on the card's light ink. */
   --appx-cell-line: 0.0625rem solid
     color-mix(in srgb, currentColor 14%, transparent);
+}
+
+/* --- Editor tips footer (feature 32) --------------------------------------
+ * A manual-advance tips strip rendered BELOW the editor card (outside it, outside
+ * the save-freeze). Layout only: the ‹ / › controls and the tip body sit in one
+ * inline row, centered under the card, that wraps gracefully on a narrow iframe.
+ * Subdued tone comes from the Polaris `<s-text color="subdued">` inside — no color
+ * here, so the strip stays hex-free and theme-faithful like the rest of the module. */
+.tipsFooter {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  padding-block: 0.75rem;
+  text-align: center;
+}
+
+/* The live region holding the current tip text + "Tip i of n" indicator. Capped
+ * width so a long tip wraps to a tidy block between the controls rather than
+ * stretching the whole footer; it gives up width first when the row wraps. */
+.tipBody {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.125rem;
+  min-width: 0;
+  max-width: 32rem;
 }

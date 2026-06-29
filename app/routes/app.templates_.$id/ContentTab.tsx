@@ -3,6 +3,7 @@ import { RowActionsToolbar } from "./RowActionsToolbar";
 import { RowGrid } from "./RowGrid";
 import { InsertFieldModal } from "./InsertFieldModal";
 import { PasteCapModal } from "./PasteCapModal";
+import { BulkDeleteModal } from "./BulkDeleteModal";
 import type { RowEngine } from "./useRowEngine";
 
 // The Content stage hosted in the EditorShell's `stage` slot (reshell A1): the
@@ -42,6 +43,7 @@ export function ContentTab({ engine }: { engine: RowEngine }) {
 
           <InsertFieldModal engine={engine} />
           <PasteCapModal engine={engine} />
+          <BulkDeleteModal engine={engine} />
         </s-stack>
       </s-box>
     </div>

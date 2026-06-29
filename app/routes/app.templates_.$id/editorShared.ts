@@ -48,9 +48,13 @@ export const useBrowserLayoutEffect =
   typeof document === "undefined" ? useEffect : useLayoutEffect;
 
 // Shared grid template so the column header, data rows, and section rows all
-// line up. First track is the fixed-width gutter holding the drag handle and
-// delete button side by side (inline), so it must fit both controls plus gap.
-export const GUTTER = "4rem";
+// line up. First track is the fixed-width gutter holding the per-row select
+// checkbox + the drag handle + the delete button side by side (inline), so it
+// must fit all THREE controls plus gaps. Widened from 4rem (two controls) when
+// the multi-select checkbox landed (feature 29); DATA_COLUMNS / SECTION_COLUMNS
+// derive from it, so the header, data rows, and section rows stay aligned
+// automatically — retune this one constant, never hardcode per-row widths.
+export const GUTTER = "5.5rem";
 export const DATA_COLUMNS = `${GUTTER} 1fr 1.6fr`;
 export const SECTION_COLUMNS = `${GUTTER} 1fr`;
 
@@ -58,11 +62,33 @@ export const SECTION_COLUMNS = `${GUTTER} 1fr`;
 // Modal API (`shopify.modal.show/hide`).
 export const INSERT_FIELD_MODAL_ID = "insert-field-modal";
 
+// App Bridge plays a view transition whenever an `<s-modal>` opens or closes, and
+// it manages focus AROUND that transition: focusing a child mid-open ABORTS the
+// transition, and on close it restores focus to the modal's invoker AFTER the
+// transition settles. Both fights with our own `.focus()` calls, so we defer past
+// the animation by this many ms — long enough to clear the transition. Used by the
+// modal's deferred search-field focus (open) and the value cell's caret restore
+// after an Insert (close). Confirmed in-browser; see polaris-web-component-gotchas.
+export const MODAL_TRANSITION_MS = 350;
+
 // The "some pasted rows won't fit" confirmation modal (feature 24). Shown before a
 // bulk paste that would cross the 200-row cap so the merchant can continue (add
 // what fits) or cancel (add nothing). Driven imperatively via the App Bridge Modal
 // API, like the Insert-field modal.
 export const PASTE_CAP_MODAL_ID = "paste-over-cap-modal";
+
+// The bulk-delete confirmation modal (feature 29). Shown before a destructive
+// multi-row delete (gated on count) so the merchant can confirm or cancel —
+// there is no undo yet, so this is the primary safeguard. Driven imperatively via
+// the App Bridge Modal API, like the Insert-field and Paste-cap modals.
+export const BULK_DELETE_MODAL_ID = "bulk-delete-modal";
+
+// Deleting this many or more selected rows (and therefore Select all → Delete)
+// opens the confirmation modal first; deleting 1–2 is already a deliberate
+// toolbar action and applies immediately, no modal. A named constant — never a
+// hardcoded literal — same convention as MAX_TEMPLATE_ROWS, so the threshold can
+// be retuned from merchant feedback in one place.
+export const BULK_DELETE_CONFIRM_THRESHOLD = 3;
 
 // Spoken once when a drag handle is focused (Step 11). dnd-kit renders this into
 // the auto-generated `aria-describedby` instructions element the handle points at.

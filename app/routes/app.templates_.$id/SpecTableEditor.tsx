@@ -2,6 +2,7 @@ import { useEffect, useRef } from "react";
 import { SaveBar } from "@shopify/app-bridge-react";
 import { EditorShell } from "./EditorShell";
 import { ContentTab } from "./ContentTab";
+import { EditorTips } from "./EditorTips";
 import { SAVE_BAR_ID } from "./editorShared";
 import type { RowEngine } from "./useRowEngine";
 import styles from "./SpecTableEditor.module.css";
@@ -45,6 +46,12 @@ export function SpecTableEditor({ engine }: { engine: RowEngine }) {
       >
         <EditorShell stage={<ContentTab engine={engine} />} />
       </div>
+
+      {/* Tips footer (feature 32) — a sibling AFTER the freeze <div>, so it sits
+          below the editor card, outside it, and outside the save-freeze (tips stay
+          readable/usable during a save). Manual-advance, one-tip-at-a-time; the
+          home for the keyboard-nav tip and all future editor tips. */}
+      <EditorTips />
 
       {/* The App Bridge contextual save bar (Step 9.5). Rendered at the wrapper
           level (outside EditorShell) so the "Unsaved changes" state persists

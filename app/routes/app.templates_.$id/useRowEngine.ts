@@ -43,7 +43,10 @@ import {
 import { cellCount, gridToPastedRows } from "../../utils/clipboardTable";
 import { readClipboardGrid } from "../../utils/clipboardTableDom";
 import {
+  BULK_DELETE_CONFIRM_THRESHOLD,
+  BULK_DELETE_MODAL_ID,
   INSERT_FIELD_MODAL_ID,
+  MODAL_TRANSITION_MS,
   PASTE_CAP_MODAL_ID,
   metafieldChoiceValue,
   partToSelection,
@@ -133,6 +136,13 @@ export function useRowEngine({
 }: UseRowEngineArgs) {
   const [rows, dispatch] = useReducer(rowsReducer, initialRows);
   const [activeRowId, setActiveRowId] = useState<string | null>(null);
+  // Multi-select for bulk delete (feature 29). KEPT SEPARATE from `activeRowId`:
+  // `activeRowId` is single-focus (caret / insert-after-active / scroll), while
+  // `selectedRowIds` is an orthogonal Set of rows ticked for a bulk action, so the
+  // two never interfere. Reseeds empty on every remount (Discard / create-on-save).
+  const [selectedRowIds, setSelectedRowIds] = useState<Set<string>>(
+    () => new Set(),
+  );
   const atCap = rows.length >= MAX_TEMPLATE_ROWS;
   useCapturedTokenColor();
   const shopify = useAppBridge();
@@ -276,8 +286,6 @@ export function useRowEngine({
       revalidator.revalidate();
       if (data.syncError) {
         shopify.toast.show(data.syncError, { isError: true });
-      } else if (data.roundTripOk) {
-        shopify.toast.show("Saved — storefront round-trip verified");
       } else {
         shopify.toast.show("Saved");
       }
@@ -301,6 +309,7 @@ export function useRowEngine({
     if (saving) {
       shopify.modal.hide(INSERT_FIELD_MODAL_ID);
       shopify.modal.hide(PASTE_CAP_MODAL_ID);
+      shopify.modal.hide(BULK_DELETE_MODAL_ID);
       setPendingPaste(null);
     }
   }, [saving, shopify]);
@@ -392,18 +401,115 @@ export function useRowEngine({
 
   const onActivate = useCallback((id: string) => setActiveRowId(id), []);
 
-  const onDelete = useCallback((id: string) => {
-    dispatch({ type: "DELETE_ROW", id });
-    // The active id may now point at a removed row; clear it so toolbar inserts
-    // fall back to appending until the merchant focuses another row.
-    setActiveRowId((current) => (current === id ? null : current));
-    // If the deleted row held the saved caret, drop the Insert field gate so it
-    // cannot target a row that no longer exists.
-    if (activeCaretRef.current?.rowId === id) {
-      activeCaretRef.current = null;
-      setHasActiveCaret(false);
-    }
+  // Shared post-delete cleanup for BOTH the single ✕ and the bulk delete, so the
+  // two paths cannot drift: after rows leave the array, null out any active-row
+  // or saved-caret state that pointed into the removed set, so the toolbar and
+  // Insert-field gates can never target a row that no longer exists. `wasRemoved`
+  // is a predicate over row ids (single delete → one id; bulk → a Set lookup).
+  const cleanupAfterDelete = useCallback(
+    (wasRemoved: (id: string) => boolean) => {
+      setActiveRowId((current) =>
+        current !== null && wasRemoved(current) ? null : current,
+      );
+      const caretRowId = activeCaretRef.current?.rowId;
+      if (caretRowId !== undefined && wasRemoved(caretRowId)) {
+        activeCaretRef.current = null;
+        setHasActiveCaret(false);
+      }
+    },
+    [],
+  );
+
+  const onDelete = useCallback(
+    (id: string) => {
+      dispatch({ type: "DELETE_ROW", id });
+      cleanupAfterDelete((rowId) => rowId === id);
+    },
+    [cleanupAfterDelete],
+  );
+
+  // --- Multi-select + bulk delete (feature 29) -----------------------------
+  const selectedCount = selectedRowIds.size;
+  const allSelected = rows.length > 0 && selectedCount === rows.length;
+
+  const toggleSelected = useCallback((id: string) => {
+    setSelectedRowIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
+      return next;
+    });
   }, []);
+  // Reads the LIVE rows via the ref so the callback stays stable across selection
+  // changes (it is fanned out to every row's checkbox indirectly, and the bar).
+  const selectAll = useCallback(
+    () => setSelectedRowIds(new Set(rowsRef.current.map((r) => r.id))),
+    [],
+  );
+  const clearSelection = useCallback(() => setSelectedRowIds(new Set()), []);
+
+  // Keep the selection pruned to LIVE row ids after any structural edit. Delete
+  // clears it outright, but a paste-replace (new-template scaffold swap) or a
+  // single ✕ on a selected row can leave a dangling id; pruning here keeps the
+  // "N selected" count and `allSelected` honest, and returns the SAME Set when
+  // nothing changed so it never forces a needless re-render of the rows.
+  useEffect(() => {
+    setSelectedRowIds((prev) => {
+      if (prev.size === 0) return prev;
+      const live = new Set(rows.map((r) => r.id));
+      let changed = false;
+      const next = new Set<string>();
+      for (const id of prev) {
+        if (live.has(id)) next.add(id);
+        else changed = true;
+      }
+      return changed ? next : prev;
+    });
+  }, [rows]);
+
+  // Apply the bulk delete: one DELETE_ROWS step, shared cleanup so the active-row
+  // / Insert-field gates can't point at a deleted row, clear the selection, toast
+  // the count. Guards on `saving` — the editor is frozen during a save, and this
+  // can be reached from the modal's Confirm, which portals outside that freeze.
+  const handleDeleteSelected = useCallback(() => {
+    if (saving) return;
+    const ids = [...selectedRowIds];
+    if (ids.length === 0) return;
+    dispatch({ type: "DELETE_ROWS", ids });
+    const removed = new Set(ids);
+    cleanupAfterDelete((rowId) => removed.has(rowId));
+    clearSelection();
+    shopify.toast.show(
+      `Deleted ${ids.length} ${ids.length === 1 ? "row" : "rows"}`,
+    );
+  }, [saving, selectedRowIds, cleanupAfterDelete, clearSelection, shopify]);
+
+  // Entry point from the bulk bar's Delete: 1–2 rows apply immediately (a
+  // deliberate small action), 3+ (and Select all → Delete) confirm first.
+  const requestDeleteSelected = useCallback(() => {
+    if (saving || selectedCount === 0) return;
+    if (selectedCount >= BULK_DELETE_CONFIRM_THRESHOLD) {
+      shopify.modal.show(BULK_DELETE_MODAL_ID);
+    } else {
+      handleDeleteSelected();
+    }
+  }, [saving, selectedCount, shopify, handleDeleteSelected]);
+
+  const handleConfirmBulkDelete = useCallback(() => {
+    shopify.modal.hide(BULK_DELETE_MODAL_ID);
+    // Re-guard on `saving`: the modal portals outside the editor's inert freeze,
+    // so Continue must not mutate rows mid-save (defense in depth alongside the
+    // hide-on-save effect and the guard inside handleDeleteSelected).
+    if (!saving) handleDeleteSelected();
+  }, [shopify, saving, handleDeleteSelected]);
+
+  const handleCancelBulkDelete = useCallback(() => {
+    // Hide only; deletes nothing, selection preserved.
+    shopify.modal.hide(BULK_DELETE_MODAL_ID);
+  }, [shopify]);
 
   // Toolbar inserts land directly below the active row (append when none); the
   // new row becomes active and is scrolled into view.
@@ -451,7 +557,7 @@ export function useRowEngine({
   // trap lands on the close button first; this moves it to the search field so
   // the merchant can type straight away.
   const focusSearchField = useCallback(() => {
-    setTimeout(() => searchFieldRef.current?.focus(), 350);
+    setTimeout(() => searchFieldRef.current?.focus(), MODAL_TRANSITION_MS);
   }, []);
 
   const handleOpenInsertField = useCallback(() => {
@@ -571,13 +677,18 @@ export function useRowEngine({
             row.valueParts,
             saved.linear,
           );
-          pendingCaretByRowRef.current.set(saved.rowId, saved.linear + 1);
+          // Drop a trailing space after the new pill (Claude-style smart-pill UX)
+          // so the merchant can keep typing without it abutting the pill; the
+          // caret lands after BOTH the pill and the space (+2: pill = 1 slot,
+          // space = 1 slot).
+          pendingCaretByRowRef.current.set(saved.rowId, saved.linear + 2);
           dispatch({
             type: "INSERT_VALUE_PART_AT",
             id: saved.rowId,
             partIndex,
             offset,
             part,
+            spaceAfter: true,
           });
         }
       }
@@ -825,6 +936,16 @@ export function useRowEngine({
     handleAddSection,
     handleDuplicate,
     handleAppendRow,
+    // Multi-select bulk delete (feature 29)
+    selectedRowIds,
+    selectedCount,
+    allSelected,
+    toggleSelected,
+    selectAll,
+    clearSelection,
+    requestDeleteSelected,
+    handleConfirmBulkDelete,
+    handleCancelBulkDelete,
     // Modal handlers
     handleOpenInsertField,
     handleEditPart,

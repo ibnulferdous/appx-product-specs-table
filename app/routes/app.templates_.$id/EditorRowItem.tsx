@@ -14,8 +14,10 @@ interface RowItemProps {
   row: EditorRow;
   index: number;
   isActive: boolean;
+  selected: boolean;
   onActivate: (id: string) => void;
   onDelete: (id: string) => void;
+  onToggleSelected: (id: string) => void;
   dispatch: Dispatch<RowsAction>;
   onCaretChange: (rowId: string, linear: number | null) => void;
   onEditPart: (rowId: string, partIndex: number, part: ValuePart) => void;
@@ -24,15 +26,18 @@ interface RowItemProps {
 }
 
 // Memoized so a single cell edit re-renders only that row. `dispatch`,
-// `onActivate`, `onDelete`, `onCaretChange`, `onEditPart`, and `onBulkPaste` are
-// stable; `pendingCaret` is a stable ref-held Map; `isActive` is a boolean, so
-// non-edited, non-(de)activated rows skip re-rendering entirely.
+// `onActivate`, `onDelete`, `onToggleSelected`, `onCaretChange`, `onEditPart`,
+// and `onBulkPaste` are stable; `pendingCaret` is a stable ref-held Map;
+// `isActive` and `selected` are booleans, so non-edited, non-(de)activated,
+// non-(de)selected rows skip re-rendering entirely.
 export const EditorRowItem = memo(function EditorRowItem({
   row,
   index,
   isActive,
+  selected,
   onActivate,
   onDelete,
+  onToggleSelected,
   dispatch,
   onCaretChange,
   onEditPart,
@@ -51,6 +56,10 @@ export const EditorRowItem = memo(function EditorRowItem({
     [dispatch, row.id],
   );
   const handleDelete = useCallback(() => onDelete(row.id), [onDelete, row.id]);
+  const handleToggleSelected = useCallback(
+    () => onToggleSelected(row.id),
+    [onToggleSelected, row.id],
+  );
   const handleActivate = useCallback(
     () => onActivate(row.id),
     [onActivate, row.id],
@@ -118,6 +127,8 @@ export const EditorRowItem = memo(function EditorRowItem({
         >
           <RowGutter
             rowNumber={rowNumber}
+            selected={selected}
+            onToggleSelected={handleToggleSelected}
             onDelete={handleDelete}
             reorderLabel={reorderLabel}
             dragAttributes={attributes}

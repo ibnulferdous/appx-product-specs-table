@@ -274,6 +274,75 @@ describe("rowsReducer", () => {
     });
   });
 
+  describe("DELETE_ROWS (bulk delete)", () => {
+    it("deletes exactly the listed ids and preserves the order of the rest", () => {
+      const rows = [
+        dataRow("a", "a"),
+        dataRow("b", "b"),
+        dataRow("c", "c"),
+        dataRow("d", "d"),
+      ];
+      expect(
+        rowsReducer(rows, { type: "DELETE_ROWS", ids: ["b", "d"] }).map(
+          (r) => r.id,
+        ),
+      ).toEqual(["a", "c"]);
+    });
+
+    it("returns the SAME array reference for an empty id list (no dirty flip)", () => {
+      const rows = [dataRow("a", "a")];
+      expect(rowsReducer(rows, { type: "DELETE_ROWS", ids: [] })).toBe(rows);
+    });
+
+    it("returns the SAME array reference when every id is foreign/stale (no dirty flip)", () => {
+      const rows = [dataRow("a", "a"), dataRow("b", "b")];
+      expect(
+        rowsReducer(rows, { type: "DELETE_ROWS", ids: ["ghost", "missing"] }),
+      ).toBe(rows);
+    });
+
+    it("deletes all rows when every id is listed (Select all → Delete leaves [])", () => {
+      const rows = [
+        dataRow("a", "a"),
+        sectionRow("s", "section"),
+        dataRow("b", "b"),
+      ];
+      expect(
+        rowsReducer(rows, { type: "DELETE_ROWS", ids: ["a", "s", "b"] }),
+      ).toEqual([]);
+    });
+
+    it("deletes only the live ids when the set mixes live and foreign ids", () => {
+      const rows = [dataRow("a", "a"), dataRow("b", "b"), dataRow("c", "c")];
+      expect(
+        rowsReducer(rows, {
+          type: "DELETE_ROWS",
+          ids: ["b", "ghost"],
+        }).map((r) => r.id),
+      ).toEqual(["a", "c"]);
+    });
+
+    it("never touches the key or id of the surviving rows", () => {
+      const rows: EditorRow[] = [
+        dataRow("a", "battery_life"),
+        sectionRow("s", "performance"),
+        dataRow("c", "chipset"),
+      ];
+      const result = rowsReducer(rows, { type: "DELETE_ROWS", ids: ["s"] });
+      expect(result.map((r) => [r.id, r.key])).toEqual([
+        ["a", "battery_life"],
+        ["c", "chipset"],
+      ]);
+    });
+
+    it("does not mutate the input array (the reducer is pure)", () => {
+      const rows: EditorRow[] = [dataRow("a", "a"), dataRow("b", "b")];
+      const result = rowsReducer(rows, { type: "DELETE_ROWS", ids: ["a"] });
+      expect(rows.map((r) => r.id)).toEqual(["a", "b"]);
+      expect(result).not.toBe(rows);
+    });
+  });
+
   describe("SET_LABEL", () => {
     it("updates the label but never the key (data-model invariant)", () => {
       const rows = [dataRow("a", "screen_size")];
@@ -551,6 +620,58 @@ describe("rowsReducer", () => {
           part: lineBreak,
         }),
       ).toEqual(rows);
+    });
+
+    it("spaceAfter drops a trailing space, merged into the following TEXT (smart-pill UX)", () => {
+      const rows = [dataRow("a", "a", [{ type: "TEXT", text: "Intel" }])];
+      // Caret at the end of "Intel" → pill + space, with the space merged into
+      // the (empty) trailing half so the cell ends with "Intel" + pill + " ".
+      const result = rowsReducer(rows, {
+        type: "INSERT_VALUE_PART_AT",
+        id: "a",
+        partIndex: 0,
+        offset: 5,
+        part: metafield,
+        spaceAfter: true,
+      }) as DataRow[];
+      expect(result[0].valueParts).toEqual([
+        { type: "TEXT", text: "Intel" },
+        metafield,
+        { type: "TEXT", text: " " },
+      ]);
+    });
+
+    it("spaceAfter prefixes the space onto the right half when splitting mid-text", () => {
+      const rows = [dataRow("a", "a", [{ type: "TEXT", text: "ab" }])];
+      const result = rowsReducer(rows, {
+        type: "INSERT_VALUE_PART_AT",
+        id: "a",
+        partIndex: 0,
+        offset: 1,
+        part: metafield,
+        spaceAfter: true,
+      }) as DataRow[];
+      expect(result[0].valueParts).toEqual([
+        { type: "TEXT", text: "a" },
+        metafield,
+        { type: "TEXT", text: " b" },
+      ]);
+    });
+
+    it("omitting spaceAfter inserts no space (LINE_BREAK path unchanged)", () => {
+      const rows = [dataRow("a", "a", [{ type: "TEXT", text: "ab" }])];
+      const result = rowsReducer(rows, {
+        type: "INSERT_VALUE_PART_AT",
+        id: "a",
+        partIndex: 0,
+        offset: 1,
+        part: metafield,
+      }) as DataRow[];
+      expect(result[0].valueParts).toEqual([
+        { type: "TEXT", text: "a" },
+        metafield,
+        { type: "TEXT", text: "b" },
+      ]);
     });
   });
 

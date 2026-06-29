@@ -5,9 +5,12 @@ import type {
 } from "@dnd-kit/core";
 import styles from "./SpecTableEditor.module.css";
 
-// --- Row gutter (drag handle + delete), shared by data and section rows ------
+// --- Row gutter (select checkbox + drag handle + delete), shared by data and
+// section rows ----------------------------------------------------------------
 export const RowGutter = memo(function RowGutter({
   rowNumber,
+  selected,
+  onToggleSelected,
   onDelete,
   reorderLabel,
   dragAttributes,
@@ -16,6 +19,11 @@ export const RowGutter = memo(function RowGutter({
   isDragging,
 }: {
   rowNumber: number;
+  // Multi-select state for bulk delete (feature 29). `selected` is a plain
+  // boolean (so the memoized row only re-renders when ITS selection flips) and
+  // `onToggleSelected` is a memo-stable per-row toggle.
+  selected: boolean;
+  onToggleSelected: () => void;
   onDelete: () => void;
   // The drag handle's accessible name, e.g. "Reorder Battery Life row" (Step 11).
   // The handle is icon-only, so without this it would announce as a nameless
@@ -41,8 +49,24 @@ export const RowGutter = memo(function RowGutter({
     // Plain wrapper so the CSS module's `.gutter` class can mute the controls at
     // rest and reveal them on row hover/active/focus — Polaris `s-*` elements
     // reject `className`, so the muting lives on this div, not the <s-stack>.
-    <div className={styles.gutter}>
+    // `data-selected` lifts the gutter out of the muted-at-rest state while the
+    // row is selected, so a ticked checkbox can never scroll out of sight.
+    <div
+      className={styles.gutter}
+      data-selected={selected ? "true" : undefined}
+    >
       <s-stack direction="inline" gap="small-200" alignItems="center">
+        {/* Per-row select checkbox (feature 29), left of the drag handle. A
+            native <input> (matching the gutter's native button controls), tinted
+            with the captured Polaris link blue in the CSS module and labelled for
+            assistive tech. Its checked state drives the bulk-action bar. */}
+        <input
+          type="checkbox"
+          className={styles.selectCheckbox}
+          aria-label={`Select row ${rowNumber}`}
+          checked={selected}
+          onChange={onToggleSelected}
+        />
         {/* Drag-to-reorder handle. A real <button> (dnd-kit's recommended, most
             accessible activator) — keyboard-focusable and operable: Space/Enter to
             pick up, arrow keys to move, Space/Enter to drop, Escape to cancel

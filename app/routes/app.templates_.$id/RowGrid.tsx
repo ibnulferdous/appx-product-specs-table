@@ -7,6 +7,7 @@ import {
 import { EditorRowItem } from "./EditorRowItem";
 import { DATA_COLUMNS, REORDER_INSTRUCTIONS } from "./editorShared";
 import { useScrollRegionHeight } from "./useScrollRegionHeight";
+import { useGridKeyboardNav } from "./useGridKeyboardNav";
 import type { RowEngine } from "./useRowEngine";
 import styles from "./SpecTableEditor.module.css";
 
@@ -24,8 +25,10 @@ export function RowGrid({ engine }: { engine: RowEngine }) {
   const {
     rows,
     activeRowId,
+    selectedRowIds,
     onActivate,
     onDelete,
+    toggleSelected,
     dispatch,
     onCaretChange,
     handleEditPart,
@@ -40,6 +43,11 @@ export function RowGrid({ engine }: { engine: RowEngine }) {
 
   const scrollerRef = useRef<HTMLDivElement>(null);
   const maxHeight = useScrollRegionHeight(scrollerRef, rows.length);
+  // Spreadsheet-style Ctrl/Cmd+Arrow Up/Down vertical cell navigation (feature 31).
+  // Attaches a delegated native keydown listener to the scroller; self-filters to
+  // the chord + a real text cell, so plain arrows / Tab / dnd pick-up arrows pass
+  // through untouched.
+  useGridKeyboardNav(scrollerRef, rows);
 
   return (
     <div
@@ -94,8 +102,10 @@ export function RowGrid({ engine }: { engine: RowEngine }) {
               row={row}
               index={index}
               isActive={row.id === activeRowId}
+              selected={selectedRowIds.has(row.id)}
               onActivate={onActivate}
               onDelete={onDelete}
+              onToggleSelected={toggleSelected}
               dispatch={dispatch}
               onCaretChange={onCaretChange}
               onEditPart={handleEditPart}
