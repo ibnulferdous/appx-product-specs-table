@@ -22,7 +22,8 @@ browser-verified**, the editor was **reshelled to the mockup (Phase A complete)*
 and the follow-on slices — paste refinements (21–24), templates-list polish
 (25–28), editor bulk delete (29), keyboard cell navigation (30–32), and the
 template lifecycle/create-on-save flows (19–20) — are all **complete and
-browser-verified**. Test suite: **322 tests green**.
+browser-verified**, plus the **bulk-delete "Undo" toast (33)**. Test suite:
+**325 tests green**.
 
 **Next: product assignment + the Theme App Extension storefront renderer**
 (assign a template to a product, write the product metafield, build + deploy the
@@ -76,10 +77,20 @@ E (assignment) → F (top-bar status/save model + cleanup)** continue alongside.
 - List Rename (`27-…`): immediate-persist Rename menu action (`renameTemplateForShop` — rows-untouching, can't reuse `saveTemplateForShop`).
 - List instant status filter (`28-…`): client-side filter (`templateFilter.ts`); loader returns all rows once; `shouldRevalidate` skips status-only GET navs but lets row-action fetchers revalidate; dead `countTemplatesForShop` + list-status option removed.
 - Name cap raised 100 → 255 (`templateName.ts`; name is internal-only, not synced to storefront).
+- List Duplicate in-flight feedback: Duplicate has no modal to host a spinner (unlike Delete/Rename) and the ⋯ menu closes on click, so it fired with no visible progress. Now toggles App Bridge's global loading indicator (`shopify.loading(duplicating)`) while the clone is in flight. Success toast unchanged. Browser-verified (loading bar shows during flight; "(copy)" row + toast on settle).
+- Shared-fetcher race fix: the three row mutations share ONE fetcher, so a second submit while one ran would interrupt the first (e.g. Delete cancelling an in-progress Duplicate). Added a single `busy = fetcher.state !== "idle"` gate that (a) guards all three submit handlers and (b) is threaded through `TemplateTable`→`TemplateTableRow` to `disabled` the per-row ⋯ trigger, so no second row action can even be opened mid-mutation. Browser-verified: all ⋯ triggers grey out during an in-flight duplicate.
 - Bug fix: SaveBar lingered on the list after Delete-with-unsaved-edits → `shopify.saveBar.hide` before the delete redirect (`TemplateHeaderActions.tsx`). _Pending live re-verify._
 
 **Editor bulk delete (`29-…`)**
-- Per-row select checkbox (gutter) + contextual bulk-action bar + count-gated confirm modal; pure `DELETE_ROWS`; gutter widened to fit checkbox·handle·✕. Deferred: undo/redo, range-select, Delete/Backspace shortcut.
+- Per-row select checkbox (gutter) + contextual bulk-action bar + count-gated confirm modal; pure `DELETE_ROWS`; gutter widened to fit checkbox·handle·✕. Deferred: range-select, Delete/Backspace shortcut.
+- UX follow-up: **tristate "select all" header checkbox** in the Label/Value header (`RowGrid.tsx`, wired to `selectAll`/`clearSelection`/`allSelected`; indeterminate when partial; selects section rows too). Replaces the in-bar "Select all (N)/Deselect all" toggle — one-click select-all matching Polaris `IndexTable`; bar stays contextual (count + Delete only).
+- UX polish: **selected-row highlight** (`.rowSelected` blue fill in `SpecTableEditor.module.css`, wired in `EditorRowItem.tsx`; declared before `.rowActive` so the active insertion target still wins the bg when both) so a bulk selection is legible while scrolling, not just via the gutter checkbox. **Clear-selection ✕** added to `BulkActionsBar.tsx` (icon-only, `clearSelection`) so the merchant can drop a selection without scrolling up to the header checkbox.
+
+**Bulk-delete "Undo" toast (`33-…`)**
+- Stopgap safety valve making bulk delete reversible without the full reducer undo/redo (deferred post-storefront). New pure `RESTORE_ROWS` action (`rows.ts`) replaces the array with a pre-delete snapshot verbatim (exact id/key/valueParts/order; no cap check); `handleDeleteSelected` (`useRowEngine.ts`) captures `rowsRef.current` pre-delete and shows the "Deleted N rows" toast with a 10s `action: "Undo"` that dispatches `RESTORE_ROWS` + re-toasts "Restored N rows". No server/schema/dependency change.
+- **Review fix:** the `onAction` `saving` guard reads a new `savingRef.current` (not the by-value `saving` closure, which would be stale at toast-show time) so an Undo can't mutate rows during a save started after the toast appears.
+- Browser-verified (all 3 paths): 1–2-row immediate delete, 3+ confirm-modal delete, and select-all → delete-all ("No rows yet") — each Undo restores the exact rows + re-toasts, and the SaveBar dirty state correctly returns to clean (restored array == saved baseline). Expired toast leaves the delete in place. 3 new `rows.test.ts` cases (verbatim restore, delete→restore round-trip, empty snapshot).
+- **Resolved:** the confirm modal's "Deleting N rows can't be undone." copy (which the Undo toast made false) is gone — `BulkDeleteModal.tsx` now reads "…will be removed…. You can undo right afterward; the removal is saved when you save." Heading is count-aware ("Delete N rows?"); stale header comment updated.
 
 **Keyboard cell navigation (`30-…` / `31-…` / `32-…`)**
 - Step 1: pure vertical-nav resolver `gridNav.ts` (sticky column through section rows; no wrap).
@@ -107,7 +118,7 @@ E (assignment) → F (top-bar status/save model + cleanup)** continue alongside.
 2. **Reshell Phases B–F**: B (Style tab) → C (Settings) → D (device previews — read-only Desktop/Tablet/Mobile) → E (assignment) → F (top-bar status+save model + cleanup).
 3. **Templates-list Phase 2**: search / sort / pagination — server-side filtering returns *with* pagination when the list can grow large. Multi-select bulk actions later.
 
-**Deferred / no longer numbered editor steps:** undo/redo, WYSIWYG storefront styling, and the Desktop/Tablet/Mobile viewport toggle move to the later styling/persistence slice. Editor bulk-delete deferrals: undo/redo (next slice — `DELETE_ROWS` is one clean undoable step), range-select (Shift+click), Delete/Backspace shortcut.
+**Deferred / no longer numbered editor steps:** WYSIWYG storefront styling and the Desktop/Tablet/Mobile viewport toggle move to the later styling/persistence slice. Editor bulk-delete deferrals: range-select (Shift+click), Delete/Backspace shortcut.
 
 ---
 

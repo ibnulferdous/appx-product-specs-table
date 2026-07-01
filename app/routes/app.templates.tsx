@@ -88,11 +88,15 @@ const EmptyTemplatesState = () => (
 // state; the row only renders and calls the handlers it gets as props.
 const TemplateTableRow = ({
   template,
+  busy,
   onRequestRename,
   onDuplicate,
   onRequestDelete,
 }: {
   template: TemplateListItem;
+  // Disables this row's actions trigger while any mutation is in flight, so a
+  // second row action can't be opened on the shared fetcher mid-mutation.
+  busy: boolean;
   onRequestRename: (id: string, name: string) => void;
   onDuplicate: (id: string) => void;
   onRequestDelete: (id: string, name: string) => void;
@@ -128,6 +132,7 @@ const TemplateTableRow = ({
           icon="menu-horizontal"
           accessibilityLabel={`Actions for ${template.name}`}
           commandFor={menuId}
+          {...(busy ? { disabled: true } : {})}
         />
         <s-menu id={menuId} accessibilityLabel={`Actions for ${template.name}`}>
           <s-button
@@ -154,6 +159,7 @@ const TemplateTableRow = ({
 
 const TemplateTable = ({
   templates,
+  busy,
   selectedStatus,
   onSelectStatus,
   onRequestRename,
@@ -161,6 +167,7 @@ const TemplateTable = ({
   onRequestDelete,
 }: {
   templates: TemplateListItem[];
+  busy: boolean;
   selectedStatus: StatusFilter;
   onSelectStatus: (status: StatusFilter) => void;
   onRequestRename: (id: string, name: string) => void;
@@ -212,6 +219,7 @@ const TemplateTable = ({
               <TemplateTableRow
                 key={template.id}
                 template={template}
+                busy={busy}
                 onRequestRename={onRequestRename}
                 onDuplicate={onDuplicate}
                 onRequestDelete={onRequestDelete}
@@ -347,9 +355,11 @@ export default function TemplatesPage() {
     });
   };
 
-  // One shared fetcher: duplicate and delete are mutually exclusive in time, so
-  // they never collide. After it settles, React Router revalidates the list
-  // loader, so the table is already correct by the time the toast fires.
+  // One shared fetcher for all three row mutations. They MUST stay mutually
+  // exclusive in time — a second submit would interrupt the first mid-flight (e.g.
+  // a Delete cancelling an in-progress Duplicate) — which the `busy` gate below
+  // enforces. After it settles, React Router revalidates the list loader, so the
+  // table is already correct by the time the toast fires.
   const fetcher = useFetcher<typeof action>();
   const [pendingDelete, setPendingDelete] = useState<{
     id: string;
@@ -374,9 +384,19 @@ export default function TemplatesPage() {
       : undefined;
   const deleting = inFlightIntent === "delete";
   const renaming = inFlightIntent === "rename";
+  const duplicating = inFlightIntent === "duplicate";
+  // True while any row mutation is submitting OR its post-submit revalidation is
+  // still loading. Gates every submit handler and disables the row-action triggers
+  // so a merchant can't start a second mutation (e.g. Delete a template while a
+  // copy is still generating) on the shared fetcher.
+  const busy = fetcher.state !== "idle";
 
   // Duplicate is non-destructive on a list, so it fires immediately — no confirm.
+  // The `busy` guard blocks it while any other row mutation is in flight, and also
+  // stops a double-submit: the ⋯ menu closes on click, so a merchant could reopen
+  // it and click Duplicate again before the clone settles, creating two copies.
   const handleDuplicate = (id: string) => {
+    if (busy) return;
     fetcher.submit(
       { intent: "duplicate", id },
       { method: "post", encType: "application/json" },
@@ -390,7 +410,7 @@ export default function TemplatesPage() {
     shopify.modal.show(DELETE_MODAL_ID);
   };
   const handleDeleteConfirm = () => {
-    if (!pendingDelete || deleting) return;
+    if (!pendingDelete || busy) return;
     fetcher.submit(
       { intent: "delete", id: pendingDelete.id },
       { method: "post", encType: "application/json" },
@@ -410,7 +430,7 @@ export default function TemplatesPage() {
     shopify.modal.show(RENAME_MODAL_ID);
   };
   const handleRenameConfirm = () => {
-    if (!pendingRename || renaming || !renameResult.ok) return;
+    if (!pendingRename || busy || !renameResult.ok) return;
     fetcher.submit(
       { intent: "rename", id: pendingRename.id, name: renameResult.name },
       { method: "post", encType: "application/json" },
@@ -420,6 +440,15 @@ export default function TemplatesPage() {
     shopify.modal.hide(RENAME_MODAL_ID);
     setPendingRename(null);
   };
+
+  // Duplicate has no modal to host a spinner (delete/rename do) and the ⋯ menu
+  // closes on click, so there's nowhere to show inline progress. Toggle App
+  // Bridge's global loading indicator (the admin top progress bar) while the clone
+  // is in flight, so the merchant sees their request is being processed; the
+  // settle effect below then fires the "Template duplicated" toast.
+  useEffect(() => {
+    shopify.loading(duplicating);
+  }, [duplicating, shopify]);
 
   // Surface the success/error toast once the submission settles. On a successful
   // delete, also close the modal + clear the pending target.
@@ -460,6 +489,7 @@ export default function TemplatesPage() {
       ) : (
         <TemplateTable
           templates={visibleTemplates}
+          busy={busy}
           selectedStatus={selectedStatus}
           onSelectStatus={handleSelectStatus}
           onRequestRename={handleRequestRename}

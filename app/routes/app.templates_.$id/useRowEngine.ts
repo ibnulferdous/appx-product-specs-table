@@ -222,6 +222,15 @@ export function useRowEngine({
   const saveFetcher = useFetcher<typeof templateAction>();
   const revalidator = useRevalidator();
   const saving = saveFetcher.state !== "idle";
+  // Mirror `saving` into a ref so deferred callbacks read the LIVE save state, not
+  // the value captured at the time they were created. The Undo toast's `onAction`
+  // (feature 33) is registered with the admin chrome and outlives the render that
+  // showed it, so a plain `saving` closure there would be stale (always the value
+  // at toast-show time, i.e. false) — letting Undo mutate rows during an in-flight
+  // save started AFTER the toast appeared. Reading `savingRef.current` keeps the
+  // guard honest, the same pattern as `rowsRef` / `activeRowIdRef`.
+  const savingRef = useRef(saving);
+  savingRef.current = saving;
 
   // Dirty-tracking against the last-saved baseline. The baseline is a
   // META-SNAPSHOT of every editable surface — the row array AND the template
@@ -478,13 +487,32 @@ export function useRowEngine({
     if (saving) return;
     const ids = [...selectedRowIds];
     if (ids.length === 0) return;
+    // Capture the live pre-delete array BEFORE dispatching, so the Undo toast can
+    // restore the exact rows (same id / key / valueParts / order). The reducer
+    // never mutates `rows` in place, so this reference stays a valid snapshot even
+    // after DELETE_ROWS swaps in a new array (feature 33).
+    const snapshot = rowsRef.current;
     dispatch({ type: "DELETE_ROWS", ids });
     const removed = new Set(ids);
     cleanupAfterDelete((rowId) => removed.has(rowId));
     clearSelection();
-    shopify.toast.show(
-      `Deleted ${ids.length} ${ids.length === 1 ? "row" : "rows"}`,
-    );
+    const n = ids.length;
+    const word = n === 1 ? "row" : "rows";
+    // The "Undo" toast portals to the admin chrome, OUTSIDE the editor's inert
+    // freeze (like the modals), so re-guard on the LIVE save state via savingRef
+    // — the toast can outlive its showing render, so a plain `saving` closure here
+    // would be stale. RESTORE_ROWS returns the exact snapshot array, so isDirty (a
+    // JSON compare) flips back precisely: not dirty if the pre-delete state was the
+    // saved baseline, still dirty if it was already dirty.
+    shopify.toast.show(`Deleted ${n} ${word}`, {
+      duration: 10000,
+      action: "Undo",
+      onAction: () => {
+        if (savingRef.current) return;
+        dispatch({ type: "RESTORE_ROWS", rows: snapshot });
+        shopify.toast.show(`Restored ${n} ${word}`);
+      },
+    });
   }, [saving, selectedRowIds, cleanupAfterDelete, clearSelection, shopify]);
 
   // Entry point from the bulk bar's Delete: 1–2 rows apply immediately (a

@@ -95,10 +95,12 @@ export const EditorRowItem = memo(function EditorRowItem({
 
   const isSection = row.rowType === "SECTION_HEADER";
   // Compose the row's classes: every row is a `.row`; a section adds the grey
-  // full-width band; the active row adds the blue accent + tint (declared last so
-  // it wins the background on an active section).
+  // full-width band; a selected row adds the blue fill; the active row adds the
+  // blue accent + tint (its CSS is declared last so it wins the background when a
+  // row is both selected/section and active).
   let rowClass = styles.row;
   if (isSection) rowClass += ` ${styles.rowSection}`;
+  if (selected) rowClass += ` ${styles.rowSelected}`;
   if (isActive) rowClass += ` ${styles.rowActive}`;
   // Accessible name for the drag handle (Step 11). Reuses the same descriptor as
   // the screen-reader announcements so the handle and the live region agree

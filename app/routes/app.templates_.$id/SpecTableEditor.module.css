@@ -257,6 +257,22 @@
   cursor: grabbing;
 }
 
+/* Selected row (feature 29) — a light full-bleed blue fill so a bulk selection
+ * is legible at a glance while scanning/scrolling, not just via the small gutter
+ * checkbox. Reuses the captured Polaris link blue (the same accent the checkbox +
+ * active row use), degrading to currentColor when the capture is unavailable.
+ * Declared BEFORE `.rowActive` so the active row's accent-bar tint wins the
+ * background when a row is both selected and the active insertion target — the
+ * checkbox still marks it selected. A selected section row tints over its grey
+ * band for the same reason (this rule follows `.rowSection`). */
+.rowSelected {
+  background: color-mix(
+    in srgb,
+    var(--appx-token-color, currentColor) 8%,
+    transparent
+  );
+}
+
 /* Active row — the target the toolbar inserts below. A blue left accent bar plus
  * a light full-bleed tint (painted on the full-width .row box so it respects the
  * hairline dividers), instead of a floating grey card. Reuses the captured Polaris

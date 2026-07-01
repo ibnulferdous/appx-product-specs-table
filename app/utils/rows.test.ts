@@ -343,6 +343,51 @@ describe("rowsReducer", () => {
     });
   });
 
+  describe("RESTORE_ROWS (bulk-delete undo)", () => {
+    it("returns exactly the provided snapshot array (content, order, id and key)", () => {
+      const snapshot: EditorRow[] = [
+        dataRow("a", "battery_life", [{ type: "TEXT", text: "10h" }]),
+        sectionRow("s", "performance"),
+        dataRow("c", "chipset", [{ type: "TEXT", text: "M5" }]),
+      ];
+      const result = rowsReducer([], { type: "RESTORE_ROWS", rows: snapshot });
+      // Same reference and same content — a verbatim restore, no remint.
+      expect(result).toBe(snapshot);
+      expect(result.map((r) => [r.id, r.key])).toEqual([
+        ["a", "battery_life"],
+        ["s", "performance"],
+        ["c", "chipset"],
+      ]);
+    });
+
+    it("round-trips DELETE_ROWS → RESTORE_ROWS back to the original rows", () => {
+      const original: EditorRow[] = [
+        dataRow("a", "a", [{ type: "TEXT", text: "one" }]),
+        dataRow("b", "b", [{ type: "TEXT", text: "two" }]),
+        sectionRow("s", "section"),
+        dataRow("c", "c", [{ type: "TEXT", text: "three" }]),
+      ];
+      const afterDelete = rowsReducer(original, {
+        type: "DELETE_ROWS",
+        ids: ["b", "s"],
+      });
+      expect(afterDelete.map((r) => r.id)).toEqual(["a", "c"]);
+      // Undo restores the captured pre-delete snapshot verbatim.
+      const restored = rowsReducer(afterDelete, {
+        type: "RESTORE_ROWS",
+        rows: original,
+      });
+      expect(restored).toEqual(original);
+    });
+
+    it("restores an empty snapshot to [] (Select all → Delete → Undo path is coherent)", () => {
+      const current = [dataRow("x", "x")];
+      expect(rowsReducer(current, { type: "RESTORE_ROWS", rows: [] })).toEqual(
+        [],
+      );
+    });
+  });
+
   describe("SET_LABEL", () => {
     it("updates the label but never the key (data-model invariant)", () => {
       const rows = [dataRow("a", "screen_size")];

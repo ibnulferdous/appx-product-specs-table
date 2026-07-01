@@ -231,6 +231,14 @@ export type RowsAction =
   // MOVE_ROW, a delete can never grow the array. Designed as exactly ONE undoable
   // step so the upcoming undo/redo slice can capture a bulk delete cleanly.
   | { type: "DELETE_ROWS"; ids: string[] }
+  // Replace the row array wholesale with a previously-captured, already-valid
+  // snapshot (feature 33). Powers the bulk-delete "Undo" toast: it restores the
+  // EXACT pre-delete rows — same id / key / valueParts / order — which PASTE_ROWS
+  // cannot (it mints fresh ids/keys). No cap check: a snapshot of a prior valid
+  // state already satisfied the cap, so it can never exceed it. A deliberate
+  // stopgap that adds NO history; the full undo/redo system restores snapshots in
+  // its own meta-reducer (not via a RowsAction) and supersedes this action.
+  | { type: "RESTORE_ROWS"; rows: EditorRow[] }
   | { type: "SET_LABEL"; id: string; label: string }
   // partIndex targets one TEXT segment of valueParts (Step 1 only had index 0).
   | { type: "SET_VALUE_TEXT"; id: string; partIndex: number; text: string }
@@ -368,6 +376,13 @@ export function rowsReducer(
       // no-ops. Surviving rows keep their id/key and order untouched (set-filter).
       return next.length === rows.length ? rows : next;
     }
+
+    case "RESTORE_ROWS":
+      // Replace the array with a previously-captured, already-valid snapshot. Used
+      // by the bulk-delete "Undo" toast to restore the exact pre-delete rows (same
+      // id/key/order). No cap check: a snapshot of a prior valid state already
+      // satisfied the cap.
+      return action.rows;
 
     case "SET_LABEL":
       // Label only — the key is fixed at creation and must not change here.

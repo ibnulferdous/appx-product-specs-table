@@ -26,6 +26,10 @@ export function RowGrid({ engine }: { engine: RowEngine }) {
     rows,
     activeRowId,
     selectedRowIds,
+    selectedCount,
+    allSelected,
+    selectAll,
+    clearSelection,
     onActivate,
     onDelete,
     toggleSelected,
@@ -40,6 +44,12 @@ export function RowGrid({ engine }: { engine: RowEngine }) {
     handleAppendRow,
     atCap,
   } = engine;
+
+  // Tristate "select all" — checked when every row is selected, indeterminate
+  // (the native `─` glyph) when only some are. A native checkbox has no
+  // indeterminate attribute, so it's set imperatively via a ref callback on each
+  // render. Clicking selects all from empty/partial and clears from all.
+  const someSelected = selectedCount > 0 && !allSelected;
 
   const scrollerRef = useRef<HTMLDivElement>(null);
   const maxHeight = useScrollRegionHeight(scrollerRef, rows.length);
@@ -67,7 +77,23 @@ export function RowGrid({ engine }: { engine: RowEngine }) {
             gap="none"
             alignItems="center"
           >
-            <span aria-hidden="true"></span>
+            {/* Select-all checkbox — sits in the gutter column, aligned over the
+                per-row checkboxes. Shares `.selectCheckbox` styling with them.
+                `justifySelf: start` left-aligns it within the 5.5rem gutter column
+                so it lines up with the row checkboxes (which sit at the left edge
+                of the gutter div); without it, s-grid centers the bare input. */}
+            <input
+              type="checkbox"
+              className={styles.selectCheckbox}
+              style={{ justifySelf: "start" }}
+              aria-label="Select all rows"
+              checked={allSelected}
+              ref={(el) => {
+                if (el) el.indeterminate = someSelected;
+              }}
+              onChange={() => (allSelected ? clearSelection() : selectAll())}
+              {...(rows.length === 0 ? { disabled: true } : {})}
+            />
             <div className={styles.headerCell}>
               <s-text color="subdued">Label</s-text>
             </div>
