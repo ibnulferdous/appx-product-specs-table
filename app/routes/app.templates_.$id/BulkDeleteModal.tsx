@@ -22,8 +22,9 @@ export function BulkDeleteModal({ engine }: { engine: RowEngine }) {
       heading={`Delete ${selectedCount} ${rowWord}?`}
     >
       <s-paragraph>
-        {selectedCount} selected {rowWord} will be removed from this template. You
-        can undo right afterward; the removal is saved when you save the template.
+        {selectedCount} selected {rowWord} will be removed from this template.
+        You can undo right afterward; the removal is saved when you save the
+        template.
       </s-paragraph>
       <s-button
         slot="primary-action"
