@@ -2,8 +2,6 @@ import { describe, it, expect, vi } from "vitest";
 import type { AdminApiContext } from "@shopify/shopify-app-react-router/server";
 import {
   deleteSpecTableMetaobject,
-  readDefinitionByTypeId,
-  readDefinitionCreateId,
   readMetaobjectDeleteId,
   readMetaobjectIdByHandle,
   readMetaobjectRows,
@@ -34,59 +32,6 @@ describe("readUserErrors", () => {
     expect(readUserErrors(null)).toEqual([]);
     expect(readUserErrors({})).toEqual([]);
     expect(readUserErrors({ userErrors: "nope" })).toEqual([]);
-  });
-});
-
-describe("readDefinitionByTypeId", () => {
-  it("reads the definition GID when present", () => {
-    expect(
-      readDefinitionByTypeId({
-        data: {
-          metaobjectDefinitionByType: {
-            id: "gid://shopify/MetaobjectDefinition/1",
-            type: "app--1--appx_spec_table",
-          },
-        },
-      }),
-    ).toBe("gid://shopify/MetaobjectDefinition/1");
-  });
-
-  it("returns null when the definition is absent", () => {
-    expect(
-      readDefinitionByTypeId({ data: { metaobjectDefinitionByType: null } }),
-    ).toBeNull();
-    expect(readDefinitionByTypeId({})).toBeNull();
-    expect(readDefinitionByTypeId("nope")).toBeNull();
-  });
-});
-
-describe("readDefinitionCreateId", () => {
-  it("reads the created definition GID", () => {
-    expect(
-      readDefinitionCreateId({
-        data: {
-          metaobjectDefinitionCreate: {
-            metaobjectDefinition: {
-              id: "gid://shopify/MetaobjectDefinition/9",
-            },
-            userErrors: [],
-          },
-        },
-      }),
-    ).toBe("gid://shopify/MetaobjectDefinition/9");
-  });
-
-  it("returns null when create reported errors and minted no definition", () => {
-    expect(
-      readDefinitionCreateId({
-        data: {
-          metaobjectDefinitionCreate: {
-            metaobjectDefinition: null,
-            userErrors: [{ message: "taken", code: "TAKEN" }],
-          },
-        },
-      }),
-    ).toBeNull();
   });
 });
 

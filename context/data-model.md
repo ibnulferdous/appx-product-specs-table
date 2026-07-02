@@ -634,6 +634,29 @@ Exact Liquid syntax should be verified during Theme App Extension implementation
 > auto-resolves an app-owned metaobject in Liquid) rather than a raw handle-string
 > lookup. Finalize this when the Theme App Extension is built.
 
+> **Update (2026-07-01, storefront slice 1 — `context/features/34-storefront-theme-app-extension-first-pixel.md`).**
+> Confirmed against Shopify docs and **implemented**: the product → template pointer
+> is a **`metaobject_reference` product metafield**, **not** the
+> `single_line_text_field` handle sketched in the example below (docs: never store
+> handles/IDs in plain-text fields for relationships — it breaks Liquid/Storefront
+> resolution). Locked details:
+>
+> - **Declared in `shopify.app.toml`** (app-owned):
+>   `[product.metafields.app.spec_table]`, `type = "metaobject_reference<$app:appx_spec_table>"`,
+>   `access.storefront = "public_read"` (required for an app-owned metafield to be
+>   Liquid-readable — app metafields are **not** always readable in Liquid, unlike
+>   merchant/standard ones), `access.admin = "merchant_read_write"` (so Step 3 can set
+>   the value by hand in Admin).
+> - **Namespace/key:** namespace `$app`, key `spec_table`.
+> - **Liquid access (theme app extension, bracket form for the reserved prefix):**
+>   `product.metafields["$app"].spec_table.value` → the referenced metaobject;
+>   then `...spec_table.value.status.value` and iterate `...spec_table.value.rows.value`.
+>   Dot form (`product.metafields.app.spec_table`) does **not** resolve the reserved
+>   namespace.
+>
+> The example block below is retained for history but is **superseded** by the
+> reference-metafield approach.
+
 ### Assignment resolution
 
 For each product, the app resolves assignment candidates before writing the Shopify product metafield or updating `ProductAssignmentIndex`:
@@ -642,7 +665,7 @@ For each product, the app resolves assignment candidates before writing the Shop
 2. Find the `PRODUCT_TYPE` assignment for that product's Shopify product type, if one exists.
 3. Pick the candidate with the highest `priority`.
 4. If two matching candidates have the same highest `priority`, mark the product as an assignment conflict and do not silently choose a winner.
-5. If there is a clear winner, write that template's Shopify metaobject handle to `appx.spec_table_template_handle` and upsert one `ProductAssignmentIndex` row for that product.
+5. If there is a clear winner, set the product's `$app:spec_table` `metaobject_reference` metafield to that template's metaobject (by GID) and upsert one `ProductAssignmentIndex` row for that product.
 
 Higher numeric `priority` means higher precedence. Direct product assignments do not automatically beat product type assignments; priority decides the winner.
 
@@ -652,8 +675,8 @@ When the merchant assigns a template to one product:
 
 1. Save `ProductAssignment` in Postgres.
 2. Resolve the winning assignment for that product.
-3. If there is no priority tie, write product metafield `appx.spec_table_template_handle` to that product.
-4. Upsert `ProductAssignmentIndex` with the product GID, winning template, source assignment, applied template handle, and Shopify sync timestamp.
+3. If there is no priority tie, set the product's `$app:spec_table` `metaobject_reference` metafield to that template's metaobject (by GID).
+4. Upsert `ProductAssignmentIndex` with the product GID, winning template, source assignment, applied metaobject reference, and Shopify sync timestamp.
 
 ### Product type assignment
 
@@ -698,9 +721,22 @@ When a conflict is detected, the app may upsert `ProductAssignmentIndex` with `s
 
 ### Metaobject definition
 
-One metaobject definition per shop, created on first app launch. **Implemented and round-trip-tested live (Editor Step 9.5, 2026-06-19); decisions locked:**
+One metaobject definition, **declared declaratively in `shopify.app.toml`**
+(`[metaobjects.app.appx_spec_table]`) and distributed automatically to every
+shop on install/deploy. **Implemented and round-trip-tested live (Editor Step
+9.5, 2026-06-19); decisions locked:**
 
-- **Type is app-reserved: `$app:appx_spec_table`** (resolves to `app--<app-id>--appx_spec_table`) — the `$app:` prefix reserves it for this app's exclusive use so neither the merchant nor another app can alter its structure (data safety, priority #1). `access: { admin: MERCHANT_READ_WRITE, storefront: PUBLIC_READ }`.
+> **Update (2026-07-01, storefront slice 1).** The definition moved from a
+> **runtime** `metaobjectDefinitionCreate` (once per shop, GID stamped on
+> `Shop.metaobjectDefinitionGid`) to a **declarative TOML** definition — Shopify's
+> recommended path for app-owned data, and required so the `spec_table`
+> `metaobject_reference` metafield (§9) can target it at deploy time via the
+> `metaobject_reference<$app:appx_spec_table>` shorthand. `ensureSpecTableDefinition`
+> and `setShopMetaobjectDefinitionGid` were removed; `Shop.metaobjectDefinitionGid`
+> is now **vestigial** (no longer written/read) — dropping the column is a later
+> cleanup, deferred here to keep this slice off a DB migration.
+
+- **Type is app-reserved: `$app:appx_spec_table`** (resolves to `app--<app-id>--appx_spec_table`) — the `$app:` prefix reserves it for this app's exclusive use so neither the merchant nor another app can alter its structure (data safety, priority #1). `access: { admin: merchant_read_write, storefront: public_read }`.
 - **Fields:**
 
   | Key | Type | Purpose |
@@ -711,7 +747,8 @@ One metaobject definition per shop, created on first app launch. **Implemented a
   | `styling` | `json` | Storefront-ready styling (JSON string). |
   | `updated_at` | `single_line_text_field` | Debugging/sync visibility. |
 
-- **Mutations** (validated with `validate_graphql_codeblocks` @ 2025-10, in `app/shopify/metaobjects.server.ts`): `metaobjectDefinitionCreate` once per shop (store the GID on `Shop.metaobjectDefinitionGid`; `metaobjectDefinitionByType` is the idempotent lookup/race-recovery); `metaobjectUpsert` per template by handle `template-{templateId}` (store the returned GID + handle on the `Template`); `metaobjectByHandle` to read back. Sync runs for every status; the storefront gates visibility on `status == ACTIVE`.
+- **Definition:** declared in `shopify.app.toml`, not created at runtime (see the update note above). The definition is read-only through the Admin API.
+- **Entry mutations** (validated with `validate_graphql_codeblocks` @ 2025-10, in `app/shopify/metaobjects.server.ts`): `metaobjectUpsert` per template by handle `template-{templateId}` (store the returned GID + handle on the `Template`); `metaobjectByHandle` to read back; `metaobjectDelete` on template delete. Sync runs for every status; the storefront gates visibility on `status == ACTIVE`.
 
 ### Store both GID and handle
 

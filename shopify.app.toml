@@ -33,6 +33,53 @@ required = true
 name = "Description"
 type = "multi_line_text_field"
 
+# --- Appx spec table (storefront delivery) ---------------------------------
+# App-owned metaobject holding a template's storefront-ready payload. Declared
+# here (declarative/TOML) so it deploys to every install and can be referenced
+# by the `spec_table` product metafield below. Supersedes the runtime
+# `metaobjectDefinitionCreate` path (data-model.md §10). `storefront = public_read`
+# keeps `rows`/`status` readable by the Theme App Extension in Liquid; fields
+# mirror what `upsertSpecTableMetaobject` writes.
+[metaobjects.app.appx_spec_table]
+name = "Appx Spec Table"
+description = "Storefront-ready copy of an Appx spec table template."
+
+  [metaobjects.app.appx_spec_table.access]
+  admin = "merchant_read_write"
+  storefront = "public_read"
+
+[metaobjects.app.appx_spec_table.fields.template_id]
+name = "Template ID"
+type = "single_line_text_field"
+
+[metaobjects.app.appx_spec_table.fields.status]
+name = "Status"
+type = "single_line_text_field"
+
+[metaobjects.app.appx_spec_table.fields.rows]
+name = "Rows"
+type = "json"
+
+[metaobjects.app.appx_spec_table.fields.styling]
+name = "Styling"
+type = "json"
+
+[metaobjects.app.appx_spec_table.fields.updated_at]
+name = "Updated At"
+type = "single_line_text_field"
+
+# Product -> template pointer. A `metaobject_reference` (NOT a handle string) is
+# required for Liquid/Storefront to resolve the relationship (data-model.md §9).
+# Access path in Liquid: `product.metafields["$app"].spec_table.value`.
+[product.metafields.app.spec_table]
+type = "metaobject_reference<$app:appx_spec_table>"
+name = "Appx Spec Table"
+description = "The Appx spec table rendered on this product's storefront page."
+
+  [product.metafields.app.spec_table.access]
+  admin = "merchant_read_write"
+  storefront = "public_read"
+
 [webhooks]
 api_version = "2026-07"
 

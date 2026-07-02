@@ -12,9 +12,10 @@
 //
 // The definition is app-owned: the type is prefixed with `$app:`, which reserves
 // it for this app's exclusive use so neither the merchant nor another app can
-// alter its structure (data safety). `storefront: PUBLIC_READ` keeps the payload
-// readable by the Theme App Extension; `admin: MERCHANT_READ_WRITE` matches
-// Shopify's app-owned-metaobject example.
+// alter its structure (data safety). The definition itself is now declared
+// declaratively in `shopify.app.toml` ([metaobjects.app.appx_spec_table]) and
+// distributed on deploy/install, so this module only writes/reads/deletes
+// ENTRIES — it no longer creates the definition at runtime (data-model.md §10).
 
 import type { AdminApiContext } from "@shopify/shopify-app-react-router/server";
 import type { EditorRow } from "../utils/rows";
@@ -31,29 +32,6 @@ export function specTableHandle(templateId: string): string {
 }
 
 // --- GraphQL (all validated at 2025-10) ------------------------------------
-
-const DEFINITION_BY_TYPE_QUERY = `#graphql
-  query SpecTableDefinitionByType($type: String!) {
-    metaobjectDefinitionByType(type: $type) {
-      id
-      type
-    }
-  }`;
-
-const DEFINITION_CREATE_MUTATION = `#graphql
-  mutation CreateSpecTableDefinition($definition: MetaobjectDefinitionCreateInput!) {
-    metaobjectDefinitionCreate(definition: $definition) {
-      metaobjectDefinition {
-        id
-        type
-      }
-      userErrors {
-        field
-        message
-        code
-      }
-    }
-  }`;
 
 const METAOBJECT_UPSERT_MUTATION = `#graphql
   mutation UpsertSpecTable($handle: MetaobjectHandleInput!, $metaobject: MetaobjectUpsertInput!) {
@@ -100,15 +78,6 @@ const METAOBJECT_DELETE_MUTATION = `#graphql
     }
   }`;
 
-// The field definitions for the appx_spec_table metaobject (data-model.md §10).
-const SPEC_TABLE_FIELD_DEFINITIONS = [
-  { name: "Template ID", key: "template_id", type: "single_line_text_field" },
-  { name: "Status", key: "status", type: "single_line_text_field" },
-  { name: "Rows", key: "rows", type: "json" },
-  { name: "Styling", key: "styling", type: "json" },
-  { name: "Updated At", key: "updated_at", type: "single_line_text_field" },
-];
-
 // --- Pure narrowing helpers (unit-tested) ----------------------------------
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -127,30 +96,6 @@ export function readUserErrors(payload: unknown): string[] {
   return errors
     .map((error) => (isRecord(error) ? asString(error.message) : ""))
     .filter((message) => message !== "");
-}
-
-/** Read the definition GID from a metaobjectDefinitionByType query response. */
-export function readDefinitionByTypeId(json: unknown): string | null {
-  if (!isRecord(json)) return null;
-  const data = json.data;
-  if (!isRecord(data)) return null;
-  const definition = data.metaobjectDefinitionByType;
-  if (!isRecord(definition)) return null;
-  const id = asString(definition.id);
-  return id || null;
-}
-
-/** Read the created definition GID (or surface user errors) from a create payload. */
-export function readDefinitionCreateId(json: unknown): string | null {
-  if (!isRecord(json)) return null;
-  const data = json.data;
-  if (!isRecord(data)) return null;
-  const payload = data.metaobjectDefinitionCreate;
-  if (!isRecord(payload)) return null;
-  const definition = payload.metaobjectDefinition;
-  if (!isRecord(definition)) return null;
-  const id = asString(definition.id);
-  return id || null;
 }
 
 /** Read the upserted metaobject's GID + handle from the mutation payload. */
@@ -225,63 +170,6 @@ export function readMetaobjectDeleteId(json: unknown): string | null {
 }
 
 // --- Live Admin API calls (mocked at the boundary in tests) -----------------
-
-/**
- * Ensure the app-owned `appx_spec_table` metaobject definition exists, returning
- * its GID. Created at most once per shop:
- *  - a known GID (passed from `Shop.metaobjectDefinitionGid`) short-circuits;
- *  - otherwise look it up by type (idempotency: it may exist in Shopify even if
- *    the Shop row has no GID — e.g. a prior partial run);
- *  - otherwise create it. A "type already taken" race is recovered by a final
- *    lookup rather than failing (mirrors the upsertShop P2002 pattern).
- */
-export async function ensureSpecTableDefinition(
-  admin: AdminApiContext,
-  existingGid: string | null,
-): Promise<string> {
-  if (existingGid) return existingGid;
-
-  const found = await admin.graphql(DEFINITION_BY_TYPE_QUERY, {
-    variables: { type: SPEC_TABLE_METAOBJECT_TYPE },
-  });
-  const foundId = readDefinitionByTypeId(await found.json());
-  if (foundId) return foundId;
-
-  const created = await admin.graphql(DEFINITION_CREATE_MUTATION, {
-    variables: {
-      definition: {
-        name: "Appx Spec Table",
-        type: SPEC_TABLE_METAOBJECT_TYPE,
-        access: { admin: "MERCHANT_READ_WRITE", storefront: "PUBLIC_READ" },
-        fieldDefinitions: SPEC_TABLE_FIELD_DEFINITIONS,
-      },
-    },
-  });
-  const createdJson: unknown = await created.json();
-  const createdId = readDefinitionCreateId(createdJson);
-  if (createdId) return createdId;
-
-  // Create reported errors (most likely the definition already exists from a
-  // concurrent first save): re-query by type before giving up.
-  const recheck = await admin.graphql(DEFINITION_BY_TYPE_QUERY, {
-    variables: { type: SPEC_TABLE_METAOBJECT_TYPE },
-  });
-  const recheckId = readDefinitionByTypeId(await recheck.json());
-  if (recheckId) return recheckId;
-
-  const errors = isRecord(createdJson)
-    ? readUserErrors(
-        isRecord(createdJson.data)
-          ? createdJson.data.metaobjectDefinitionCreate
-          : null,
-      )
-    : [];
-  throw new Error(
-    `Could not create the appx_spec_table metaobject definition${
-      errors.length ? `: ${errors.join("; ")}` : ""
-    }`,
-  );
-}
 
 /**
  * Upsert (create-or-update by handle) the template's metaobject entry, returning

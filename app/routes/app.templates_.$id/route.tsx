@@ -12,10 +12,7 @@ import {
 } from "@shopify/shopify-app-react-router/server";
 import { useAppBridge } from "@shopify/app-bridge-react";
 import { authenticate } from "../../shopify.server";
-import {
-  setShopMetaobjectDefinitionGid,
-  upsertShop,
-} from "../../models/shop.server";
+import { upsertShop } from "../../models/shop.server";
 import {
   createTemplateForShop,
   DEFAULT_TEMPLATE_NAME,
@@ -27,7 +24,6 @@ import {
 } from "../../models/template.server";
 import {
   deleteSpecTableMetaobject,
-  ensureSpecTableDefinition,
   readSpecTableMetaobjectRows,
   upsertSpecTableMetaobject,
 } from "../../shopify/metaobjects.server";
@@ -47,20 +43,15 @@ import { useRowEngine } from "./useRowEngine";
  */
 async function syncTemplateToMetaobject(
   admin: AdminApiContext,
-  shop: { id: string; metaobjectDefinitionGid: string | null },
+  shop: { id: string },
   template: { id: string; status: TemplateStatus; rows: unknown },
 ): Promise<{ syncError: string | null; roundTripOk: boolean | null }> {
   let syncError: string | null = null;
   let roundTripOk: boolean | null = null;
   try {
-    const definitionGid = await ensureSpecTableDefinition(
-      admin,
-      shop.metaobjectDefinitionGid,
-    );
-    if (definitionGid !== shop.metaobjectDefinitionGid) {
-      await setShopMetaobjectDefinitionGid(shop.id, definitionGid);
-    }
-
+    // The `$app:appx_spec_table` metaobject definition is declared in
+    // shopify.app.toml and distributed on deploy/install, so we only upsert the
+    // ENTRY here — no runtime definition create (data-model.md §10).
     const savedRows = parseRows(template.rows);
     const { gid, handle } = await upsertSpecTableMetaobject(admin, {
       templateId: template.id,

@@ -22,15 +22,19 @@ browser-verified**, the editor was **reshelled to the mockup (Phase A complete)*
 and the follow-on slices — paste refinements (21–24), templates-list polish
 (25–28), editor bulk delete (29), keyboard cell navigation (30–32), and the
 template lifecycle/create-on-save flows (19–20) — are all **complete and
-browser-verified**, plus the **bulk-delete "Undo" toast (33)**. Test suite:
-**325 tests green**.
+browser-verified**, plus the **bulk-delete "Undo" toast (33)**. **Storefront slice
+1 — Theme App Extension first pixel (34) is complete and browser-verified**: a
+product's assigned spec table now renders as a real (unstyled) table on the live
+storefront product page. Test suite: **319 tests green**.
 
-**Next: product assignment + the Theme App Extension storefront renderer**
-(assign a template to a product, write the product metafield, build + deploy the
-app block that renders the table on the storefront — incl. the deployable Liquid
-readback deferred from Step 9.5.4; verified read syntax in `data-model.md` §9).
+**Next: the full product-assignment engine + storefront styling.** The first
+pixel proved the admin→storefront pipeline end to end (editor → Postgres →
+metaobject → `metaobject_reference` product metafield → Liquid table). Remaining:
+value-part **resolution** on the storefront (`SHOPIFY_FIELD`/`METAFIELD` still
+render as placeholders — currently shopper-facing, so this precedes shopper-ready),
+the assignment engine (by product/type, priority, conflict index, webhooks), and
 Reshell Phases **B (Style tab) → C (Settings) → D (device previews) →
-E (assignment) → F (top-bar status/save model + cleanup)** continue alongside.
+E (assignment) → F (top-bar status/save model + cleanup)**.
 
 ---
 
@@ -92,6 +96,12 @@ E (assignment) → F (top-bar status/save model + cleanup)** continue alongside.
 - Browser-verified (all 3 paths): 1–2-row immediate delete, 3+ confirm-modal delete, and select-all → delete-all ("No rows yet") — each Undo restores the exact rows + re-toasts, and the SaveBar dirty state correctly returns to clean (restored array == saved baseline). Expired toast leaves the delete in place. 3 new `rows.test.ts` cases (verbatim restore, delete→restore round-trip, empty snapshot).
 - **Resolved:** the confirm modal's "Deleting N rows can't be undone." copy (which the Undo toast made false) is gone — `BulkDeleteModal.tsx` now reads "…will be removed…. You can undo right afterward; the removal is saved when you save." Heading is count-aware ("Delete N rows?"); stale header comment updated.
 
+**Storefront slice 1 — Theme App Extension: first pixel (`34-…`)**
+- Scaffolded `extensions/product-specs-table/` (theme app extension, no build step): `blocks/spec_table.liquid` app block (`target: section`, `enabled_on` product templates) + `assets/spec-table.css` + locales. Browser-verified through all 5 steps on the dev store.
+- **Definitions moved to declarative TOML** (`shopify.app.toml`): the `$app:appx_spec_table` metaobject **and** a new `[product.metafields.app.spec_table]` `metaobject_reference<$app:appx_spec_table>` pointer, both `access.storefront = public_read`. Removed the runtime `ensureSpecTableDefinition` + `setShopMetaobjectDefinitionGid` create path (`Shop.metaobjectDefinitionGid` now vestigial). Existing 11 metaobject entries were adopted cleanly (no conflict/data loss).
+- Block reads `product.metafields["$app"].spec_table.value` → metaobject → renders a semantic `<table>`: section headers, label/value rows, `LINE_BREAK` → `<br>`, escaped author text, silent when non-ACTIVE/empty. `SHOPIFY_FIELD`/`METAFIELD` parts render as deferred placeholders (`[field:vendor]` etc.) — resolution is a later slice.
+- **Storefront access confirmed live**: app-owned metafield + metaobject are Liquid-readable via `public_read` (the admin "Storefront API access" toggle is non-representative for app-owned defs). Both Liquid files pass Shopify Theme Check.
+
 **Keyboard cell navigation (`30-…` / `31-…` / `32-…`)**
 - Step 1: pure vertical-nav resolver `gridNav.ts` (sticky column through section rows; no wrap).
 - Step 2: keyboard + DOM wiring `useGridKeyboardNav.ts` (`Ctrl/Cmd + Arrow Up/Down`, caret at target end).
@@ -108,15 +118,16 @@ E (assignment) → F (top-bar status/save model + cleanup)** continue alongside.
 
 ## In Progress
 
-- **None active.** Reshell Phase A is complete; **next is Phase B (Style tab)** — decide the `StylePanel` sidebar's controls at build start (likely the `add-table-styling` migration introducing `TableStyling` per `data-model.md` §5, applied live via inline `--appx-*` custom properties), then C–F.
+- _(nothing mid-flight — storefront slice 1 closed; next unit is the value-part resolution + assignment engine, see Next Up.)_
 
 ---
 
 ## Next Up
 
-1. **Product assignment + Theme App Extension storefront renderer** (the first-slice finish): assign a template to one product → write the product metafield → build + deploy the app block that renders the table on the storefront (incl. the Liquid readback deferred from Step 9.5.4; verified read syntax + app-reserved-metaobject access caveat in `data-model.md` §9). Rides Reshell Phase E onward.
-2. **Reshell Phases B–F**: B (Style tab) → C (Settings) → D (device previews — read-only Desktop/Tablet/Mobile) → E (assignment) → F (top-bar status+save model + cleanup).
-3. **Templates-list Phase 2**: search / sort / pagination — server-side filtering returns *with* pagination when the list can grow large. Multi-select bulk actions later.
+1. **Storefront value-part resolution** (the first pixel's obvious follow-on): resolve `SHOPIFY_FIELD` (product object) and `METAFIELD` (product metafields) value parts against the live product in `spec_table.liquid`, replacing the `[field:…]`/`[metafield:…]` placeholders — which are currently shopper-facing. Activates the real `hideWhenEmpty` whole-row emptiness rule (data-model.md §9) at the same time.
+2. **Product assignment engine**: assign a template to a product/product-type (priority, conflict index, webhooks, assignment UI) → write the product's `$app:spec_table` `metaobject_reference` metafield. Replaces the by-hand metafield set used in slice 1. Rides Reshell Phase E.
+3. **Reshell Phases B–F**: B (Style tab) → C (Settings) → D (device previews — read-only Desktop/Tablet/Mobile) → E (assignment) → F (top-bar status+save model + cleanup).
+4. **Templates-list Phase 2**: search / sort / pagination — server-side filtering returns *with* pagination when the list can grow large. Multi-select bulk actions later.
 
 **Deferred / no longer numbered editor steps:** WYSIWYG storefront styling and the Desktop/Tablet/Mobile viewport toggle move to the later styling/persistence slice. Editor bulk-delete deferrals: range-select (Shift+click), Delete/Backspace shortcut.
 
@@ -133,7 +144,7 @@ E (assignment) → F (top-bar status/save model + cleanup)** continue alongside.
 ## Open Questions
 
 - ~~Admin API mutations for the app-owned metaobject definition/entries~~ **RESOLVED (Step 9.5):** `metaobjectDefinitionCreate` / `…ByType` / `metaobjectUpsert` / `metaobjectByHandle` (handle `template-{id}`), validated @ 2025-10 — see `metaobjects.server.ts` + `data-model.md` §10.
-- **Storefront Liquid read path** — *partially resolved (Step 9.5):* metaobject read syntax is `{{ metaobjects[type][handle] }}` with `rows.value` iterable (`data-model.md` §9). Still open for the storefront slice: the **app-reserved** (`$app:`) metaobject's storefront access pattern (likely a metaobject-reference product metafield, not a raw handle lookup) and the product-metafield → template pointer.
+- **Storefront Liquid read path** — **RESOLVED + verified live (slice 1, `context/features/34-…`):** the product → template pointer is a **`metaobject_reference` product metafield** declared in `shopify.app.toml` (`[product.metafields.app.spec_table]`, `metaobject_reference<$app:appx_spec_table>`). Liquid access is the reserved-prefix **bracket** form `product.metafields["$app"].spec_table.value` → the metaobject (dot form does NOT resolve the reserved namespace); `rows.value` (json field) is an iterable array. An app-owned `metaobject_reference` **does** resolve its app-owned metaobject on the storefront. **Correction:** app-owned metafields/metaobjects are **not** always Liquid-readable — they require `access.storefront = public_read` (set in TOML); the admin "Storefront API access" toggle is non-representative for app-owned defs. **Supersedes** the `appx.spec_table_template_handle` single-line-text sketch in `data-model.md` §9.
 - Best storefront event strategy for selected-variant changes across themes.
 - Exact UX for preventing/warning about assignment conflicts in MVP.
 - **Assignment location:** direction is to move Product Assignment into the editor's **Settings tab** (not locked). Open: does the Settings tab **fully replace** the standalone `/app/templates/:id/assign` screen, or does `/assign` survive as a deep view for conflict warnings + assignment summary? Decide before building the assignment slice.
@@ -154,6 +165,7 @@ E (assignment) → F (top-bar status/save model + cleanup)** continue alongside.
 - **Color policy:** the app *uses* color, organized through CSS variables as one source of truth (admin mirrors Polaris; storefront inherits theme but is merchant-overridable). The "no hardcoded hex literal" rule is CSS hygiene, not "colorless" — use Polaris tokens / `currentColor` / custom properties (e.g. runtime-captured `--appx-token-color` for the pill blue).
 - **Save/status model (from the mockup):** App Bridge contextual SaveBar (Save/Discard) + header status dropdown + ⋯ more-actions menu; no separate "Save as draft" (status independent of saving). Save freezes the editor (`inert`) in-flight; baseline reset uses the **submitted** snapshot (merchant-data-safety race fix).
 - **Persistence/keys:** key finalization is **server-authoritative** ("is this row id already persisted?"), never re-derives a finalized key. Metaobject is **app-reserved** (`$app:appx_spec_table`) for data safety; metaobject deleted *before* Postgres on delete so a storefront-readable entry can't outlive its template.
+- **App-owned definitions are declarative TOML** (slice 1): the `$app:appx_spec_table` metaobject and the `$app:spec_table` product `metaobject_reference` are declared in `shopify.app.toml`, distributed on deploy/install — the Shopify-recommended path, and required so the reference can target the metaobject at deploy time. Runtime `metaobjectDefinitionCreate` was removed; `Shop.metaobjectDefinitionGid` is vestigial (drop in a later DB-migration cleanup). Metaobject *entries* are still written at runtime via `metaobjectUpsert`.
 - **Testing strategy:** Vitest; Phases 1–2 done (unit + shop-isolation, mocked Prisma); reach Phase 4 (route loaders/actions + GDPR webhooks) before App Store submission, E2E (Playwright) as fast-follow. Polaris web components don't render in jsdom → editor UI is browser-verified, pure logic is unit-tested. Full doc: `~/.claude/plans/there-is-no-automated-encapsulated-yeti.md`.
 - **Pre-submission gaps to close:** mandatory privacy webhooks (`customers/data_request`, `customers/redact`, `shop/redact`) and Billing (defined in `prd.md`, not yet implemented). See `context/app-store-review-checklist.md`.
 - **Embedded-app verification:** the editor is a cross-origin iframe (top frame can't read its DOM/AOM/console); verify via Claude-in-Chrome on the `shopify app dev` preview + direct Postgres/Neon checks. Polaris CDN-build gotchas live in the `polaris-web-component-gotchas` memory.
