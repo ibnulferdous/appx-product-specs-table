@@ -27,12 +27,12 @@ browser-verified**, plus the **bulk-delete "Undo" toast (33)**. **Storefront sli
 product's assigned spec table now renders as a real (unstyled) table on the live
 storefront product page. Test suite: **319 tests green**.
 
-**Next: the full product-assignment engine + storefront styling.** The first
-pixel proved the admin→storefront pipeline end to end (editor → Postgres →
-metaobject → `metaobject_reference` product metafield → Liquid table). Remaining:
-value-part **resolution** on the storefront (`SHOPIFY_FIELD`/`METAFIELD` still
-render as placeholders — currently shopper-facing, so this precedes shopper-ready),
-the assignment engine (by product/type, priority, conflict index, webhooks), and
+**Next: the full product-assignment engine + storefront styling.** The
+admin→storefront pipeline is proven end to end (editor → Postgres → metaobject →
+`metaobject_reference` product metafield → Liquid table), and **value parts now
+resolve live** on the storefront (slice 2 / feature 35, browser-verified — dynamic
+`SHOPIFY_FIELD`/`METAFIELD` show real values, no placeholders). Remaining: the
+assignment engine (by product/type, priority, conflict index, webhooks), and
 Reshell Phases **B (Style tab) → C (Settings) → D (device previews) →
 E (assignment) → F (top-bar status/save model + cleanup)**.
 
@@ -102,6 +102,10 @@ E (assignment) → F (top-bar status/save model + cleanup)**.
 - Block reads `product.metafields["$app"].spec_table.value` → metaobject → renders a semantic `<table>`: section headers, label/value rows, `LINE_BREAK` → `<br>`, escaped author text, silent when non-ACTIVE/empty. `SHOPIFY_FIELD`/`METAFIELD` parts render as deferred placeholders (`[field:vendor]` etc.) — resolution is a later slice.
 - **Storefront access confirmed live**: app-owned metafield + metaobject are Liquid-readable via `public_read` (the admin "Storefront API access" toggle is non-representative for app-owned defs). Both Liquid files pass Shopify Theme Check.
 
+**Storefront slice 2 — value-part resolution (`35-…`)**
+- New `snippets/spec-table-value.liquid` resolves the value cell: `SHOPIFY_FIELD` (12 tokens against the product / `product.first_available_variant`; `total_inventory` → empty), `METAFIELD` (`metafield_text | escape | newline_to_br`), `TEXT`, `LINE_BREAK`. `blocks/spec_table.liquid` captures the cell per row and applies the **whole-cell `hideWhenEmpty`** gate (`strip_html | strip` blank test); 50-row-chunked loops (Shopify's 50-iteration `for` cap). Locale Yes/No keys for `available_for_sale`; dead `.appx-spec-table__pending` CSS removed. `data-model.md` §10 rewritten to the whole-cell rule.
+- Browser-verified on the DJI Air 3S product page: dynamic fields resolve (price `$155,000.00`, vendor/type in "In The Box", vendor in "Warranty"), `hideWhenEmpty` hides empty rows (SKU / metafield / "No value row") while the section renders, multi-line `<br>` renders, section headers render, and **no `[field:…]`/`[metafield:…]` placeholders leak**. Requires `ACTIVE` metaobject status (block gate).
+
 **Keyboard cell navigation (`30-…` / `31-…` / `32-…`)**
 - Step 1: pure vertical-nav resolver `gridNav.ts` (sticky column through section rows; no wrap).
 - Step 2: keyboard + DOM wiring `useGridKeyboardNav.ts` (`Ctrl/Cmd + Arrow Up/Down`, caret at target end).
@@ -118,16 +122,15 @@ E (assignment) → F (top-bar status/save model + cleanup)**.
 
 ## In Progress
 
-- _(nothing mid-flight — storefront slice 1 closed; next unit is the value-part resolution + assignment engine, see Next Up.)_
+- _(nothing mid-flight — storefront slice 2 (value-part resolution) closed + browser-verified; next unit is the assignment engine, see Next Up.)_
 
 ---
 
 ## Next Up
 
-1. **Storefront value-part resolution** (the first pixel's obvious follow-on): resolve `SHOPIFY_FIELD` (product object) and `METAFIELD` (product metafields) value parts against the live product in `spec_table.liquid`, replacing the `[field:…]`/`[metafield:…]` placeholders — which are currently shopper-facing. Activates the real `hideWhenEmpty` whole-row emptiness rule (data-model.md §9) at the same time.
-2. **Product assignment engine**: assign a template to a product/product-type (priority, conflict index, webhooks, assignment UI) → write the product's `$app:spec_table` `metaobject_reference` metafield. Replaces the by-hand metafield set used in slice 1. Rides Reshell Phase E.
-3. **Reshell Phases B–F**: B (Style tab) → C (Settings) → D (device previews — read-only Desktop/Tablet/Mobile) → E (assignment) → F (top-bar status+save model + cleanup).
-4. **Templates-list Phase 2**: search / sort / pagination — server-side filtering returns *with* pagination when the list can grow large. Multi-select bulk actions later.
+1. **Product assignment engine**: assign a template to a product/product-type (priority, conflict index, webhooks, assignment UI) → write the product's `$app:spec_table` `metaobject_reference` metafield. Replaces the by-hand metafield set used in slices 1–2. Rides Reshell Phase E.
+2. **Reshell Phases B–F**: B (Style tab) → C (Settings) → D (device previews — read-only Desktop/Tablet/Mobile) → E (assignment) → F (top-bar status+save model + cleanup).
+3. **Templates-list Phase 2**: search / sort / pagination — server-side filtering returns *with* pagination when the list can grow large. Multi-select bulk actions later.
 
 **Deferred / no longer numbered editor steps:** WYSIWYG storefront styling and the Desktop/Tablet/Mobile viewport toggle move to the later styling/persistence slice. Editor bulk-delete deferrals: range-select (Shift+click), Delete/Backspace shortcut.
 

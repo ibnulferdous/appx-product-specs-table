@@ -1,1 +1,6 @@
-{}
+{
+  "spec_table": {
+    "available_yes": "Yes",
+    "available_no": "No"
+  }
+}

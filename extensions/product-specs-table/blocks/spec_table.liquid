@@ -2,23 +2,23 @@
   Appx — Product Specs Table
   Storefront app block. Renders the spec table assigned to the current product.
 
-  Slice 1, Step 5: semantic (unstyled) <table> output.
   - Reads the assigned template via the app-owned metafield -> metaobject:
     `product.metafields["$app"].spec_table.value` (reserved-prefix BRACKET form;
     dot form does not resolve the reserved namespace). `.status`/`.rows` fields
     are read as `.status.value` / `.rows.value` (json -> iterable array).
   - SECTION_HEADER rows span both columns; DATA rows are label/value pairs.
-  - `LINE_BREAK` value parts render as <br>.
-  - Author-entered text is escaped (merchants author these — never inject raw HTML).
-  - Silent by design: a non-ACTIVE status, no assigned template, or no rows renders
-    NOTHING on the storefront (no diagnostic text, no empty box).
-
-  Deferred to the value-resolution slice (not this one):
-  - `SHOPIFY_FIELD` / `METAFIELD` parts render as placeholders here; resolving them
-    against the live product is later.
-  - `hideWhenEmpty`: per data-model.md §9 a row is empty only when it has dynamic
-    parts and ALL of them resolve empty. Those parts are unresolved in this slice,
-    so no row is empty yet — the rule activates with value resolution.
+  - Value cells (all part types, incl. SHOPIFY_FIELD / METAFIELD resolution
+    against the live product) render via `snippets/spec-table-value.liquid` —
+    see that file + `context/features/35-storefront-value-part-resolution.md`.
+  - `hideWhenEmpty` is a WHOLE-CELL character test (locked decision, slice 2):
+    the row is skipped when the flag is set and the fully resolved cell has
+    zero non-whitespace characters. `strip_html` drops the `<br>`s first so
+    LINE_BREAKs never count as content. TEXT-only cells always render.
+  - Author-entered text is escaped inside the snippet (merchants author these —
+    never inject raw HTML); the captured cell is emitted unfiltered because it
+    is already escaped and may legitimately contain `<br>`.
+  - Silent by design: a non-ACTIVE status, no assigned template, or no rows
+    renders NOTHING on the storefront (no diagnostic text, no empty box).
 
   CSS lives in assets/spec-table.css and is loaded via the schema "stylesheet"
   attribute — theme app extension blocks cannot use the {% stylesheet %} tag.
@@ -34,26 +34,29 @@
   <div class="appx-spec-table" {{ block.shopify_attributes }}>
     <table class="appx-spec-table__table">
       <tbody>
-        {%- for row in rows -%}
-          {%- if row.rowType == "SECTION_HEADER" -%}
-            <tr class="appx-spec-table__section-row">
-              <th class="appx-spec-table__section" colspan="2" scope="colgroup">{{ row.label | escape }}</th>
-            </tr>
-          {%- else -%}
-            <tr class="appx-spec-table__row">
-              <th class="appx-spec-table__label" scope="row">{{ row.label | escape }}</th>
-              <td class="appx-spec-table__value">
-                {%- for part in row.valueParts -%}
-                  {%- case part.type -%}
-                    {%- when "TEXT" -%}{{ part.text | escape }}
-                    {%- when "LINE_BREAK" -%}<br>
-                    {%- when "METAFIELD" -%}<span class="appx-spec-table__pending">[metafield:{{ part.namespace | escape }}.{{ part.key | escape }}]</span>
-                    {%- when "SHOPIFY_FIELD" -%}<span class="appx-spec-table__pending">[field:{{ part.field | escape }}]</span>
-                  {%- endcase -%}
-                {%- endfor -%}
-              </td>
-            </tr>
-          {%- endif -%}
+        {%- comment -%}
+          Shopify caps for-loops at 50 iterations; templates hold up to
+          MAX_TEMPLATE_ROWS (200) rows, so iterate in 50-row chunks.
+        {%- endcomment -%}
+        {%- assign row_chunks = rows.size | plus: 49 | divided_by: 50 -%}
+        {%- for chunk in (1..row_chunks) -%}
+          {%- assign row_offset = chunk | minus: 1 | times: 50 -%}
+          {%- for row in rows offset: row_offset limit: 50 -%}
+            {%- if row.rowType == "SECTION_HEADER" -%}
+              <tr class="appx-spec-table__section-row">
+                <th class="appx-spec-table__section" colspan="2" scope="colgroup">{{ row.label | escape }}</th>
+              </tr>
+            {%- else -%}
+              {%- capture cell -%}{% render "spec-table-value", row: row, product: product %}{%- endcapture -%}
+              {%- assign cell_plain = cell | strip_html | strip -%}
+              {%- unless row.hideWhenEmpty and cell_plain == blank -%}
+                <tr class="appx-spec-table__row">
+                  <th class="appx-spec-table__label" scope="row">{{ row.label | escape }}</th>
+                  <td class="appx-spec-table__value">{{ cell }}</td>
+                </tr>
+              {%- endunless -%}
+            {%- endif -%}
+          {%- endfor -%}
         {%- endfor -%}
       </tbody>
     </table>

@@ -1,0 +1,60 @@
+{% comment %}
+  Appx — Product Specs Table
+  Resolves ONE data row's value cell against the live product (slice 2,
+  `context/features/35-storefront-value-part-resolution.md`).
+
+  Params (render scope is isolated — both must be passed explicitly):
+  - row:     one DATA row object from the metaobject `rows` json field
+  - product: the current product (drives SHOPIFY_FIELD / METAFIELD parts)
+
+  Contracts:
+  - Emits the resolved cell HTML only — no wrapper element. The block captures
+    this output and applies the whole-cell `hideWhenEmpty` gate; keep all
+    author-meaningful whitespace (TEXT part edges like "Up to ") intact.
+  - Every dynamic value is escaped before output (merchant/Shopify data is
+    never trusted as HTML). The only raw HTML emitted is `<br>` (LINE_BREAK
+    and metafield multiline newlines via `newline_to_br` AFTER `escape`).
+  - Variant-sourced fields read `product.first_available_variant`, falling
+    back to the FIRST variant when every variant is unavailable (sold-out
+    products must still show their specs). Selected-variant resolution +
+    live variant-switch JS are deferred (locked decision).
+  - Shopify caps `{% for %}` at 50 iterations, so the parts loop runs in
+    50-part chunks (a long multiline value alone can exceed 50 parts).
+  - Unknown/unresolvable tokens emit nothing (silent by design), including
+    `total_inventory` (no clean product-level Liquid property).
+  - `selected_options` renders `variant.title` (the option values joined with
+    " / ", guaranteed string) and emits nothing for single-variant products —
+    shoppers must never see "Default Title".
+  - `inventory_quantity` guard: untracked inventory (`inventory_management`
+    nil) returns "items sold", which would mislead shoppers — emit nothing.
+  - `weight` guard: 0 means unset — emit nothing rather than "0 g".
+{% endcomment %}
+{%- liquid
+  assign variant = product.first_available_variant | default: product.variants.first
+  assign part_chunks = row.valueParts.size | plus: 49 | divided_by: 50
+-%}
+{%- for chunk in (1..part_chunks) -%}
+  {%- assign part_offset = chunk | minus: 1 | times: 50 -%}
+  {%- for part in row.valueParts offset: part_offset limit: 50 -%}
+    {%- case part.type -%}
+      {%- when "TEXT" -%}{{ part.text | escape }}
+      {%- when "LINE_BREAK" -%}<br>
+      {%- when "METAFIELD" -%}{{ product.metafields[part.namespace][part.key] | metafield_text | escape | newline_to_br }}
+      {%- when "SHOPIFY_FIELD" -%}
+        {%- case part.field -%}
+          {%- when "vendor" -%}{{ product.vendor | escape }}
+          {%- when "product_type" -%}{{ product.type | escape }}
+          {%- when "category" -%}{{ product.category.name | escape }}
+          {%- when "tags" -%}{{ product.tags | join: ", " | escape }}
+          {%- when "available_for_sale" -%}{%- if product.available -%}{{ "spec_table.available_yes" | t }}{%- else -%}{{ "spec_table.available_no" | t }}{%- endif -%}
+          {%- when "selected_options" -%}{%- unless product.has_only_default_variant -%}{{ variant.title | escape }}{%- endunless -%}
+          {%- when "price" -%}{{ variant.price | money }}
+          {%- when "compare_at_price" -%}{%- if variant.compare_at_price -%}{{ variant.compare_at_price | money }}{%- endif -%}
+          {%- when "sku" -%}{{ variant.sku | escape }}
+          {%- when "barcode" -%}{{ variant.barcode | escape }}
+          {%- when "weight" -%}{%- if variant.weight > 0 -%}{{ variant.weight_in_unit | weight_with_unit: variant.weight_unit }}{%- endif -%}
+          {%- when "inventory_quantity" -%}{%- if variant.inventory_management -%}{{ variant.inventory_quantity }}{%- endif -%}
+        {%- endcase -%}
+    {%- endcase -%}
+  {%- endfor -%}
+{%- endfor -%}

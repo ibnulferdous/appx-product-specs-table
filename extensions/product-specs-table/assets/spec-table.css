@@ -28,7 +28,3 @@
   font-weight: 700;
   border-block-end: 2px solid currentColor;
 }
-
-.appx-spec-table__pending {
-  opacity: 0.6;
-}

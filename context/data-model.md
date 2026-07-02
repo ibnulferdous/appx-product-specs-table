@@ -756,14 +756,15 @@ shop on install/deploy. **Implemented and round-trip-tested live (Editor Step
 
 ### Storefront serialization
 
-The metaobject stores template structure — the same `EditorRow[]` rows JSON (see the §6 example); the product metafield stores the assigned template handle. Liquid/JS resolves each value by joining its parts in order: `TEXT` from row JSON, `SHOPIFY_FIELD` from the Shopify product object, `METAFIELD` from product metafields, `LINE_BREAK` as a hard break (`<br>`, no content).
+The metaobject stores template structure — the same `EditorRow[]` rows JSON (see the §6 example); the product's app-owned `spec_table` metafield is a `metaobject_reference` pointing at that metaobject (§9, **not** a handle string). Liquid resolves each value by joining its parts in order via `snippets/spec-table-value.liquid`: `TEXT` from row JSON, `SHOPIFY_FIELD` from the Shopify product object, `METAFIELD` from `product.metafields`, `LINE_BREAK` as a hard break (`<br>`, no content). Variant `SHOPIFY_FIELD`s (price, sku, weight, …) resolve against `product.first_available_variant` — the **default** variant, not a shopper selection (feature 35 decision; live variant-switch re-rendering is deferred until requested).
 
-`hideWhenEmpty` is evaluated for the **whole row, never per line**. Emptiness is judged across every part of the value together (all lines), with `LINE_BREAK` parts ignored:
+`hideWhenEmpty` is a **whole-cell character test**, evaluated for the entire row (never per line). The row is hidden when `hideWhenEmpty = true` **and** the fully resolved value cell — all parts joined, all dynamic parts resolved, with `LINE_BREAK` `<br>`s stripped (`strip_html`) so they never count — contains zero non-whitespace characters:
 
-- If the value contains any dynamic part (`SHOPIFY_FIELD` / `METAFIELD`), the row is empty when **all** of those dynamic parts resolve empty — the surrounding `TEXT` is treated as leftover and hidden with the row.
-- A value made only of `TEXT` (and/or `LINE_BREAK`) has no dynamic parts and is never empty; it always renders.
+- A `TEXT`-only cell always has characters, so it always renders.
+- A cell whose only content is empty dynamic parts (`SHOPIFY_FIELD` / `METAFIELD` that resolve to nothing) is empty → hidden.
+- A **mixed** cell like `"Up to " + [empty metafield] + " hours"` still has literal text, so it **renders** (the orphaned-text edge is accepted for MVP). This **supersedes** the earlier "leftover `TEXT` is hidden with the row" rule.
 
-When a row is empty and `hideWhenEmpty = true`, the storefront hides the entire row instead of rendering leftover text or blank lines.
+Separately, the block renders the table only for an **`ACTIVE`** metaobject status with ≥1 row; a non-ACTIVE status, no assigned template, or no rows renders nothing (silent by design). Feature 35 shipped + browser-verified 2026-07-02.
 
 ---
 
