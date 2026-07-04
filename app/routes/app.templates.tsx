@@ -16,9 +16,11 @@ import {
   getTemplateByIdForShop,
   listTemplatesForShop,
   renameTemplateForShop,
+  setTemplateStatusForShop,
 } from "../models/template.server";
 import { deleteSpecTableMetaobject } from "../shopify/metaobjects.server";
-import { BADGE_TONES } from "../utils/templateStatus";
+import { syncTemplateToMetaobject } from "../shopify/templateSync.server";
+import { BADGE_TONES, TEMPLATE_STATUS_OPTIONS } from "../utils/templateStatus";
 import { NAME_MAX_LENGTH, validateTemplateName } from "../utils/templateName";
 import {
   filterTemplatesByStatus,
@@ -33,6 +35,10 @@ const DELETE_MODAL_ID = "templates-list-delete-modal";
 // One shared rename modal (mirrors the delete modal): `pendingRename` carries which
 // row, the field value is seeded from the current name on open.
 const RENAME_MODAL_ID = "templates-list-rename-modal";
+
+// One shared status modal (feature 36): `pendingStatus` carries which row, the
+// <s-select> value is seeded from that row's current status on open.
+const STATUS_MODAL_ID = "templates-list-status-modal";
 
 const STATUS_FILTERS: { label: string; value: StatusFilter }[] = [
   { label: "All", value: "ALL" },
@@ -90,6 +96,7 @@ const TemplateTableRow = ({
   template,
   busy,
   onRequestRename,
+  onRequestStatus,
   onDuplicate,
   onRequestDelete,
 }: {
@@ -98,6 +105,7 @@ const TemplateTableRow = ({
   // second row action can't be opened on the shared fetcher mid-mutation.
   busy: boolean;
   onRequestRename: (id: string, name: string) => void;
+  onRequestStatus: (id: string, name: string, status: string) => void;
   onDuplicate: (id: string) => void;
   onRequestDelete: (id: string, name: string) => void;
 }) => {
@@ -141,6 +149,14 @@ const TemplateTableRow = ({
           >
             Rename
           </s-button>
+          <s-button
+            icon="status"
+            onClick={() =>
+              onRequestStatus(template.id, template.name, template.status)
+            }
+          >
+            Change status
+          </s-button>
           <s-button icon="duplicate" onClick={() => onDuplicate(template.id)}>
             Duplicate
           </s-button>
@@ -163,6 +179,7 @@ const TemplateTable = ({
   selectedStatus,
   onSelectStatus,
   onRequestRename,
+  onRequestStatus,
   onDuplicate,
   onRequestDelete,
 }: {
@@ -171,6 +188,7 @@ const TemplateTable = ({
   selectedStatus: StatusFilter;
   onSelectStatus: (status: StatusFilter) => void;
   onRequestRename: (id: string, name: string) => void;
+  onRequestStatus: (id: string, name: string, status: string) => void;
   onDuplicate: (id: string) => void;
   onRequestDelete: (id: string, name: string) => void;
 }) => (
@@ -221,6 +239,7 @@ const TemplateTable = ({
                 template={template}
                 busy={busy}
                 onRequestRename={onRequestRename}
+                onRequestStatus={onRequestStatus}
                 onDuplicate={onDuplicate}
                 onRequestDelete={onRequestDelete}
               />
@@ -284,6 +303,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     intent?: unknown;
     id?: unknown;
     name?: unknown;
+    status?: unknown;
   };
   const id = typeof payload.id === "string" ? payload.id : "";
   if (!id) {
@@ -300,6 +320,28 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       return { ok: false as const, error: result.error };
     }
     return { ok: true as const, intent: "rename" as const };
+  }
+
+  // Change status (feature 36): rows-untouching, shop-scoped status write, THEN a
+  // storefront metaobject re-sync — the storefront gates visibility on the
+  // metaobject's `status` field (data-model.md §8/§10), so a to/from-ACTIVE change
+  // must re-sync or an ex-ACTIVE template would keep rendering (priority #2). The
+  // sync also upserts the metaobject for a never-synced draft first going Active.
+  // `setTemplateStatusForShop` validates the status and is shop-scoped (priority
+  // #1); the sync client is bound to this shop's Admin token. Returns `{ ok }` DATA
+  // so the list revalidates the badge in place; `syncError` (best-effort — Postgres
+  // is the source of truth) is surfaced so the merchant knows to retry the sync.
+  if (payload.intent === "status") {
+    const result = await setTemplateStatusForShop(shop.id, id, payload.status);
+    if (!result.ok) {
+      return { ok: false as const, error: result.error };
+    }
+    const { syncError } = await syncTemplateToMetaobject(
+      admin,
+      shop,
+      result.data,
+    );
+    return { ok: true as const, intent: "status" as const, syncError };
   }
 
   // Duplicate: clone the SAVED template (DRAFT, fresh row ids) shop-scoped. The
@@ -355,11 +397,12 @@ export default function TemplatesPage() {
     });
   };
 
-  // One shared fetcher for all three row mutations. They MUST stay mutually
-  // exclusive in time — a second submit would interrupt the first mid-flight (e.g.
-  // a Delete cancelling an in-progress Duplicate) — which the `busy` gate below
-  // enforces. After it settles, React Router revalidates the list loader, so the
-  // table is already correct by the time the toast fires.
+  // One shared fetcher for every row mutation (rename / change-status / duplicate
+  // / delete). They MUST stay mutually exclusive in time — a second submit would
+  // interrupt the first mid-flight (e.g. a Delete cancelling an in-progress
+  // Duplicate) — which the `busy` gate below enforces. After it settles, React
+  // Router revalidates the list loader, so the table is already correct by the
+  // time the toast fires.
   const fetcher = useFetcher<typeof action>();
   const [pendingDelete, setPendingDelete] = useState<{
     id: string;
@@ -376,6 +419,16 @@ export default function TemplatesPage() {
   const [renameValue, setRenameValue] = useState("");
   const renameResult = validateTemplateName(renameValue);
 
+  // Status modal (feature 36): `pendingStatus` carries the target row (and its
+  // current status, so Save can be disabled when unchanged); `statusValue` is the
+  // controlled <s-select>, seeded from the current status on open.
+  const [pendingStatus, setPendingStatus] = useState<{
+    id: string;
+    name: string;
+    status: string;
+  } | null>(null);
+  const [statusValue, setStatusValue] = useState("");
+
   // A JSON submission's payload lives on `fetcher.json` (not `fetcher.formData`);
   // read it to scope the loading state to a delete specifically.
   const inFlightIntent =
@@ -385,6 +438,7 @@ export default function TemplatesPage() {
   const deleting = inFlightIntent === "delete";
   const renaming = inFlightIntent === "rename";
   const duplicating = inFlightIntent === "duplicate";
+  const updatingStatus = inFlightIntent === "status";
   // True while any row mutation is submitting OR its post-submit revalidation is
   // still loading. Gates every submit handler and disables the row-action triggers
   // so a merchant can't start a second mutation (e.g. Delete a template while a
@@ -441,6 +495,31 @@ export default function TemplatesPage() {
     setPendingRename(null);
   };
 
+  // Change status persists immediately (the list has no SaveBar): open the shared
+  // modal seeded with the row's current status; Confirm submits the picked status
+  // and the list revalidates the badge in place. Cancel/Esc/outside-click change
+  // nothing.
+  const handleRequestStatus = (id: string, name: string, status: string) => {
+    setPendingStatus({ id, name, status });
+    setStatusValue(status);
+    shopify.modal.show(STATUS_MODAL_ID);
+  };
+  const statusUnchanged =
+    pendingStatus !== null && statusValue === pendingStatus.status;
+  const handleStatusConfirm = () => {
+    // No-op guards: nothing pending, a mutation in flight, or the status wasn't
+    // actually changed (skip a needless write + metaobject re-sync).
+    if (!pendingStatus || busy || statusUnchanged) return;
+    fetcher.submit(
+      { intent: "status", id: pendingStatus.id, status: statusValue },
+      { method: "post", encType: "application/json" },
+    );
+  };
+  const handleStatusCancel = () => {
+    shopify.modal.hide(STATUS_MODAL_ID);
+    setPendingStatus(null);
+  };
+
   // Duplicate has no modal to host a spinner (delete/rename do) and the ⋯ menu
   // closes on click, so there's nowhere to show inline progress. Toggle App
   // Bridge's global loading indicator (the admin top progress bar) while the clone
@@ -471,6 +550,18 @@ export default function TemplatesPage() {
       shopify.modal.hide(RENAME_MODAL_ID);
       setPendingRename(null);
       shopify.toast.show("Template renamed");
+    } else if (data.intent === "status") {
+      // The status IS persisted (Postgres is the source of truth); the metaobject
+      // re-sync is best-effort, so surface a sync failure honestly rather than a
+      // bare success — otherwise a merchant could think an ex-ACTIVE table stopped
+      // rendering when its metaobject is still stale.
+      shopify.modal.hide(STATUS_MODAL_ID);
+      setPendingStatus(null);
+      if (data.syncError) {
+        shopify.toast.show(data.syncError, { isError: true });
+      } else {
+        shopify.toast.show("Status updated");
+      }
     }
   }, [fetcher.state, fetcher.data, shopify]);
 
@@ -493,6 +584,7 @@ export default function TemplatesPage() {
           selectedStatus={selectedStatus}
           onSelectStatus={handleSelectStatus}
           onRequestRename={handleRequestRename}
+          onRequestStatus={handleRequestStatus}
           onDuplicate={handleDuplicate}
           onRequestDelete={handleRequestDelete}
         />
@@ -554,6 +646,48 @@ export default function TemplatesPage() {
           slot="secondary-actions"
           onClick={handleRenameCancel}
           {...(renaming ? { disabled: true } : {})}
+        >
+          Cancel
+        </s-button>
+      </s-modal>
+
+      {/* Single shared status modal (feature 36) — immediate-persist (no SaveBar on
+          the list). Seeded with the row's current status; Save is disabled while a
+          mutation is in flight OR the status is unchanged (skips a needless write +
+          storefront re-sync). Cancel/Esc/outside-click change nothing. */}
+      <s-modal id={STATUS_MODAL_ID} heading="Change status">
+        <s-stack direction="block" gap="base">
+          <s-select
+            label="Status"
+            value={statusValue}
+            onChange={(event: Event) =>
+              setStatusValue((event.currentTarget as HTMLSelectElement).value)
+            }
+          >
+            {TEMPLATE_STATUS_OPTIONS.map((option) => (
+              <s-option key={option.value} value={option.value}>
+                {option.label}
+              </s-option>
+            ))}
+          </s-select>
+          <s-text color="subdued">
+            Active shows this table on the storefront for its assigned products.
+            Draft and Archived are hidden.
+          </s-text>
+        </s-stack>
+        <s-button
+          slot="primary-action"
+          variant="primary"
+          onClick={handleStatusConfirm}
+          loading={updatingStatus}
+          {...(statusUnchanged ? { disabled: true } : {})}
+        >
+          Save
+        </s-button>
+        <s-button
+          slot="secondary-actions"
+          onClick={handleStatusCancel}
+          {...(updatingStatus ? { disabled: true } : {})}
         >
           Cancel
         </s-button>

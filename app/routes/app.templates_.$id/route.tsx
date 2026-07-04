@@ -6,10 +6,7 @@ import type {
 } from "react-router";
 import { redirect, useLoaderData, useSearchParams } from "react-router";
 import { TemplateStatus } from "@prisma/client";
-import {
-  boundary,
-  type AdminApiContext,
-} from "@shopify/shopify-app-react-router/server";
+import { boundary } from "@shopify/shopify-app-react-router/server";
 import { useAppBridge } from "@shopify/app-bridge-react";
 import { authenticate } from "../../shopify.server";
 import { upsertShop } from "../../models/shop.server";
@@ -20,58 +17,14 @@ import {
   duplicateTemplateForShop,
   getTemplateByIdForShop,
   saveTemplateForShop,
-  setTemplateMetaobjectRef,
 } from "../../models/template.server";
-import {
-  deleteSpecTableMetaobject,
-  readSpecTableMetaobjectRows,
-  upsertSpecTableMetaobject,
-} from "../../shopify/metaobjects.server";
+import { deleteSpecTableMetaobject } from "../../shopify/metaobjects.server";
+import { syncTemplateToMetaobject } from "../../shopify/templateSync.server";
 import { createInitialRows } from "../../utils/rows";
 import { parseRows } from "../../utils/rowsSerialize";
 import { SpecTableEditor } from "./SpecTableEditor";
 import { TemplateHeaderActions } from "./TemplateHeaderActions";
 import { useRowEngine } from "./useRowEngine";
-
-/**
- * Sync a template's storefront delivery copy to its app-owned Shopify metaobject
- * (Editor Step 9.5), returning the outcome for the caller to surface. Runs AFTER
- * the durable Postgres write — Postgres is the source of truth, so a failure here
- * warns but never loses the saved rows. Shared by the create and the save action
- * branches so both persist → sync → round-trip-check identically; extracting it
- * is behavior-preserving for the existing save path.
- */
-async function syncTemplateToMetaobject(
-  admin: AdminApiContext,
-  shop: { id: string },
-  template: { id: string; status: TemplateStatus; rows: unknown },
-): Promise<{ syncError: string | null; roundTripOk: boolean | null }> {
-  let syncError: string | null = null;
-  let roundTripOk: boolean | null = null;
-  try {
-    // The `$app:appx_spec_table` metaobject definition is declared in
-    // shopify.app.toml and distributed on deploy/install, so we only upsert the
-    // ENTRY here — no runtime definition create (data-model.md §10).
-    const savedRows = parseRows(template.rows);
-    const { gid, handle } = await upsertSpecTableMetaobject(admin, {
-      templateId: template.id,
-      status: template.status,
-      rows: savedRows,
-      updatedAt: new Date().toISOString(),
-    });
-    await setTemplateMetaobjectRef(shop.id, template.id, gid, handle);
-
-    const readback = await readSpecTableMetaobjectRows(admin, template.id);
-    roundTripOk =
-      readback !== null &&
-      JSON.stringify(readback) === JSON.stringify(savedRows);
-  } catch (error) {
-    console.error("[template save] metaobject sync failed", error);
-    syncError =
-      "Saved, but we couldn't update your storefront. Please save again.";
-  }
-  return { syncError, roundTripOk };
-}
 
 export const loader = async ({ request, params }: LoaderFunctionArgs) => {
   const { session } = await authenticate.admin(request);

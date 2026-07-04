@@ -149,11 +149,12 @@ export function useRowEngine({
 
   // Template-level editable fields tracked alongside rows in the dirty model
   // (feature 20). `name` has a setter wired to the header Rename action; `status`
-  // is read-only this slice (no setter) but rides the dirty snapshot so the
-  // editable-status slice is a drop-in. Both reseed from props on remount (the
-  // engine owner is keyed on `${id}:${nonce}`), so Discard reverts a rename.
+  // gained its setter in feature 36 (the editor Settings tab). Both ride the dirty
+  // snapshot, so changing either flips isDirty + opens the SaveBar; Save persists
+  // them (and re-syncs the metaobject). Both reseed from props on remount (the
+  // engine owner is keyed on `${id}:${nonce}`), so Discard reverts a change.
   const [name, setName] = useState(initialName);
-  const [status] = useState(initialStatus);
+  const [status, setStatus] = useState(initialStatus);
 
   // --- Drag reorder (Steps 10–11) ------------------------------------------
   // Two sensors on one DndContext: a PointerSensor (mouse/touch, Step 10) with a
@@ -940,10 +941,11 @@ export function useRowEngine({
     sensors,
     handleDragEnd,
     dndAnnouncements,
-    // Template-level fields (feature 20)
+    // Template-level fields (feature 20; status setter added feature 36)
     name,
     setName,
     status,
+    setStatus,
     // Save / dirty
     isDirty,
     saving,

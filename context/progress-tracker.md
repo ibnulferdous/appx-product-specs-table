@@ -25,7 +25,7 @@ template lifecycle/create-on-save flows (19–20) — are all **complete and
 browser-verified**, plus the **bulk-delete "Undo" toast (33)**. **Storefront slice
 1 — Theme App Extension first pixel (34) is complete and browser-verified**: a
 product's assigned spec table now renders as a real (unstyled) table on the live
-storefront product page. Test suite: **319 tests green**.
+storefront product page. Test suite: **330 tests green**.
 
 **Next: the full product-assignment engine + storefront styling.** The
 admin→storefront pipeline is proven end to end (editor → Postgres → metaobject →
@@ -33,8 +33,9 @@ admin→storefront pipeline is proven end to end (editor → Postgres → metaob
 resolve live** on the storefront (slice 2 / feature 35, browser-verified — dynamic
 `SHOPIFY_FIELD`/`METAFIELD` show real values, no placeholders). Remaining: the
 assignment engine (by product/type, priority, conflict index, webhooks), and
-Reshell Phases **B (Style tab) → C (Settings) → D (device previews) →
-E (assignment) → F (top-bar status/save model + cleanup)**.
+Reshell Phases **B (Style tab) → C (Settings — status control shipped in feature
+36; display rules still pending) → D (device previews) → E (assignment) →
+F (top-bar status/save model + cleanup)**.
 
 ---
 
@@ -106,6 +107,11 @@ E (assignment) → F (top-bar status/save model + cleanup)**.
 - New `snippets/spec-table-value.liquid` resolves the value cell: `SHOPIFY_FIELD` (12 tokens against the product / `product.first_available_variant`; `total_inventory` → empty), `METAFIELD` (`metafield_text | escape | newline_to_br`), `TEXT`, `LINE_BREAK`. `blocks/spec_table.liquid` captures the cell per row and applies the **whole-cell `hideWhenEmpty`** gate (`strip_html | strip` blank test); 50-row-chunked loops (Shopify's 50-iteration `for` cap). Locale Yes/No keys for `available_for_sale`; dead `.appx-spec-table__pending` CSS removed. `data-model.md` §10 rewritten to the whole-cell rule.
 - Browser-verified on the DJI Air 3S product page: dynamic fields resolve (price `$155,000.00`, vendor/type in "In The Box", vendor in "Warranty"), `hideWhenEmpty` hides empty rows (SKU / metafield / "No value row") while the section renders, multi-line `<br>` renders, section headers render, and **no `[field:…]`/`[metafield:…]` placeholders leak**. Requires `ACTIVE` metaobject status (block gate).
 
+**Template status change (`36-…`)**
+- Merchants can change a template's status (DRAFT / ACTIVE / ARCHIVED) from **two** surfaces: the templates-list ⋯ menu ("Change status" → modal `<s-select>` picker, immediate-persist) and the editor's **Settings tab** (`SettingsTab.tsx` `<s-select>` in the sidebar, rides the existing dirty/SaveBar flow — `setStatus` added to `useRowEngine`, status already rode the dirty snapshot + Save payload). Shared client-safe `validateTemplateStatus` + `TEMPLATE_STATUS_OPTIONS` (`utils/templateStatus.ts`); rows-untouching, shop-scoped `setTemplateStatusForShop` (twin of `renameTemplateForShop`).
+- **Both surfaces re-sync the storefront metaobject** after the status write so a to/from-`ACTIVE` change flips storefront visibility (priority #2). `syncTemplateToMetaobject` was extracted from the editor route into shared **`app/shopify/templateSync.server.ts`** (behavior-preserving); the list action calls it and surfaces `syncError` honestly, the editor rides its existing save-path sync. List Save is disabled when the status is unchanged (skips a needless write + re-sync); the shared-fetcher `busy` gate covers it like the other row mutations.
+- Browser-verified on the dev store (both surfaces + full storefront round-trip): list Change-status flips the badge in place; editor Settings change opens the SaveBar → Save re-tones the header badge + "Saved"; and the DJI product's spec table **hides on ACTIVE→DRAFT and re-renders on DRAFT→ACTIVE**. 11 new unit tests (`validateTemplateStatus` + `setTemplateStatusForShop` shop-isolation). Detail → `context/features/36-template-status-change.md`.
+
 **Keyboard cell navigation (`30-…` / `31-…` / `32-…`)**
 - Step 1: pure vertical-nav resolver `gridNav.ts` (sticky column through section rows; no wrap).
 - Step 2: keyboard + DOM wiring `useGridKeyboardNav.ts` (`Ctrl/Cmd + Arrow Up/Down`, caret at target end).
@@ -122,7 +128,7 @@ E (assignment) → F (top-bar status/save model + cleanup)**.
 
 ## In Progress
 
-- _(nothing mid-flight — storefront slice 2 (value-part resolution) closed + browser-verified; next unit is the assignment engine, see Next Up.)_
+- _(nothing mid-flight — template status change (feature 36) closed + browser-verified on both surfaces + the storefront round-trip; next unit is the assignment engine, see Next Up.)_
 
 ---
 
@@ -153,7 +159,7 @@ E (assignment) → F (top-bar status/save model + cleanup)**.
 - **Assignment location:** direction is to move Product Assignment into the editor's **Settings tab** (not locked). Open: does the Settings tab **fully replace** the standalone `/app/templates/:id/assign` screen, or does `/assign` survive as a deep view for conflict warnings + assignment summary? Decide before building the assignment slice.
 - **Settings-tab "Display rules"** (mockup's `hide rows with empty values` / `show section dividers` / `show on mobile`) are dummy/illustrative — each needs a real definition + reconciliation with the per-row `hideWhenEmpty` flag before building.
 - **Top-bar name-edit affordance:** inline title edit vs a Rename item in the ⋯ menu — settle when the top bar (Phase F) is built.
-- **Templates-list Archive — deferred entirely (2026-06-27).** Row menu ships Rename/Duplicate/Delete only. When revisited it needs a rows-untouching `setTemplateStatusForShop` **and** a storefront metaobject re-sync so an archived (ex-ACTIVE) template stops rendering (extract the detail route's `syncTemplateToMetaobject` into a shared module). Low urgency until product assignment exists.
+- ~~**Templates-list Archive — deferred entirely (2026-06-27).**~~ **RESOLVED (feature 36, 2026-07-03):** status change (incl. Archive) now ships on BOTH the list ⋯ menu ("Change status" modal) and the editor Settings tab. Built exactly as this note anticipated — a rows-untouching `setTemplateStatusForShop` **plus** the extracted shared `syncTemplateToMetaobject` (`app/shopify/templateSync.server.ts`) re-syncs the storefront metaobject so an archived (ex-ACTIVE) template stops rendering. Browser-verified via the DJI ACTIVE→DRAFT→ACTIVE storefront round-trip.
 
 ---
 

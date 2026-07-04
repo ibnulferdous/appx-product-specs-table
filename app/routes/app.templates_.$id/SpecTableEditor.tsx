@@ -2,6 +2,7 @@ import { useEffect, useRef } from "react";
 import { SaveBar } from "@shopify/app-bridge-react";
 import { EditorShell } from "./EditorShell";
 import { ContentTab } from "./ContentTab";
+import { SettingsTab } from "./SettingsTab";
 import { EditorTips } from "./EditorTips";
 import { SAVE_BAR_ID } from "./editorShared";
 import type { RowEngine } from "./useRowEngine";
@@ -44,7 +45,10 @@ export function SpecTableEditor({ engine }: { engine: RowEngine }) {
         className={styles.stageFreeze}
         aria-busy={engine.saving || undefined}
       >
-        <EditorShell stage={<ContentTab engine={engine} />} />
+        <EditorShell
+          stage={<ContentTab engine={engine} />}
+          settingsPanel={<SettingsTab engine={engine} />}
+        />
       </div>
 
       {/* Tips footer (feature 32) — a sibling AFTER the freeze <div>, so it sits

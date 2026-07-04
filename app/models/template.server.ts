@@ -7,10 +7,7 @@ import {
   reconcileRowKeys,
 } from "../utils/rowsSerialize";
 import { copyName, validateTemplateName } from "../utils/templateName";
-
-export const TEMPLATE_STATUSES = ["ACTIVE", "DRAFT", "ARCHIVED"];
-
-const TEMPLATE_STATUS_SET = new Set(TEMPLATE_STATUSES);
+import { validateTemplateStatus } from "../utils/templateStatus";
 
 // Default name for a template created via the editor's create-on-first-save flow
 // (the merchant lands in the editor, not a name form). Renaming is a later slice;
@@ -42,11 +39,13 @@ function parseRowsWithinCap(
   return { ok: true, rows: incoming };
 }
 
-// Coerce an untrusted status into a known TemplateStatus, defaulting to DRAFT.
+// Coerce an untrusted status into a known TemplateStatus for the TOLERANT paths
+// (create / save), defaulting anything unknown to DRAFT. The explicit
+// status-change paths use `validateTemplateStatus` instead, which REJECTS unknown
+// values rather than silently defaulting.
 function resolveStatus(status: unknown): TemplateStatus {
-  return typeof status === "string" && TEMPLATE_STATUS_SET.has(status)
-    ? (status as TemplateStatus)
-    : TemplateStatus.DRAFT;
+  const result = validateTemplateStatus(status);
+  return result.ok ? result.status : TemplateStatus.DRAFT;
 }
 
 // Always returns ALL of the shop's templates (ordered most-recently-updated
@@ -236,6 +235,44 @@ export async function renameTemplateForShop(
     return { ok: true as const, data: template };
   } catch {
     return { ok: false as const, error: "Could not rename template" };
+  }
+}
+
+/**
+ * Set an owned template's status (feature 36). A focused, **rows-untouching**
+ * sibling of `renameTemplateForShop`: the list "Change status" modal holds no
+ * in-memory rows, so reusing `saveTemplateForShop` (which narrows + caps `rows`,
+ * treating `parseRows(undefined)` as `[]`) would clobber them. This writes
+ * `status` only and leaves `rows` + `name` alone.
+ *
+ * The untrusted status is REJECTED if unknown (`validateTemplateStatus`) — an
+ * explicit status change is deliberate, never silently defaulted to DRAFT.
+ *
+ * Shop isolation (priority #1): the `{ id, shopId }` where-unique scopes the write
+ * itself — a cross-shop/unknown id is "not found" (P2025), never a status change
+ * to another shop's template. Mirrors `renameTemplateForShop`.
+ *
+ * No metaobject sync here — the CALLER owns the storefront re-sync (via the shared
+ * `syncTemplateToMetaobject`) so this stays a pure, Admin-free, unit-testable DB
+ * write. Returns the updated template so the caller can feed it to the sync.
+ */
+export async function setTemplateStatusForShop(
+  shopId: string,
+  id: string,
+  status: unknown,
+) {
+  const statusResult = validateTemplateStatus(status);
+  if (!statusResult.ok) {
+    return { ok: false as const, error: statusResult.error };
+  }
+  try {
+    const template = await prisma.template.update({
+      where: { id, shopId },
+      data: { status: statusResult.status }, // ONLY status; rows + name untouched
+    });
+    return { ok: true as const, data: template };
+  } catch {
+    return { ok: false as const, error: "Could not update status" };
   }
 }
 

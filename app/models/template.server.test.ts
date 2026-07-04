@@ -8,6 +8,7 @@ import {
   renameTemplateForShop,
   saveTemplateForShop,
   setTemplateMetaobjectRef,
+  setTemplateStatusForShop,
 } from "./template.server";
 import { MAX_TEMPLATE_ROWS } from "../utils/rows";
 import { NAME_MAX_LENGTH } from "../utils/templateName";
@@ -465,6 +466,59 @@ describe("renameTemplateForShop", () => {
       data: { name: "Hijacked" },
     });
     expect(result).toEqual({ ok: false, error: "Could not rename template" });
+  });
+});
+
+describe("setTemplateStatusForShop", () => {
+  it("rejects an unknown status without reading or writing", async () => {
+    const result = await setTemplateStatusForShop("shop_A", "t1", "PUBLISHED");
+
+    expect(result).toEqual({ ok: false, error: "Invalid status" });
+    expect(prismaMock.template.update).not.toHaveBeenCalled();
+  });
+
+  it("rejects a non-string status without writing", async () => {
+    const result = await setTemplateStatusForShop("shop_A", "t1", undefined);
+
+    expect(result).toEqual({ ok: false, error: "Invalid status" });
+    expect(prismaMock.template.update).not.toHaveBeenCalled();
+  });
+
+  it("writes ONLY the status, shop-scoped (rows + name untouched)", async () => {
+    const updated = { id: "t1", status: "ACTIVE" };
+    prismaMock.template.update.mockResolvedValue(updated);
+
+    const result = await setTemplateStatusForShop("shop_A", "t1", "ACTIVE");
+
+    // The write is shop-scoped itself (priority #1): `shopId` rides along as an
+    // extended where-unique filter, so a foreign id can never be re-statused.
+    expect(prismaMock.template.update).toHaveBeenCalledWith({
+      where: { id: "t1", shopId: "shop_A" },
+      data: { status: "ACTIVE" },
+    });
+    // Only `status` is written — `rows` and `name` are absent from the payload.
+    const updateArg = prismaMock.template.update.mock.calls[0][0];
+    expect(updateArg.data).toEqual({ status: "ACTIVE" });
+    expect(result).toEqual({ ok: true, data: updated });
+  });
+
+  it("is a no-op cross-shop: a foreign {id, shopId} throws P2025 → ok:false", async () => {
+    // The template belongs to shop_A; shop_B asks to change its status. The
+    // {id, shopId} where-unique matches no row → Prisma throws P2025, caught as
+    // ok:false (the other shop's template is untouched).
+    prismaMock.template.update.mockRejectedValue(new Error("P2025"));
+
+    const result = await setTemplateStatusForShop(
+      "shop_B",
+      "tmpl_owned_by_A",
+      "ACTIVE",
+    );
+
+    expect(prismaMock.template.update).toHaveBeenCalledWith({
+      where: { id: "tmpl_owned_by_A", shopId: "shop_B" },
+      data: { status: "ACTIVE" },
+    });
+    expect(result).toEqual({ ok: false, error: "Could not update status" });
   });
 });
 
