@@ -60,7 +60,11 @@ model Shop {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  templates Template[]
+  templates         Template[]
+  // Polymorphic assignment rules (scope + value) that bind templates to products/attributes.
+  assignments       ProductAssignment[]
+  // Sparse per-product override state (materialized single-product overrides only).
+  assignmentIndexes ProductAssignmentIndex[]
 
   @@index([isInstalled])
 }
@@ -91,6 +95,9 @@ model Template {
   updatedAt  DateTime  @updatedAt
   archivedAt DateTime?
 
+  assignments       ProductAssignment[]
+  assignmentIndexes ProductAssignmentIndex[]
+
   @@unique([shopId, shopifyMetaobjectHandle])
   @@index([shopId])
   @@index([shopId, status])
@@ -100,4 +107,106 @@ enum TemplateStatus {
   DRAFT
   ACTIVE
   ARCHIVED
+}
+
+model ProductAssignment {
+  id     String @id @default(cuid())
+  shopId String
+  shop   Shop   @relation(fields: [shopId], references: [id], onDelete: Cascade)
+
+  templateId String
+  template   Template @relation(fields: [templateId], references: [id], onDelete: Cascade)
+
+  // Polymorphic scope — one selector method per rule (Kaching-style single picker).
+  scope AssignmentScope
+  // INCLUDE = "this template covers the scope"; EXCLUDE = a carve-out exception
+  // (e.g. ALL_PRODUCTS INCLUDE + PRODUCT EXCLUDE for a discontinued SKU).
+  mode  AssignmentMode  @default(INCLUDE)
+
+  // Selector value for the scope. NULL only for ALL_PRODUCTS (matches everything).
+  //   PRODUCT      -> gid://shopify/Product/123456
+  //   PRODUCT_TYPE -> exact product type string
+  //   VENDOR       -> exact vendor string
+  //   COLLECTION   -> gid://shopify/Collection/123456
+  scopeValue String?
+
+  // DORMANT in MVP. The rigid block-on-conflict model keeps the ACTIVE rule set
+  // disjoint, so there is no runtime tie to break and no merchant-facing priority
+  // knob. Retained un-surfaced for a possible post-MVP same-tier tiebreak on
+  // multi-valued scopes (collection/tag). See data-model.md §9 "Conflict handling".
+  priority Int @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  resolvedProducts ProductAssignmentIndex[]
+
+  // Prevent literal duplicate rows within one template. Cross-template semantic
+  // overlaps are NOT a DB constraint — they are blocked at DRAFT -> ACTIVE by the
+  // dry-run resolver, which lets DRAFTs coexist with unresolved conflicts.
+  @@unique([shopId, templateId, scope, scopeValue, mode])
+  @@index([shopId, scope])
+  @@index([shopId, scope, scopeValue])
+  @@index([shopId, templateId])
+}
+
+enum AssignmentScope {
+  ALL_PRODUCTS
+  PRODUCT
+  PRODUCT_TYPE
+  VENDOR
+  COLLECTION
+  // TAG — post-MVP; multi-valued like COLLECTION
+}
+
+enum AssignmentMode {
+  INCLUDE
+  EXCLUDE
+}
+
+// SPARSE per-product override cache. Populated ONLY for explicit single-product
+// overrides materialized as a per-product metafield (the bounded fallback), plus
+// any hard PRODUCT-vs-PRODUCT conflict. Broad rules (type/vendor/collection/tag/
+// all-products) are delivered via the shop routing map and are NEVER indexed here —
+// this table is never O(catalog).
+model ProductAssignmentIndex {
+  id     String @id @default(cuid())
+  shopId String
+  shop   Shop   @relation(fields: [shopId], references: [id], onDelete: Cascade)
+
+  // Required when status is APPLIED. Optional for unresolved conflicts.
+  templateId String?
+  template   Template? @relation(fields: [templateId], references: [id], onDelete: Cascade)
+
+  // The assignment rule that produced this resolved product state.
+  sourceAssignmentId String?
+  sourceAssignment   ProductAssignment? @relation(fields: [sourceAssignmentId], references: [id], onDelete: SetNull)
+
+  // For the resolved product: gid://shopify/Product/123456
+  shopifyProductGid String
+
+  // Scope snapshot used during resolution (PRODUCT for materialized overrides).
+  scope      AssignmentScope?
+  scopeValue String?
+
+  status         AssignmentIndexStatus @default(APPLIED)
+  conflictReason String?
+
+  // Storefront pointer written to the product's `$app:spec_table` metaobject_reference.
+  appliedTemplateHandle String?
+  syncedToShopifyAt     DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([shopId, shopifyProductGid])
+  @@index([shopId, templateId])
+  @@index([shopId, status])
+  @@index([sourceAssignmentId])
+}
+
+enum AssignmentIndexStatus {
+  APPLIED
+  CONFLICT
+  STALE
 }
