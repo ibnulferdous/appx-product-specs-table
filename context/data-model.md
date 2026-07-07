@@ -50,12 +50,12 @@ Layer 2: PostgreSQL via Neon
 - Stores shops, templates, rows JSON, assignment rules, resolved product assignment indexes, styling, billing, and entitlement data.
 
 Layer 3: Shopify storefront data
-- Shopify metaobjects store the renderable template payload.
-- Product metafields point Liquid to the correct template for the current product.
-- Liquid and plain JavaScript render the table through the Theme App Extension.
+- Shopify metaobjects store the renderable template payload (one per template).
+- A shop-level routing metafield maps product attributes (type / vendor / collection / tag / all-products default) to the assigned template handle; a bounded per-product metafield carries direct single-product overrides.
+- Liquid reads the routing map, resolves the matched template metaobject by handle, and renders the table through the Theme App Extension.
 ```
 
-Core principle: Postgres is the source of truth. Shopify metaobjects and metafields are the storefront delivery layer.
+Core principle: Postgres is the source of truth. Shopify metaobjects (template payload) + a shop-level routing metafield (assignment map) are the storefront delivery layer.
 
 ---
 
@@ -63,12 +63,12 @@ Core principle: Postgres is the source of truth. Shopify metaobjects and metafie
 
 1. Use a real `Shop` model as the parent record for shop-specific app data.
 2. Include minimal billing and entitlement models in the MVP schema.
-3. Make assignments visible to Liquid by writing a product metafield that points to the assigned template.
+3. Make assignments visible to Liquid primarily through **one shop-level routing metafield** (attribute → template handle), not by writing a metafield onto every matching product. A bounded per-product metafield carries only explicit single-product overrides.
 4. Treat saved data and template status separately, similar to Shopify products.
-5. Support one effective spec table per product by resolving overlapping assignments with priority.
+5. Enforce **one effective spec table per product via a rigid, block-on-conflict model** (merchant-controlled, Moon-Bundles style): overlaps between `ACTIVE` templates are blocked at `DRAFT → ACTIVE`; the published rule set is therefore disjoint and needs no runtime precedence. `priority` is retained but dormant (see §5 / §9).
 6. Use ordered `valueParts` instead of a single row value source.
-7. Include product create/update webhooks in MVP so product-type assignments apply to future matching products.
-8. Store a resolved `ProductAssignmentIndex` row for each product that currently has an effective template assignment.
+7. Broad rules (type / vendor / collection / tag / all-products) resolve at **render time** against the shop routing map, so future matching products are covered with **zero** per-product writes. Product create/update webhooks keep only bounded per-product overrides and merchant-facing match counts in sync — they do not re-materialize broad rules.
+8. Keep `ProductAssignmentIndex` **sparse**: it records only materialized per-product overrides and their Shopify sync state, never one row per covered product (never O(catalog)).
 9. Keep advanced Shopify field mapping outside MVP beyond the simple selected/default variant behavior.
 
 ---
@@ -87,11 +87,12 @@ Shop
 │   ├── ProductAssignment ─────┐
 │   │   └── ProductAssignmentIndex (also → Shop, Template, ProductAssignment)
 │   └── TableStyling
+├── ShopStorefrontRouting  (projected routing map mirrored to the shop metafield)
 ├── AppSubscription
 └── ShopEntitlement
 ```
 
-`Template` depends on `Shop`. `ProductAssignment` depends on `Shop` + `Template`. `ProductAssignmentIndex` depends on `Shop` + `Template` + `ProductAssignment`. `TableStyling` depends on `Template`. Billing models depend only on `Shop`.
+`Template` depends on `Shop`. `ProductAssignment` depends on `Shop` + `Template`. `ProductAssignmentIndex` depends on `Shop` + `Template` + `ProductAssignment`. `TableStyling` depends on `Template`. `ShopStorefrontRouting` and the billing models depend only on `Shop`.
 
 ### Migration schedule
 
@@ -99,7 +100,8 @@ Shop
 | --- | --- | --- | --- |
 | `add-shop` | `Shop` | `OnboardingStatus` | App shell — upsert `Shop` on first auth |
 | `add-template` | `Template` | `TemplateStatus` | Templates list + Template editor (Rows tab) |
-| `add-assignment` | `ProductAssignment`, `ProductAssignmentIndex` | `AssignmentType`, `AssignmentIndexStatus` | Product assignment screen |
+| `add-assignment` | `ProductAssignment`, `ProductAssignmentIndex` | `AssignmentScope`, `AssignmentMode`, `AssignmentIndexStatus` | Product assignment screen |
+| `add-routing` | `ShopStorefrontRouting` | — | Shop-level storefront routing projection |
 | `add-table-styling` | `TableStyling` | — | Template editor — Styling tab |
 | `add-billing` | `AppSubscription`, `ShopEntitlement` | `SubscriptionStatus` | Billing logic + early-bird entitlement |
 
@@ -183,10 +185,12 @@ model Shop {
 
   // Spec table templates created by this shop.
   templates          Template[]
-  // Rules that connect templates to products or product types.
+  // Polymorphic assignment rules (scope + value) that bind templates to products/attributes.
   assignments        ProductAssignment[]
-  // Resolved per-product assignment state used for quick lookup and conflict warnings.
+  // Sparse per-product override state (materialized single-product overrides only).
   assignmentIndexes  ProductAssignmentIndex[]
+  // Projected shop-level routing map mirrored to the shop routing metafield.
+  storefrontRouting  ShopStorefrontRouting?
   // Shopify billing subscriptions for this shop over time.
   subscriptions      AppSubscription[]
   // Feature limits and usage rights derived from plan/promotions.
@@ -249,37 +253,59 @@ model ProductAssignment {
   templateId String
   template   Template @relation(fields: [templateId], references: [id], onDelete: Cascade)
 
-  assignmentType   AssignmentType
+  // Polymorphic scope — one selector method per rule (Kaching-style single picker).
+  scope AssignmentScope
+  // INCLUDE = "this template covers the scope"; EXCLUDE = a carve-out exception
+  // (e.g. ALL_PRODUCTS INCLUDE + PRODUCT EXCLUDE for a discontinued SKU).
+  mode  AssignmentMode  @default(INCLUDE)
 
-  // App validation: PRODUCT requires shopifyProductGid.
-  // App validation: PRODUCT_TYPE requires productType.
+  // Selector value for the scope. NULL only for ALL_PRODUCTS (matches everything).
+  //   PRODUCT      -> gid://shopify/Product/123456
+  //   PRODUCT_TYPE -> exact product type string
+  //   VENDOR       -> exact vendor string
+  //   COLLECTION   -> gid://shopify/Collection/123456
+  //   TAG          -> exact tag string (post-MVP)
+  scopeValue String?
 
-  // For PRODUCT: gid://shopify/Product/123456
-  shopifyProductGid String?
-
-  // For PRODUCT_TYPE: exact product type string from Shopify.
-  productType       String?
-
-  // Higher number wins when multiple assignments match the same product.
-  priority          Int      @default(0)
+  // DORMANT in MVP. The rigid block-on-conflict model keeps the ACTIVE rule set
+  // disjoint, so there is no runtime tie to break and no merchant-facing priority
+  // knob. Retained un-surfaced for a possible post-MVP same-tier tiebreak on
+  // multi-valued scopes (collection/tag). See §9 "Conflict handling".
+  priority   Int      @default(0)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   resolvedProducts ProductAssignmentIndex[]
 
-  @@unique([shopId, shopifyProductGid])
-  @@unique([shopId, productType])
-  @@index([shopId, assignmentType])
-  @@index([shopId, shopifyProductGid])
-  @@index([shopId, productType])
+  // Prevent literal duplicate rows within one template. Cross-template semantic
+  // overlaps are NOT a DB constraint — they are blocked at DRAFT -> ACTIVE by the
+  // dry-run resolver, which lets DRAFTs coexist with unresolved conflicts.
+  @@unique([shopId, templateId, scope, scopeValue, mode])
+  @@index([shopId, scope])
+  @@index([shopId, scope, scopeValue])
+  @@index([shopId, templateId])
 }
 
-enum AssignmentType {
+enum AssignmentScope {
+  ALL_PRODUCTS
   PRODUCT
   PRODUCT_TYPE
+  VENDOR
+  COLLECTION
+  // TAG — post-MVP; multi-valued like COLLECTION
 }
 
+enum AssignmentMode {
+  INCLUDE
+  EXCLUDE
+}
+
+// SPARSE per-product override cache. Populated ONLY for explicit single-product
+// overrides materialized as a per-product metafield (the bounded fallback), plus
+// any hard PRODUCT-vs-PRODUCT conflict. Broad rules (type/vendor/collection/tag/
+// all-products) are delivered via the shop routing map and are NEVER indexed here —
+// this table is never O(catalog).
 model ProductAssignmentIndex {
   id     String @id @default(cuid())
   shopId String
@@ -296,15 +322,14 @@ model ProductAssignmentIndex {
   // For the resolved product: gid://shopify/Product/123456
   shopifyProductGid String
 
-  // Snapshot of the product type used during resolution.
-  productType String?
+  // Scope snapshot used during resolution (PRODUCT for materialized overrides).
+  scope      AssignmentScope?
+  scopeValue String?
 
-  // Required when status is APPLIED. Optional for unresolved conflicts.
-  assignmentType AssignmentType?
   status         AssignmentIndexStatus @default(APPLIED)
   conflictReason String?
 
-  // Storefront pointer written to Shopify product metafield after resolution.
+  // Storefront pointer written to the product's `$app:spec_table` metaobject_reference.
   appliedTemplateHandle String?
   syncedToShopifyAt     DateTime?
 
@@ -313,7 +338,6 @@ model ProductAssignmentIndex {
 
   @@unique([shopId, shopifyProductGid])
   @@index([shopId, templateId])
-  @@index([shopId, assignmentType])
   @@index([shopId, status])
   @@index([sourceAssignmentId])
 }
@@ -322,6 +346,31 @@ enum AssignmentIndexStatus {
   APPLIED
   CONFLICT
   STALE
+}
+
+// Projected disjoint routing map — the mirror of the shop `$app:routing` json
+// metafield that Liquid reads on the storefront. Rebuilt from the ACTIVE, disjoint
+// ProductAssignment rows on every activate/deactivate. Postgres stays the source of
+// truth; the metafield is the delivery copy. Each map is { scopeValue -> handle }.
+model ShopStorefrontRouting {
+  id     String @id @default(cuid())
+  shopId String @unique
+  shop   Shop   @relation(fields: [shopId], references: [id], onDelete: Cascade)
+
+  defaultTemplateHandle String?              // ALL_PRODUCTS winner
+  byType                Json    @default("{}") // productType    -> template handle
+  byVendor              Json    @default("{}") // vendor         -> template handle
+  byCollection          Json    @default("{}") // collectionGid  -> template handle
+  byTag                 Json    @default("{}") // tag            -> template handle (post-MVP)
+  byProduct             Json    @default("{}") // productGid     -> template handle (bounded overrides)
+  excludedProductGids   Json    @default("[]") // EXCLUDE carve-outs -> render nothing
+
+  // Delivery sync state for the shop-level metafield.
+  shopMetafieldGid  String?
+  syncedToShopifyAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
 model TableStyling {
@@ -581,6 +630,8 @@ Merchant edits template in the custom spec-table editor
 | `DRAFT`    | Yes           | No                      | Saved but hidden        |
 | `ARCHIVED` | Yes           | No                      | Hidden from normal list |
 
+> **Rendering also requires an assignment.** `ACTIVE` is necessary but not sufficient: a template renders on a product only when an assignment routes that product to it (see §9). An `ACTIVE` template with no matching assignment renders nowhere. Status gates visibility; assignment gates reach.
+
 ### Important product decision
 
 This is not a versioned publish workflow. If a template is `ACTIVE`, saved row changes can appear on the storefront after sync.
@@ -591,13 +642,24 @@ That is acceptable for MVP because it matches the simple Shopify product-style s
 
 ## 9. Storefront Assignment Strategy
 
+> **Update (2026-07-07) — rigid model + shop-level routing. Supersedes the per-product-materialization and priority-precedence design originally described in this section.**
+>
+> 1. **Assignment is rigid and merchant-controlled (Moon-Bundles style), not priority-resolved.** Each template targets **one scope** (all products / selected products / product type / vendor / selected collections). A dry-run checks that scope against every **other ACTIVE** template; any overlap **blocks activation** (`DRAFT → ACTIVE`). A template may be **saved `DRAFT` with a conflict**, never `ACTIVE`. The published rule set is therefore **disjoint** — the storefront never resolves precedence, so there is no merchant-facing `priority`.
+> 2. **Broad rules deliver through ONE shop-level routing metafield, not per-product writes.** `[shop.metafields.app.routing]` (json, `access.storefront = "public_read"`) holds `{ default, byType, byVendor, byCollection, byTag, byProduct, excludedProductGids }` mapping attribute → template metaobject **handle**. Liquid reads `shop.metafields["$app"].routing.value`, matches the current product's fields, and resolves the handle **directly** to the template metaobject. O(1) writes per rule; future products are covered with no re-materialization. A per-product `metaobject_reference` metafield remains only for bounded single-product overrides.
+>
+> **Metaobject-by-handle is PROVEN (live storefront, 2026-07-07).** `metaobjects["$app:appx_spec_table"][handle]` resolves an app-owned metaobject from a **handle string** and exposes `.status.value` / `.rows.value` — overturning the 2026-06-19 caveat below (which pushed reference metafields out of caution). Both `$app:appx_spec_table` and the resolved `app--<app-id>--appx_spec_table` type forms work; use the `$app:` form. Observed live: `system.type = app--378906640385--appx_spec_table`, `status = ACTIVE`, `rows = 19`. (App-owned metafields/metaobjects require `access.storefront = "public_read"` to be Liquid-readable — theme app extensions are storefront surfaces.)
+>
+> The subsections below are rewritten to this model. The 2026-06-19 and 2026-07-01 notes are retained as shipped history.
+
 Liquid cannot read Appx Postgres data directly. Therefore, assignment resolution must be projected into Shopify data.
 
 ### MVP strategy
 
-Use a product metafield to point the current product to the one effective spec table template. MVP intentionally renders only one spec table per product.
+The current product is matched to its one effective template through the **shop-level routing map** (`shop.metafields["$app"].routing`), with a per-product `metaobject_reference` metafield for bounded single-product overrides. MVP intentionally renders one spec table per product, and the rigid block-on-conflict model (top-of-section update) guarantees exactly one match.
 
-`ProductAssignment` stores merchant-created assignment rules. `ProductAssignmentIndex` stores the resolved product-level result of those rules, so the app can quickly show merchants which products already have an effective template assignment and avoid changing storefront metafields when a conflict exists.
+`ProductAssignment` stores the merchant's assignment **rules** (Postgres, source of truth). `ShopStorefrontRouting` is the projected map pushed to Shopify. `ProductAssignmentIndex` is the sparse record of materialized single-product overrides only (see below).
+
+> **The `single_line_text_field` example and Liquid flow immediately below are HISTORICAL** (the original 2026 sketch). They are superseded twice — first by the `metaobject_reference` metafield (2026-07-01 note), then by the shop routing map + direct handle resolution (2026-07-07 top-of-section update). Retained for provenance; do not implement from them.
 
 Example product metafield:
 
@@ -630,9 +692,11 @@ Exact Liquid syntax should be verified during Theme App Extension implementation
 > `metaobject.rows.value`. **Caveat for the storefront slice:** because the
 > definition is **app-reserved** (`$app:appx_spec_table`, see §10), the bare
 > `shop.metaobjects.appx_spec_table[handle]` sketch above will need the resolved
-> app type — lean toward a **metaobject-reference product metafield** (which
-> auto-resolves an app-owned metaobject in Liquid) rather than a raw handle-string
-> lookup. Finalize this when the Theme App Extension is built.
+> app type. **[SUPERSEDED 2026-07-07]** — proven false on the live storefront:
+> `metaobjects["$app:appx_spec_table"][handle]` resolves a raw handle string
+> directly (see the top-of-§9 update). The `metaobject_reference` product metafield
+> shipped in feature 34 is retained, but only as the bounded single-product override
+> path — broad rules use the shop routing map + direct handle lookup.
 
 > **Update (2026-07-01, storefront slice 1 — `context/features/34-storefront-theme-app-extension-first-pixel.md`).**
 > Confirmed against Shopify docs and **implemented**: the product → template pointer
@@ -657,63 +721,54 @@ Exact Liquid syntax should be verified during Theme App Extension implementation
 > The example block below is retained for history but is **superseded** by the
 > reference-metafield approach.
 
-### Assignment resolution
+### Assignment (Postgres) — rigid, block-on-conflict
 
-For each product, the app resolves assignment candidates before writing the Shopify product metafield or updating `ProductAssignmentIndex`:
+The merchant gives a template **one scope** (a single selector, Kaching-style): all products, selected products, product type, vendor, or selected collections (`AssignmentScope`), optionally narrowed by `EXCLUDE` exceptions. Saving the rule writes `ProductAssignment` in Postgres — nothing is projected to Shopify while the template is `DRAFT`.
 
-1. Find the direct `PRODUCT` assignment for that Shopify product GID, if one exists.
-2. Find the `PRODUCT_TYPE` assignment for that product's Shopify product type, if one exists.
-3. Pick the candidate with the highest `priority`.
-4. If two matching candidates have the same highest `priority`, mark the product as an assignment conflict and do not silently choose a winner.
-5. If there is a clear winner, set the product's `$app:spec_table` `metaobject_reference` metafield to that template's metaobject (by GID) and upsert one `ProductAssignmentIndex` row for that product.
+**Dry-run conflict check** runs at `DRAFT → ACTIVE` (and when an ACTIVE template's scope is edited): the candidate scope is tested for overlap against every **other ACTIVE** template's scope. Any overlap **blocks activation** and the merchant is shown which template collides; the template stays `DRAFT`. DRAFTs may hold conflicts freely. Because activation is gated this way, **the set of ACTIVE rules is always disjoint** — every product matches at most one, so the storefront needs no precedence.
 
-Higher numeric `priority` means higher precedence. Direct product assignments do not automatically beat product type assignments; priority decides the winner.
+**How overlap is computed cheaply (never a catalog scan):**
 
-### Individual product assignment
+1. `ALL_PRODUCTS` overlaps everything; `PRODUCT_TYPE` / `VENDOR` are single-valued, so same-scope overlap is a string-equality/containment test — **O(1) Postgres set-algebra**.
+2. Cross-dimension or multi-valued pairs (type × vendor, anything × collection, anything × tag) are tested with **one Shopify existence query** per existing ACTIVE rule: `products(first: 1, query: "product_type:'X' AND vendor:'Y'")` (or `collection_id:` / `tag:`) — a non-empty result means overlap. Cost is O(active rules) tiny queries, not O(catalog). (Filters + AND + `first:1` confirmed against docs.)
 
-When the merchant assigns a template to one product:
+### Delivery (Shopify) — rebuild the routing projection
 
-1. Save `ProductAssignment` in Postgres.
-2. Resolve the winning assignment for that product.
-3. If there is no priority tie, set the product's `$app:spec_table` `metaobject_reference` metafield to that template's metaobject (by GID).
-4. Upsert `ProductAssignmentIndex` with the product GID, winning template, source assignment, applied metaobject reference, and Shopify sync timestamp.
+On every activate/deactivate (or ACTIVE-scope edit), the app rebuilds `ShopStorefrontRouting` from the ACTIVE, disjoint rules and pushes it to the `[shop.metafields.app.routing]` json metafield:
 
-### Product type assignment
+- Broad scopes each become **one map entry** — `PRODUCT_TYPE` → `byType`, `VENDOR` → `byVendor`, `COLLECTION` → `byCollection`, `TAG` → `byTag`, `ALL_PRODUCTS` → `default` — so a rule matching 20k products is still **O(1) writes**. **No per-product metafields; future matching products are covered automatically at render time.**
+- Selected single products (`PRODUCT`) go into `byProduct`; `EXCLUDE` carve-outs go into `excludedProductGids`. If one template's `byProduct` set ever approaches the 128KB json cap (~2,500 full-GID entries), materialize those products as per-product `$app:spec_table` `metaobject_reference` metafields instead — via `bulkOperationRunMutation` (rate-limit-exempt) — and record them in `ProductAssignmentIndex`.
 
-When the merchant assigns a template by product type:
+### Storefront (Liquid) — resolve the one match
 
-1. Save `ProductAssignment` with `assignmentType = PRODUCT_TYPE`.
-2. Query Shopify products matching that product type.
-3. Resolve the winning assignment for each matching product.
-4. If there is no priority tie, write the product metafield to each matching product.
-5. Upsert one `ProductAssignmentIndex` row for each resolved product.
-6. Use product create/update webhooks in MVP to keep future products in sync.
+The theme app extension resolves the current product against the routing map top-down (order is efficiency only — disjointness guarantees ≤1 match):
 
-### Product assignment index
+1. `product.metafields["$app"].spec_table.value` — bounded per-product override, if materialized.
+2. `routing.byProduct[product.id]` → `byType[product.type]` → `byVendor[product.vendor]` → first hit scanning `product.collections` against `byCollection` → first hit scanning `product.tags` against `byTag` → `routing.default`.
+3. `excludedProductGids` containing `product.id` ⇒ render nothing.
 
-`ProductAssignmentIndex` is the resolved per-product assignment cache. It exists to make product lookup, merchant warnings, and webhook sync simple.
+The matched value is a template **handle**; resolve it with `metaobjects["$app:appx_spec_table"][handle]` (proven — see top-of-section update), then render only if `status.value == "ACTIVE"` and rows exist.
 
-Use it to answer:
+### Product assignment index (sparse)
 
-- whether a product already has an effective template assignment
-- which template is currently applied to a product
-- whether the effective assignment came from a direct product rule or a product type rule
-- whether assignment resolution produced a conflict or stale result
+`ProductAssignmentIndex` is **not** a per-catalog cache anymore. Broad rules live in the shop routing map, so most products have **no** index row. It is populated only for:
 
-The unique constraint on `[shopId, shopifyProductGid]` keeps one effective index row per product. `status = APPLIED` means the product metafield has a clear assignment, so `templateId`, `sourceAssignmentId`, and `assignmentType` should be set. `status = CONFLICT` means there is no clear winner; the app should warn the merchant and avoid changing the product metafield until the conflict is resolved. `status = STALE` means Shopify product data changed and the product needs reassignment/resync.
+- **materialized single-product overrides** — the bounded `PRODUCT`-scope entries written as per-product `$app:spec_table` metafields (the fallback path), with `appliedTemplateHandle` + `syncedToShopifyAt`; and
+- **`STALE`** rows when a materialized override's product data changed and needs resync.
+
+`status = APPLIED` means a per-product override metafield is set (`templateId`, `sourceAssignmentId`, `scope = PRODUCT`). `status = CONFLICT` is reserved for the rare hard `PRODUCT`-vs-`PRODUCT` override collision. **Rule-vs-rule conflicts are not stored here** — they are computed by the dry-run at activation and surfaced to the merchant immediately (blocking). The `[shopId, shopifyProductGid]` unique still guarantees one override row per product.
 
 ### Conflict handling
 
-MVP supports one effective spec table per product. Duplicate direct product assignments and duplicate product type assignments are prevented by unique constraints:
+Conflicts are resolved by **blocking, not precedence** — the merchant decides, exactly like Moon Bundles. There is no `priority` tiebreak in MVP.
 
-- One shop can assign only one template directly to a specific product.
-- One shop can assign only one template to a specific product type.
+- **Cross-scope overlap** (e.g. `ALL_PRODUCTS` vs `PRODUCT_TYPE`, or a selected product that also matches a type rule): blocked at `DRAFT → ACTIVE`. The merchant resolves it by narrowing scope, adding an `EXCLUDE` exception, or leaving one template `DRAFT`.
+- **Two `ALL_PRODUCTS` templates both trying to be `ACTIVE`** is the only statically-decidable MVP tie: blocked (a shop default already exists).
+- **Same-scope single-valued ties can't occur** by construction — a product has exactly one `product_type` and one `vendor`, and `@@unique([shopId, templateId, scope, scopeValue, mode])` stops literal duplicates.
 
-Direct product and product type assignments may still overlap for the same product. In that case, the assignment with the highest `priority` wins.
+`priority` stays in the schema but **dormant and unsurfaced**. It is a forward-compatible landing spot for a post-MVP same-tier tiebreak on **multi-valued** scopes (a product in two different collection rules, or two tag rules), where an overlap can appear at render time on a *future* product that didn't exist at activation. Even then, prefer an implicit rule (most-recently-updated wins) or a contextual prompt over a global numeric knob — do not surface a priority field in the MVP UI.
 
-If matching assignments have the same highest `priority`, the app should prevent or warn before applying the conflicting assignment and avoid changing the existing storefront metafield until the merchant fixes priority.
-
-When a conflict is detected, the app may upsert `ProductAssignmentIndex` with `status = CONFLICT` and a short `conflictReason`. The existing Shopify product metafield should remain unchanged.
+While a conflict is unresolved the template cannot go `ACTIVE`, so nothing is projected to the routing map for it and the storefront is unaffected.
 
 ---
 
@@ -756,7 +811,7 @@ shop on install/deploy. **Implemented and round-trip-tested live (Editor Step
 
 ### Storefront serialization
 
-The metaobject stores template structure — the same `EditorRow[]` rows JSON (see the §6 example); the product's app-owned `spec_table` metafield is a `metaobject_reference` pointing at that metaobject (§9, **not** a handle string). Liquid resolves each value by joining its parts in order via `snippets/spec-table-value.liquid`: `TEXT` from row JSON, `SHOPIFY_FIELD` from the Shopify product object, `METAFIELD` from `product.metafields`, `LINE_BREAK` as a hard break (`<br>`, no content). Variant `SHOPIFY_FIELD`s (price, sku, weight, …) resolve against `product.first_available_variant` — the **default** variant, not a shopper selection (feature 35 decision; live variant-switch re-rendering is deferred until requested).
+The metaobject stores template structure — the same `EditorRow[]` rows JSON (see the §6 example); two pointers reach it: for broad rules the **shop routing map** (`shop.metafields["$app"].routing`) yields a template **handle** resolved directly via `metaobjects["$app:appx_spec_table"][handle]` (§9, proven 2026-07-07), and for bounded single-product overrides a per-product `metaobject_reference` metafield (`product.metafields["$app"].spec_table`, **not** a handle string) points at the same metaobject. Liquid resolves each value by joining its parts in order via `snippets/spec-table-value.liquid`: `TEXT` from row JSON, `SHOPIFY_FIELD` from the Shopify product object, `METAFIELD` from `product.metafields`, `LINE_BREAK` as a hard break (`<br>`, no content). Variant `SHOPIFY_FIELD`s (price, sku, weight, …) resolve against `product.first_available_variant` — the **default** variant, not a shopper selection (feature 35 decision; live variant-switch re-rendering is deferred until requested).
 
 `hideWhenEmpty` is a **whole-cell character test**, evaluated for the entire row (never per line). The row is hidden when `hideWhenEmpty = true` **and** the fully resolved value cell — all parts joined, all dynamic parts resolved, with `LINE_BREAK` `<br>`s stripped (`strip_html`) so they never count — contains zero non-whitespace characters:
 
@@ -785,4 +840,4 @@ See §7 for the full id/key rules.
 
 ---
 
-**Architecture summary.** Postgres is the source of truth; Shopify metaobjects (template structure) + product metafields (assignment handle) are the storefront delivery layer. Store both metaobject GID and handle. Resolve one effective spec table per product via `ProductAssignment.priority`, record the result in `ProductAssignmentIndex`, and never change a storefront metafield while a conflict is unresolved. Use product create/update webhooks for product-type sync. Keep variant-sensitive field mapping to selected/default-variant behavior for MVP.
+**Architecture summary.** Postgres is the source of truth; Shopify metaobjects (template structure) + a shop-level routing metafield (attribute → handle) + a bounded per-product metafield (single-product overrides) are the storefront delivery layer. Store both metaobject GID and handle. Assignment is **rigid and block-on-conflict**: a template targets one scope, overlaps between `ACTIVE` templates are blocked at `DRAFT → ACTIVE` (dry-run: O(rules) set-algebra + `products(query, first:1)` existence checks), so the `ACTIVE` rule set is disjoint and the storefront resolves one match with no precedence. Broad rules deliver as O(1) shop-map entries (future products auto-covered, no re-materialization); `ProductAssignmentIndex` is sparse (materialized overrides only). Liquid resolves the matched handle directly via `metaobjects["$app:appx_spec_table"][handle]` (proven live) and renders only `status == "ACTIVE"`. `priority` is retained dormant. Keep variant-sensitive field mapping to selected/default-variant behavior for MVP.
