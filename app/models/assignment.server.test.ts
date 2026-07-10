@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import {
   getAssignmentForTemplate,
+  getTemplateIncludeSelectors,
   setTemplateScope,
   clearTemplateScope,
   getActiveIncludeScopesExcept,
@@ -71,103 +72,246 @@ describe("getAssignmentForTemplate — shop isolation (priority #1)", () => {
   });
 });
 
-describe("setTemplateScope", () => {
-  it("rejects an invalid scope before any DB call", async () => {
-    const result = await setTemplateScope("shop_A", "t1", {
-      scope: "TAG", // post-MVP → invalid
-      scopeValue: "sale",
-    });
+describe("setTemplateScope (feature 46 — multi-value)", () => {
+  const PT = (id: string) => `gid://shopify/Product/${id}`;
+  const CT = (id: string) => `gid://shopify/Collection/${id}`;
 
-    expect(result).toEqual({ ok: false, error: "Invalid scope" });
-    expect(prismaMock.template.findFirst).not.toHaveBeenCalled();
-    expect(prismaMock.$transaction).not.toHaveBeenCalled();
-    expect(prismaMock.productAssignment.create).not.toHaveBeenCalled();
-  });
-
-  it("rejects ALL_PRODUCTS carrying a value before any DB call", async () => {
-    const result = await setTemplateScope("shop_A", "t1", {
-      scope: "ALL_PRODUCTS",
-      scopeValue: "oops",
-    });
-
-    expect(result).toEqual({
-      ok: false,
-      error: "All products scope takes no value",
-    });
-    expect(prismaMock.productAssignment.create).not.toHaveBeenCalled();
-  });
-
-  it("blocks a cross-shop write: a foreign template reads nothing and creates nothing", async () => {
-    // The template belongs to shop_A; shop_B tries to attach a rule. The
-    // ownership read is shop-scoped → null → no transaction, no create.
-    prismaMock.template.findFirst.mockResolvedValue(null);
-
-    const result = await setTemplateScope("shop_B", "tmpl_owned_by_A", {
-      scope: "VENDOR",
-      scopeValue: "Apple",
-    });
-
-    expect(prismaMock.template.findFirst).toHaveBeenCalledWith({
-      where: { id: "tmpl_owned_by_A", shopId: "shop_B" },
-    });
-    expect(prismaMock.$transaction).not.toHaveBeenCalled();
-    expect(prismaMock.productAssignment.create).not.toHaveBeenCalled();
-    expect(result).toEqual({ ok: false, error: "Template not found" });
-  });
-
-  it("replaces atomically: deletes existing INCLUDE rows then creates the new one, shop-scoped", async () => {
-    prismaMock.template.findFirst.mockResolvedValue({
-      id: "t1",
-      shopId: "shop_A",
-    });
-    prismaMock.productAssignment.deleteMany.mockResolvedValue({ count: 1 });
-    const created = {
-      id: "a2",
-      scope: "PRODUCT_TYPE",
-      scopeValue: "Smartphone",
-    };
-    prismaMock.productAssignment.create.mockResolvedValue(created);
-
-    const result = await setTemplateScope("shop_A", "t1", {
-      scope: "PRODUCT_TYPE",
-      scopeValue: "  Smartphone  ", // trimmed by validateScope
-    });
-
-    // The whole replace ran inside one transaction.
-    expect(prismaMock.$transaction).toHaveBeenCalledTimes(1);
-    // Old INCLUDE rows for this template are cleared first (shop-scoped).
-    expect(prismaMock.productAssignment.deleteMany).toHaveBeenCalledWith({
-      where: { shopId: "shop_A", templateId: "t1", mode: "INCLUDE" },
-    });
-    // The new rule carries shopId + templateId + mode INCLUDE and the trimmed value.
-    expect(prismaMock.productAssignment.create).toHaveBeenCalledWith({
-      data: {
-        shopId: "shop_A",
-        templateId: "t1",
-        scope: "PRODUCT_TYPE",
-        scopeValue: "Smartphone",
-        mode: "INCLUDE",
-      },
-    });
-    expect(result).toEqual({ ok: true, data: created });
-  });
-
-  it("normalizes ALL_PRODUCTS to a null scopeValue", async () => {
+  function ownedTemplate() {
     prismaMock.template.findFirst.mockResolvedValue({
       id: "t1",
       shopId: "shop_A",
     });
     prismaMock.productAssignment.deleteMany.mockResolvedValue({ count: 0 });
-    prismaMock.productAssignment.create.mockResolvedValue({ id: "a3" });
+    prismaMock.productAssignment.createMany.mockResolvedValue({ count: 1 });
+  }
 
-    await setTemplateScope("shop_A", "t1", {
-      scope: "ALL_PRODUCTS",
-      scopeValue: undefined,
+  it("rejects an empty set before any DB call", async () => {
+    const result = await setTemplateScope("shop_A", "t1", []);
+
+    expect(result).toEqual({
+      ok: false,
+      error: "Assignment requires at least one value",
     });
+    expect(prismaMock.template.findFirst).not.toHaveBeenCalled();
+    expect(prismaMock.$transaction).not.toHaveBeenCalled();
+  });
 
-    const createArg = prismaMock.productAssignment.create.mock.calls[0][0];
-    expect(createArg.data.scope).toBe("ALL_PRODUCTS");
-    expect(createArg.data.scopeValue).toBeNull();
+  it("rejects an invalid scope before any DB call", async () => {
+    const result = await setTemplateScope("shop_A", "t1", [
+      { scope: "TAG" as never, scopeValue: "sale" }, // post-MVP → invalid
+    ]);
+
+    expect(result).toEqual({ ok: false, error: "Invalid scope" });
+    expect(prismaMock.template.findFirst).not.toHaveBeenCalled();
+    expect(prismaMock.$transaction).not.toHaveBeenCalled();
+    expect(prismaMock.productAssignment.createMany).not.toHaveBeenCalled();
+  });
+
+  it("rejects ALL_PRODUCTS carrying a value before any DB call", async () => {
+    const result = await setTemplateScope("shop_A", "t1", [
+      { scope: "ALL_PRODUCTS", scopeValue: "oops" },
+    ]);
+
+    expect(result).toEqual({
+      ok: false,
+      error: "All products scope takes no value",
+    });
+    expect(prismaMock.productAssignment.createMany).not.toHaveBeenCalled();
+  });
+
+  it("rejects a mixed-kind set (homogeneity)", async () => {
+    const result = await setTemplateScope("shop_A", "t1", [
+      { scope: "PRODUCT", scopeValue: PT("1") },
+      { scope: "COLLECTION", scopeValue: CT("9") },
+    ]);
+
+    expect(result).toEqual({
+      ok: false,
+      error: "Assignment values must share one scope",
+    });
+    expect(prismaMock.$transaction).not.toHaveBeenCalled();
+  });
+
+  it("rejects >1 value for a single-valued kind — VENDOR (arity)", async () => {
+    const result = await setTemplateScope("shop_A", "t1", [
+      { scope: "VENDOR", scopeValue: "Acme" },
+      { scope: "VENDOR", scopeValue: "Bose" },
+    ]);
+
+    expect(result).toEqual({
+      ok: false,
+      error: "This scope takes a single value",
+    });
+    expect(prismaMock.$transaction).not.toHaveBeenCalled();
+  });
+
+  it("rejects >1 value for ALL_PRODUCTS (single-valued per template)", async () => {
+    const result = await setTemplateScope("shop_A", "t1", [
+      { scope: "ALL_PRODUCTS", scopeValue: null },
+      { scope: "ALL_PRODUCTS", scopeValue: null },
+    ]);
+
+    expect(result).toEqual({
+      ok: false,
+      error: "This scope takes a single value",
+    });
+    expect(prismaMock.$transaction).not.toHaveBeenCalled();
+  });
+
+  it("blocks a cross-shop write: a foreign template reads nothing and writes nothing", async () => {
+    // The template belongs to shop_A; shop_B tries to attach a rule. The ownership
+    // read is shop-scoped → null → no transaction, no create.
+    prismaMock.template.findFirst.mockResolvedValue(null);
+
+    const result = await setTemplateScope("shop_B", "tmpl_owned_by_A", [
+      { scope: "VENDOR", scopeValue: "Apple" },
+    ]);
+
+    expect(prismaMock.template.findFirst).toHaveBeenCalledWith({
+      where: { id: "tmpl_owned_by_A", shopId: "shop_B" },
+    });
+    expect(prismaMock.$transaction).not.toHaveBeenCalled();
+    expect(prismaMock.productAssignment.createMany).not.toHaveBeenCalled();
+    expect(result).toEqual({ ok: false, error: "Template not found" });
+  });
+
+  it("single value: deletes existing INCLUDE rows then createMany the new one, shop-scoped", async () => {
+    ownedTemplate();
+
+    const result = await setTemplateScope("shop_A", "t1", [
+      { scope: "PRODUCT_TYPE", scopeValue: "  Smartphone  " }, // trimmed
+    ]);
+
+    expect(prismaMock.$transaction).toHaveBeenCalledTimes(1);
+    expect(prismaMock.productAssignment.deleteMany).toHaveBeenCalledWith({
+      where: { shopId: "shop_A", templateId: "t1", mode: "INCLUDE" },
+    });
+    expect(prismaMock.productAssignment.createMany).toHaveBeenCalledWith({
+      data: [
+        {
+          shopId: "shop_A",
+          templateId: "t1",
+          scope: "PRODUCT_TYPE",
+          scopeValue: "Smartphone",
+          mode: "INCLUDE",
+        },
+      ],
+    });
+    expect(result).toEqual({ ok: true, count: 1 });
+  });
+
+  it("multi value: writes N PRODUCT INCLUDE rows in one createMany", async () => {
+    ownedTemplate();
+    prismaMock.productAssignment.createMany.mockResolvedValue({ count: 2 });
+
+    const result = await setTemplateScope("shop_A", "t1", [
+      { scope: "PRODUCT", scopeValue: PT("1") },
+      { scope: "PRODUCT", scopeValue: PT("2") },
+    ]);
+
+    expect(prismaMock.productAssignment.createMany).toHaveBeenCalledWith({
+      data: [
+        {
+          shopId: "shop_A",
+          templateId: "t1",
+          scope: "PRODUCT",
+          scopeValue: PT("1"),
+          mode: "INCLUDE",
+        },
+        {
+          shopId: "shop_A",
+          templateId: "t1",
+          scope: "PRODUCT",
+          scopeValue: PT("2"),
+          mode: "INCLUDE",
+        },
+      ],
+    });
+    expect(result).toEqual({ ok: true, count: 2 });
+  });
+
+  it("accepts N>1 for COLLECTION too (multi-valued kind)", async () => {
+    ownedTemplate();
+    prismaMock.productAssignment.createMany.mockResolvedValue({ count: 2 });
+
+    const result = await setTemplateScope("shop_A", "t1", [
+      { scope: "COLLECTION", scopeValue: CT("1") },
+      { scope: "COLLECTION", scopeValue: CT("2") },
+    ]);
+
+    expect(result).toEqual({ ok: true, count: 2 });
+    const arg = prismaMock.productAssignment.createMany.mock.calls[0][0];
+    expect(arg.data).toHaveLength(2);
+  });
+
+  it("de-duplicates repeated PRODUCT values", async () => {
+    ownedTemplate();
+
+    const result = await setTemplateScope("shop_A", "t1", [
+      { scope: "PRODUCT", scopeValue: PT("1") },
+      { scope: "PRODUCT", scopeValue: PT("1") },
+    ]);
+
+    const arg = prismaMock.productAssignment.createMany.mock.calls[0][0];
+    expect(arg.data).toHaveLength(1);
+    expect(result).toEqual({ ok: true, count: 1 });
+  });
+
+  it("normalizes ALL_PRODUCTS to a single null-value row", async () => {
+    ownedTemplate();
+
+    await setTemplateScope("shop_A", "t1", [
+      { scope: "ALL_PRODUCTS", scopeValue: null },
+    ]);
+
+    const arg = prismaMock.productAssignment.createMany.mock.calls[0][0];
+    expect(arg.data).toEqual([
+      {
+        shopId: "shop_A",
+        templateId: "t1",
+        scope: "ALL_PRODUCTS",
+        scopeValue: null,
+        mode: "INCLUDE",
+      },
+    ]);
+  });
+
+  it("Decision C: deletes contradictory EXCLUDE PRODUCT rows in the same transaction", async () => {
+    ownedTemplate();
+
+    await setTemplateScope("shop_A", "t1", [
+      { scope: "PRODUCT", scopeValue: PT("1") },
+      { scope: "PRODUCT", scopeValue: PT("2") },
+    ]);
+
+    // First deleteMany clears the INCLUDE rows; a SECOND deleteMany removes any
+    // EXCLUDE PRODUCT row whose GID is now INCLUDE'd (the two are contradictory).
+    expect(prismaMock.productAssignment.deleteMany).toHaveBeenCalledWith({
+      where: { shopId: "shop_A", templateId: "t1", mode: "INCLUDE" },
+    });
+    expect(prismaMock.productAssignment.deleteMany).toHaveBeenCalledWith({
+      where: {
+        shopId: "shop_A",
+        templateId: "t1",
+        mode: "EXCLUDE",
+        scope: "PRODUCT",
+        scopeValue: { in: [PT("1"), PT("2")] },
+      },
+    });
+  });
+
+  it("no EXCLUDE cleanup for a non-PRODUCT include (only the INCLUDE deleteMany runs)", async () => {
+    ownedTemplate();
+
+    await setTemplateScope("shop_A", "t1", [
+      { scope: "VENDOR", scopeValue: "Acme" },
+    ]);
+
+    // Exactly one deleteMany (INCLUDE); no EXCLUDE-cleanup call for a VENDOR scope.
+    expect(prismaMock.productAssignment.deleteMany).toHaveBeenCalledTimes(1);
+    expect(prismaMock.productAssignment.deleteMany).toHaveBeenCalledWith({
+      where: { shopId: "shop_A", templateId: "t1", mode: "INCLUDE" },
+    });
   });
 
   it("returns ok:false (not a throw) when the transaction fails", async () => {
@@ -177,12 +321,45 @@ describe("setTemplateScope", () => {
     });
     prismaMock.$transaction.mockRejectedValue(new Error("db down"));
 
-    const result = await setTemplateScope("shop_A", "t1", {
-      scope: "VENDOR",
-      scopeValue: "Apple",
-    });
+    const result = await setTemplateScope("shop_A", "t1", [
+      { scope: "VENDOR", scopeValue: "Apple" },
+    ]);
 
     expect(result).toEqual({ ok: false, error: "Could not save assignment" });
+  });
+});
+
+describe("getTemplateIncludeSelectors (feature 46) — shop isolation + INCLUDE-only", () => {
+  it("reads only this template's INCLUDE rows, scoped by shopId", async () => {
+    prismaMock.productAssignment.findMany.mockResolvedValue([]);
+
+    await getTemplateIncludeSelectors("shop_A", "t1");
+
+    expect(prismaMock.productAssignment.findMany).toHaveBeenCalledWith({
+      where: { shopId: "shop_A", templateId: "t1", mode: "INCLUDE" },
+      select: { scope: true, scopeValue: true },
+    });
+  });
+
+  it("returns all N INCLUDE rows as selectors (EXCLUDE rows are filtered by the mode query)", async () => {
+    // The `where.mode === "INCLUDE"` clause (asserted above) is what excludes the
+    // template's EXCLUDE PRODUCT:C carve-out; the mock returns only the INCLUDE rows.
+    prismaMock.productAssignment.findMany.mockResolvedValue([
+      { scope: "PRODUCT", scopeValue: "gid://shopify/Product/A" },
+      { scope: "PRODUCT", scopeValue: "gid://shopify/Product/B" },
+    ]);
+
+    const result = await getTemplateIncludeSelectors("shop_A", "t1");
+
+    expect(result).toEqual([
+      { scope: "PRODUCT", scopeValue: "gid://shopify/Product/A" },
+      { scope: "PRODUCT", scopeValue: "gid://shopify/Product/B" },
+    ]);
+  });
+
+  it("returns [] for a template with no INCLUDE rows", async () => {
+    prismaMock.productAssignment.findMany.mockResolvedValue([]);
+    expect(await getTemplateIncludeSelectors("shop_A", "t1")).toEqual([]);
   });
 });
 

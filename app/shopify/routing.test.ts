@@ -110,6 +110,34 @@ describe("flattenActiveRulesToRoutingRules", () => {
       ]),
     ).toEqual([]);
   });
+
+  it("multi-value (feature 46): one template's N INCLUDE rows all carry its handle", () => {
+    const A = "gid://shopify/Product/A";
+    const B = "gid://shopify/Product/B";
+    const templates: ActiveTemplateForRouting[] = [
+      {
+        shopifyMetaobjectHandle: "template-a",
+        assignments: [
+          { scope: "PRODUCT", scopeValue: A, mode: "INCLUDE" },
+          { scope: "PRODUCT", scopeValue: B, mode: "INCLUDE" },
+        ],
+      },
+    ];
+    expect(flattenActiveRulesToRoutingRules(templates)).toEqual([
+      {
+        scope: "PRODUCT",
+        scopeValue: A,
+        mode: "INCLUDE",
+        templateHandle: "template-a",
+      },
+      {
+        scope: "PRODUCT",
+        scopeValue: B,
+        mode: "INCLUDE",
+        templateHandle: "template-a",
+      },
+    ]);
+  });
 });
 
 describe("buildRoutingMetafieldInput", () => {

@@ -4,7 +4,21 @@ import {
   validateScope,
   type AssignmentScopeValue,
 } from "../utils/assignmentScope";
+import type { ScopeSelector } from "../utils/assignmentOverlap";
 import { getTemplateByIdForShop } from "./template.server";
+
+// Scope kinds that may carry MORE THAN ONE value on a single template (feature 46):
+// "selected products" / "selected collections". Every other kind is single-valued
+// PER TEMPLATE — ALL_PRODUCTS carries no value; a product has exactly one type and
+// one vendor. IMPORTANT: this is a DIFFERENT predicate from assignmentOverlap.ts's
+// private `SINGLE_VALUED` ({PRODUCT, PRODUCT_TYPE, VENDOR} — "single-valued PER
+// PRODUCT", which drives the DISJOINT set-algebra). They answer different questions
+// ("multi per template" vs "single per product") and disagree on PRODUCT and
+// ALL_PRODUCTS; do NOT conflate them.
+const MULTI_VALUE_SCOPES: ReadonlySet<AssignmentScopeValue> = new Set([
+  "PRODUCT",
+  "COLLECTION",
+]);
 
 // Persistence for a template's assignment rules. The primary INCLUDE scope rule
 // (feature 37, "one scope per template", data-model.md §9) AND its EXCLUDE
@@ -37,28 +51,101 @@ export async function getAssignmentForTemplate(
 }
 
 /**
- * Set (create-or-replace) a template's single INCLUDE scope. Validates the
- * `(scope, scopeValue)` pair first (`validateScope` — rejects unknown scopes, the
- * ALL_PRODUCTS-with-value / valued-scope-without-value mismatches, malformed
- * GIDs), then proves the template belongs to the shop, then replaces the rule
- * atomically.
+ * All of a template's INCLUDE rows as scope selectors (feature 46) — `[]` when the
+ * template has no scope. INCLUDE-only and shop-scoped (a foreign/unknown template
+ * matches nothing → `[]`), so EXCLUDE carve-out rows (feature 45) are never returned
+ * as candidate selectors. Feeds the activation gate's candidate set and the editor
+ * action's scope-change diff. With the multi-value relaxation a template may hold
+ * 1..N PRODUCT/COLLECTION rows, so this returns the whole set (unlike the single-row
+ * `getAssignmentForTemplate` the loader still uses for the single-select UI).
+ */
+export async function getTemplateIncludeSelectors(
+  shopId: string,
+  templateId: string,
+): Promise<ScopeSelector[]> {
+  const rows = await prisma.productAssignment.findMany({
+    where: { shopId, templateId, mode: AssignmentMode.INCLUDE },
+    select: { scope: true, scopeValue: true },
+  });
+  return rows.map((row) => ({
+    scope: row.scope as AssignmentScopeValue,
+    scopeValue: row.scopeValue,
+  }));
+}
+
+/**
+ * Set (create-or-replace) a template's INCLUDE scope from a homogeneous SET of
+ * selectors (feature 46). A template's INCLUDE rows all share one scope KIND:
+ * exactly one row for ALL_PRODUCTS / PRODUCT_TYPE / VENDOR, or 1..N rows for
+ * PRODUCT / COLLECTION (the multi-value kinds — `MULTI_VALUE_SCOPES`). Validates
+ * every `(scope, scopeValue)` pair (`validateScope` — rejects unknown scopes, the
+ * ALL_PRODUCTS-with-value / valued-scope-without-value mismatches, malformed GIDs)
+ * BEFORE any DB call, enforces kind homogeneity + arity, dedupes by value, proves
+ * the template belongs to the shop, then replaces the whole INCLUDE set atomically.
  *
- * "Exactly one INCLUDE rule per template" is guaranteed here, not left to callers:
- * a `$transaction` deletes the template's existing INCLUDE row(s) and creates the
- * new one, so a scope change (e.g. VENDOR → PRODUCT_TYPE) can't leave a stale rule
- * behind — and because we only touch `mode: INCLUDE`, future EXCLUDE carve-outs
- * (feature 45) are left intact. The `@@unique(shopId, templateId, scope,
- * scopeValue, mode)` still backstops literal duplicates.
+ * "One scope kind per template" is guaranteed here, not left to callers: a
+ * `$transaction` deletes the template's existing INCLUDE row(s) and creates the new
+ * set, so a scope change can't leave a stale rule behind. Only `mode: INCLUDE` rows
+ * are replaced — EXCLUDE carve-outs (feature 45) survive — EXCEPT the Decision-C
+ * cleanup: any `EXCLUDE PRODUCT` row whose GID is now in the new INCLUDE PRODUCT set
+ * is deleted in the same transaction. A template that both INCLUDEs and EXCLUDEs the
+ * same product is self-contradictory — `byProduct` beats the exclude gate on the
+ * storefront (feature 45 Decision B), so the EXCLUDE is inert AND, left in place,
+ * would fool the activation gate's exclude-subtraction into resolving a real
+ * collision (Decision C). Invariant: a template's INCLUDE PRODUCT set and its
+ * EXCLUDE PRODUCT set are disjoint.
+ *
+ * An empty set is rejected — callers CLEAR via `clearTemplateScope`, not `[]` here.
  */
 export async function setTemplateScope(
   shopId: string,
   templateId: string,
-  { scope, scopeValue }: { scope: unknown; scopeValue: unknown },
-) {
-  const scopeResult = validateScope(scope, scopeValue);
-  if (!scopeResult.ok) {
-    return { ok: false as const, error: scopeResult.error };
+  selectors: ScopeSelector[],
+): Promise<{ ok: true; count: number } | { ok: false; error: string }> {
+  if (!Array.isArray(selectors) || selectors.length === 0) {
+    return {
+      ok: false as const,
+      error: "Assignment requires at least one value",
+    };
   }
+
+  // Validate every (scope, scopeValue) pair first — a single invalid selector
+  // rejects the whole write, before any DB call (defense in depth; the client and
+  // the action already validate). validateScope trims + normalizes each value.
+  const validated: {
+    scope: AssignmentScopeValue;
+    scopeValue: string | null;
+  }[] = [];
+  for (const selector of selectors) {
+    const result = validateScope(selector.scope, selector.scopeValue);
+    if (!result.ok) {
+      return { ok: false as const, error: result.error };
+    }
+    validated.push({ scope: result.scope, scopeValue: result.scopeValue });
+  }
+
+  // Homogeneity: all INCLUDE rows of a template share ONE scope kind.
+  const kind = validated[0].scope;
+  if (validated.some((v) => v.scope !== kind)) {
+    return {
+      ok: false as const,
+      error: "Assignment values must share one scope",
+    };
+  }
+
+  // Arity: only PRODUCT / COLLECTION may carry more than one value. (This is the
+  // MULTI_VALUE_SCOPES predicate — NOT assignmentOverlap's per-product SINGLE_VALUED.)
+  if (!MULTI_VALUE_SCOPES.has(kind) && validated.length > 1) {
+    return { ok: false as const, error: "This scope takes a single value" };
+  }
+
+  // Dedupe by value (ALL_PRODUCTS's null collapses to one; arity already caps it).
+  const seen = new Set<string | null>();
+  const rows = validated.filter((v) => {
+    if (seen.has(v.scopeValue)) return false;
+    seen.add(v.scopeValue);
+    return true;
+  });
 
   // Ownership gate (priority #1): a foreign/unknown template writes nothing.
   const template = await getTemplateByIdForShop(shopId, templateId);
@@ -66,22 +153,41 @@ export async function setTemplateScope(
     return { ok: false as const, error: "Template not found" };
   }
 
+  // The new INCLUDE set's PRODUCT GIDs — drive the Decision-C EXCLUDE cleanup below
+  // (only a PRODUCT INCLUDE can collide with a PRODUCT-scoped EXCLUDE carve-out).
+  const includedProductGids =
+    kind === "PRODUCT"
+      ? rows.map((r) => r.scopeValue).filter((v): v is string => v !== null)
+      : [];
+
   try {
-    const assignment = await prisma.$transaction(async (tx) => {
+    await prisma.$transaction(async (tx) => {
       await tx.productAssignment.deleteMany({
         where: { shopId, templateId, mode: AssignmentMode.INCLUDE },
       });
-      return tx.productAssignment.create({
-        data: {
+      // Decision C: a product is never both INCLUDE'd and EXCLUDE'd on one template.
+      if (includedProductGids.length > 0) {
+        await tx.productAssignment.deleteMany({
+          where: {
+            shopId,
+            templateId,
+            mode: AssignmentMode.EXCLUDE,
+            scope: AssignmentScope.PRODUCT,
+            scopeValue: { in: includedProductGids },
+          },
+        });
+      }
+      await tx.productAssignment.createMany({
+        data: rows.map((r) => ({
           shopId,
           templateId,
-          scope: scopeResult.scope,
-          scopeValue: scopeResult.scopeValue,
+          scope: r.scope,
+          scopeValue: r.scopeValue,
           mode: AssignmentMode.INCLUDE,
-        },
+        })),
       });
     });
-    return { ok: true as const, data: assignment };
+    return { ok: true as const, count: rows.length };
   } catch {
     return { ok: false as const, error: "Could not save assignment" };
   }

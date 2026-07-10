@@ -142,3 +142,31 @@ describe("buildRoutingProjection", () => {
     expect(rules).toEqual(snapshot);
   });
 });
+
+describe("multi-value scope (feature 46) — N rows from one template", () => {
+  it("N PRODUCT INCLUDE rows all map into byProduct under the one handle", () => {
+    const A = "gid://shopify/Product/A";
+    const B = "gid://shopify/Product/B";
+    const projection = buildRoutingProjection([
+      rule("PRODUCT", A, "template-a"),
+      rule("PRODUCT", B, "template-a"),
+    ]);
+    expect(projection.byProduct).toEqual({
+      [A]: "template-a",
+      [B]: "template-a",
+    });
+  });
+
+  it("N COLLECTION INCLUDE rows all map into byCollection under the one handle", () => {
+    const C1 = "gid://shopify/Collection/1";
+    const C2 = "gid://shopify/Collection/2";
+    const projection = buildRoutingProjection([
+      rule("COLLECTION", C1, "template-c"),
+      rule("COLLECTION", C2, "template-c"),
+    ]);
+    expect(projection.byCollection).toEqual({
+      [C1]: "template-c",
+      [C2]: "template-c",
+    });
+  });
+});

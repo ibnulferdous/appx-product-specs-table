@@ -8,8 +8,8 @@
 //      dry-run GATE: may this template go ACTIVE, or does its scope overlap another
 //      ACTIVE template's scope (block, write nothing)?
 //
-// This module composes `getAssignmentForTemplate` (37), `partitionOverlaps` (38),
-// and `checkCrossDimensionConflicts` (39). It lives in `app/shopify/` (not
+// This module composes `getTemplateIncludeSelectors` (46), `partitionOverlaps`
+// (38), and `checkCrossDimensionConflicts` (39). It lives in `app/shopify/` (not
 // `app/utils/`) because the gate calls the Admin API through feature 39, exactly
 // like `routing.server.ts`. The pure helper (`shouldRebuildRouting`) and the
 // conflict-combining are unit-tested; the surfaces do their own status write and
@@ -23,7 +23,7 @@
 import type { AdminApiContext } from "@shopify/shopify-app-react-router/server";
 import type { TemplateStatus } from "@prisma/client";
 import {
-  getAssignmentForTemplate,
+  getTemplateIncludeSelectors,
   getActiveIncludeScopesExcept,
   getActiveExcludesByTemplate,
   getExcludesForTemplate,
@@ -83,144 +83,179 @@ export function shouldRebuildRoutingForScopeSave(
   return wasActive !== willBeActive || (willBeActive && scopeChanged);
 }
 
+/** One (candidateSelector, otherSelector-with-template) collision the gate found —
+ *  the unit the EXCLUDE subtraction reasons over (feature 46). Keeps the specific
+ *  candidate selector `cs` so a PRODUCT-attributable carve-out is judged against the
+ *  RIGHT product, and the tagged `other` so survivors aggregate to templates. */
+type CollidingPair = { cs: ScopeSelector; other: ActiveIncludeScope };
+
 /**
- * The DRAFT→ACTIVE dry-run gate (data-model.md §9). Called BEFORE any status
- * write; a block means the caller writes NOTHING (atomic block — no status, no
- * rows, no metaobject, no routing).
+ * Does an EXCLUDE carve-out resolve this specific colliding pair (feature 45
+ * Decision A, lifted to pair-scope for feature 46)? Pure + exported so the gate's
+ * subtraction is unit-testable in isolation (mirrors `shouldRebuildRouting`).
+ *
+ * Only a PRODUCT-attributable collision is resolvable — the two decidable cases:
+ *  1. the candidate selector is `PRODUCT: X` and the OTHER (covering) template
+ *     excludes X, or
+ *  2. the OTHER selector is `PRODUCT: X` and the CANDIDATE (covering) template
+ *     excludes X.
+ * Every broad×broad overlap stays unresolved (a finite exclude list can't prove two
+ * broad scopes disjoint; the probe returns existence, not which product).
+ *
+ * Soundness rests on Decision C (a covering side that excludes X never ALSO
+ * explicitly INCLUDEs X) — enforced at the write boundary (`setTemplateScope`) and
+ * the action's pending reconciliation, so a self-included product's stale exclude
+ * can't fool this into resolving a real collision.
+ */
+export function resolvedByExclude(
+  pair: CollidingPair,
+  candidateExcludes: Set<string>,
+  othersExcludesByTemplate: Map<string, string[]>,
+): boolean {
+  const { cs, other } = pair;
+  if (
+    cs.scope === "PRODUCT" &&
+    cs.scopeValue &&
+    (othersExcludesByTemplate.get(other.templateId) ?? []).includes(
+      cs.scopeValue,
+    )
+  ) {
+    return true; // Decision A case 1
+  }
+  if (
+    other.scope === "PRODUCT" &&
+    other.scopeValue &&
+    candidateExcludes.has(other.scopeValue)
+  ) {
+    return true; // Decision A case 2
+  }
+  return false;
+}
+
+/**
+ * The DRAFT→ACTIVE dry-run gate (data-model.md §9), generalized to MULTI-VALUE
+ * candidates (feature 46). Called BEFORE any status write; a block means the caller
+ * writes NOTHING (atomic block — no status, rows, metaobject, or routing).
+ *
+ * The candidate is now a SET of INCLUDE selectors (a template may target several
+ * products/collections). Two templates collide iff ANY (candidateSelector,
+ * otherSelector) pair overlaps; the gate reasons PER PAIR, subtracts EXCLUDE
+ * carve-outs per pair, then dedupes survivors to distinct templates LAST (subtract
+ * before dedupe — a multi-value OTHER template partially covered by the candidate's
+ * excludes must still block via its un-excluded members).
  *
  * Flow:
- *   1. The candidate scope: either the explicit `candidateScope` argument (feature
- *      44 — the PENDING scope on an editor Save, so an ACTIVE-scope-edit is gated
- *      BEFORE any write, no persist-then-rollback) or, when omitted, the persisted
- *      rule via `getAssignmentForTemplate` (feature 42's callers, unchanged). A
- *      `null` candidate ⇒ no INCLUDE scope ⇒ matches no products ⇒ `{ ok: true }`.
- *   2. `getActiveIncludeScopesExcept` → the OTHER ACTIVE templates with a scope
- *      (candidate excluded, shop-scoped — priority #1).
- *   3. `partitionOverlaps` → `{ blocking, needsCheck }` by pure set-algebra (38).
- *   4. `checkCrossDimensionConflicts` resolves `needsCheck` via Shopify existence
- *      probes (39) — in a try/catch: a THROW ⇒ a BLOCK (fail closed).
- *   5. Combine definite OVERLAPs + probe-confirmed collisions → non-empty ⇒
- *      `{ ok: false, conflicts }`, else `{ ok: true }`.
+ *   1. Candidate selectors: the explicit `candidateScopes` (the PENDING set on an
+ *      editor Save) or, when omitted, the persisted set via
+ *      `getTemplateIncludeSelectors`. Empty ⇒ no scope ⇒ `{ ok: true }`.
+ *   2. `getActiveIncludeScopesExcept` → OTHER ACTIVE templates' INCLUDE rows, one
+ *      tagged row per value (candidate excluded, shop-scoped — priority #1).
+ *   3. For each candidate selector: `partitionOverlaps` (38) → definite overlaps +
+ *      needs-check pairs; `checkCrossDimensionConflicts` (39) resolves needs-check
+ *      via Shopify probes in a try/catch — a THROW in ANY iteration ⇒ BLOCK (fail
+ *      closed, priority #2). Each colliding pair keeps its candidate selector.
+ *   4. Subtract EXCLUDE carve-outs per pair (`resolvedByExclude`), then dedupe the
+ *      survivors by `templateId` → conflicts.
  *
- * Shop isolation (priority #1): the candidate read, the comparison read, and the
- * probe are all bound to this shop (the first two by `where { shopId }`, the probe
- * structurally by the session-bound `admin` client), so the candidate and every
- * "other" belong to the same shop.
- *
- * `candidateScope` semantics: `undefined` (arg omitted) ⇒ read the persisted rule;
- * a passed value (a `ScopeSelector` or `null`) is used verbatim — passing `null`
- * explicitly gates a to-be-scope-less activation (trivially passes).
- *
- * EXCLUDE carve-outs (feature 45 Decision A): after the pure/probe collisions are
- * found, a PRODUCT-attributable collision is SUBTRACTED when the specific product
- * is excluded on the covering side — the two decidable cases being (1) the
- * candidate is `PRODUCT: X` and the OTHER (broad) side excludes X, or (2) the OTHER
- * side is `PRODUCT: X` and the CANDIDATE (broad) side excludes X. Broad×broad
- * overlaps are never resolved (a finite exclude list can't prove them disjoint, and
- * the probe returns existence, not which product). `candidateExcludes` mirrors
- * `candidateScope`: `undefined` ⇒ read the persisted carve-outs; a passed array
- * (incl. `[]`) is used verbatim (the editor Save's PENDING carve-outs).
+ * `candidateScopes` semantics: `undefined` (omitted) ⇒ read the persisted set (the
+ * list-page caller); a passed array (incl. `[]`) is used verbatim. `candidateExcludes`
+ * mirrors it: `undefined` ⇒ read the persisted carve-outs; a passed array is verbatim.
  */
 export async function evaluateActivationConflicts(
   admin: AdminApiContext,
   shopId: string,
   templateId: string,
-  candidateScope?: ScopeSelector | null,
+  candidateScopes?: ScopeSelector[],
   candidateExcludes?: string[],
 ): Promise<{ ok: true } | { ok: false; conflicts: ActivationConflict[] }> {
-  // 1. The candidate scope — the PENDING scope (feature 44) when provided, else the
-  //    persisted rule (feature 42). No scope ⇒ nothing to overlap → passes.
-  const candidate =
-    candidateScope === undefined
-      ? await getAssignmentForTemplate(shopId, templateId)
-      : candidateScope;
-  if (!candidate) {
+  // 1. The candidate selector SET — the PENDING set when provided, else persisted.
+  //    Empty ⇒ nothing to overlap → passes.
+  const candidateSelectors =
+    candidateScopes === undefined
+      ? await getTemplateIncludeSelectors(shopId, templateId)
+      : candidateScopes;
+  if (candidateSelectors.length === 0) {
     return { ok: true };
   }
 
-  // 2. The other ACTIVE templates that carry a scope (candidate excluded).
+  // 2. The other ACTIVE templates' INCLUDE rows (candidate excluded), one tagged
+  //    row per value — the pre-flattened, template-tagged other-selector list.
   const others = await getActiveIncludeScopesExcept(shopId, templateId);
   if (others.length === 0) {
     return { ok: true };
   }
 
-  // 3. Pure set-algebra split: definite overlaps vs. pairs needing a probe.
-  const candidateSelector: ScopeSelector = {
-    scope: candidate.scope,
-    scopeValue: candidate.scopeValue,
-  };
-  const { blocking, needsCheck } = partitionOverlaps<ActiveIncludeScope>(
-    candidateSelector,
-    others,
-  );
-
-  // 4. Resolve the undecidable pairs against Shopify — fail closed on any error.
-  let confirmed: { other: ActiveIncludeScope; reason: string }[];
-  try {
-    confirmed = await checkCrossDimensionConflicts(admin, needsCheck);
-  } catch {
-    // An unverifiable probe must NOT let the template go ACTIVE (priority #2).
-    return {
-      ok: false,
-      conflicts: [
-        {
-          reason:
-            "Couldn't verify this template's assignment against your other " +
-            "active templates. Please try again.",
-        },
-      ],
-    };
+  // 3. Per candidate selector: pure set-algebra split, then resolve needs-check
+  //    pairs against Shopify. Fail closed on ANY probe error, in ANY iteration.
+  const collidingPairs: CollidingPair[] = [];
+  for (const cs of candidateSelectors) {
+    const { blocking, needsCheck } = partitionOverlaps<ActiveIncludeScope>(
+      cs,
+      others,
+    );
+    let confirmed: { other: ActiveIncludeScope; reason: string }[];
+    try {
+      confirmed = await checkCrossDimensionConflicts(admin, needsCheck);
+    } catch {
+      // An unverifiable probe must NOT let the template go ACTIVE (priority #2).
+      return {
+        ok: false,
+        conflicts: [
+          {
+            reason:
+              "Couldn't verify this template's assignment against your other " +
+              "active templates. Please try again.",
+          },
+        ],
+      };
+    }
+    for (const other of blocking) collidingPairs.push({ cs, other });
+    for (const { other } of confirmed) collidingPairs.push({ cs, other });
   }
 
-  // 5. Combine definite overlaps + probe-confirmed collisions into the set of
-  //    other ACTIVE templates the candidate collides with.
-  const collidingOthers: ActiveIncludeScope[] = [
-    ...blocking,
-    ...confirmed.map(({ other }) => other),
-  ];
-  if (collidingOthers.length === 0) {
+  if (collidingPairs.length === 0) {
     return { ok: true };
   }
 
-  // 6. Subtract EXCLUDE carve-outs (Decision A). Read both sides' carve-outs only
-  //    now that a real collision exists to potentially resolve. The candidate's
-  //    carve-outs are the PENDING set when supplied (editor Save), else the
-  //    persisted set (feature 42 callers). The others' carve-outs are read per
-  //    ACTIVE template so a collision with `other` is judged against `other`'s set.
+  // 4. Subtract EXCLUDE carve-outs PER PAIR (Decision A), then dedupe survivors to
+  //    distinct templates LAST. Read both sides' carve-outs only now that a real
+  //    collision exists to potentially resolve. The candidate's carve-outs are the
+  //    PENDING set when supplied (editor Save), else the persisted set; the others'
+  //    are read per ACTIVE template so a pair is judged against that template's set.
   const othersExcludes = await getActiveExcludesByTemplate(shopId, templateId);
-  const candidateExcludeSet = new Set(
+  // Decision C (defense in depth): a product the candidate itself INCLUDEs cannot be
+  // a carve-out that resolves a collision — `byProduct` beats the exclude gate on the
+  // storefront (feature 45 Decision B), so the candidate still covers it. Strip any
+  // such contradiction from the candidate's carve-out set before the subtraction. (The
+  // editor action reconciles the PENDING set upstream too; this keeps the gate sound
+  // for any direct caller. The OTHER side stays clean by the `setTemplateScope` write
+  // invariant, which deletes a contradictory EXCLUDE when an INCLUDE is written.)
+  const candidateIncludedProducts = new Set(
+    candidateSelectors
+      .filter((s) => s.scope === "PRODUCT" && s.scopeValue)
+      .map((s) => s.scopeValue as string),
+  );
+  const rawCandidateExcludes =
     candidateExcludes === undefined
       ? await getExcludesForTemplate(shopId, templateId)
-      : candidateExcludes,
+      : candidateExcludes;
+  const candidateExcludeSet = new Set(
+    rawCandidateExcludes.filter((gid) => !candidateIncludedProducts.has(gid)),
   );
 
-  const remaining = collidingOthers.filter((other) => {
-    // Case 1: candidate is PRODUCT:X and the OTHER (covering) side excludes X.
-    if (
-      candidate.scope === "PRODUCT" &&
-      candidate.scopeValue &&
-      (othersExcludes.get(other.templateId) ?? []).includes(
-        candidate.scopeValue,
-      )
-    ) {
-      return false; // carve-out resolves this overlap
-    }
-    // Case 2: the OTHER side is PRODUCT:X and the CANDIDATE (covering) excludes X.
-    if (
-      other.scope === "PRODUCT" &&
-      other.scopeValue &&
-      candidateExcludeSet.has(other.scopeValue)
-    ) {
-      return false; // carve-out resolves this overlap
-    }
-    return true; // a broad×broad (or un-excluded) overlap still blocks
-  });
-
-  const conflicts: ActivationConflict[] = remaining.map((other) => ({
-    templateId: other.templateId,
-    templateName: other.templateName,
-    reason: `Its assignment overlaps the active template “${other.templateName}”.`,
-  }));
+  const seenTemplateIds = new Set<string>();
+  const conflicts: ActivationConflict[] = [];
+  for (const pair of collidingPairs) {
+    if (resolvedByExclude(pair, candidateExcludeSet, othersExcludes)) continue;
+    const { templateId: otherId, templateName } = pair.other;
+    if (seenTemplateIds.has(otherId)) continue; // dedupe by template (last step)
+    seenTemplateIds.add(otherId);
+    conflicts.push({
+      templateId: otherId,
+      templateName,
+      reason: `Its assignment overlaps the active template “${templateName}”.`,
+    });
+  }
 
   return conflicts.length > 0 ? { ok: false, conflicts } : { ok: true };
 }
