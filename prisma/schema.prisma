@@ -65,6 +65,8 @@ model Shop {
   assignments       ProductAssignment[]
   // Sparse per-product override state (materialized single-product overrides only).
   assignmentIndexes ProductAssignmentIndex[]
+  // Projected shop-level routing map mirrored to the shop routing metafield.
+  storefrontRouting ShopStorefrontRouting?
 
   @@index([isInstalled])
 }
@@ -209,4 +211,29 @@ enum AssignmentIndexStatus {
   APPLIED
   CONFLICT
   STALE
+}
+
+// Projected disjoint routing map — the mirror of the shop `$app:routing` json
+// metafield that Liquid reads on the storefront. Rebuilt from the ACTIVE, disjoint
+// ProductAssignment rows on every activate/deactivate. Postgres stays the source of
+// truth; the metafield is the delivery copy. Each map is { scopeValue -> handle }.
+model ShopStorefrontRouting {
+  id     String @id @default(cuid())
+  shopId String @unique
+  shop   Shop   @relation(fields: [shopId], references: [id], onDelete: Cascade)
+
+  defaultTemplateHandle String? // ALL_PRODUCTS winner
+  byType                Json    @default("{}") // productType    -> template handle
+  byVendor              Json    @default("{}") // vendor         -> template handle
+  byCollection          Json    @default("{}") // collectionGid  -> template handle
+  byTag                 Json    @default("{}") // tag            -> template handle (post-MVP)
+  byProduct             Json    @default("{}") // productGid     -> template handle (bounded overrides)
+  excludedProductGids   Json    @default("[]") // EXCLUDE carve-outs -> render nothing
+
+  // Delivery sync state for the shop-level metafield.
+  shopMetafieldGid  String?
+  syncedToShopifyAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }

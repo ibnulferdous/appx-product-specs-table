@@ -1,5 +1,11 @@
 import { describe, it, expect } from "vitest";
-import { ASSIGNMENT_SCOPES, validateScope } from "./assignmentScope";
+import {
+  ASSIGNMENT_SCOPES,
+  SCOPE_NONE,
+  SCOPE_OPTIONS,
+  isScopeComplete,
+  validateScope,
+} from "./assignmentScope";
 
 describe("validateScope", () => {
   it("accepts ALL_PRODUCTS with no value and normalizes the value to null", () => {
@@ -116,6 +122,49 @@ describe("ASSIGNMENT_SCOPES", () => {
     ]);
     expect((ASSIGNMENT_SCOPES as readonly string[]).includes("TAG")).toBe(
       false,
+    );
+  });
+});
+
+describe("SCOPE_OPTIONS (feature 44 picker)", () => {
+  it("leads with None, then the five scopes in ASSIGNMENT_SCOPES order", () => {
+    expect(SCOPE_OPTIONS.map((option) => option.value)).toEqual([
+      SCOPE_NONE,
+      ...ASSIGNMENT_SCOPES,
+    ]);
+  });
+
+  it("gives every option a non-empty label", () => {
+    for (const option of SCOPE_OPTIONS) {
+      expect(option.label.length).toBeGreaterThan(0);
+    }
+  });
+});
+
+describe("isScopeComplete (client mirror; UX Save-gate)", () => {
+  it("treats None as always complete (it clears the rule)", () => {
+    expect(isScopeComplete(SCOPE_NONE, null)).toBe(true);
+    // A stray value under None is ignored — still complete (the action clears it).
+    expect(isScopeComplete(SCOPE_NONE, "gid://shopify/Product/1")).toBe(true);
+  });
+
+  it("treats ALL_PRODUCTS as complete with no value", () => {
+    expect(isScopeComplete("ALL_PRODUCTS", null)).toBe(true);
+  });
+
+  it("is incomplete for a valued scope with no value", () => {
+    expect(isScopeComplete("PRODUCT", null)).toBe(false);
+    expect(isScopeComplete("PRODUCT", "")).toBe(false);
+    expect(isScopeComplete("VENDOR", "")).toBe(false);
+    expect(isScopeComplete("PRODUCT", "not-a-gid")).toBe(false);
+  });
+
+  it("is complete for a valued scope with a valid value", () => {
+    expect(isScopeComplete("PRODUCT", "gid://shopify/Product/1")).toBe(true);
+    expect(isScopeComplete("VENDOR", "Acme")).toBe(true);
+    expect(isScopeComplete("PRODUCT_TYPE", "Snowboard")).toBe(true);
+    expect(isScopeComplete("COLLECTION", "gid://shopify/Collection/2")).toBe(
+      true,
     );
   });
 });

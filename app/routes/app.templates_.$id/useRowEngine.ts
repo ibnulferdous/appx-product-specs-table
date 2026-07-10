@@ -42,6 +42,7 @@ import {
 } from "../../utils/reorderAnnouncements";
 import { cellCount, gridToPastedRows } from "../../utils/clipboardTable";
 import { readClipboardGrid } from "../../utils/clipboardTableDom";
+import { isScopeComplete } from "../../utils/assignmentScope";
 import {
   BULK_DELETE_CONFIRM_THRESHOLD,
   BULK_DELETE_MODAL_ID,
@@ -66,10 +67,41 @@ interface PendingPaste {
   afterId: string | null;
 }
 
+// The template's assignment scope kind + value seeded from the loader (feature
+// 44). `scope` is the picker-kind ("NONE" when the template has no INCLUDE rule,
+// else a real AssignmentScope); `scopeValue` is the GID / free-text the rule
+// carries (null for NONE / ALL_PRODUCTS); `scopeValueLabel` is the resolved
+// display title for a PRODUCT/COLLECTION GID (falls back to the GID) so the picker
+// shows a readable chip, not a raw id.
+export interface ScopeSeed {
+  scope: string;
+  scopeValue: string | null;
+  scopeValueLabel: string | null;
+}
+
+// One EXCLUDE carve-out for the Settings-tab "Except these products" list (feature
+// 45): the excluded product's GID plus its resolved display title (falls back to
+// the GID). Only the GIDs ride the dirty snapshot + Save payload; the label is
+// presentation, mirroring the scope chip's `scopeValueLabel`.
+export interface ExcludeSeed {
+  gid: string;
+  label: string;
+}
+
 export interface UseRowEngineArgs {
   initialRows: EditorRow[];
   initialName: string;
   initialStatus: string;
+  // The persisted assignment scope (feature 44). Seeds the Settings-tab picker and
+  // rides the dirty snapshot + Save payload exactly like `status`. Reseeded on
+  // every remount (Discard / create-on-save) so Discard reverts a scope change.
+  initialScope: string;
+  initialScopeValue: string | null;
+  initialScopeValueLabel: string | null;
+  // The persisted EXCLUDE carve-outs (feature 45), seeded from the loader as
+  // `{ gid, label }` pairs. Rides the dirty snapshot + Save payload like `scope`;
+  // reseeded on every remount so Discard reverts an exclude change.
+  initialExcludes: ExcludeSeed[];
   // True only for the `/app/templates/new` sentinel mount (route.tsx). A stable
   // per-mount fact: after the first Save the URL flips to the real cuid and the
   // engine remounts with `isNew = false`, so the scaffold-replace (file 23) can
@@ -131,6 +163,10 @@ export function useRowEngine({
   initialRows,
   initialName,
   initialStatus,
+  initialScope,
+  initialScopeValue,
+  initialScopeValueLabel,
+  initialExcludes,
   isNew,
   onDiscard,
 }: UseRowEngineArgs) {
@@ -155,6 +191,47 @@ export function useRowEngine({
   // engine owner is keyed on `${id}:${nonce}`), so Discard reverts a change.
   const [name, setName] = useState(initialName);
   const [status, setStatus] = useState(initialStatus);
+
+  // Assignment scope (feature 44). Three pieces of state: the picker kind
+  // (`scope`), the persisted value (`scopeValue` — a GID for PRODUCT/COLLECTION,
+  // free text for TYPE/VENDOR, null for NONE/ALL_PRODUCTS), and a display-only
+  // `scopeValueLabel` (the resolved resource title for a GID). Only scope +
+  // scopeValue ride the dirty snapshot / Save payload; the label is presentation.
+  // `setScope` replaces all three atomically so the SettingsTab can change the
+  // kind (resetting value + label) or set a value (keeping the kind) in one call.
+  const [scope, setScopeKind] = useState(initialScope);
+  const [scopeValue, setScopeValue] = useState<string | null>(
+    initialScopeValue,
+  );
+  const [scopeValueLabel, setScopeValueLabel] = useState<string | null>(
+    initialScopeValueLabel,
+  );
+  const setScope = useCallback((next: ScopeSeed) => {
+    setScopeKind(next.scope);
+    setScopeValue(next.scopeValue);
+    setScopeValueLabel(next.scopeValueLabel);
+  }, []);
+
+  // EXCLUDE carve-outs (feature 45). `excludes` is the ordered GID list that rides
+  // the dirty snapshot + Save payload; `excludeLabels` is a GID→title map for
+  // readable chips (presentation only). `setExcludes` replaces both from a
+  // `{ gid, label }[]` (the SettingsTab builds the new list on add/remove). Shown
+  // only under the ALL_PRODUCTS scope (SettingsTab gates the control), but the
+  // state is unconditional so Discard/seed round-trips cleanly.
+  const [excludes, setExcludeGids] = useState<string[]>(() =>
+    initialExcludes.map((e) => e.gid),
+  );
+  const [excludeLabels, setExcludeLabels] = useState<Record<string, string>>(
+    () => Object.fromEntries(initialExcludes.map((e) => [e.gid, e.label])),
+  );
+  const setExcludes = useCallback((next: ExcludeSeed[]) => {
+    setExcludeGids(next.map((e) => e.gid));
+    setExcludeLabels(Object.fromEntries(next.map((e) => [e.gid, e.label])));
+  }, []);
+  // Client mirror of the value-required rule (UX only; the server re-validates):
+  // an incomplete scope (e.g. PRODUCT kind with no product picked) is an invalid
+  // state, so Save is disabled until it is completed or set back to "None".
+  const scopeComplete = isScopeComplete(scope, scopeValue);
 
   // --- Drag reorder (Steps 10–11) ------------------------------------------
   // Two sensors on one DndContext: a PointerSensor (mouse/touch, Step 10) with a
@@ -233,13 +310,32 @@ export function useRowEngine({
   const savingRef = useRef(saving);
   savingRef.current = saving;
 
+  // Rich conflict banner state (feature 44). A blocked activation is discovered
+  // server-side on Save (feature 42's model returns `{ blocked, conflicts }`); we
+  // hold those conflicts here so the SettingsTab can render a persistent critical
+  // banner naming the colliding template(s), not just the fleeting error toast.
+  // Cleared when a save succeeds (below) and when the merchant edits the pending
+  // scope/status (the clearing effect further down) — so the banner never lingers
+  // after the merchant has moved to resolve it.
+  const [conflicts, setConflicts] = useState<
+    Array<{ templateId?: string; templateName?: string; reason: string }>
+  >([]);
+
   // Dirty-tracking against the last-saved baseline. The baseline is a
-  // META-SNAPSHOT of every editable surface — the row array AND the template
-  // name/status — so a rename (name) flips isDirty and opens the SaveBar, not just
-  // a row edit (feature 20). `status` has no editor yet but is in the snapshot so
-  // the editable-status slice needs no change here. The key order is fixed so the
-  // JSON compare is stable.
-  const currentMetaJson = JSON.stringify({ rows, name, status });
+  // META-SNAPSHOT of every editable surface — the row array, the template
+  // name/status, AND the assignment scope (feature 44) — so a rename, a status
+  // change, or a scope change each flips isDirty and opens the SaveBar, not just a
+  // row edit (feature 20). The key order is fixed so the JSON compare is stable.
+  // Excludes are a SET (order is meaningless), so the snapshot sorts a copy — a
+  // reorder alone never flips isDirty, only a real membership change does.
+  const currentMetaJson = JSON.stringify({
+    rows,
+    name,
+    status,
+    scope,
+    scopeValue,
+    excludes: [...excludes].sort(),
+  });
   const metaJsonRef = useRef(currentMetaJson);
   metaJsonRef.current = currentMetaJson;
   const [savedMetaJson, setSavedMetaJson] = useState(currentMetaJson);
@@ -255,21 +351,41 @@ export function useRowEngine({
 
   const handleSave = useCallback(() => {
     if (saveFetcher.state !== "idle") return; // a save is already in flight
+    if (!scopeComplete) return; // an incomplete scope is not submittable (Save is disabled)
     // The payload is valid JSON at runtime; the cast satisfies SubmitTarget,
     // which the EditorRow interface union does not match structurally (interfaces
-    // carry no implicit index signature). name/status are sent from STATE, so a
-    // rename rides the existing Save payload (saveTemplateForShop updates them
-    // only when provided + valid — no server change needed).
-    submittedMetaJsonRef.current = JSON.stringify({ rows, name, status });
+    // carry no implicit index signature). name/status/scope are sent from STATE, so
+    // a rename or a scope change rides the existing Save payload (the action reads
+    // scope + scopeValue and persists the rule alongside the template — feature 44).
+    submittedMetaJsonRef.current = JSON.stringify({
+      rows,
+      name,
+      status,
+      scope,
+      scopeValue,
+      excludes: [...excludes].sort(),
+    });
     saveFetcher.submit(
       {
         rows,
         name,
         status,
+        scope,
+        scopeValue,
+        excludes,
       } as unknown as Parameters<typeof saveFetcher.submit>[0],
       { method: "post", encType: "application/json" },
     );
-  }, [saveFetcher, rows, name, status]);
+  }, [
+    saveFetcher,
+    rows,
+    name,
+    status,
+    scope,
+    scopeValue,
+    excludes,
+    scopeComplete,
+  ]);
 
   const handleDiscard = useCallback(() => {
     // Clear dirty immediately (hides the bar), then remount to the persisted
@@ -288,23 +404,45 @@ export function useRowEngine({
     if (!data || data === handledSaveRef.current) return;
     handledSaveRef.current = data;
     if (data.ok) {
+      // A successful save clears any prior conflict banner (feature 44).
+      setConflicts([]);
       // Reset the baseline to exactly what was persisted (the submitted
       // snapshot), NOT the live state — otherwise an edit made during the
       // in-flight save would be marked saved and lost. Falls back to the live
       // snapshot if the submitted one is somehow missing.
       setSavedMetaJson(submittedMetaJsonRef.current ?? metaJsonRef.current);
       revalidator.revalidate();
-      if (data.syncError) {
-        shopify.toast.show(data.syncError, { isError: true });
+      // Both storefront-delivery writes are best-effort (Postgres holds the
+      // durable save); surface whichever warned. `routingError` only appears when
+      // the save changed the ACTIVE set (feature 42).
+      const deliveryWarning = data.syncError ?? data.routingError;
+      if (deliveryWarning) {
+        shopify.toast.show(deliveryWarning, { isError: true });
       } else {
         shopify.toast.show("Saved");
       }
     } else {
+      // On a blocked activation (feature 42/44) capture the structured conflicts
+      // for the rich banner; other failures carry none. The toast fires either way
+      // as a fallback / for non-block errors.
+      setConflicts(
+        "blocked" in data && data.blocked && "conflicts" in data
+          ? data.conflicts
+          : [],
+      );
       shopify.toast.show(data.error ?? "Could not save template", {
         isError: true,
       });
     }
   }, [saveFetcher.state, saveFetcher.data, revalidator, shopify]);
+
+  // Clear the conflict banner once the merchant edits the pending state it was
+  // reported against (scope kind, scope value, or status) — the banner describes a
+  // specific pending combination, so any change to that combination makes it stale.
+  // Runs on mount too, but conflicts starts empty so that first pass is a no-op.
+  useEffect(() => {
+    setConflicts([]);
+  }, [scope, scopeValue, status, excludes]);
 
   // Close the editor's body modals when a save begins. Both portal their content
   // (including their primary buttons) into the admin chrome, OUTSIDE the editor's
@@ -946,9 +1084,23 @@ export function useRowEngine({
     setName,
     status,
     setStatus,
+    // Assignment scope (feature 44)
+    scope,
+    scopeValue,
+    scopeValueLabel,
+    setScope,
+    scopeComplete,
+    conflicts,
+    // EXCLUDE carve-outs (feature 45)
+    excludes,
+    excludeLabels,
+    setExcludes,
     // Save / dirty
     isDirty,
     saving,
+    // Save is blocked while a scope is incomplete (an invalid state) — the SaveBar
+    // primary button reads this so an incomplete assignment can't be submitted.
+    canSave: !saving && scopeComplete,
     handleSave,
     handleDiscard,
     // Caret bridge / modal state

@@ -107,6 +107,152 @@ F (top-bar status/save model + cleanup)**.
 - New `snippets/spec-table-value.liquid` resolves the value cell: `SHOPIFY_FIELD` (12 tokens against the product / `product.first_available_variant`; `total_inventory` → empty), `METAFIELD` (`metafield_text | escape | newline_to_br`), `TEXT`, `LINE_BREAK`. `blocks/spec_table.liquid` captures the cell per row and applies the **whole-cell `hideWhenEmpty`** gate (`strip_html | strip` blank test); 50-row-chunked loops (Shopify's 50-iteration `for` cap). Locale Yes/No keys for `available_for_sale`; dead `.appx-spec-table__pending` CSS removed. `data-model.md` §10 rewritten to the whole-cell rule.
 - Browser-verified on the DJI Air 3S product page: dynamic fields resolve (price `$155,000.00`, vendor/type in "In The Box", vendor in "Warranty"), `hideWhenEmpty` hides empty rows (SKU / metafield / "No value row") while the section renders, multi-line `<br>` renders, section headers render, and **no `[field:…]`/`[metafield:…]` placeholders leak**. Requires `ACTIVE` metaobject status (block gate).
 
+**Product assignment engine — EXCLUDE carve-outs (`45-…`)**
+- Turns the inert `mode: EXCLUDE` schema (features 37/40) into a live feature: a
+  merchant can carve specific products out of an `ALL_PRODUCTS` template ("all
+  products EXCEPT X"), so X falls through to its own dedicated table or renders
+  nothing. **No migration** — application code only. All 8 code steps landed; full
+  gate green (**446 tests**, typecheck, lint, format, build) + Theme Check (4 files,
+  0 offenses). **Live-verified end to end on the dev store (Step 7), 2026-07-09.**
+- **Live verification (2026-07-09, store restored to exact pre-test state after):**
+  set template A = `ACTIVE, ALL_PRODUCTS, EXCLUDE product X` (X = DJI Air 3S) via the
+  new UI → the **"Except these products" control appeared only under ALL_PRODUCTS**,
+  the multi-select picker added a **chip with the resolved product title** + Remove,
+  and Save persisted it (Neon: coexisting `INCLUDE ALL_PRODUCTS` + `EXCLUDE PRODUCT`
+  rows; routing metafield: `defaultTemplateHandle=template-A` **and**
+  `excludedProductGids=[X]` — **Step 6 confirmed, writer unchanged**). Storefront
+  (App-Bridge product Preview, reads live metafields): a **clean non-excluded sibling
+  (Edge 60, no override) rendered A's catch-all table**, while **X rendered nothing**
+  (carved out of the broad tier). Then B = `ACTIVE, PRODUCT X` → **gate ALLOWED it
+  (no conflict banner)** because A excludes X (Decision A), routing added
+  `byProduct[X]=template-B`, and **X's page then rendered B** — proving **Decision B
+  (byProduct beats the exclude gate)**; X carries **no per-product override**
+  (checked in admin), so this was pure tier-2 routing, not tier-1. Finally, removing
+  A's carve-out while B stayed ACTIVE → **Save BLOCKED with the critical banner naming
+  "Motorola Moto G35 5G"**, nothing written (the `excludesChanged` gate re-check).
+  Decision A thus proven **both directions** live. (Aside: a leftover tier-1 override
+  on the Moto G35 product — unrelated to feature 45 — initially masked the catch-all
+  test until diagnosed.)
+- **Write path** (`assignment.server.ts`): `setTemplateExcludes` (validates each GID
+  via `validateScope("PRODUCT", …)`, ownership-gated, `$transaction`
+  delete-EXCLUDE-then-`createMany`, touches ONLY `mode: EXCLUDE` so the INCLUDE
+  scope survives — the mirror of `setTemplateScope`), `getExcludesForTemplate` (the
+  loader read), `getActiveExcludesByTemplate` (the gate read, grouped by templateId,
+  shop-scoped, candidate excluded). 15 new unit tests (shop isolation, invalid-GID
+  reject, atomic replace, dedupe, empty-clear).
+- **Gate subtraction (Decision A)** (`assignmentActivation.server.ts`):
+  `evaluateActivationConflicts` gained a `candidateExcludes?` param and subtracts a
+  PRODUCT-attributable collision when the product is excluded on the covering side —
+  the two decidable cases (candidate `PRODUCT:X` & other excludes X; other
+  `PRODUCT:X` & candidate excludes X). **Broad×broad still blocks** (a finite GID
+  list can't prove disjointness; the probe returns existence, not which product).
+  The subtraction is a filter **around** the pure INCLUDE resolver (feature 38's
+  matrix untouched). Fails closed unchanged. 5 new gate tests (both cases resolve;
+  wrong-product still blocks; broad×broad never resolves; persisted-excludes path).
+- **Storefront reorder (Decision B)** (`snippets/spec-table-resolve.liquid`): moved
+  `byProduct` **ahead of** the `excludedProductGids` gate so an excluded product
+  still reaches its own explicit assignment; the exclude gate now only carves out
+  the broad tiers (`byType`/`byVendor`/`byCollection`/default). New order: override →
+  `byProduct` → exclude gate → broad tiers. **A real storefront bug** (only a live
+  storefront surfaces it) — Step 7 live-verifies. Routing writer unchanged
+  (`rebuildShopRouting` already selects all modes → EXCLUDE PRODUCT rows flow through
+  feature 40 into `excludedProductGids`; confirmed, no change).
+- **Engine + Save** (`useRowEngine.ts`, `route.tsx`): engine gained
+  `excludes`/`excludeLabels`/`setExcludes`, into the meta-JSON dirty snapshot
+  (sorted → order-independent) + Save payload; loader resolves each GID→title
+  (fail-soft to GID, concurrent) and seeds the engine. Action parses pending
+  excludes, feeds them to the gate, persists via `setTemplateExcludes` (before
+  status, with the scope write), and rebuilds routing when an ACTIVE template's
+  excludes changed — the gate trigger + rebuild trigger both extended with
+  `excludesChanged` (removing a carve-out can re-create a conflict).
+- **UI** (`SettingsTab.tsx`): an "Except these products" section shown **only under
+  `ALL_PRODUCTS`** (settled decision — the one scope where a carve-out is always
+  honorable, since ALL_PRODUCTS overlaps everything so only a PRODUCT:X template can
+  coexist). Multi-select product `resourcePicker` (merge/dedupe) → chip list with
+  per-chip Remove + an "Add more products" button; rides the SaveBar. PRODUCT-only
+  (no Collections option). Hidden for every other scope.
+
+**Product assignment engine — scope picker UI + rich conflict warnings (`44-…`)**
+- The assignment engine is now **merchant-driven end to end**. The editor **Settings
+  tab** (`SettingsTab.tsx`) gained an assignment scope picker below the status
+  control: a scope-kind `<s-select>` (None / All products / A product / Product
+  type / Vendor / A collection) + a conditional value control — an App Bridge
+  `resourcePicker` (single-select) for PRODUCT/COLLECTION rendering a title chip, a
+  free-text `<s-text-field>` for PRODUCT_TYPE/VENDOR, nothing for None/All. Scope
+  **rides the SaveBar** exactly like status: `useRowEngine` gained
+  `scope`/`scopeValue`/`scopeValueLabel` state + `setScope`, added to the meta-JSON
+  dirty snapshot (`{ rows, name, status, scope, scopeValue }`) and the Save payload,
+  seeded from new loader-returned `assignment`. One Save persists rows, name,
+  status, and scope together; Discard reverts all of them. An **incomplete scope**
+  (a valued kind with no value) disables Save (client mirror `isScopeComplete` +
+  `SCOPE_OPTIONS`/`SCOPE_NONE` in `assignmentScope.ts`).
+- **The gate now evaluates the PENDING scope** (feature 42 left "ACTIVE-scope-edit"
+  here): `evaluateActivationConflicts(admin, shopId, templateId, candidateScope?)`
+  takes an optional pending scope (default: the persisted rule, preserving 42's
+  callers), so an ACTIVE template's scope edit re-verifies disjointness **before any
+  write** — no persist-then-rollback. The editor Save runs the gate when
+  `willBeActive && (!wasActive || scopeChanged)`; on a block it writes **nothing**
+  (atomic block — rows, name, status, scope, metaobject, routing all untouched) and
+  returns the structured `conflicts`. Scope is written **before** status so an
+  ACTIVE template's persisted scope is always the gate-checked one. Routing rebuilds
+  on membership OR content change (new pure `shouldRebuildRoutingForScopeSave`). The
+  **create path** now gates create-as-ACTIVE-with-scope too (excluded from its own
+  set; blocks before creating).
+- **Rich conflict banner** (`SettingsTab.tsx`): a blocked activation renders a
+  persistent `s-banner` (critical) from the engine's `conflicts` — names each
+  colliding template with a link (`/app/templates/{id}`) + the three resolutions
+  (narrow / clear / other-to-Draft). Cleared when the merchant edits the pending
+  scope/status or a save succeeds. `activationBlockedMessage` stays the toast
+  fallback. A scope-less **ACTIVE** template shows a warning (renders nowhere).
+- New `app/shopify/scopeResourceLabel.server.ts` resolves a PRODUCT/COLLECTION GID
+  to its resource title for the picker chip (loader-side, batched, **fails soft** to
+  the GID — display only, never blocks the load; GraphQL validated @ 2025-10,
+  `read_products`). **Shop isolation** holds throughout (scope write, gate reads,
+  label query all session-bound / `where { shopId }`). 12 new unit tests
+  (`isScopeComplete` + `SCOPE_OPTIONS`; the candidate-scope gate override + the
+  generalized rebuild trigger). Full gate green (**430 tests**, typecheck, lint,
+  format, build).
+- **Live-verified end to end on the dev store (Step 6 — closes features 42 & 43's
+  deferred passes), 2026-07-08:** set a PRODUCT scope on the ACTIVE "Creator Combo"
+  template via the picker (App Bridge resource picker → title chip) → Save → the
+  rule persisted, `rebuildShopRouting` added `byProduct:{E88→handle}` + re-stamped
+  the `$app:routing` metafield, and the **E88 storefront page (previously blank)
+  rendered the routed table** via tier 2 (closes **43**'s merchant-driven routing
+  pass). Assigned the **same** product to the ACTIVE "Motorola" template → Save →
+  **blocked** with the rich critical banner naming "Creator Combo" (linked) + the 3
+  resolutions, SaveBar retained, and **nothing written** (Motorola scope stayed
+  null — atomic block confirmed via Neon; closes **42**'s block pass). Changing the
+  pending product **cleared the banner**; Save then **succeeded**, routing rebuilt,
+  and the Moto G35 page rendered the Motorola table (ACTIVE-scope-edit path).
+  Confirmed live: the `canSave` Save-disable on an incomplete scope, the inert
+  freeze during save, and the clear-scope→rebuild path (reverting both test scopes
+  restored the routing map + store to its exact pre-test state). Detail →
+  `context/features/44-assignment-scope-picker-ui.md`.
+
+**Product assignment engine — storefront routing resolution (`43-…`)**
+- The theme app extension now resolves a product's table in **three tiers** (data-model §9): (1) the per-product `$app:spec_table` override metafield (features 34/35, highest precedence, unchanged); (2) the **shop routing map** — new `snippets/spec-table-resolve.liquid` reads `shop.metafields["$app"].routing.value` and emits the matched template **handle** (`byProduct` GID → `byType` → `byVendor` → `byCollection` GID scan → `defaultTemplateHandle`), which the block resolves via `metaobjects["$app:appx_spec_table"][handle]`; (3) no match → nothing renders. So a broad rule lights up every matching product with O(1) storefront data.
+- **GID-faithful lookups** constructed in Liquid (`gid://shopify/Product/<id>` / `…/Collection/<id>`; feature 40 keys are raw GIDs, Liquid exposes only numeric `.id`). **`excludedProductGids` honored** — an excluded product renders nothing *from the map* (the override still wins); the exclude gate sits **after** the override so it can't suppress an explicit assignment. Inert today (`excludedProductGids` is `[]` until feature 45). **TAG routing intentionally not read** (`byTag` always `{}`, post-MVP). Collection scan is 50-chunked (Shopify's `for` cap) with break-on-first-hit, mirroring the rows loop. The render body is unchanged — the change only picks `spec`. Silent-by-design and the ACTIVE-status gate preserved; a missing `$app:routing` metafield resolves gracefully to nothing.
+- **Correctness catch:** the live projection default key is **`defaultTemplateHandle`**, not §9's loose "`default`" — reading `routing.default` would have silently broken the fallback tier; data-model §9 reconciled.
+- **Live-verified end to end** (scratch route on the dev store, then removed): seeded a `PRODUCT`-scope rule on an ACTIVE template routing the E88 Pro product (id `7897939443777`, no override, previously blank) → `rebuildShopRouting` wrote `byProduct:{gid→handle}` + stamped sync → the E88 storefront page then **rendered the routed template's 19-row table via tier 2** (`spec_present=true`, `status=ACTIVE`); clearing the rule + rebuild reverted E88 to blank. Confirmed the whole chain live: `shop.metafields["$app"].routing.value` **is** Liquid-readable (the feature-41 write is now proven readable too), the GID-key `byProduct` lookup resolves, and `metaobjects["$app:appx_spec_table"][handle]` renders.
+- **Live bug found + fixed (only a real storefront surfaces it):** Shopify wraps every app-extension `render` output in `<!-- BEGIN/END app snippet -->` comments, so the captured handle was polluted and `metaobjects[...][handle]` returned nil. `| strip` only trims whitespace; fixed with **`| strip_html | strip`** (a metaobject handle is a plain slug, so `strip_html` is lossless). Without the live run this would have shipped as a silently-broken routing tier. **Theme Check green** (4 files, 0 offenses); typecheck + build green (418 tests still green from feature 42). Detail → `context/features/43-storefront-routing-resolution.md`.
+
+**Product assignment engine — activation pipeline + DRAFT→ACTIVE dry-run gate (`42-…`)**
+- Wired the isolated pieces (37–41) into the two existing status-change surfaces (feature 36): the templates-list `intent:"status"` action (`app/routes/app.templates.tsx`) and the editor Save action (`app/routes/app.templates_.$id/route.tsx`). A DRAFT→ACTIVE transition now runs the **dry-run conflict gate** first — on a scope overlap with another ACTIVE template it **blocks atomically** (returns `{ ok:false, blocked, conflicts, error }`, writes nothing: no status, rows, metaobject, or routing); otherwise it writes status → re-syncs the metaobject → **rebuilds + publishes the shop routing** (`rebuildShopRouting`, 41). A transition **away from** ACTIVE just rebuilds; a rows-only save (status unchanged) skips the rebuild (fast path).
+- New decision core `app/shopify/assignmentActivation.server.ts`: pure `shouldRebuildRouting(current,target)` (rebuild iff the ACTIVE set changes) + `evaluateActivationConflicts(admin, shopId, templateId)` (composes `getAssignmentForTemplate` 37 → `getActiveIncludeScopesExcept` → `partitionOverlaps` 38 → `checkCrossDimensionConflicts` 39) + `activationBlockedMessage` (folds conflicts → one toast string). **Fails closed** — a thrown Shopify probe (39) is caught and returns a **block**, never a silent pass (priority #2). **Scope-less candidate ⇒ trivially passes** (the common case today: the scope picker is feature 44, so most templates have no rule — the gate becomes load-bearing once 44 ships). New shop-scoped read `getActiveIncludeScopesExcept(shopId, excludeTemplateId)` in `assignment.server.ts` (OTHER ACTIVE templates with an INCLUDE scope; candidate excluded so an ACTIVE template can't conflict with itself). Both delivery writes (`syncError`, `routingError`) are best-effort + surfaced via the existing toasts; only the pre-write conflict blocks.
+- **Conflict surfacing is minimal** (a concise error toast naming the other template(s)) — the rich conflict UI (which dimension, resolution picker) is **feature 44**; this slice returns the structured `conflicts` payload but surfaces only the toast. **Create-as-ACTIVE** and **ACTIVE-scope-edit** wiring are left for 44 (both are genuine no-ops today — new/edited templates carry no scope yet; the core is already scope-edit-ready). 16 new unit tests (2 `getActiveIncludeScopesExcept` shop-isolation, 14 activation-core incl. the full gate matrix + fail-closed + `activationBlockedMessage`). Full gate green (418 tests, typecheck, lint, build). **Live seeded verification (Step 5) pending** — requires a scratch `setTemplateScope` seeder (no scope UI until 44), mirroring feature 41's approach. Detail → `context/features/42-activation-pipeline-dry-run-gate.md`.
+
+**Product assignment engine — shop routing metafield writer + TOML def (`41-…`)**
+- `[shop.metafields.app.routing]` (json, `storefront = public_read`) added to `shopify.app.toml` and **deployed live** (version `appx-product-specs-table-5`) → resolves to reserved `$app`/`routing`, Liquid-readable as `shop.metafields["$app"].routing.value`.
+- `app/shopify/routing.server.ts` — `rebuildShopRouting(admin, shopId)`: reads ACTIVE templates + assignments (shop-scoped) → `flattenActiveRulesToRoutingRules` → `buildRoutingProjection` (feature 40) → **upserts `ShopStorefrontRouting` (Postgres first)** → `metafieldsSet` the `$app:routing` shop metafield → stamps `shopMetafieldGid` + `syncedToShopifyAt`. Pure unit-tested glue (`flattenActiveRulesToRoutingRules`, `buildRoutingMetafieldInput`, `readMetafieldsSetResult`); **honest failure** (`userErrors`/non-ok → `{ ok:false }`, sync NOT stamped, row already persisted); **empty ACTIVE set writes an empty map** (clears the storefront); shop isolation structural + `where {shopId}`. GraphQL (`metafieldsSet` + `{ shop { id } }`) validated @ 2025-10. **Not yet wired into activation** — feature 42 calls it.
+- **Live-verified end to end** (scratch route on the dev store, then removed): seeded a PRODUCT_TYPE rule → `rebuildShopRouting` wrote `byType:{DevRoutingCheck→handle}` to Postgres **and** stamped a real `shopMetafieldGid` (`gid://shopify/Metafield/36190945214529`) = the live `metafieldsSet` succeeded; cleanup rebuild reset `byType` to `{}` + re-stamped sync (proving the empty-map/clear path). **Resolves the plan's open questions:** the `$app`/`routing`/`json`/shop-owner write shape is correct and **no added access scope was needed**. 12 unit tests. Full gate green (402 tests, typecheck, lint, format, build). Detail → `context/features/41-shop-routing-metafield-writer.md`.
+
+**Product assignment engine — routing-projection builder + `add-routing` migration (`40-…`)**
+- `add-routing` migration (`20260708052957_add_routing`): `ShopStorefrontRouting` table (one row per shop; `shopId @unique`; `defaultTemplateHandle` + `byType`/`byVendor`/`byCollection`/`byTag`/`byProduct` JSONB `@default("{}")` + `excludedProductGids` JSONB `@default("[]")` + `shopMetafieldGid`/`syncedToShopifyAt` delivery state) + `Shop.storefrontRouting` back-relation. Model copied verbatim from data-model §5; confirmed live in Neon (`proud-hat-02103652`) with columns + `shopId` unique index. **No writer yet** — the row/metafield write is feature 41.
+- Pure `app/utils/routingProjection.ts` (no DB, no Admin API): `buildRoutingProjection(rules)` folds a flat `RoutingRule[]` (`{scope, scopeValue, mode, templateHandle}`, flattened across ACTIVE templates by the caller) into the delivery map — INCLUDE bucketed by scope (`ALL_PRODUCTS`→default, TYPE/VENDOR→raw-string key, COLLECTION/PRODUCT→raw-GID key), EXCLUDE PRODUCT→`excludedProductGids`. **Key format GID-faithful/lossless** (feature 43 constructs the GID token in Liquid; data-model §9 annotated); skips blank-handle rules (no null pointers); `byTag` stays `{}` (post-MVP); shop-agnostic + disjointness assumed (last-wins on a dup key). EXCLUDE projection built now though no EXCLUDE rows exist until feature 45. 13 unit tests. Full gate green (390 tests, typecheck, lint, format, build). Detail → `context/features/40-routing-projection-builder.md`.
+
+**Product assignment engine — cross-dimension conflict check (`39-…`)**
+- `app/shopify/assignmentConflict.server.ts` — the Shopify half of the DRAFT→ACTIVE dry-run (data-model §9): consumes feature 38's `needsCheck` bucket and resolves each undecidable pair with **one `products(first:1, query: A AND B)` existence probe**. Pure, unit-tested parts: `buildScopeFragment` (scope→search fragment: `product_type:'X'` / `vendor:'Y'` / `collection_id:<id>` / `id:<id>`, GID→numeric, ALL_PRODUCTS-throws guard), `buildExistenceQuery` (ANDs two fragments), `hasMatchingProduct` (edge-existence narrower). Live `checkCrossDimensionConflicts(admin, needsCheck)` runs the probes and returns only **confirmed** `{ other, reason }` collisions (the shape feature 42 merges into `blocking`). **Injection-safe** (single-quote/backslash escaping of merchant `product_type`/`vendor` strings) and **fails closed** — a non-ok HTTP response or GraphQL `errors` array **throws** (never a false all-clear that would let a conflicting template go ACTIVE, priority #2). Shop isolation is structural (session-bound `admin`). GraphQL validated via `validate_graphql_codeblocks` @ 2025-10 (`read_products`). 18 unit tests (boundary-mocked `admin.graphql`). Full gate green (377 tests, typecheck, lint, build). Detail → `context/features/39-cross-dimension-conflict-check.md`.
+
 **Product assignment engine — scope-overlap resolver (`38-…`)**
 - Pure `app/utils/assignmentOverlap.ts` (no DB, no Admin API): `classifyScopePair(a, b)` → `OVERLAP` / `DISJOINT` / `NEEDS_CHECK` per the data-model §9 set-algebra (ALL_PRODUCTS universal; PRODUCT/TYPE/VENDOR single-valued → same-scope-diff-value provably DISJOINT; COLLECTION multi-valued → diff → NEEDS_CHECK; cross-dimension → NEEDS_CHECK). `NEEDS_CHECK` carries the two selectors feature 39 ANDs into a `products(first:1,query)` probe (never contains ALL_PRODUCTS). Safety-biased: never DISJOINT when a shared product is possible. `partitionOverlaps` buckets a candidate against a list into `blocking` / `needsCheck` (the shape feature 42 consumes). 10 unit tests (full matrix + symmetry sweep + selector-guarantee + bucketing). Full gate green (359 tests, typecheck, lint, build). Detail → `context/features/38-scope-overlap-resolver.md`.
 
@@ -136,13 +282,13 @@ F (top-bar status/save model + cleanup)**.
 
 ## In Progress
 
-- **Product assignment engine — building on the 8-file plan (features 37–44).** Done: 37 data foundation, 38 scope-overlap resolver (pure). **Next: feature 39** — cross-dimension existence check (`assignmentConflict.server.ts`: renders the NEEDS_CHECK selectors into `products(first:1,query)` probes, admin.graphql mocked, GraphQL validated). Per-step build specs land in `context/features/NN-*.md` as each is started; UI location (Settings-tab vs standalone `/assign`) stays open until feature 44.
+- **Product assignment engine — building on the 8-file plan (features 37–44).** Done: 37 data foundation, 38 scope-overlap resolver (pure), 39 cross-dimension existence check (`assignmentConflict.server.ts`, Shopify probe + fail-closed), 40 routing-projection builder + `add-routing` migration (`ShopStorefrontRouting`; pure `routingProjection.ts`), 41 shop routing metafield writer + `[shop.metafields.app.routing]` TOML def (`routing.server.ts`, deployed + live-verified), **42 activation pipeline + DRAFT→ACTIVE dry-run gate** (`assignmentActivation.server.ts`; wired into both status surfaces — atomic block on conflict, fail-closed, routing rebuild on ACTIVE-set change), **43 storefront routing resolution** (`snippets/spec-table-resolve.liquid` + block wired to 3-tier override→exclude→routing resolution; Theme Check green), **44 assignment scope picker UI + rich conflict warnings** (`SettingsTab.tsx` scope picker riding the SaveBar; gate generalized to the PENDING scope; rich conflict banner; `scopeResourceLabel.server.ts`). The engine is now **merchant-driven end to end** — 37–44 all implemented, gate-green, and **live-verified on the dev store (feature 44 Step 6, 2026-07-08)**: scope-set→routing→storefront, the atomic block with the rich banner, banner-clears-on-change, resolve→activate, and the clear-scope→rebuild path all confirmed through the real UI (closing features 42 & 43's previously-deferred live passes). The store was restored to its exact pre-test state afterward. **Now on the feature-45 series** — feature 45 was found too big for one unit (three unrelated system boundaries) and **split** (2026-07-09): **45 EXCLUDE carve-outs** (**complete + gate-green + Theme-Check-green + live-verified end to end on the dev store, 2026-07-09** — `context/features/45-exclude-carve-outs.md`) → **46 multi-value scopes (server relaxation)** → **47 multi-value scopes (UI)** → per-product overflow materialization + list "Assigned Products" count **deferred post-45** (a scaling valve behind a threshold; only if large selected-product sets become real). Locked scope decisions (2026-07-09): multi-value applies to **PRODUCT + COLLECTION only** (TYPE/VENDOR stay single-valued); materialization deferred. **No migrations** needed for the whole series — `mode: EXCLUDE`, multi-row INCLUDE (`@@unique` already permits it), and `ProductAssignmentIndex` are all in the schema. Two invariant-sensitive design decisions locked in the 45 spec: (A) the conflict gate must **subtract EXCLUDE carve-outs** (an EXCLUDE resolves a PRODUCT-level overlap; broad×broad still blocks); (B) a **storefront-resolver order bug** — `spec-table-resolve.liquid` currently wraps `byProduct` inside the `excludedProductGids` gate, so an excluded product never reaches its own explicit assignment; fix = check override → `byProduct` **before** the exclude gate. Per-step build specs land in `context/features/NN-*.md` as each is started.
 
 ---
 
 ## Next Up
 
-1. **Product assignment engine** (design locked 2026-07-07 — `data-model.md` §5/§9): **rigid, block-on-conflict, merchant-controlled** (Moon-Bundles style). Being built on an **8-file plan** (features 37–44, small verifiable steps): **37 data foundation ✅** → **38 scope-overlap resolver ✅** → 39 cross-dimension existence check (Shopify) → 40 routing-projection builder + `add-routing` migration → 41 shop routing metafield writer + TOML def → 42 activation dry-run gate (wires into both status surfaces) → 43 storefront routing resolution (Liquid) → 44 assignment UI (scope picker). Then 45 (EXCLUDE + per-product overrides) + 46 (docs wrap). Design recap: one scope per template; dry-run **blocks activation** on overlap with another ACTIVE template (O(rules) set-algebra + `products(query,first:1)`); DRAFT may hold a conflict, ACTIVE may not; **no `priority` knob**; broad rules deliver via **one shop-level `[shop.metafields.app.routing]` json map** resolved in Liquid by handle; per-product `metaobject_reference` metafield only for bounded overrides. Rides Reshell Phase E.
+1. **Product assignment engine** (design locked 2026-07-07 — `data-model.md` §5/§9): **rigid, block-on-conflict, merchant-controlled** (Moon-Bundles style). Being built on an **8-file plan** (features 37–44, small verifiable steps): **37 data foundation ✅** → **38 scope-overlap resolver ✅** → **39 cross-dimension existence check (Shopify) ✅** → **40 routing-projection builder + `add-routing` migration ✅** → **41 shop routing metafield writer + TOML def ✅** → **42 activation dry-run gate (wired into both status surfaces) ✅** → **43 storefront routing resolution (Liquid) ✅** → **44 assignment UI (scope picker) + rich conflict warnings ✅** (live-verified on the dev store 2026-07-08). Then the **45-series** (split 2026-07-09): **45 EXCLUDE carve-outs ✅** (complete + gate-green + live-verified on the dev store 2026-07-09) → **46 multi-value scopes — server** → **47 multi-value scopes — UI** (PRODUCT/COLLECTION only) → materialization **deferred** → docs wrap. Design recap: one scope per template; dry-run **blocks activation** on overlap with another ACTIVE template (O(rules) set-algebra + `products(query,first:1)`); DRAFT may hold a conflict, ACTIVE may not; **no `priority` knob**; broad rules deliver via **one shop-level `[shop.metafields.app.routing]` json map** resolved in Liquid by handle; per-product `metaobject_reference` metafield only for bounded overrides. Rides Reshell Phase E.
 2. **Reshell Phases B–F**: B (Style tab) → C (Settings) → D (device previews — read-only Desktop/Tablet/Mobile) → E (assignment) → F (top-bar status+save model + cleanup).
 3. **Templates-list Phase 2**: search / sort / pagination — server-side filtering returns *with* pagination when the list can grow large. Multi-select bulk actions later.
 
@@ -163,8 +309,8 @@ F (top-bar status/save model + cleanup)**.
 - ~~Admin API mutations for the app-owned metaobject definition/entries~~ **RESOLVED (Step 9.5):** `metaobjectDefinitionCreate` / `…ByType` / `metaobjectUpsert` / `metaobjectByHandle` (handle `template-{id}`), validated @ 2025-10 — see `metaobjects.server.ts` + `data-model.md` §10.
 - **Storefront Liquid read path** — **RESOLVED + verified live (slice 1, `context/features/34-…`):** the product → template pointer is a **`metaobject_reference` product metafield** declared in `shopify.app.toml` (`[product.metafields.app.spec_table]`, `metaobject_reference<$app:appx_spec_table>`). Liquid access is the reserved-prefix **bracket** form `product.metafields["$app"].spec_table.value` → the metaobject (dot form does NOT resolve the reserved namespace); `rows.value` (json field) is an iterable array. An app-owned `metaobject_reference` **does** resolve its app-owned metaobject on the storefront. **Correction:** app-owned metafields/metaobjects are **not** always Liquid-readable — they require `access.storefront = public_read` (set in TOML); the admin "Storefront API access" toggle is non-representative for app-owned defs. **Supersedes** the `appx.spec_table_template_handle` single-line-text sketch in `data-model.md` §9.
 - Best storefront event strategy for selected-variant changes across themes.
-- ~~Exact UX for preventing/warning about assignment conflicts in MVP.~~ **DIRECTION SET (2026-07-07, `data-model.md` §9):** rigid **block-on-conflict** (Moon-Bundles style) — a template can't go ACTIVE while its scope overlaps another ACTIVE template; DRAFT may hold a conflict; no priority tiebreak. Remaining detail: exact conflict-message copy + how the merchant picks the resolution (narrow scope / add EXCLUDE exception / leave draft).
-- **Assignment location:** direction is to move Product Assignment into the editor's **Settings tab** (not locked). Open: does the Settings tab **fully replace** the standalone `/app/templates/:id/assign` screen, or does `/assign` survive as a deep view for conflict warnings + assignment summary? Decide before building the assignment slice.
+- ~~Exact UX for preventing/warning about assignment conflicts in MVP.~~ **RESOLVED (feature 44, 2026-07-08):** rigid **block-on-conflict** (Moon-Bundles style) — a template can't go ACTIVE while its scope overlaps another ACTIVE template; DRAFT may hold a conflict; no priority tiebreak. **Conflict copy + resolution shipped**: on a blocked Save the Settings tab shows a persistent critical `s-banner` naming each colliding template (with a link) and the **three resolutions** — narrow this template's scope, set it to "No products", or set the other template back to Draft. (An EXCLUDE-exception resolution arrives with feature 45's carve-out UI.)
+- ~~**Assignment location:** direction is to move Product Assignment into the editor's **Settings tab** (not locked).~~ **RESOLVED (feature 44, 2026-07-08):** the editor **Settings tab** is the assignment home — **no standalone `/assign` route**. The scope picker + rich conflict banner live in `SettingsTab.tsx` and ride the same SaveBar as status; assignment is a template-level setting alongside status. A deep "assignment summary" screen can come later if ever needed; MVP does not split it out.
 - **Settings-tab "Display rules"** (mockup's `hide rows with empty values` / `show section dividers` / `show on mobile`) are dummy/illustrative — each needs a real definition + reconciliation with the per-row `hideWhenEmpty` flag before building.
 - **Top-bar name-edit affordance:** inline title edit vs a Rename item in the ⋯ menu — settle when the top bar (Phase F) is built.
 - ~~**Templates-list Archive — deferred entirely (2026-06-27).**~~ **RESOLVED (feature 36, 2026-07-03):** status change (incl. Archive) now ships on BOTH the list ⋯ menu ("Change status" modal) and the editor Settings tab. Built exactly as this note anticipated — a rows-untouching `setTemplateStatusForShop` **plus** the extracted shared `syncTemplateToMetaobject` (`app/shopify/templateSync.server.ts`) re-syncs the storefront metaobject so an archived (ex-ACTIVE) template stops rendering. Browser-verified via the DJI ACTIVE→DRAFT→ACTIVE storefront round-trip.

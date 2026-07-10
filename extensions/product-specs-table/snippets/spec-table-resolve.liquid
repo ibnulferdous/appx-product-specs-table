@@ -1,0 +1,83 @@
+{% comment %}
+  Appx — Product Specs Table
+  Resolves the current product to its assigned template HANDLE via the shop-level
+  routing map (feature 43, context/features/43-storefront-routing-resolution.md).
+
+  Params (render scope is isolated — both passed explicitly):
+  - product: the current product
+  - routing: the parsed `shop.metafields["$app"].routing.value` json object, i.e.
+             { defaultTemplateHandle, byType, byVendor, byCollection, byTag,
+               byProduct, excludedProductGids } (feature 40 shape, written by 41).
+
+  Emits: the resolved template handle STRING, or nothing. Liquid render scope is
+  isolated (a snippet cannot return a value), so the block CAPTURES this output.
+
+  Resolution order (data-model §9, feature 45 Decision B). The ACTIVE rule set is
+  disjoint (feature 42), so at most one key matches — the order is efficiency, never
+  precedence. An EXPLICIT single-product assignment (`byProduct`) is checked BEFORE
+  the exclude gate, so an excluded product still reaches its own dedicated table
+  (the "all products EXCEPT X, and X gets its own table" story); the exclude gate
+  then only carves products out of the BROAD tiers:
+    byProduct[<product GID>]
+      -> excluded? -> nothing
+      -> byType[type] -> byVendor[vendor]
+        -> byCollection[<collection GID>] (scan) -> defaultTemplateHandle
+  (The block's tier-1 per-product override metafield sits ahead of all of this.)
+
+  Keys are GID-faithful (feature 40): byProduct / byCollection keys are the raw
+  `gid://shopify/...` token, but Liquid only exposes the numeric `.id`, so we
+  CONSTRUCT the GID token before each lookup. byType / byVendor keys are the raw
+  selector strings (a blank product type/vendor indexes a key that never exists,
+  so it simply falls through). TAG routing is intentionally NOT read — `byTag` is
+  always {} (post-MVP; absent from the AssignmentScope enum).
+
+  Collections are scanned in 50-item chunks (Shopify caps `for` at 50), breaking
+  on the first hit — mirroring the block's rows loop.
+{% endcomment %}
+{%- liquid
+  assign handle = ''
+
+  if routing != blank
+    assign pgid = 'gid://shopify/Product/' | append: product.id
+
+    # An explicit single-product assignment wins even for an excluded product
+    # (feature 45 Decision B) — it is checked BEFORE the exclude gate.
+    assign handle = routing.byProduct[pgid]
+
+    # The broad tiers are carved out by excludedProductGids: an excluded product
+    # matches none of them (renders nothing unless byProduct claimed it above).
+    if handle == blank
+      unless routing.excludedProductGids contains pgid
+        assign handle = routing.byType[product.type]
+
+        if handle == blank
+          assign handle = routing.byVendor[product.vendor]
+        endif
+
+        if handle == blank
+          assign coll_chunks = product.collections.size | plus: 49 | divided_by: 50
+          for chunk in (1..coll_chunks)
+            assign coll_offset = chunk | minus: 1 | times: 50
+            for collection in product.collections offset: coll_offset limit: 50
+              assign cgid = 'gid://shopify/Collection/' | append: collection.id
+              assign coll_hit = routing.byCollection[cgid]
+              if coll_hit != blank
+                assign handle = coll_hit
+                break
+              endif
+            endfor
+            if handle != blank
+              break
+            endif
+          endfor
+        endif
+
+        if handle == blank
+          assign handle = routing.defaultTemplateHandle
+        endif
+      endunless
+    endif
+  endif
+
+  echo handle
+-%}

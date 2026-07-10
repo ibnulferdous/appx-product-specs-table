@@ -20,6 +20,45 @@ export const ASSIGNMENT_SCOPES = [
 // can be written straight to the DB without a cast.
 export type AssignmentScopeValue = (typeof ASSIGNMENT_SCOPES)[number];
 
+// The sentinel the assignment picker (feature 44) uses for "no assignment" — a
+// UI-only value that is NOT an AssignmentScope: it means "clear the template's
+// INCLUDE rule so it matches no products". The editor engine carries it as the
+// scope-kind whenever a template has no rule; the Save action reads it as a clear.
+export const SCOPE_NONE = "NONE";
+
+// The scope-kind the picker binds to: either the "none" sentinel or a real
+// AssignmentScope. Kept distinct from `AssignmentScopeValue` so the persisted
+// rule type never accidentally admits the UI-only sentinel.
+export type ScopeSelectionValue = typeof SCOPE_NONE | AssignmentScopeValue;
+
+// Options for the assignment scope-kind <s-select> (feature 44), in picker order.
+// Client-safe and colocated with `ASSIGNMENT_SCOPES` (mirrors
+// `TEMPLATE_STATUS_OPTIONS`) so the picker and any server copy share one source of
+// truth. "None" leads because a brand-new template is unassigned by default.
+export const SCOPE_OPTIONS: { value: ScopeSelectionValue; label: string }[] = [
+  { value: SCOPE_NONE, label: "No products (not assigned)" },
+  { value: "ALL_PRODUCTS", label: "All products" },
+  { value: "PRODUCT", label: "A specific product" },
+  { value: "PRODUCT_TYPE", label: "Product type" },
+  { value: "VENDOR", label: "Vendor" },
+  { value: "COLLECTION", label: "A specific collection" },
+];
+
+/**
+ * Client mirror of the picker's value-required rule (feature 44), driving the
+ * inline error + the Save-disable in the editor. Pure + client-safe. `SCOPE_NONE`
+ * is always complete (it clears the rule); every real scope defers to the shared
+ * `validateScope` so the client and server accept EXACTLY the same shapes (the
+ * server re-validates — this is UX only, never the security boundary).
+ */
+export function isScopeComplete(
+  scope: string,
+  scopeValue: string | null,
+): boolean {
+  if (scope === SCOPE_NONE) return true;
+  return validateScope(scope, scopeValue).ok;
+}
+
 // Every listed literal must be a real AssignmentScope (compile-time guard against
 // a typo drifting from the Prisma enum).
 const _scopesAreValid = ASSIGNMENT_SCOPES satisfies readonly AssignmentScope[];

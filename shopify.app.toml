@@ -80,6 +80,21 @@ description = "The Appx spec table rendered on this product's storefront page."
   admin = "merchant_read_write"
   storefront = "public_read"
 
+# Shop-level routing map (attribute -> template handle). One json metafield per
+# shop, rebuilt from the ACTIVE disjoint ProductAssignment rows (data-model.md §9)
+# by `app/shopify/routing.server.ts`. `storefront = public_read` makes it
+# Liquid-readable in the Theme App Extension as
+# `shop.metafields["$app"].routing.value` (json auto-parsed). Reserved namespace
+# resolves to `$app` / key `routing` (feature 41).
+[shop.metafields.app.routing]
+type = "json"
+name = "Appx Storefront Routing"
+description = "Maps product attributes to the assigned Appx spec-table handle."
+
+  [shop.metafields.app.routing.access]
+  admin = "merchant_read_write"
+  storefront = "public_read"
+
 [webhooks]
 api_version = "2026-07"
 

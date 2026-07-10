@@ -69,6 +69,7 @@ export function SpecTableEditor({ engine }: { engine: RowEngine }) {
           variant="primary"
           onClick={engine.handleSave}
           loading={engine.saving}
+          disabled={!engine.canSave}
         >
           Save
         </button>

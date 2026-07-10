@@ -20,6 +20,12 @@ import {
 } from "../models/template.server";
 import { deleteSpecTableMetaobject } from "../shopify/metaobjects.server";
 import { syncTemplateToMetaobject } from "../shopify/templateSync.server";
+import {
+  activationBlockedMessage,
+  evaluateActivationConflicts,
+  shouldRebuildRouting,
+} from "../shopify/assignmentActivation.server";
+import { rebuildShopRouting } from "../shopify/routing.server";
 import { BADGE_TONES, TEMPLATE_STATUS_OPTIONS } from "../utils/templateStatus";
 import { NAME_MAX_LENGTH, validateTemplateName } from "../utils/templateName";
 import {
@@ -332,6 +338,30 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   // so the list revalidates the badge in place; `syncError` (best-effort — Postgres
   // is the source of truth) is surfaced so the merchant knows to retry the sync.
   if (payload.intent === "status") {
+    // Read the current status first — the gate decision (is this a DRAFT→ACTIVE
+    // transition?) and the rebuild decision (did the ACTIVE set change?) both need
+    // it. Shop-scoped, so a foreign/unknown id reads nothing (priority #1).
+    const existing = await getTemplateByIdForShop(shop.id, id);
+    if (!existing) {
+      return { ok: false as const, error: "Template not found" };
+    }
+    const current = existing.status;
+
+    // DRAFT→ACTIVE dry-run gate (feature 42): if the template's scope overlaps
+    // another ACTIVE template's scope, BLOCK — write nothing (atomic). Fails
+    // closed (an unverifiable Shopify probe blocks, never silently passes).
+    if (payload.status === "ACTIVE" && current !== "ACTIVE") {
+      const gate = await evaluateActivationConflicts(admin, shop.id, id);
+      if (!gate.ok) {
+        return {
+          ok: false as const,
+          blocked: true as const,
+          conflicts: gate.conflicts,
+          error: activationBlockedMessage(gate.conflicts),
+        };
+      }
+    }
+
     const result = await setTemplateStatusForShop(shop.id, id, payload.status);
     if (!result.ok) {
       return { ok: false as const, error: result.error };
@@ -341,7 +371,25 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       shop,
       result.data,
     );
-    return { ok: true as const, intent: "status" as const, syncError };
+
+    // Rebuild + publish the shop routing map only when the ACTIVE set actually
+    // changed (to/from ACTIVE). Best-effort like syncError — Postgres already
+    // holds the durable status write; a routing failure is surfaced, not rolled
+    // back (data-model.md §9).
+    let routingError: string | undefined;
+    if (shouldRebuildRouting(current, result.data.status)) {
+      const routing = await rebuildShopRouting(admin, shop.id);
+      if (!routing.ok) {
+        routingError = routing.error;
+      }
+    }
+
+    return {
+      ok: true as const,
+      intent: "status" as const,
+      syncError,
+      routingError,
+    };
   }
 
   // Duplicate: clone the SAVED template (DRAFT, fresh row ids) shop-scoped. The
@@ -557,8 +605,12 @@ export default function TemplatesPage() {
       // rendering when its metaobject is still stale.
       shopify.modal.hide(STATUS_MODAL_ID);
       setPendingStatus(null);
-      if (data.syncError) {
-        shopify.toast.show(data.syncError, { isError: true });
+      // Both storefront-delivery writes are best-effort (Postgres is the source
+      // of truth); surface whichever failed so the merchant knows to retry rather
+      // than a bare success. The routing rebuild only ran on an ACTIVE-set change.
+      const deliveryWarning = data.syncError ?? data.routingError;
+      if (deliveryWarning) {
+        shopify.toast.show(deliveryWarning, { isError: true });
       } else {
         shopify.toast.show("Status updated");
       }
