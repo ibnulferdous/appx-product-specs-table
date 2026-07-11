@@ -150,6 +150,39 @@ F (top-bar status/save model + cleanup)**.
   store was being modified in parallel. (One transient `Failed to fetch` on the
   create-Save *response* — a dev-tunnel/HMR blip; the server side-effect completed,
   two rows written.) Detail → `context/features/47-multi-value-scopes-ui.md`.
+- **Chip visual polish — Kaching-style cards (follow-up, 2026-07-11).** The scope
+  chips (and the `ALL_PRODUCTS` EXCLUDE "Except these products" chips) are now
+  **[thumbnail] [title] [red trash button]** cards on one row (a shared
+  `ResourceChipCard`, a 3-column `auto 1fr auto` grid + `background="base"`/border so
+  the row never wraps and reads as a distinct tile against the subdued sidebar) —
+  replacing the plain title + text "Remove" link, matching the Kaching Bundle
+  reference the merchant shared. Thumbnails come from the resource picker at pick time
+  (`images[]`/`image`) and, on reload, from the loader: `resolveScopeValueLabels` was
+  reshaped into **`resolveScopeResourceDetails`** returning a `GID → { label, image }`
+  map — `Product.featuredImage.url`/`Collection.image.url` fetched in the **same**
+  batched `nodes(ids:)` query as the titles (no extra round-trip; fail-soft to a null
+  image → `s-thumbnail` placeholder). Excludes moved onto that same batched resolver
+  (one query, was N single `node` calls; the scalar `resolveScopeValueLabel` is
+  retired). Display-only — no persistence/gate/routing change. Full gate green
+  (**506 tests**, typecheck, lint, format, build); markup + GraphQL validated with the
+  Shopify MCP validators. **Live-verified:** the picker rendered two Kaching-style
+  cards with real drone thumbnails + red trash buttons on a `/new` template (discarded,
+  zero DB footprint).
+- **Long-list collapse + picker preselect (follow-up, 2026-07-11).** So a 100-product
+  assignment doesn't stack 100 cards in the sidebar, a shared `CollapsibleChipList`
+  (`MAX_INLINE_CHIPS = 4`) renders both chip lists (scope + `ALL_PRODUCTS` excludes)
+  inline up to 4, then collapses behind a **"View all selected (N)"** toggle that
+  expands into a height-capped (~20rem) scroll `<div>` ("Show less" re-collapses); the
+  "Add more / Select" button stays visible throughout. Matches the Kaching Bundles
+  collapse the merchant shared. Also aligned the EXCLUDE picker (`addExcludes`) with the
+  scope picker: it now passes `selectionIds` (current exceptions) + REPLACES from the
+  returned set, so reopening either picker shows the current selection **checked**
+  (uncheck-to-remove). Pure client-side, display-only. Gate green (**506 tests**,
+  typecheck, lint, format, build). **Live-verified on the dev store (2026-07-11):** a
+  `/new` PRODUCT scope with 6 products collapsed to a **"View all selected (6)"**
+  button (no stacked cards); clicking it expanded the full list inside a height-capped
+  scroll container (thumbnails + trash) with **"Show less"**, which re-collapsed it.
+  Discarded — zero DB footprint.
 
 **Product assignment engine — multi-value scopes, server (`46-…`)**
 - Relaxes "exactly one INCLUDE rule per template" to **1..N INCLUDE rows for

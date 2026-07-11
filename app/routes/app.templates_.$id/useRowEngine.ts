@@ -70,20 +70,25 @@ interface PendingPaste {
 // One member of a template's assignment scope value SET (features 44/46/47): the
 // raw value (a PRODUCT/COLLECTION GID, or free text for TYPE/VENDOR) plus its
 // resolved display label (the resource title for a GID, falling back to the GID; the
-// value itself for free text) so the picker shows readable chips, not raw ids. Only
-// the `value` rides the dirty snapshot + Save payload; the label is presentation.
+// value itself for free text) and an optional thumbnail image URL (feature 47; null
+// for free-text scopes and on any resolution miss) so the picker shows a rich chip —
+// thumbnail + title + remove — not a raw id. Only the `value` rides the dirty
+// snapshot + Save payload; label + image are presentation.
 export interface ScopeValueSeed {
   value: string;
   label: string;
+  image: string | null;
 }
 
 // One EXCLUDE carve-out for the Settings-tab "Except these products" list (feature
 // 45): the excluded product's GID plus its resolved display title (falls back to
-// the GID). Only the GIDs ride the dirty snapshot + Save payload; the label is
-// presentation, mirroring the scope chip's `scopeValueLabel`.
+// the GID) and an optional thumbnail image URL (feature 47; null on a miss). Only
+// the GIDs ride the dirty snapshot + Save payload; label + image are presentation,
+// mirroring the scope chip.
 export interface ExcludeSeed {
   gid: string;
   label: string;
+  image: string | null;
 }
 
 export interface UseRowEngineArgs {
@@ -209,10 +214,11 @@ export function useRowEngine({
   }, []);
 
   // EXCLUDE carve-outs (feature 45). `excludes` is the ordered GID list that rides
-  // the dirty snapshot + Save payload; `excludeLabels` is a GID→title map for
-  // readable chips (presentation only). `setExcludes` replaces both from a
-  // `{ gid, label }[]` (the SettingsTab builds the new list on add/remove). Shown
-  // only under the ALL_PRODUCTS scope (SettingsTab gates the control), but the
+  // the dirty snapshot + Save payload; `excludeLabels` (GID→title) and
+  // `excludeImages` (GID→thumbnail url, feature 47) are presentation-only side maps
+  // for the rich chips. `setExcludes` replaces all three from a
+  // `{ gid, label, image }[]` (the SettingsTab builds the new list on add/remove).
+  // Shown only under the ALL_PRODUCTS scope (SettingsTab gates the control), but the
   // state is unconditional so Discard/seed round-trips cleanly.
   const [excludes, setExcludeGids] = useState<string[]>(() =>
     initialExcludes.map((e) => e.gid),
@@ -220,9 +226,13 @@ export function useRowEngine({
   const [excludeLabels, setExcludeLabels] = useState<Record<string, string>>(
     () => Object.fromEntries(initialExcludes.map((e) => [e.gid, e.label])),
   );
+  const [excludeImages, setExcludeImages] = useState<
+    Record<string, string | null>
+  >(() => Object.fromEntries(initialExcludes.map((e) => [e.gid, e.image])));
   const setExcludes = useCallback((next: ExcludeSeed[]) => {
     setExcludeGids(next.map((e) => e.gid));
     setExcludeLabels(Object.fromEntries(next.map((e) => [e.gid, e.label])));
+    setExcludeImages(Object.fromEntries(next.map((e) => [e.gid, e.image])));
   }, []);
   // Client mirror of the value-required rule over the SET (UX only; the server
   // re-validates): an incomplete scope (e.g. a PRODUCT kind with no product picked)
@@ -1097,9 +1107,10 @@ export function useRowEngine({
     setScopeValues,
     scopeComplete,
     conflicts,
-    // EXCLUDE carve-outs (feature 45)
+    // EXCLUDE carve-outs (feature 45; thumbnails feature 47)
     excludes,
     excludeLabels,
+    excludeImages,
     setExcludes,
     // Save / dirty
     isDirty,

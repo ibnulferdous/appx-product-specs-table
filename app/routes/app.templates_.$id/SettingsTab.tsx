@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { useAppBridge } from "@shopify/app-bridge-react";
 import { TEMPLATE_STATUS_OPTIONS } from "../../utils/templateStatus";
 import {
@@ -5,7 +6,7 @@ import {
   SCOPE_OPTIONS,
   isScopeSetComplete,
 } from "../../utils/assignmentScope";
-import type { RowEngine } from "./useRowEngine";
+import type { ExcludeSeed, RowEngine, ScopeValueSeed } from "./useRowEngine";
 
 // The editor's Settings-tab sidebar (feature 36 status control + feature 44
 // assignment scope picker). Presentational — it reads the live status/scope off
@@ -25,6 +26,139 @@ function readValue(event: Event): string {
   return (event.currentTarget as unknown as { value: string }).value;
 }
 
+// The subset of an App Bridge resource-picker result we read: the GID, the title,
+// and the thumbnail. A product carries `images[]`, a collection a single `image`;
+// each image field has historically been `originalSrc` (newer builds also expose
+// `url`), so we read both defensively.
+type PickedImage = { originalSrc?: string; url?: string };
+type PickedResource = {
+  id: string;
+  title?: string;
+  images?: PickedImage[];
+  image?: PickedImage | null;
+};
+
+// Pull a thumbnail URL off a picked product/collection, tolerating either field
+// name and a resource with no image (→ null, the chip renders a placeholder).
+function pickedImageUrl(resource: PickedResource): string | null {
+  const productImage = resource.images?.[0];
+  const collectionImage = resource.image ?? undefined;
+  return (
+    productImage?.originalSrc ??
+    productImage?.url ??
+    collectionImage?.originalSrc ??
+    collectionImage?.url ??
+    null
+  );
+}
+
+// A Kaching-style resource chip: thumbnail + title + a critical-tone trash button
+// on one row (feature 47). Shared by the INCLUDE scope list and the EXCLUDE "Except
+// these products" list so both read identically. A 3-column `auto 1fr auto` grid so
+// the row NEVER wraps in the narrow (~300px) Settings sidebar — the thumbnail and
+// trash keep their intrinsic width and the title column (1fr) absorbs the rest,
+// wrapping its own text over two lines if long. `background="base"` (not the
+// sidebar's `subdued`) + a border make the card read as a distinct tile against the
+// subdued sidebar. `s-thumbnail` renders its own placeholder when `src` is empty, so
+// a resource with no image (or an unresolved one) still shows a neat square.
+function ResourceChipCard({
+  image,
+  label,
+  onRemove,
+  removeLabel,
+}: {
+  image: string | null;
+  label: string;
+  onRemove: () => void;
+  removeLabel: string;
+}) {
+  return (
+    <s-box
+      background="base"
+      border="base"
+      borderRadius="base"
+      padding="small-200"
+    >
+      <s-grid
+        gridTemplateColumns="auto 1fr auto"
+        gap="small-200"
+        alignItems="center"
+      >
+        <s-thumbnail src={image ?? ""} alt="" size="small"></s-thumbnail>
+        <s-text>{label}</s-text>
+        <s-button
+          variant="tertiary"
+          tone="critical"
+          icon="delete"
+          accessibilityLabel={removeLabel}
+          onClick={onRemove}
+        ></s-button>
+      </s-grid>
+    </s-box>
+  );
+}
+
+// Above this many selected resources the chip list collapses behind a "View all
+// selected (N)" toggle, so a large assignment (e.g. 100 products) doesn't stack 100
+// cards down the narrow Settings sidebar — matching the Kaching Bundles pattern the
+// merchant shared (list a few inline; a summary button beyond that). At or below it,
+// every chip renders inline as before.
+const MAX_INLINE_CHIPS = 4;
+
+type ChipItem = {
+  key: string;
+  image: string | null;
+  label: string;
+  removeLabel: string;
+  onRemove: () => void;
+};
+
+// A chip list that collapses when long. ≤ MAX_INLINE_CHIPS → all chips inline. More
+// than that → hidden behind a "View all selected (N)" toggle; expanding reveals the
+// full list inside a height-capped scroller so it can never blow out the page (and
+// "Show less" re-collapses). The trailing Add button is a sibling in the caller, so
+// it stays visible in every state. Returns null when empty (the caller renders the
+// "Select …" button on its own).
+function CollapsibleChipList({ items }: { items: ChipItem[] }) {
+  const [expanded, setExpanded] = useState(false);
+  const isLong = items.length > MAX_INLINE_CHIPS;
+  if (items.length === 0) return null;
+
+  const chips = (
+    <s-stack direction="block" gap="small-200">
+      {items.map((item) => (
+        <ResourceChipCard
+          key={item.key}
+          image={item.image}
+          label={item.label}
+          onRemove={item.onRemove}
+          removeLabel={item.removeLabel}
+        />
+      ))}
+    </s-stack>
+  );
+
+  return (
+    <s-stack direction="block" gap="small-200">
+      {!isLong ? (
+        chips
+      ) : expanded ? (
+        // `s-box`'s `overflow` only supports hidden/visible, so a plain scroll div
+        // caps the expanded list's height (~20rem) rather than growing unbounded.
+        <div style={{ maxHeight: "20rem", overflowY: "auto" }}>{chips}</div>
+      ) : null}
+      {isLong ? (
+        <s-button
+          variant="tertiary"
+          onClick={() => setExpanded((value) => !value)}
+        >
+          {expanded ? "Show less" : `View all selected (${items.length})`}
+        </s-button>
+      ) : null}
+    </s-stack>
+  );
+}
+
 export function SettingsTab({ engine }: { engine: RowEngine }) {
   const {
     status,
@@ -36,6 +170,7 @@ export function SettingsTab({ engine }: { engine: RowEngine }) {
     conflicts,
     excludes,
     excludeLabels,
+    excludeImages,
     setExcludes,
   } = engine;
   const shopify = useAppBridge();
@@ -71,36 +206,47 @@ export function SettingsTab({ engine }: { engine: RowEngine }) {
       type,
       multiple: true,
       selectionIds: scopeValues.map((item) => ({ id: item.value })),
-    })) as Array<{ id: string; title?: string }> | undefined;
+    })) as PickedResource[] | undefined;
     if (!selected) return;
-    const byGid = new Map<string, string>();
+    // The picker returns the FULL final selection, so REPLACE the set (dedupe by
+    // GID). Capture each resource's title + thumbnail for the rich chip.
+    const byGid = new Map<string, ScopeValueSeed>();
     for (const resource of selected) {
-      byGid.set(resource.id, resource.title ?? resource.id);
+      byGid.set(resource.id, {
+        value: resource.id,
+        label: resource.title ?? resource.id,
+        image: pickedImageUrl(resource),
+      });
     }
-    setScopeValues([...byGid].map(([value, label]) => ({ value, label })));
+    setScopeValues([...byGid.values()]);
   };
 
   const removeScopeValue = (value: string) => {
     setScopeValues(scopeValues.filter((item) => item.value !== value));
   };
 
-  // Add products to the EXCLUDE carve-out list (feature 45). Multi-select picker;
-  // MERGE the picked products into the existing set (dedupe by GID, keep existing
-  // labels) so a second "Add more" pass appends rather than replaces. Removal is
-  // per-chip below.
+  // Edit the EXCLUDE carve-out list (feature 45). Multi-select picker, preseeded via
+  // `selectionIds` with the current exceptions so reopening shows them CHECKED — the
+  // same preselect + REPLACE model as the scope picker above: the picker returns the
+  // full final selection (checked minus unchecked), so unchecking one in the picker
+  // removes it (per-chip trash still works too). A cancel returns undefined → keep the
+  // current set.
   const addExcludes = async () => {
     const selected = (await shopify.resourcePicker({
       type: "product",
       multiple: true,
-    })) as Array<{ id: string; title?: string }> | undefined;
-    if (!selected || selected.length === 0) return;
-    const byGid = new Map<string, string>(
-      excludes.map((gid) => [gid, excludeLabels[gid] ?? gid]),
-    );
+      selectionIds: excludes.map((gid) => ({ id: gid })),
+    })) as PickedResource[] | undefined;
+    if (!selected) return;
+    const byGid = new Map<string, ExcludeSeed>();
     for (const product of selected) {
-      byGid.set(product.id, product.title ?? product.id);
+      byGid.set(product.id, {
+        gid: product.id,
+        label: product.title ?? product.id,
+        image: pickedImageUrl(product),
+      });
     }
-    setExcludes([...byGid].map(([gid, label]) => ({ gid, label })));
+    setExcludes([...byGid.values()]);
   };
 
   const removeExclude = (gid: string) => {
@@ -110,6 +256,7 @@ export function SettingsTab({ engine }: { engine: RowEngine }) {
         .map((existing) => ({
           gid: existing,
           label: excludeLabels[existing] ?? existing,
+          image: excludeImages[existing] ?? null,
         })),
     );
   };
@@ -196,28 +343,15 @@ export function SettingsTab({ engine }: { engine: RowEngine }) {
           INCLUDE scope so a template can target several products / collections. */}
       {isResourceScope ? (
         <s-stack direction="block" gap="small-200">
-          {scopeValues.length > 0 ? (
-            <s-stack direction="block" gap="small-100">
-              {scopeValues.map((item) => (
-                <s-stack
-                  key={item.value}
-                  direction="inline"
-                  gap="small-200"
-                  alignItems="center"
-                  justifyContent="space-between"
-                >
-                  <s-text>{item.label}</s-text>
-                  <s-button
-                    variant="tertiary"
-                    onClick={() => removeScopeValue(item.value)}
-                    accessibilityLabel={`Remove ${item.label} from this assignment`}
-                  >
-                    Remove
-                  </s-button>
-                </s-stack>
-              ))}
-            </s-stack>
-          ) : null}
+          <CollapsibleChipList
+            items={scopeValues.map((item) => ({
+              key: item.value,
+              image: item.image,
+              label: item.label,
+              removeLabel: `Remove ${item.label} from this assignment`,
+              onRemove: () => removeScopeValue(item.value),
+            }))}
+          />
           <s-button onClick={pickResources}>
             {scope === "PRODUCT"
               ? scopeValues.length > 0
@@ -246,9 +380,11 @@ export function SettingsTab({ engine }: { engine: RowEngine }) {
           }
           onInput={(event: Event) => {
             const value = readValue(event);
-            // Single-valued free text: the value IS its own label. An empty field
-            // clears the set (incomplete — not a value), keeping the kind.
-            setScopeValues(value === "" ? [] : [{ value, label: value }]);
+            // Single-valued free text: the value IS its own label, no thumbnail. An
+            // empty field clears the set (incomplete — not a value), keeping the kind.
+            setScopeValues(
+              value === "" ? [] : [{ value, label: value, image: null }],
+            );
           }}
           error={scopeIncomplete ? "Enter a value." : undefined}
         />
@@ -274,28 +410,15 @@ export function SettingsTab({ engine }: { engine: RowEngine }) {
               assignment above. Assign them their own table, or leave them with
               nothing.
             </s-text>
-            {excludes.length > 0 ? (
-              <s-stack direction="block" gap="small-100">
-                {excludes.map((gid) => (
-                  <s-stack
-                    key={gid}
-                    direction="inline"
-                    gap="small-200"
-                    alignItems="center"
-                    justifyContent="space-between"
-                  >
-                    <s-text>{excludeLabels[gid] ?? gid}</s-text>
-                    <s-button
-                      variant="tertiary"
-                      onClick={() => removeExclude(gid)}
-                      accessibilityLabel={`Remove ${excludeLabels[gid] ?? gid} from the exceptions`}
-                    >
-                      Remove
-                    </s-button>
-                  </s-stack>
-                ))}
-              </s-stack>
-            ) : null}
+            <CollapsibleChipList
+              items={excludes.map((gid) => ({
+                key: gid,
+                image: excludeImages[gid] ?? null,
+                label: excludeLabels[gid] ?? gid,
+                removeLabel: `Remove ${excludeLabels[gid] ?? gid} from the exceptions`,
+                onRemove: () => removeExclude(gid),
+              }))}
+            />
             <s-button onClick={addExcludes}>
               {excludes.length > 0 ? "Add more products" : "Select products"}
             </s-button>

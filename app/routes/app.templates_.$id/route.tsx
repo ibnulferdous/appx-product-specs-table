@@ -29,10 +29,7 @@ import {
   shouldRebuildRoutingForScopeSave,
 } from "../../shopify/assignmentActivation.server";
 import { rebuildShopRouting } from "../../shopify/routing.server";
-import {
-  resolveScopeValueLabel,
-  resolveScopeValueLabels,
-} from "../../shopify/scopeResourceLabel.server";
+import { resolveScopeResourceDetails } from "../../shopify/scopeResourceLabel.server";
 import {
   clearTemplateScope,
   getExcludesForTemplate,
@@ -56,11 +53,13 @@ import { TemplateHeaderActions } from "./TemplateHeaderActions";
 import { useRowEngine } from "./useRowEngine";
 
 // The editor's assignment seed: the homogeneous INCLUDE scope kind + its value set
-// with resolved display labels (feature 47). Shared shape between the loader return,
-// the engine seed, and the SettingsTab picker.
+// with resolved display details — label + optional thumbnail image (feature 47).
+// Shared shape between the loader return, the engine seed, and the SettingsTab
+// picker. `image` is null for free-text scopes (TYPE/VENDOR) and on any resolution
+// miss.
 type AssignmentSeed = {
   scope: string;
-  values: { value: string; label: string }[];
+  values: { value: string; label: string; image: string | null }[];
 };
 
 // Build the assignment seed from a template's persisted INCLUDE selector SET
@@ -80,22 +79,27 @@ async function buildAssignmentSeed(
 
   if (scope === "PRODUCT" || scope === "COLLECTION") {
     const gids = selectors.map((selector) => selector.scopeValue as string);
-    const labels = await resolveScopeValueLabels(admin, scope, gids);
+    const details = await resolveScopeResourceDetails(admin, scope, gids);
     return {
       scope,
-      values: gids.map((value) => ({
-        value,
-        label: labels.get(value) ?? value,
-      })),
+      values: gids.map((value) => {
+        const detail = details.get(value);
+        return {
+          value,
+          label: detail?.label ?? value,
+          image: detail?.image ?? null,
+        };
+      }),
     };
   }
 
-  // PRODUCT_TYPE / VENDOR: free-text, single-valued, value IS its own label.
+  // PRODUCT_TYPE / VENDOR: free-text, single-valued, value IS its own label, no image.
   return {
     scope,
     values: selectors.map((selector) => ({
       value: selector.scopeValue as string,
       label: selector.scopeValue as string,
+      image: null,
     })),
   };
 }
@@ -139,17 +143,25 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
   const assignment = await buildAssignmentSeed(admin, selectors);
 
   // The template's EXCLUDE carve-outs (feature 45), each resolved to its product
-  // TITLE for a readable chip (fails soft to the GID — display only, never blocks
-  // the load). Resolved concurrently; MVP exclude sets are small. Loaded even when
-  // the scope isn't ALL_PRODUCTS (the UI hides the control, but the state must seed
-  // cleanly so Discard/dirty round-trips work).
+  // TITLE + thumbnail image for a rich chip (feature 47; fails soft to the GID with
+  // no thumbnail — display only, never blocks the load). One batched query for the
+  // whole set (excludes are all PRODUCT), the same resolver the INCLUDE scope uses.
+  // Loaded even when the scope isn't ALL_PRODUCTS (the UI hides the control, but the
+  // state must seed cleanly so Discard/dirty round-trips work).
   const excludeGids = await getExcludesForTemplate(shop.id, template.id);
-  const excludes = await Promise.all(
-    excludeGids.map(async (gid) => ({
-      gid,
-      label: (await resolveScopeValueLabel(admin, "PRODUCT", gid)) ?? gid,
-    })),
+  const excludeDetails = await resolveScopeResourceDetails(
+    admin,
+    "PRODUCT",
+    excludeGids,
   );
+  const excludes = excludeGids.map((gid) => {
+    const detail = excludeDetails.get(gid);
+    return {
+      gid,
+      label: detail?.label ?? gid,
+      image: detail?.image ?? null,
+    };
+  });
 
   return { template, assignment, excludes };
 };
@@ -446,7 +458,7 @@ function TemplateOverview({
 }: {
   template: { id: string; name: string; status: TemplateStatus; rows: unknown };
   assignment: AssignmentSeed | null;
-  excludes: Array<{ gid: string; label: string }>;
+  excludes: Array<{ gid: string; label: string; image: string | null }>;
   onDiscard: () => void;
 }) {
   const engine = useRowEngine({
