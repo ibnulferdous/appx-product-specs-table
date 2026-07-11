@@ -3,7 +3,7 @@ import { useAppBridge } from "@shopify/app-bridge-react";
 import { TEMPLATE_STATUS_OPTIONS } from "../../utils/templateStatus";
 import {
   SCOPE_NONE,
-  SCOPE_OPTIONS,
+  VISIBLE_SCOPE_OPTIONS,
   isScopeSetComplete,
 } from "../../utils/assignmentScope";
 import type { ExcludeSeed, RowEngine, ScopeValueSeed } from "./useRowEngine";
@@ -330,7 +330,7 @@ export function SettingsTab({ engine }: { engine: RowEngine }) {
         value={scope}
         onChange={(event: Event) => setScopeKind(readValue(event))}
       >
-        {SCOPE_OPTIONS.map((option) => (
+        {VISIBLE_SCOPE_OPTIONS.map((option) => (
           <s-option key={option.value} value={option.value}>
             {option.label}
           </s-option>

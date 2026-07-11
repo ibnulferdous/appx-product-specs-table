@@ -44,6 +44,24 @@ export const SCOPE_OPTIONS: { value: ScopeSelectionValue; label: string }[] = [
   { value: "COLLECTION", label: "A specific collection" },
 ];
 
+// Scope kinds intentionally hidden from the merchant-facing picker for now: the
+// MVP exposes only "No products", "All products", and "A specific product".
+// Product type / vendor / collection scoping stays fully implemented server-side
+// (validation, gate, routing, engine) — it's just not offered in the UI until a
+// merchant asks for it, at which point re-enabling is a one-line removal here.
+export const HIDDEN_SCOPE_KINDS: ReadonlySet<ScopeSelectionValue> = new Set([
+  "PRODUCT_TYPE",
+  "VENDOR",
+  "COLLECTION",
+]);
+
+// The scope options actually rendered in the picker — `SCOPE_OPTIONS` minus the
+// hidden kinds. `SCOPE_OPTIONS` remains the full source of truth (server + tests
+// still enumerate every scope); this is the UI-only projection.
+export const VISIBLE_SCOPE_OPTIONS = SCOPE_OPTIONS.filter(
+  (option) => !HIDDEN_SCOPE_KINDS.has(option.value),
+);
+
 /**
  * Client mirror of the picker's value-required rule over a value SET (features
  * 44/47), driving the inline error + the Save-disable in the editor. Pure +

@@ -184,6 +184,21 @@ F (top-bar status/save model + cleanup)**.
   scroll container (thumbnails + trash) with **"Show less"**, which re-collapsed it.
   Discarded — zero DB footprint.
 
+**Scope picker — MVP option trim (UI-only, 2026-07-11)**
+- The assignment scope `<s-select>` now offers only **No products / All products /
+  A specific product**. `PRODUCT_TYPE` / `VENDOR` / `COLLECTION` are hidden from the
+  picker pending merchant demand. Implemented as a UI-only projection: `SCOPE_OPTIONS`
+  stays the full source of truth (server validation, gate, routing, engine, and the
+  multi-value PRODUCT/COLLECTION machinery all unchanged); a new
+  `HIDDEN_SCOPE_KINDS` set + derived `VISIBLE_SCOPE_OPTIONS`
+  (`assignmentScope.ts`) drives the picker, so re-enabling any hidden kind is a
+  one-line removal. `SettingsTab.tsx` renders `VISIBLE_SCOPE_OPTIONS`. 3 new tests;
+  full gate green (typecheck, lint, build). No migration, no persistence change.
+  **Live-verified on the dev store (2026-07-11):** the editor's "Show this table on"
+  dropdown (Portable Handheld Fan template) now lists exactly **No products (not
+  assigned) / All products / A specific product** — type/vendor/collection absent.
+  Read-only check; nothing changed or saved.
+
 **Product assignment engine — multi-value scopes, server (`46-…`)**
 - Relaxes "exactly one INCLUDE rule per template" to **1..N INCLUDE rows for
   `PRODUCT` and `COLLECTION`** (selected products / collections); `ALL_PRODUCTS` /

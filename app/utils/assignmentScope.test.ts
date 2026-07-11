@@ -3,6 +3,7 @@ import {
   ASSIGNMENT_SCOPES,
   SCOPE_NONE,
   SCOPE_OPTIONS,
+  VISIBLE_SCOPE_OPTIONS,
   isScopeSetComplete,
   validateScope,
 } from "./assignmentScope";
@@ -137,6 +138,30 @@ describe("SCOPE_OPTIONS (feature 44 picker)", () => {
   it("gives every option a non-empty label", () => {
     for (const option of SCOPE_OPTIONS) {
       expect(option.label.length).toBeGreaterThan(0);
+    }
+  });
+});
+
+describe("VISIBLE_SCOPE_OPTIONS (UI-only projection: hides type/vendor/collection)", () => {
+  it("exposes only None, All products, and A specific product, in order", () => {
+    expect(VISIBLE_SCOPE_OPTIONS.map((option) => option.value)).toEqual([
+      SCOPE_NONE,
+      "ALL_PRODUCTS",
+      "PRODUCT",
+    ]);
+  });
+
+  it("hides PRODUCT_TYPE, VENDOR, and COLLECTION", () => {
+    const values = VISIBLE_SCOPE_OPTIONS.map((option) => option.value);
+    expect(values).not.toContain("PRODUCT_TYPE");
+    expect(values).not.toContain("VENDOR");
+    expect(values).not.toContain("COLLECTION");
+  });
+
+  it("is a subset of SCOPE_OPTIONS (source of truth stays complete)", () => {
+    expect(SCOPE_OPTIONS.length).toBeGreaterThan(VISIBLE_SCOPE_OPTIONS.length);
+    for (const option of VISIBLE_SCOPE_OPTIONS) {
+      expect(SCOPE_OPTIONS).toContainEqual(option);
     }
   });
 });
