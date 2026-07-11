@@ -29,6 +29,23 @@ const RESOURCE_LABEL_QUERY = `#graphql
     }
   }`;
 
+// Batched sibling of RESOURCE_LABEL_QUERY: resolve a whole PRODUCT/COLLECTION scope
+// SET (feature 47's multi-value picker) in ONE round-trip instead of N, so loading a
+// template with several selected products doesn't fan out into N `node` queries.
+const RESOURCE_LABELS_QUERY = `#graphql
+  query ScopeResourceLabels($ids: [ID!]!) {
+    nodes(ids: $ids) {
+      ... on Product {
+        id
+        title
+      }
+      ... on Collection {
+        id
+        title
+      }
+    }
+  }`;
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
 }
@@ -65,5 +82,55 @@ export async function resolveScopeValueLabel(
   } catch {
     // Display-only: a lookup failure must not break the editor load.
     return scopeValue;
+  }
+}
+
+/**
+ * Resolve a whole PRODUCT/COLLECTION scope SET to a `GID → title` map in one
+ * batched `nodes(ids:)` query (feature 47). Returns a Map seeded with an IDENTITY
+ * entry for every input GID (`gid → gid`), overwritten by any resolved title — so a
+ * miss (deleted resource, unknown id, network/GraphQL error, non-resource kind)
+ * degrades to the raw GID and the map is ALWAYS total over `gids` (never a blank or
+ * missing chip). Never throws (same fail-soft posture as the single resolver). For
+ * a non-PRODUCT/COLLECTION scope the caller shouldn't need this (the value IS the
+ * label) — it short-circuits to the identity map. The `#graphql` operation was
+ * validated with `validate_graphql_codeblocks` against API version 2025-10.
+ */
+export async function resolveScopeValueLabels(
+  admin: AdminApiContext,
+  scope: string,
+  gids: string[],
+): Promise<Map<string, string>> {
+  const labels = new Map<string, string>(gids.map((gid) => [gid, gid]));
+  if (scope !== "PRODUCT" && scope !== "COLLECTION") return labels;
+  if (gids.length === 0) return labels;
+
+  try {
+    const response = await admin.graphql(RESOURCE_LABELS_QUERY, {
+      variables: { ids: gids },
+    });
+    if (!response.ok) return labels;
+
+    const json: unknown = await response.json();
+    if (!isRecord(json)) return labels;
+    const data = json.data;
+    if (!isRecord(data)) return labels;
+    const nodes = data.nodes;
+    if (!Array.isArray(nodes)) return labels;
+
+    for (const node of nodes) {
+      // A deleted / mismatched id comes back as `null`; skip it (its identity
+      // fallback already stands).
+      if (!isRecord(node)) continue;
+      const id = node.id;
+      const title = node.title;
+      if (typeof id === "string" && typeof title === "string" && title !== "") {
+        labels.set(id, title);
+      }
+    }
+    return labels;
+  } catch {
+    // Display-only: a lookup failure must not break the editor load.
+    return labels;
   }
 }

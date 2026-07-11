@@ -42,7 +42,7 @@ import {
 } from "../../utils/reorderAnnouncements";
 import { cellCount, gridToPastedRows } from "../../utils/clipboardTable";
 import { readClipboardGrid } from "../../utils/clipboardTableDom";
-import { isScopeComplete } from "../../utils/assignmentScope";
+import { isScopeSetComplete } from "../../utils/assignmentScope";
 import {
   BULK_DELETE_CONFIRM_THRESHOLD,
   BULK_DELETE_MODAL_ID,
@@ -67,16 +67,14 @@ interface PendingPaste {
   afterId: string | null;
 }
 
-// The template's assignment scope kind + value seeded from the loader (feature
-// 44). `scope` is the picker-kind ("NONE" when the template has no INCLUDE rule,
-// else a real AssignmentScope); `scopeValue` is the GID / free-text the rule
-// carries (null for NONE / ALL_PRODUCTS); `scopeValueLabel` is the resolved
-// display title for a PRODUCT/COLLECTION GID (falls back to the GID) so the picker
-// shows a readable chip, not a raw id.
-export interface ScopeSeed {
-  scope: string;
-  scopeValue: string | null;
-  scopeValueLabel: string | null;
+// One member of a template's assignment scope value SET (features 44/46/47): the
+// raw value (a PRODUCT/COLLECTION GID, or free text for TYPE/VENDOR) plus its
+// resolved display label (the resource title for a GID, falling back to the GID; the
+// value itself for free text) so the picker shows readable chips, not raw ids. Only
+// the `value` rides the dirty snapshot + Save payload; the label is presentation.
+export interface ScopeValueSeed {
+  value: string;
+  label: string;
 }
 
 // One EXCLUDE carve-out for the Settings-tab "Except these products" list (feature
@@ -92,12 +90,13 @@ export interface UseRowEngineArgs {
   initialRows: EditorRow[];
   initialName: string;
   initialStatus: string;
-  // The persisted assignment scope (feature 44). Seeds the Settings-tab picker and
-  // rides the dirty snapshot + Save payload exactly like `status`. Reseeded on
-  // every remount (Discard / create-on-save) so Discard reverts a scope change.
+  // The persisted assignment scope kind + its value SET (features 44/46/47). Seeds
+  // the Settings-tab picker and rides the dirty snapshot + Save payload exactly like
+  // `status`. Reseeded on every remount (Discard / create-on-save) so Discard reverts
+  // a scope change. The set is homogeneous in `initialScope`: empty for
+  // NONE/ALL_PRODUCTS, one member for TYPE/VENDOR, 1..N for PRODUCT/COLLECTION.
   initialScope: string;
-  initialScopeValue: string | null;
-  initialScopeValueLabel: string | null;
+  initialScopeValues: ScopeValueSeed[];
   // The persisted EXCLUDE carve-outs (feature 45), seeded from the loader as
   // `{ gid, label }` pairs. Rides the dirty snapshot + Save payload like `scope`;
   // reseeded on every remount so Discard reverts an exclude change.
@@ -164,8 +163,7 @@ export function useRowEngine({
   initialName,
   initialStatus,
   initialScope,
-  initialScopeValue,
-  initialScopeValueLabel,
+  initialScopeValues,
   initialExcludes,
   isNew,
   onDiscard,
@@ -192,24 +190,22 @@ export function useRowEngine({
   const [name, setName] = useState(initialName);
   const [status, setStatus] = useState(initialStatus);
 
-  // Assignment scope (feature 44). Three pieces of state: the picker kind
-  // (`scope`), the persisted value (`scopeValue` — a GID for PRODUCT/COLLECTION,
-  // free text for TYPE/VENDOR, null for NONE/ALL_PRODUCTS), and a display-only
-  // `scopeValueLabel` (the resolved resource title for a GID). Only scope +
-  // scopeValue ride the dirty snapshot / Save payload; the label is presentation.
-  // `setScope` replaces all three atomically so the SettingsTab can change the
-  // kind (resetting value + label) or set a value (keeping the kind) in one call.
-  const [scope, setScopeKind] = useState(initialScope);
-  const [scopeValue, setScopeValue] = useState<string | null>(
-    initialScopeValue,
-  );
-  const [scopeValueLabel, setScopeValueLabel] = useState<string | null>(
-    initialScopeValueLabel,
-  );
-  const setScope = useCallback((next: ScopeSeed) => {
-    setScopeKind(next.scope);
-    setScopeValue(next.scopeValue);
-    setScopeValueLabel(next.scopeValueLabel);
+  // Assignment scope (features 44/46/47). Two pieces of state: the picker kind
+  // (`scope`) and its value SET (`scopeValues` — `{ value, label }[]`: 0 members for
+  // NONE/ALL_PRODUCTS, one for TYPE/VENDOR, 1..N GIDs for PRODUCT/COLLECTION). Only
+  // the kind + each member's `value` ride the dirty snapshot / Save payload; the
+  // labels are presentation. `setScopeKind` changes the kind and RESETS the set (a
+  // product GID is meaningless for a VENDOR scope — the homogeneous-kind invariant);
+  // `setScopeValues` replaces the set from a picker/text result keeping the kind.
+  const [scope, setScopeKindState] = useState(initialScope);
+  const [scopeValues, setScopeValuesState] =
+    useState<ScopeValueSeed[]>(initialScopeValues);
+  const setScopeKind = useCallback((kind: string) => {
+    setScopeKindState(kind);
+    setScopeValuesState([]);
+  }, []);
+  const setScopeValues = useCallback((next: ScopeValueSeed[]) => {
+    setScopeValuesState(next);
   }, []);
 
   // EXCLUDE carve-outs (feature 45). `excludes` is the ordered GID list that rides
@@ -228,10 +224,14 @@ export function useRowEngine({
     setExcludeGids(next.map((e) => e.gid));
     setExcludeLabels(Object.fromEntries(next.map((e) => [e.gid, e.label])));
   }, []);
-  // Client mirror of the value-required rule (UX only; the server re-validates):
-  // an incomplete scope (e.g. PRODUCT kind with no product picked) is an invalid
-  // state, so Save is disabled until it is completed or set back to "None".
-  const scopeComplete = isScopeComplete(scope, scopeValue);
+  // Client mirror of the value-required rule over the SET (UX only; the server
+  // re-validates): an incomplete scope (e.g. a PRODUCT kind with no product picked)
+  // is an invalid state, so Save is disabled until it is completed or set back to
+  // "None". A valued kind with an empty set is incomplete, NOT a clear (feature 46).
+  const scopeComplete = isScopeSetComplete(
+    scope,
+    scopeValues.map((item) => item.value),
+  );
 
   // --- Drag reorder (Steps 10–11) ------------------------------------------
   // Two sensors on one DndContext: a PointerSensor (mouse/touch, Step 10) with a
@@ -333,7 +333,9 @@ export function useRowEngine({
     name,
     status,
     scope,
-    scopeValue,
+    // The value SET is order-independent (features 46/47), so the snapshot sorts the
+    // raw values — a chip reorder never flips isDirty, only a membership/kind change.
+    scopeValues: [...scopeValues].map((item) => item.value).sort(),
     excludes: [...excludes].sort(),
   });
   const metaJsonRef = useRef(currentMetaJson);
@@ -355,14 +357,16 @@ export function useRowEngine({
     // The payload is valid JSON at runtime; the cast satisfies SubmitTarget,
     // which the EditorRow interface union does not match structurally (interfaces
     // carry no implicit index signature). name/status/scope are sent from STATE, so
-    // a rename or a scope change rides the existing Save payload (the action reads
-    // scope + scopeValue and persists the rule alongside the template — feature 44).
+    // a rename or a scope change rides the existing Save payload. The scope value SET
+    // is sent as `scopeValues` (the raw values); the action's `parsePendingScope`
+    // reads it into a homogeneous `ScopeSelector[]` (features 46/47).
+    const scopeValuesPayload = scopeValues.map((item) => item.value);
     submittedMetaJsonRef.current = JSON.stringify({
       rows,
       name,
       status,
       scope,
-      scopeValue,
+      scopeValues: [...scopeValuesPayload].sort(),
       excludes: [...excludes].sort(),
     });
     saveFetcher.submit(
@@ -371,7 +375,7 @@ export function useRowEngine({
         name,
         status,
         scope,
-        scopeValue,
+        scopeValues: scopeValuesPayload,
         excludes,
       } as unknown as Parameters<typeof saveFetcher.submit>[0],
       { method: "post", encType: "application/json" },
@@ -382,7 +386,7 @@ export function useRowEngine({
     name,
     status,
     scope,
-    scopeValue,
+    scopeValues,
     excludes,
     scopeComplete,
   ]);
@@ -437,12 +441,14 @@ export function useRowEngine({
   }, [saveFetcher.state, saveFetcher.data, revalidator, shopify]);
 
   // Clear the conflict banner once the merchant edits the pending state it was
-  // reported against (scope kind, scope value, or status) — the banner describes a
-  // specific pending combination, so any change to that combination makes it stale.
-  // Runs on mount too, but conflicts starts empty so that first pass is a no-op.
+  // reported against (scope kind, the value set, status, or excludes) — the banner
+  // describes a specific pending combination, so any change to that combination makes
+  // it stale. `scopeValues` is state, so its identity only changes when the set is
+  // actually edited (setScopeKind/setScopeValues), never per render. Runs on mount
+  // too, but conflicts starts empty so that first pass is a no-op.
   useEffect(() => {
     setConflicts([]);
-  }, [scope, scopeValue, status, excludes]);
+  }, [scope, scopeValues, status, excludes]);
 
   // Close the editor's body modals when a save begins. Both portal their content
   // (including their primary buttons) into the admin chrome, OUTSIDE the editor's
@@ -1084,11 +1090,11 @@ export function useRowEngine({
     setName,
     status,
     setStatus,
-    // Assignment scope (feature 44)
+    // Assignment scope (features 44/46/47)
     scope,
-    scopeValue,
-    scopeValueLabel,
-    setScope,
+    scopeValues,
+    setScopeKind,
+    setScopeValues,
     scopeComplete,
     conflicts,
     // EXCLUDE carve-outs (feature 45)

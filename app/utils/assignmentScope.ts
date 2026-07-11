@@ -45,18 +45,29 @@ export const SCOPE_OPTIONS: { value: ScopeSelectionValue; label: string }[] = [
 ];
 
 /**
- * Client mirror of the picker's value-required rule (feature 44), driving the
- * inline error + the Save-disable in the editor. Pure + client-safe. `SCOPE_NONE`
- * is always complete (it clears the rule); every real scope defers to the shared
- * `validateScope` so the client and server accept EXACTLY the same shapes (the
- * server re-validates — this is UX only, never the security boundary).
+ * Client mirror of the picker's value-required rule over a value SET (features
+ * 44/47), driving the inline error + the Save-disable in the editor. Pure +
+ * client-safe; the server re-validates (this is UX only, never the security
+ * boundary). The multi-value story (feature 46) made a template's INCLUDE scope a
+ * homogeneous SET of values, so completeness is a set predicate:
+ *  - `SCOPE_NONE` / `ALL_PRODUCTS` — always complete (NONE clears the rule;
+ *    ALL_PRODUCTS carries no value).
+ *  - `PRODUCT_TYPE` / `VENDOR` — single-valued: complete iff EXACTLY ONE value that
+ *    validates (a UX guard mirroring the server's `MULTI_VALUE_SCOPES` arity check).
+ *  - `PRODUCT` / `COLLECTION` — 1..N: complete iff ≥1 value and EVERY value
+ *    validates.
+ * An empty valued set on a valued kind is *incomplete* (Save disabled), NOT a
+ * clear — only `SCOPE_NONE` clears (feature 46's settled decision, its UX shipped
+ * here in 47).
  */
-export function isScopeComplete(
-  scope: string,
-  scopeValue: string | null,
-): boolean {
-  if (scope === SCOPE_NONE) return true;
-  return validateScope(scope, scopeValue).ok;
+export function isScopeSetComplete(scope: string, values: string[]): boolean {
+  if (scope === SCOPE_NONE || scope === "ALL_PRODUCTS") return true;
+  if (values.length === 0) return false;
+  // TYPE / VENDOR are single-valued; more than one value is an invalid UX state.
+  if ((scope === "PRODUCT_TYPE" || scope === "VENDOR") && values.length !== 1) {
+    return false;
+  }
+  return values.every((value) => validateScope(scope, value).ok);
 }
 
 // Every listed literal must be a real AssignmentScope (compile-time guard against

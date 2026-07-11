@@ -6,7 +6,10 @@ import type {
 } from "react-router";
 import { redirect, useLoaderData, useSearchParams } from "react-router";
 import { TemplateStatus } from "@prisma/client";
-import { boundary } from "@shopify/shopify-app-react-router/server";
+import {
+  boundary,
+  type AdminApiContext,
+} from "@shopify/shopify-app-react-router/server";
 import { useAppBridge } from "@shopify/app-bridge-react";
 import { authenticate } from "../../shopify.server";
 import { upsertShop } from "../../models/shop.server";
@@ -26,10 +29,12 @@ import {
   shouldRebuildRoutingForScopeSave,
 } from "../../shopify/assignmentActivation.server";
 import { rebuildShopRouting } from "../../shopify/routing.server";
-import { resolveScopeValueLabel } from "../../shopify/scopeResourceLabel.server";
+import {
+  resolveScopeValueLabel,
+  resolveScopeValueLabels,
+} from "../../shopify/scopeResourceLabel.server";
 import {
   clearTemplateScope,
-  getAssignmentForTemplate,
   getExcludesForTemplate,
   getTemplateIncludeSelectors,
   setTemplateExcludes,
@@ -49,6 +54,51 @@ import { parseRows } from "../../utils/rowsSerialize";
 import { SpecTableEditor } from "./SpecTableEditor";
 import { TemplateHeaderActions } from "./TemplateHeaderActions";
 import { useRowEngine } from "./useRowEngine";
+
+// The editor's assignment seed: the homogeneous INCLUDE scope kind + its value set
+// with resolved display labels (feature 47). Shared shape between the loader return,
+// the engine seed, and the SettingsTab picker.
+type AssignmentSeed = {
+  scope: string;
+  values: { value: string; label: string }[];
+};
+
+// Build the assignment seed from a template's persisted INCLUDE selector SET
+// (feature 47). The set is homogeneous in `scope` (guaranteed at the write
+// boundary, feature 46): a PRODUCT/COLLECTION set gets its chip labels resolved in
+// ONE batched query; a TYPE/VENDOR set carries its free-text value as its own label;
+// ALL_PRODUCTS has no value; an empty set is "no assignment" (null → the picker
+// opens on "None"). Never throws — label resolution is fail-soft.
+async function buildAssignmentSeed(
+  admin: AdminApiContext,
+  selectors: ScopeSelector[],
+): Promise<AssignmentSeed | null> {
+  if (selectors.length === 0) return null;
+  const scope = selectors[0].scope;
+
+  if (scope === "ALL_PRODUCTS") return { scope, values: [] };
+
+  if (scope === "PRODUCT" || scope === "COLLECTION") {
+    const gids = selectors.map((selector) => selector.scopeValue as string);
+    const labels = await resolveScopeValueLabels(admin, scope, gids);
+    return {
+      scope,
+      values: gids.map((value) => ({
+        value,
+        label: labels.get(value) ?? value,
+      })),
+    };
+  }
+
+  // PRODUCT_TYPE / VENDOR: free-text, single-valued, value IS its own label.
+  return {
+    scope,
+    values: selectors.map((selector) => ({
+      value: selector.scopeValue as string,
+      label: selector.scopeValue as string,
+    })),
+  };
+}
 
 export const loader = async ({ request, params }: LoaderFunctionArgs) => {
   const { session, admin } = await authenticate.admin(request);
@@ -79,22 +129,14 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
     throw new Response("Template not found", { status: 404 });
   }
 
-  // The template's single INCLUDE scope rule (feature 44), shop-scoped. For a
-  // PRODUCT/COLLECTION scope, resolve the resource TITLE so the picker chip is
-  // readable (falls back to the GID on a miss — never blank). null when the
-  // template has no rule → the picker opens on "None".
-  const rule = await getAssignmentForTemplate(shop.id, template.id);
-  const assignment = rule
-    ? {
-        scope: rule.scope,
-        scopeValue: rule.scopeValue,
-        scopeValueLabel: await resolveScopeValueLabel(
-          admin,
-          rule.scope,
-          rule.scopeValue,
-        ),
-      }
-    : null;
+  // The template's INCLUDE scope SET (features 44/46/47), shop-scoped. The set is
+  // homogeneous in `scope` (the write boundary guarantees it): 0 rows (NONE), one
+  // row for ALL_PRODUCTS/PRODUCT_TYPE/VENDOR, or 1..N rows for PRODUCT/COLLECTION.
+  // For PRODUCT/COLLECTION we BATCH-resolve resource TITLEs (one query, not N) so
+  // each chip is readable (falls back to the GID on a miss — never blank). null when
+  // the set is empty → the picker opens on "None".
+  const selectors = await getTemplateIncludeSelectors(shop.id, template.id);
+  const assignment = await buildAssignmentSeed(admin, selectors);
 
   // The template's EXCLUDE carve-outs (feature 45), each resolved to its product
   // TITLE for a readable chip (fails soft to the GID — display only, never blocks
@@ -403,11 +445,7 @@ function TemplateOverview({
   onDiscard,
 }: {
   template: { id: string; name: string; status: TemplateStatus; rows: unknown };
-  assignment: {
-    scope: string;
-    scopeValue: string | null;
-    scopeValueLabel: string | null;
-  } | null;
+  assignment: AssignmentSeed | null;
   excludes: Array<{ gid: string; label: string }>;
   onDiscard: () => void;
 }) {
@@ -415,10 +453,10 @@ function TemplateOverview({
     initialRows: parseRows(template.rows),
     initialName: template.name,
     initialStatus: template.status,
-    // Seed the scope picker from the persisted rule (feature 44); no rule → "None".
+    // Seed the scope picker from the persisted rule SET (features 44/46/47); no rule
+    // → "None" with an empty value set.
     initialScope: assignment?.scope ?? SCOPE_NONE,
-    initialScopeValue: assignment?.scopeValue ?? null,
-    initialScopeValueLabel: assignment?.scopeValueLabel ?? null,
+    initialScopeValues: assignment?.values ?? [],
     // Seed the EXCLUDE carve-outs (feature 45); empty for a new/unassigned template.
     initialExcludes: excludes,
     // The "new" sentinel id (loader) marks a never-saved template; the engine uses

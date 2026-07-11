@@ -3,7 +3,7 @@ import { TEMPLATE_STATUS_OPTIONS } from "../../utils/templateStatus";
 import {
   SCOPE_NONE,
   SCOPE_OPTIONS,
-  isScopeComplete,
+  isScopeSetComplete,
 } from "../../utils/assignmentScope";
 import type { RowEngine } from "./useRowEngine";
 
@@ -30,9 +30,9 @@ export function SettingsTab({ engine }: { engine: RowEngine }) {
     status,
     setStatus,
     scope,
-    scopeValue,
-    scopeValueLabel,
-    setScope,
+    scopeValues,
+    setScopeKind,
+    setScopeValues,
     conflicts,
     excludes,
     excludeLabels,
@@ -48,30 +48,40 @@ export function SettingsTab({ engine }: { engine: RowEngine }) {
   // "all products EXCEPT X" is a dedicated PRODUCT:X template — exactly the case the
   // gate resolves). See feature 45's settled decision.
   const showExcludes = scope === "ALL_PRODUCTS";
-  // A valued scope with no value yet is an invalid (incomplete) state — surface an
-  // inline error (Save is also disabled by the engine's `canSave`).
-  const scopeIncomplete = !isScopeComplete(scope, scopeValue);
+  // A valued scope with an empty value set is an invalid (incomplete) state —
+  // surface an inline error (Save is also disabled by the engine's `canSave`).
+  const scopeIncomplete = !isScopeSetComplete(
+    scope,
+    scopeValues.map((item) => item.value),
+  );
   // An Active template with no assignment (or a still-incomplete one) shows on no
   // storefront page — warn so an ACTIVE-but-invisible template is never a silent
   // no-op.
   const activeButUnassigned = status === "ACTIVE" && scope === SCOPE_NONE;
 
-  // Open the App Bridge resource picker for the current scope kind and store the
-  // picked GID + its title (feature 44; single-select — one resource per scope).
-  const pickResource = async () => {
+  // Open the App Bridge resource picker for the current scope kind (feature 47:
+  // MULTI-select for PRODUCT/COLLECTION). Preselect the current set via
+  // `selectionIds` so reopening shows the chosen resources checked; the picker
+  // returns the FULL final selection (checked minus unchecked), so we REPLACE the
+  // set with what came back (dedupe defensively). A cancel returns undefined → keep
+  // the current set.
+  const pickResources = async () => {
     const type = scope === "PRODUCT" ? "product" : "collection";
     const selected = (await shopify.resourcePicker({
       type,
-      multiple: false,
+      multiple: true,
+      selectionIds: scopeValues.map((item) => ({ id: item.value })),
     })) as Array<{ id: string; title?: string }> | undefined;
-    if (selected && selected.length > 0) {
-      const picked = selected[0];
-      setScope({
-        scope,
-        scopeValue: picked.id,
-        scopeValueLabel: picked.title ?? picked.id,
-      });
+    if (!selected) return;
+    const byGid = new Map<string, string>();
+    for (const resource of selected) {
+      byGid.set(resource.id, resource.title ?? resource.id);
     }
+    setScopeValues([...byGid].map(([value, label]) => ({ value, label })));
+  };
+
+  const removeScopeValue = (value: string) => {
+    setScopeValues(scopeValues.filter((item) => item.value !== value));
   };
 
   // Add products to the EXCLUDE carve-out list (feature 45). Multi-select picker;
@@ -165,20 +175,13 @@ export function SettingsTab({ engine }: { engine: RowEngine }) {
 
       <s-divider></s-divider>
 
-      {/* Assignment scope (feature 44). Changing the kind resets the value; the
-          conditional control below collects it (resource picker vs. free text). */}
+      {/* Assignment scope (features 44/46/47). Changing the kind resets the value
+          set (the engine's setScopeKind); the conditional control below collects it
+          (multi-select resource picker vs. free text). */}
       <s-select
         label="Show this table on"
         value={scope}
-        onChange={(event: Event) =>
-          // A kind change clears the value + label — a product GID is meaningless
-          // for a VENDOR scope, etc.
-          setScope({
-            scope: readValue(event),
-            scopeValue: null,
-            scopeValueLabel: null,
-          })
-        }
+        onChange={(event: Event) => setScopeKind(readValue(event))}
       >
         {SCOPE_OPTIONS.map((option) => (
           <s-option key={option.value} value={option.value}>
@@ -187,30 +190,48 @@ export function SettingsTab({ engine }: { engine: RowEngine }) {
         ))}
       </s-select>
 
+      {/* PRODUCT / COLLECTION value SET (feature 47). A multi-select picker → chip
+          list with per-chip Remove + an Add button — mirroring the EXCLUDE carve-out
+          control below (feature 45), the same picker→chips pattern applied to the
+          INCLUDE scope so a template can target several products / collections. */}
       {isResourceScope ? (
         <s-stack direction="block" gap="small-200">
-          {scopeValue ? (
-            <s-stack
-              direction="inline"
-              gap="small-200"
-              alignItems="center"
-              justifyContent="space-between"
-            >
-              <s-text>{scopeValueLabel ?? scopeValue}</s-text>
-              <s-button variant="tertiary" onClick={pickResource}>
-                Change
-              </s-button>
+          {scopeValues.length > 0 ? (
+            <s-stack direction="block" gap="small-100">
+              {scopeValues.map((item) => (
+                <s-stack
+                  key={item.value}
+                  direction="inline"
+                  gap="small-200"
+                  alignItems="center"
+                  justifyContent="space-between"
+                >
+                  <s-text>{item.label}</s-text>
+                  <s-button
+                    variant="tertiary"
+                    onClick={() => removeScopeValue(item.value)}
+                    accessibilityLabel={`Remove ${item.label} from this assignment`}
+                  >
+                    Remove
+                  </s-button>
+                </s-stack>
+              ))}
             </s-stack>
-          ) : (
-            <s-button onClick={pickResource}>
-              {scope === "PRODUCT" ? "Select product" : "Select collection"}
-            </s-button>
-          )}
+          ) : null}
+          <s-button onClick={pickResources}>
+            {scope === "PRODUCT"
+              ? scopeValues.length > 0
+                ? "Add more products"
+                : "Select products"
+              : scopeValues.length > 0
+                ? "Add more collections"
+                : "Select collections"}
+          </s-button>
           {scopeIncomplete ? (
             <s-text tone="critical">
               {scope === "PRODUCT"
-                ? "Choose a product to assign this table to."
-                : "Choose a collection to assign this table to."}
+                ? "Choose at least one product to assign this table to."
+                : "Choose at least one collection to assign this table to."}
             </s-text>
           ) : null}
         </s-stack>
@@ -219,14 +240,15 @@ export function SettingsTab({ engine }: { engine: RowEngine }) {
       {isTextScope ? (
         <s-text-field
           label={scope === "PRODUCT_TYPE" ? "Product type" : "Vendor"}
-          value={scopeValue ?? ""}
+          value={scopeValues[0]?.value ?? ""}
           placeholder={
             scope === "PRODUCT_TYPE" ? "e.g. Snowboard" : "e.g. Acme"
           }
           onInput={(event: Event) => {
             const value = readValue(event);
-            // For type/vendor the value IS the label (free text).
-            setScope({ scope, scopeValue: value, scopeValueLabel: value });
+            // Single-valued free text: the value IS its own label. An empty field
+            // clears the set (incomplete — not a value), keeping the kind.
+            setScopeValues(value === "" ? [] : [{ value, label: value }]);
           }}
           error={scopeIncomplete ? "Enter a value." : undefined}
         />

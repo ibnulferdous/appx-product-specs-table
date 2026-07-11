@@ -3,7 +3,7 @@ import {
   ASSIGNMENT_SCOPES,
   SCOPE_NONE,
   SCOPE_OPTIONS,
-  isScopeComplete,
+  isScopeSetComplete,
   validateScope,
 } from "./assignmentScope";
 
@@ -141,30 +141,43 @@ describe("SCOPE_OPTIONS (feature 44 picker)", () => {
   });
 });
 
-describe("isScopeComplete (client mirror; UX Save-gate)", () => {
-  it("treats None as always complete (it clears the rule)", () => {
-    expect(isScopeComplete(SCOPE_NONE, null)).toBe(true);
+describe("isScopeSetComplete (client mirror over a value SET; UX Save-gate)", () => {
+  const P = (id: string) => `gid://shopify/Product/${id}`;
+  const C = (id: string) => `gid://shopify/Collection/${id}`;
+
+  it("treats None as always complete regardless of values (it clears the rule)", () => {
+    expect(isScopeSetComplete(SCOPE_NONE, [])).toBe(true);
     // A stray value under None is ignored — still complete (the action clears it).
-    expect(isScopeComplete(SCOPE_NONE, "gid://shopify/Product/1")).toBe(true);
+    expect(isScopeSetComplete(SCOPE_NONE, [P("1")])).toBe(true);
   });
 
-  it("treats ALL_PRODUCTS as complete with no value", () => {
-    expect(isScopeComplete("ALL_PRODUCTS", null)).toBe(true);
+  it("treats ALL_PRODUCTS as complete with no values", () => {
+    expect(isScopeSetComplete("ALL_PRODUCTS", [])).toBe(true);
   });
 
-  it("is incomplete for a valued scope with no value", () => {
-    expect(isScopeComplete("PRODUCT", null)).toBe(false);
-    expect(isScopeComplete("PRODUCT", "")).toBe(false);
-    expect(isScopeComplete("VENDOR", "")).toBe(false);
-    expect(isScopeComplete("PRODUCT", "not-a-gid")).toBe(false);
+  it("is incomplete for a valued scope with an empty set", () => {
+    expect(isScopeSetComplete("PRODUCT", [])).toBe(false);
+    expect(isScopeSetComplete("COLLECTION", [])).toBe(false);
+    expect(isScopeSetComplete("VENDOR", [])).toBe(false);
   });
 
-  it("is complete for a valued scope with a valid value", () => {
-    expect(isScopeComplete("PRODUCT", "gid://shopify/Product/1")).toBe(true);
-    expect(isScopeComplete("VENDOR", "Acme")).toBe(true);
-    expect(isScopeComplete("PRODUCT_TYPE", "Snowboard")).toBe(true);
-    expect(isScopeComplete("COLLECTION", "gid://shopify/Collection/2")).toBe(
-      true,
-    );
+  it("PRODUCT / COLLECTION accept 1..N valid values, reject any invalid member", () => {
+    expect(isScopeSetComplete("PRODUCT", [P("1")])).toBe(true);
+    expect(isScopeSetComplete("PRODUCT", [P("1"), P("2"), P("3")])).toBe(true);
+    // One bad GID in the set fails the whole set.
+    expect(isScopeSetComplete("PRODUCT", [P("1"), "not-a-gid"])).toBe(false);
+    expect(isScopeSetComplete("COLLECTION", [C("1"), C("2")])).toBe(true);
+    // Wrong resource kind in the set fails it.
+    expect(isScopeSetComplete("COLLECTION", [C("1"), P("2")])).toBe(false);
+  });
+
+  it("TYPE / VENDOR are single-valued: exactly one validating value", () => {
+    expect(isScopeSetComplete("VENDOR", ["Acme"])).toBe(true);
+    expect(isScopeSetComplete("PRODUCT_TYPE", ["Snowboard"])).toBe(true);
+    // Empty or an accidental N>1 set is incomplete for a single-valued kind.
+    expect(isScopeSetComplete("VENDOR", [])).toBe(false);
+    expect(isScopeSetComplete("VENDOR", ["Acme", "Bose"])).toBe(false);
+    // A blank value doesn't validate.
+    expect(isScopeSetComplete("VENDOR", [""])).toBe(false);
   });
 });
