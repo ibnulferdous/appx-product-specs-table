@@ -199,6 +199,36 @@ F (top-bar status/save model + cleanup)**.
   assigned) / All products / A specific product** — type/vendor/collection absent.
   Read-only check; nothing changed or saved.
 
+**Status picker — Archived option trim (UI-only, 2026-07-11)**
+- Both status `<s-select>`s (the editor Settings status control + the templates-list
+  "Change status" modal) now offer only **Draft / Active**. `ARCHIVED` is hidden from
+  the pickers pending merchant demand. Same UI-only-projection pattern as the scope
+  trim: `TEMPLATE_STATUS_OPTIONS` stays the full source of truth (the Prisma enum,
+  `validateTemplateStatus`, and `BADGE_TONES` all still carry ARCHIVED); a new
+  `HIDDEN_STATUS_VALUES` set + derived `VISIBLE_TEMPLATE_STATUS_OPTIONS`
+  (`templateStatus.ts`) drive the two pickers, so re-enabling is a one-line removal.
+  `SettingsTab.tsx` + `app.templates.tsx` render `VISIBLE_TEMPLATE_STATUS_OPTIONS`;
+  the two subdued help lines dropped their now-unreachable "and Archived" mention.
+  The ARCHIVED badge tone is intentionally kept so any pre-existing ARCHIVED template
+  still renders its neutral badge. 4 new tests. No migration, no persistence change.
+- **Follow-up (2026-07-12): the list's "Archived" filter tab is now also removed.**
+  `STATUS_FILTER_OPTIONS` (a new single source of truth in `templateFilter.ts`, offering
+  only All / Active / Draft) drives both the rendered tabs (`app.templates.tsx` no longer
+  owns a local `STATUS_FILTERS`) and the ?status= URL allow-list; `normalizeStatusFilter`
+  now derives its selectable set from it, so a stale `?status=ARCHIVED` bookmark **falls
+  back to "All"** instead of showing an orphan filter with no active tab. `StatusFilter`
+  still admits ARCHIVED and `filterTemplatesByStatus` still supports it (harmless; re-adding
+  the tab is a one-line restore). 3 new tests. Full gate green (**516 tests**, typecheck,
+  lint, format, build).
+- **Live-verified on the dev store (2026-07-12):** the Templates list filter row now reads
+  exactly **Status · All · Active · Draft** (no Archived tab), and navigating directly to
+  `…/app/templates?status=ARCHIVED` correctly fell back to the **All** view (All chip active,
+  all templates shown). **Both status dropdowns were also re-driven live the same pass:** the
+  editor Settings **Status** control (DJI Mavic 4 Pro Fly More Combo) and the list **Change
+  status** modal each expand to exactly **Draft / Active** (no Archived), and both show the
+  updated "Draft is hidden." helper copy. Read-only checks — the dropdown/modal were closed
+  without saving, so the template's ACTIVE status was left unchanged; nothing was saved.
+
 **Product assignment engine — multi-value scopes, server (`46-…`)**
 - Relaxes "exactly one INCLUDE rule per template" to **1..N INCLUDE rows for
   `PRODUCT` and `COLLECTION`** (selected products / collections); `ALL_PRODUCTS` /

@@ -26,11 +26,15 @@ import {
   shouldRebuildRouting,
 } from "../shopify/assignmentActivation.server";
 import { rebuildShopRouting } from "../shopify/routing.server";
-import { BADGE_TONES, TEMPLATE_STATUS_OPTIONS } from "../utils/templateStatus";
+import {
+  BADGE_TONES,
+  VISIBLE_TEMPLATE_STATUS_OPTIONS,
+} from "../utils/templateStatus";
 import { NAME_MAX_LENGTH, validateTemplateName } from "../utils/templateName";
 import {
   filterTemplatesByStatus,
   normalizeStatusFilter,
+  STATUS_FILTER_OPTIONS,
   type StatusFilter,
 } from "../utils/templateFilter";
 
@@ -45,13 +49,6 @@ const RENAME_MODAL_ID = "templates-list-rename-modal";
 // One shared status modal (feature 36): `pendingStatus` carries which row, the
 // <s-select> value is seeded from that row's current status on open.
 const STATUS_MODAL_ID = "templates-list-status-modal";
-
-const STATUS_FILTERS: { label: string; value: StatusFilter }[] = [
-  { label: "All", value: "ALL" },
-  { label: "Active", value: "ACTIVE" },
-  { label: "Draft", value: "DRAFT" },
-  { label: "Archived", value: "ARCHIVED" },
-];
 
 type TemplateListItem = Awaited<
   ReturnType<typeof listTemplatesForShop>
@@ -205,7 +202,7 @@ const TemplateTable = ({
           so it's instant. The selected tab keeps the info badge look. */}
       <s-stack direction="inline" gap="base" alignItems="center">
         <s-text type="strong">Status</s-text>
-        {STATUS_FILTERS.map((filter) =>
+        {STATUS_FILTER_OPTIONS.map((filter) =>
           filter.value === selectedStatus ? (
             <s-badge key={filter.value} tone="info">
               {filter.label}
@@ -716,7 +713,7 @@ export default function TemplatesPage() {
               setStatusValue((event.currentTarget as HTMLSelectElement).value)
             }
           >
-            {TEMPLATE_STATUS_OPTIONS.map((option) => (
+            {VISIBLE_TEMPLATE_STATUS_OPTIONS.map((option) => (
               <s-option key={option.value} value={option.value}>
                 {option.label}
               </s-option>
@@ -724,7 +721,7 @@ export default function TemplatesPage() {
           </s-select>
           <s-text color="subdued">
             Active shows this table on the storefront for its assigned products.
-            Draft and Archived are hidden.
+            Draft is hidden.
           </s-text>
         </s-stack>
         <s-button

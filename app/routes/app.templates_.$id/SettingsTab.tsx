@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useAppBridge } from "@shopify/app-bridge-react";
-import { TEMPLATE_STATUS_OPTIONS } from "../../utils/templateStatus";
+import { VISIBLE_TEMPLATE_STATUS_OPTIONS } from "../../utils/templateStatus";
 import {
   SCOPE_NONE,
   VISIBLE_SCOPE_OPTIONS,
@@ -308,7 +308,7 @@ export function SettingsTab({ engine }: { engine: RowEngine }) {
         value={status}
         onChange={(event: Event) => setStatus(readValue(event))}
       >
-        {TEMPLATE_STATUS_OPTIONS.map((option) => (
+        {VISIBLE_TEMPLATE_STATUS_OPTIONS.map((option) => (
           <s-option key={option.value} value={option.value}>
             {option.label}
           </s-option>
@@ -316,8 +316,8 @@ export function SettingsTab({ engine }: { engine: RowEngine }) {
       </s-select>
       <s-text color="subdued">
         Active makes this table eligible to show on the storefront for its
-        assigned products. Draft and Archived are hidden. Your change takes
-        effect when you save.
+        assigned products. Draft is hidden. Your change takes effect when you
+        save.
       </s-text>
 
       <s-divider></s-divider>

@@ -43,6 +43,26 @@ export const TEMPLATE_STATUS_OPTIONS: {
   { value: "ARCHIVED", label: "Archived" },
 ];
 
+// Statuses intentionally hidden from the merchant-facing status pickers for now:
+// the MVP lets a merchant set only Draft or Active. ARCHIVED stays fully valid
+// server-side (the Prisma enum, `validateTemplateStatus`, and `BADGE_TONES` all
+// keep it) so any template already ARCHIVED still persists, still renders its
+// neutral badge, and is still filterable on the list — it's just not offered as a
+// choice in the pickers until a merchant asks for it, at which point re-enabling is
+// a one-line removal here. Mirrors `HIDDEN_SCOPE_KINDS` in `assignmentScope.ts`.
+export const HIDDEN_STATUS_VALUES: ReadonlySet<TemplateStatusValue> = new Set([
+  "ARCHIVED",
+]);
+
+// The status options actually rendered in the pickers — `TEMPLATE_STATUS_OPTIONS`
+// minus the hidden values. `TEMPLATE_STATUS_OPTIONS` remains the full source of
+// truth (validator + badge tones + tests still enumerate every status); this is the
+// UI-only projection the editor Settings control and the list "Change status" modal
+// both render.
+export const VISIBLE_TEMPLATE_STATUS_OPTIONS = TEMPLATE_STATUS_OPTIONS.filter(
+  (option) => !HIDDEN_STATUS_VALUES.has(option.value),
+);
+
 /**
  * Validate an untrusted status into a known `TemplateStatusValue`. Unlike the
  * tolerant `resolveStatus` (which defaults anything unknown to DRAFT for the

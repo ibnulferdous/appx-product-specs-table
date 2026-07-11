@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   TEMPLATE_STATUSES,
   TEMPLATE_STATUS_OPTIONS,
+  VISIBLE_TEMPLATE_STATUS_OPTIONS,
   validateTemplateStatus,
 } from "./templateStatus";
 
@@ -60,5 +61,37 @@ describe("TEMPLATE_STATUS_OPTIONS", () => {
     for (const option of TEMPLATE_STATUS_OPTIONS) {
       expect(validateTemplateStatus(option.value).ok).toBe(true);
     }
+  });
+});
+
+describe("VISIBLE_TEMPLATE_STATUS_OPTIONS (UI-only projection: hides Archived)", () => {
+  it("exposes only Draft and Active, in order", () => {
+    expect(VISIBLE_TEMPLATE_STATUS_OPTIONS.map((o) => o.value)).toEqual([
+      "DRAFT",
+      "ACTIVE",
+    ]);
+  });
+
+  it("hides ARCHIVED", () => {
+    expect(VISIBLE_TEMPLATE_STATUS_OPTIONS.map((o) => o.value)).not.toContain(
+      "ARCHIVED",
+    );
+  });
+
+  it("is a subset of TEMPLATE_STATUS_OPTIONS (source of truth stays complete)", () => {
+    expect(TEMPLATE_STATUS_OPTIONS.length).toBeGreaterThan(
+      VISIBLE_TEMPLATE_STATUS_OPTIONS.length,
+    );
+    for (const option of VISIBLE_TEMPLATE_STATUS_OPTIONS) {
+      expect(TEMPLATE_STATUS_OPTIONS).toContainEqual(option);
+    }
+  });
+
+  it("keeps every visible option a valid status (ARCHIVED still validates server-side)", () => {
+    for (const option of VISIBLE_TEMPLATE_STATUS_OPTIONS) {
+      expect(validateTemplateStatus(option.value).ok).toBe(true);
+    }
+    // The projection is UI-only: ARCHIVED remains a valid persisted status.
+    expect(validateTemplateStatus("ARCHIVED").ok).toBe(true);
   });
 });
