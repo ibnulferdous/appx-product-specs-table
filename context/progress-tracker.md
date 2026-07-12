@@ -35,7 +35,7 @@ resolve live** on the storefront (slice 2 / feature 35, browser-verified — dyn
 assignment engine — now **rigid, block-on-conflict** (one scope per template: all / product / type / vendor / collection; overlaps blocked at DRAFT→ACTIVE, no `priority`), delivering broad rules via **one shop-level routing metafield** (design locked in `data-model.md` §5/§9, 2026-07-07) — and
 Reshell Phases **B (Style tab) → C (Settings — status control shipped in feature
 36; display rules still pending) → D (device previews — **now in progress**, feature
-49; step 1 of 8 shipped) → E (assignment) →
+49; steps 1–3 of 8 shipped) → E (assignment) →
 F (top-bar status/save model + cleanup)**.
 
 ---
@@ -43,6 +43,63 @@ F (top-bar status/save model + cleanup)**.
 ## Completed
 
 > One line per unit. Detail → the linked `context/features/` doc + git history.
+
+**Device previews — Step 3: render the markup in a sandboxed iframe (Reshell Phase D, `51-…`, 2026-07-12)**
+- Third slice of feature 49 — the **first painting step**. New `SpecTablePreview.tsx` feeds the
+  live `engine.rows` through a new pure `renderSpecTablePreviewDocument(rows)` (wraps
+  `renderSpecTableHtml` in a minimal, **style-free** `<!doctype html>` shell) into a **sandboxed
+  `<iframe srcDoc>`**, so the Desktop / Tablet / Mobile toggle now shows the **real (still
+  unstyled) storefront markup** of the working table. `SpecTableEditor` swaps the Step 1
+  `DevicePreviewPlaceholder` (+ its `DEVICE_LABELS`) for `<SpecTablePreview rows={engine.rows}
+  view={view} />`; `EditorShell` unchanged. Read-only by construction (reads rows, never
+  dispatches; `srcDoc` recomputed from current rows each render).
+- **Security:** `sandbox=""` (empty token list) = most restrictive — no scripts, no forms, no
+  popups, **unique opaque origin** (no `allow-same-origin`) — a defense-in-depth layer beneath
+  Step 2's HTML escaping (matters for merchant-authored content in a production app). Noted for
+  Step 6: auto-height must avoid same-origin DOM access into the frame.
+- **Provisional & deferred:** frame chrome (`.previewFrame` — `display:block`, `width:100%`, a
+  fixed `height:32rem`, hairline border, white surface) is the iframe **element's** chrome, not
+  storefront content styling; **width → Step 5** (`previewDeviceWidth`), **height → Step 6**
+  (auto-height). No shared `spec-table.css`/pill visuals yet (Step 4), no a11y/empty-state
+  hardening yet (Step 7). `view` is consumed only for the iframe `title`. No reducer / schema /
+  dependency / server / persistence change.
+- **4 new pure unit tests** for the document wrapper (well-formed doc, body carries the exact
+  `renderSpecTableHtml` fragment, empty-rows stays valid/blank-body, **no-stylesheet-yet**
+  invariant). **Full gate green (563 tests, typecheck, lint, format, build).**
+- **Live-verified on the dev store (2026-07-12)** on the real Motorola Moto G35 5G template
+  (19 rows): Desktop / Tablet / Mobile each swap the stage to an **iframe** rendering the rows as
+  a real unstyled HTML table — dynamic fields as **plain pill text** ("Field · vendor", not the
+  editor's blue styled pill), `hideWhenEmpty` empty rows **absent**; all three views identical
+  full-width (sizing is Step 5); **Edit** restores the fully interactive grid; and on the
+  **Settings tab** a device view keeps the Settings sidebar in place beside the iframe. No SaveBar
+  (view state is client-only — previews never mutate the model). Detail →
+  `context/features/51-editor-device-previews-step3-render-in-iframe.md`. **Next → Step 4 (load the
+  shared `spec-table.css` into the iframe).**
+
+**Device previews — Step 2: pure storefront-markup renderer (Reshell Phase D, `50-…`, 2026-07-12)**
+- Second slice of feature 49. New pure `app/routes/app.templates_.$id/specTablePreviewHtml.ts`
+  exporting `renderSpecTableHtml(rows: EditorRow[]): string` — the **fidelity contract**: it
+  hand-mirrors the storefront markup (`blocks/spec_table.liquid` + `snippets/spec-table-value.liquid`)
+  so Step 3 can drop the string into a sandboxed iframe and Step 4's shared `spec-table.css`
+  styles it with **zero drift**. Same class names/structure as the storefront (`appx-spec-table`
+  div → table → tbody; section `<th colspan=2 scope=colgroup>`; data `<th …__label scope=row>` +
+  `<td …__value>`); TEXT escaped (author whitespace preserved), `LINE_BREAK → <br>`; whole-cell
+  **hideWhenEmpty** gate mirrored (skip iff flag AND the cell's visible text — TEXT + pill labels,
+  `<br>` ignored — is all-whitespace).
+- **One intentional divergence:** dynamic parts (`SHOPIFY_FIELD`/`METAFIELD`) have no product
+  context in the admin, so they render as **inert labeled pills** (`<span class="appx-spec-table__dynamic-pill"
+  title=…>`) via the editor's own pure `tokenLabels` (single source of truth for the pill text) —
+  so any cell containing a pill always survives the hideWhenEmpty gate. Also **no `ACTIVE` status
+  gate** and no `block.shopify_attributes` (storefront-only). Own small `escapeHtml` (`& < > " '`),
+  since the repo has none.
+- **Pure + wired to nothing** (Step 3 consumes it): no component / iframe / CSS / width sizing,
+  and no reducer / schema / dependency / persistence / server change. `EditorShell` /
+  `SpecTableEditor` from Step 1 unchanged. **16 new Node unit tests** (`specTablePreviewHtml.test.ts`
+  — empty, wrapper, section, data, LINE_BREAK, both pills, mixed-order/whitespace, escaping/no-injection,
+  the five hideWhenEmpty cases, array-order mix). **Full gate green (559 tests, typecheck, lint,
+  format, build).** No browser step (pure). Detail →
+  `context/features/50-editor-device-previews-step2-storefront-markup-renderer.md`. **Next → Step 3
+  (render the markup in an iframe → `SpecTablePreview.tsx`).**
 
 **Device previews — Step 1: toggle swaps the stage (Reshell Phase D, `49-…`, 2026-07-12)**
 - First slice of feature 49 (make the editor's **Desktop / Tablet / Mobile** toggle
