@@ -1,5 +1,6 @@
 import type { EditorRow } from "../../utils/rows";
 import type { DeviceView } from "./deviceView";
+import { previewDeviceWidth } from "./deviceView";
 import { renderSpecTablePreviewDocument } from "./specTablePreviewHtml";
 import styles from "./SpecTableEditor.module.css";
 
@@ -15,9 +16,11 @@ import styles from "./SpecTableEditor.module.css";
 // The `srcDoc` string is recomputed from the current rows on every render, so the
 // preview always reflects the live editor state.
 //
-// Deferred to later steps: the shared `spec-table.css` inside the iframe + pill
-// visuals (Step 4), device-width sizing (Step 5), content-driven auto-height
-// (Step 6), and richer a11y + the empty-rows state (Step 7).
+// Step 5 sizes the frame per device: `previewDeviceWidth(view)` supplies the
+// iframe's width (desktop fills, tablet 768px, mobile 375px), applied inline
+// because it is dynamic per render; `.previewFrame` clamps + centers a fixed
+// frame. Deferred to later steps: content-driven auto-height (Step 6) and the
+// dynamic-pill affordance styling + richer a11y + the empty-rows state (Step 7).
 
 const DEVICE_LABELS: Record<DeviceView, string> = {
   desktop: "Desktop",
@@ -44,6 +47,10 @@ export function SpecTablePreview({
         // must therefore avoid same-origin DOM access into the frame.)
         sandbox=""
         srcDoc={renderSpecTablePreviewDocument(rows)}
+        // Width is the one dynamic bit of the frame (desktop fills, tablet/mobile
+        // are fixed px device widths); the rest of the chrome — clamp, centering,
+        // border, height — lives in `.previewFrame`.
+        style={{ width: previewDeviceWidth(view) }}
       ></iframe>
     </s-box>
   );

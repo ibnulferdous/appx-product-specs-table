@@ -1,9 +1,12 @@
 import { describe, expect, it } from "vitest";
 import type { DataRow, SectionHeaderRow, ValuePart } from "../../utils/rows";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import {
   renderSpecTableHtml,
   renderSpecTablePreviewDocument,
 } from "./specTablePreviewHtml";
+import { PREVIEW_DOCUMENT_STYLES, SPEC_TABLE_CSS } from "./previewStyles";
 
 // Feature 49 · Step 2. The pure storefront-markup renderer — the fidelity
 // contract that "the preview matches the storefront exactly" hinges on. Because
@@ -217,18 +220,59 @@ describe("renderSpecTablePreviewDocument", () => {
     expect(doc).toContain(`<body>${renderSpecTableHtml(rows)}</body>`);
   });
 
-  it("stays a valid, complete document for empty rows (blank body)", () => {
+  it("stays a valid, complete document for empty rows (blank body, styled)", () => {
     const doc = renderSpecTablePreviewDocument([]);
     expect(doc.startsWith("<!doctype html>")).toBe(true);
     // renderSpecTableHtml([]) is "" → an empty body, no crash, no "undefined".
     expect(doc).toContain("<body></body>");
     expect(doc).not.toContain("undefined");
+    // The stylesheet is still injected even when there are no rows (Step 4).
+    expect(doc).toContain("<style>");
   });
 
-  it("links no stylesheet yet (Step 3 is intentionally unstyled)", () => {
+  // Feature 49 · Step 4 — the shared storefront stylesheet is now inlined. These
+  // assertions replace the Step 3 "intentionally unstyled" invariant.
+  it("inlines the shared storefront stylesheet in the head", () => {
     const doc = renderSpecTablePreviewDocument([dataRow([text("x")])]);
-    expect(doc).not.toContain("spec-table.css");
+    // A <style> block sits in the head (before the body opens).
+    const headEnd = doc.indexOf("</head>");
+    const styleAt = doc.indexOf("<style>");
+    expect(styleAt).toBeGreaterThanOrEqual(0);
+    expect(styleAt).toBeLessThan(headEnd);
+    // Inlined, not linked — the sandboxed opaque-origin frame has no reliable URL.
     expect(doc).not.toContain("<link");
-    expect(doc).not.toContain("<style");
+    // The exact single-source payload is present, byte-for-byte.
+    expect(doc).toContain(PREVIEW_DOCUMENT_STYLES);
+  });
+
+  it("carries the real storefront rules (not a stub)", () => {
+    // Signature selectors from the extension's spec-table.css must be present,
+    // proving the real rules are inlined.
+    expect(PREVIEW_DOCUMENT_STYLES).toContain(".appx-spec-table__table");
+    expect(PREVIEW_DOCUMENT_STYLES).toContain(".appx-spec-table__label");
+    expect(PREVIEW_DOCUMENT_STYLES).toContain(".appx-spec-table__section");
+  });
+
+  // The single-source-of-truth guard: SPEC_TABLE_CSS is a verbatim mirror of the
+  // theme app extension's storefront stylesheet. This reads the REAL file and
+  // asserts they are byte-identical (line endings normalized), so the mirror can
+  // never drift silently — if the storefront CSS changes, this fails until the
+  // copy in previewStyles.ts is updated to match.
+  it("mirrors the extension's spec-table.css byte-for-byte (no drift)", () => {
+    const cssPath = fileURLToPath(
+      new URL(
+        "../../../extensions/product-specs-table/assets/spec-table.css",
+        import.meta.url,
+      ),
+    );
+    const onDisk = readFileSync(cssPath, "utf8").replace(/\r\n/g, "\n");
+    expect(SPEC_TABLE_CSS).toBe(onDisk);
+  });
+
+  it("includes the minimal neutral preview-page ambient base", () => {
+    // A body font reset so the preview isn't the browser-default serif; explicitly
+    // not storefront table styling and not merchant-theme replication.
+    expect(PREVIEW_DOCUMENT_STYLES).toContain("body {");
+    expect(PREVIEW_DOCUMENT_STYLES).toContain("font-family");
   });
 });

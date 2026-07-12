@@ -448,20 +448,24 @@
   max-width: 32rem;
 }
 
-/* --- Device preview iframe (feature 49, Step 3) ---------------------------
+/* --- Device preview iframe (feature 49, Steps 3–5) ------------------------
  * Chrome for the sandboxed <iframe> that renders the read-only storefront markup
  * (SpecTablePreview). This styles only the iframe ELEMENT — its sizing, border,
- * and backdrop — NOT the storefront table inside it (the table stays
- * browser-default until the shared spec-table.css loads in Step 4, and its
- * colors/fonts/padding are a Style-tab concern). Both the full width and the
- * fixed height are PROVISIONAL: Step 5 replaces the width with a
- * previewDeviceWidth(view)-driven size (and centers narrow frames), and Step 6
- * replaces the fixed height with content-driven auto-height. Hex-free: the hairline
- * border reuses the module's low-alpha currentColor; the surface is a plain white
- * so the preview reads as a page, not the admin card. */
+ * and backdrop — NOT the storefront table inside it (its colors/fonts/padding
+ * come from the shared spec-table.css injected in Step 4; deeper theming is a
+ * Style-tab concern). The WIDTH is now device-driven (Step 5): the per-view size
+ * arrives as an inline style from previewDeviceWidth(view) — desktop fills,
+ * tablet is 768px, mobile is 375px — while this rule supplies the clamp and
+ * centering: `max-width: 100%` shrinks a fixed frame wider than the column
+ * (rather than overflowing it), and `margin-inline: auto` centers a narrow fixed
+ * frame in the stage. The HEIGHT stays PROVISIONAL: Step 6 replaces the fixed
+ * 32rem with content-driven auto-height. Hex-free: the hairline border reuses the
+ * module's low-alpha currentColor; the surface is a plain white so the preview
+ * reads as a page, not the admin card. */
 .previewFrame {
   display: block;
-  width: 100%;
+  max-width: 100%;
+  margin-inline: auto;
   height: 32rem;
   border: 0.0625rem solid color-mix(in srgb, currentColor 14%, transparent);
   border-radius: 0.5rem;

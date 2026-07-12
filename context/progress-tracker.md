@@ -35,7 +35,7 @@ resolve live** on the storefront (slice 2 / feature 35, browser-verified — dyn
 assignment engine — now **rigid, block-on-conflict** (one scope per template: all / product / type / vendor / collection; overlaps blocked at DRAFT→ACTIVE, no `priority`), delivering broad rules via **one shop-level routing metafield** (design locked in `data-model.md` §5/§9, 2026-07-07) — and
 Reshell Phases **B (Style tab) → C (Settings — status control shipped in feature
 36; display rules still pending) → D (device previews — **now in progress**, feature
-49; steps 1–3 of 8 shipped) → E (assignment) →
+49; steps 1–5 of 8 shipped) → E (assignment) →
 F (top-bar status/save model + cleanup)**.
 
 ---
@@ -43,6 +43,72 @@ F (top-bar status/save model + cleanup)**.
 ## Completed
 
 > One line per unit. Detail → the linked `context/features/` doc + git history.
+
+**Device previews — Step 5: size the iframe to each device width (Reshell Phase D, `53-…`, 2026-07-12)**
+- Fifth slice of feature 49. The **Desktop / Tablet / Mobile** toggle now changes the preview's
+  **width** (until now all three rendered an identical full-width frame): a new pure
+  `previewDeviceWidth(view)` in `deviceView.ts` maps `desktop → "100%"` (fill), `tablet → "768px"`,
+  `mobile → "375px"` (a `switch` with an exhaustive `never` default). `SpecTablePreview` spreads it
+  into the iframe's inline `style={{ width }}` (dynamic per render); `.previewFrame` drops the static
+  `width:100%` and adds `max-width:100%` (clamp) + `margin-inline:auto` (center a narrow fixed frame).
+- **Design calls (documented):** fixed widths are **CSS px, not rem** — a phone is 375 CSS px
+  regardless of the admin's root font size, so rem would let admin typography distort the emulated
+  device (a deliberate exception to the module's rem convention). Desktop **fills** rather than
+  pinning a fake desktop px the narrow admin column could never show. `max-width:100%` means a fixed
+  frame wider than the column **shrinks instead of overflowing** — a disclosed fidelity compromise
+  (a "768px" tablet in a narrow column is capped, never a horizontal scrollbar on the editor).
+- **Self-contained:** the storefront `spec-table.css` has **no `@media` rules** (verified), so
+  narrowing the frame only changes text **wrapping** — no responsive layout swap (the mobile
+  row-layout option is out of feature 49). Renderer / `srcDoc` / `spec-table.css` / reducer / schema
+  / server / persistence / **config** all untouched; the document string is identical across views.
+- **3 new pure unit tests** for `previewDeviceWidth` (exact `100%`/`768px`/`375px`, totality across
+  the three device views, desktop-only-fill vs. tablet/mobile `\d+px`). **Full gate green (569 tests,
+  typecheck, lint, format, build).**
+- **Live-verified on the dev store (2026-07-12)** on the real Motorola Moto G35 5G template: **Desktop**
+  fills the stage; **Tablet** renders a fixed ~768px frame **centered** with visible gutters; **Mobile**
+  a fixed ~375px frame, still centered, wrapping more tightly (e.g. "Dual SIM (Nano-SIM, dual stand-by)"
+  breaks to two lines) — the three widths scale proportionally (mobile:tablet ≈ 0.47 vs. 375:768 ≈
+  0.49). No editor horizontal overflow at any width; toggle swaps live with no reload; **Edit** restores
+  the fully interactive grid; Step 4 storefront styling (padding, hairlines, ~33% bold label column)
+  renders inside every device width; dynamic fields still show **plain pill text** (Step 7). Detail →
+  `context/features/53-editor-device-previews-step5-device-width-sizing.md`. **Next → Step 6 (iframe
+  content-driven auto-height).**
+
+**Device previews — Step 4: load the shared storefront stylesheet into the iframe (Reshell Phase D, `52-…`, 2026-07-12)**
+- Fourth slice of feature 49. The preview now **looks like the storefront table**: the theme app
+  extension's `assets/spec-table.css` is inlined into the iframe document as a `<style>` (padding,
+  row hairlines, ~33% bold label column, section rule). New `previewStyles.ts` holds the storefront
+  CSS as `SPEC_TABLE_CSS` + a **minimal neutral preview-page ambient** (`body` system sans-serif
+  reset so the preview isn't the browser-default serif — explicitly NOT storefront table CSS and NOT
+  merchant-theme replication) and exports `PREVIEW_DOCUMENT_STYLES`. `renderSpecTablePreviewDocument`
+  injects it into the `<head>`; stays pure. **Inlined, not `<link>`ed** — the sandboxed
+  opaque-origin `srcDoc` frame has no reliable URL to the CDN-served asset.
+- **Single-source-of-truth via a drift GUARD, not a build import.** First tried a Vite `?raw` import
+  of the extension file, but importing across the app→extensions boundary is fragile in
+  `shopify app dev`: `extensions/` sits outside `server.fs.allow`, the dev server blocks the read,
+  and the editor client bundle **fails to hydrate** (dead toggle, blank value cells) — even after
+  adding `"extensions"` to `fs.allow` and restarting (the vite.config route proved unreliable). So
+  the CSS is a **plain-string copy in `previewStyles.ts`** (zero dev-server coupling) and a unit test
+  **reads the real `spec-table.css` and asserts byte-equality** (line-endings normalized). Silent
+  drift is impossible — change the storefront CSS and the test fails until the copy matches — the
+  same guarantee the `?raw` import promised, robustly. `vite.config.ts` / `vitest.config.ts` /
+  `globals.d.ts` all reverted to baseline; **no npm dependency, no config change ships.**
+- Pill affordance styling stays **Step 7** (reconciled the Step 3 doc's "4/7"); device sizing →
+  Step 5, auto-height → Step 6. No `spec-table.css` edit (read only), no reducer / schema / server /
+  persistence change.
+- **Unit tests updated** (the Step 3 "no stylesheet yet" invariant flips): `<style>` in `<head>`,
+  no `<link>`, exact `PREVIEW_DOCUMENT_STYLES` payload present, real storefront selectors inlined,
+  ambient present, empty-rows still valid, **+ the byte-for-byte drift guard vs. the extension file.**
+  **Full gate green (566 tests, typecheck, lint, format, build).**
+- **Live-verified on the dev store (2026-07-12)** on the real Motorola Moto G35 5G template: Desktop
+  / Tablet / Mobile each render the **storefront-styled** table in the iframe — sans-serif (ambient),
+  left-aligned cells with padding, row hairline borders, ~33% bold label column (matching
+  `spec-table.css`), all three full-width (sizing is Step 5); dynamic fields still render as **plain
+  pill text** ("Field · vendor", not the editor's blue styled pill — Step 7); **Edit** restores the
+  fully interactive editable grid. (Settings-tab-with-preview invariant unchanged from Step 3, whose
+  plumbing Step 4 doesn't touch.) Detail →
+  `context/features/52-editor-device-previews-step4-shared-stylesheet.md`. **Next → Step 5 (device
+  width sizing — `previewDeviceWidth(view)`).**
 
 **Device previews — Step 3: render the markup in a sandboxed iframe (Reshell Phase D, `51-…`, 2026-07-12)**
 - Third slice of feature 49 — the **first painting step**. New `SpecTablePreview.tsx` feeds the

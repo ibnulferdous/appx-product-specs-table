@@ -21,3 +21,34 @@ export type DeviceView = Exclude<ViewId, "edit">;
 export function isPreviewView(view: ViewId): view is DeviceView {
   return view !== "edit";
 }
+
+/**
+ * The CSS width the device preview iframe renders at (feature 49, Step 5).
+ *
+ * - `desktop` → `"100%"`: fill the editor column. Emulating a fixed desktop px
+ *   width would only ever be clamped by the narrower admin column, so desktop
+ *   simply fills.
+ * - `tablet` → `"768px"`, `mobile` → `"375px"`: fixed CSS-pixel device widths.
+ *   Px (not rem) on purpose — a phone is 375 CSS px regardless of the admin's
+ *   root font size, so rem would let admin typography distort the emulated
+ *   device. The frame is clamped with `max-width: 100%` in CSS, so a fixed width
+ *   wider than the column shrinks instead of overflowing.
+ *
+ * Keyed on `DeviceView` (not `ViewId`) because only device previews reach the
+ * iframe; the exhaustive `never` default makes a future `ViewId` addition fail
+ * typecheck here. Pure string-in/string-out, unit-tested like `isPreviewView`.
+ */
+export function previewDeviceWidth(view: DeviceView): string {
+  switch (view) {
+    case "desktop":
+      return "100%";
+    case "tablet":
+      return "768px";
+    case "mobile":
+      return "375px";
+    default: {
+      const exhaustive: never = view;
+      return exhaustive;
+    }
+  }
+}

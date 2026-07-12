@@ -23,6 +23,7 @@
 
 import type { EditorRow, ValuePart } from "../../utils/rows";
 import { tokenLabels } from "../../utils/valueDom";
+import { PREVIEW_DOCUMENT_STYLES } from "./previewStyles";
 
 // Preview-only class for the inert dynamic-field pill. The storefront CSS has no
 // such selector (it resolves dynamic parts to plain text), so this never collides
@@ -126,12 +127,14 @@ export function renderSpecTableHtml(rows: EditorRow[]): string {
  * for an iframe `srcDoc` — a `<!doctype html>` shell with `<meta charset>` +
  * responsive viewport and the rendered rows in the `<body>`.
  *
- * Deliberately STYLE-FREE at Step 3: no `spec-table.css` is linked here, so the
- * iframe paints the browser-default table — that unstyled look is the expected,
- * verifiable Step 3 result. Step 4 adds the shared stylesheet at this seam. Pure
+ * The shared storefront `spec-table.css` (plus a minimal preview-page ambient) is
+ * inlined as a `<style>` in the `<head>` from its single source of truth
+ * (`PREVIEW_DOCUMENT_STYLES`), so the preview is styled by the same bytes the
+ * storefront ships — inlined rather than `<link>`ed because the sandboxed,
+ * opaque-origin `srcDoc` frame has no reliable URL to the CDN-served asset. Pure
  * and framework-free (string in, string out) so the whole HTML contract stays
  * Node-unit-testable; the component just drops the return value into `srcDoc`.
  */
 export function renderSpecTablePreviewDocument(rows: EditorRow[]): string {
-  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Spec table preview</title></head><body>${renderSpecTableHtml(rows)}</body></html>`;
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Spec table preview</title><style>${PREVIEW_DOCUMENT_STYLES}</style></head><body>${renderSpecTableHtml(rows)}</body></html>`;
 }
