@@ -1,14 +1,19 @@
+import { useEffect, useRef, useState } from "react";
 import type { EditorRow } from "../../utils/rows";
 import type { DeviceView } from "./deviceView";
 import { previewDeviceWidth } from "./deviceView";
+import {
+  clampPreviewHeight,
+  PREVIEW_HEIGHT_MESSAGE_TYPE,
+} from "./previewBridge";
 import { renderSpecTablePreviewDocument } from "./specTablePreviewHtml";
 import styles from "./SpecTableEditor.module.css";
 
 // Feature 49 · Step 3 — the read-only device preview. Replaces the Step 1
 // placeholder: feeds the live rows through the pure storefront-markup renderer
 // (`renderSpecTablePreviewDocument` → `renderSpecTableHtml`) into a SANDBOXED
-// <iframe srcDoc>, so the Desktop / Tablet / Mobile toggle shows the real (still
-// unstyled) storefront markup of the working table. The iframe is the isolation
+// <iframe srcDoc>, so the Desktop / Tablet / Mobile toggle shows the real
+// storefront markup + styling of the working table. The iframe is the isolation
 // boundary: the storefront box model renders with no admin/Polaris CSS bleeding
 // in, and nothing inside can reach back out.
 //
@@ -18,9 +23,19 @@ import styles from "./SpecTableEditor.module.css";
 //
 // Step 5 sizes the frame per device: `previewDeviceWidth(view)` supplies the
 // iframe's width (desktop fills, tablet 768px, mobile 375px), applied inline
-// because it is dynamic per render; `.previewFrame` clamps + centers a fixed
-// frame. Deferred to later steps: content-driven auto-height (Step 6) and the
-// dynamic-pill affordance styling + richer a11y + the empty-rows state (Step 7).
+// because it is dynamic per render; `.previewFrame` clamps + centers a fixed frame.
+//
+// Step 6 makes the frame auto-height to its content. Because the frame is an
+// opaque origin, the parent cannot read into it; instead the framed document runs
+// a trusted shim (see `previewBridge.ts`) that measures itself and postMessages the
+// height OUT, and the effect below applies it. This flips the Step 3 `sandbox=""`
+// to `sandbox="allow-scripts"` — the minimum needed to run the shim. The frame
+// stays a UNIQUE OPAQUE ORIGIN (never `allow-same-origin`; combining the two would
+// let the frame clear its own sandbox), and a strict CSP in the document forbids
+// all network egress, so the newly-granted scripts are our shim and nothing else.
+// Still read-only: the parent only READS a height number; it never posts into the
+// frame or mutates the model. Deferred to Step 7: dynamic-pill affordance styling
+// + richer a11y + the empty-rows state.
 
 const DEVICE_LABELS: Record<DeviceView, string> = {
   desktop: "Desktop",
@@ -35,22 +50,45 @@ export function SpecTablePreview({
   rows: EditorRow[];
   view: DeviceView;
 }) {
+  const frameRef = useRef<HTMLIFrameElement>(null);
+  const [height, setHeight] = useState<number | null>(null);
+
+  useEffect(() => {
+    function onMessage(event: MessageEvent) {
+      // Trust by frame IDENTITY, not origin: an opaque-origin sandboxed frame
+      // posts with `origin === "null"`, so only accept messages whose source is
+      // our own iframe's window (this also rejects unrelated App Bridge traffic).
+      if (event.source !== frameRef.current?.contentWindow) return;
+      const data = event.data;
+      if (!data || data.type !== PREVIEW_HEIGHT_MESSAGE_TYPE) return;
+      const next = clampPreviewHeight(data.height);
+      if (next !== null) setHeight(next);
+    }
+    window.addEventListener("message", onMessage);
+    return () => window.removeEventListener("message", onMessage);
+  }, []);
+
   return (
     <s-box padding="base">
       <iframe
+        ref={frameRef}
         className={styles.previewFrame}
-        title={`${DEVICE_LABELS[view]} preview`}
-        // Empty sandbox = the most restrictive: no scripts, no forms, no popups,
-        // and a unique opaque origin (no allow-same-origin). The preview is static
-        // HTML with zero interactivity, so it needs none of those — a defense-in-
-        // depth layer beneath the renderer's HTML escaping. (Step 6's auto-height
-        // must therefore avoid same-origin DOM access into the frame.)
-        sandbox=""
+        // Accessible name conveys preview + which device + read-only (Step 7), so
+        // AT users know this is a non-editable rendering, not the live table.
+        title={`Spec table preview — ${DEVICE_LABELS[view]}, read-only`}
+        // `allow-scripts` ONLY (Step 6) — runs the trusted height shim while the
+        // frame stays a unique opaque origin. Never add `allow-same-origin`: with
+        // scripts, the pair lets a frame remove its own sandbox. Egress is further
+        // barred by the document's CSP.
+        sandbox="allow-scripts"
         srcDoc={renderSpecTablePreviewDocument(rows)}
-        // Width is the one dynamic bit of the frame (desktop fills, tablet/mobile
-        // are fixed px device widths); the rest of the chrome — clamp, centering,
-        // border, height — lives in `.previewFrame`.
-        style={{ width: previewDeviceWidth(view) }}
+        // Width is the per-device size (Step 5); height is the shim-measured
+        // content height (Step 6), falling back to the `.previewFrame` min-height
+        // until the first measurement arrives.
+        style={{
+          width: previewDeviceWidth(view),
+          height: height !== null ? `${height}px` : undefined,
+        }}
       ></iframe>
     </s-box>
   );

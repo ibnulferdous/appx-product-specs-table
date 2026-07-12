@@ -24,6 +24,25 @@
 import type { EditorRow, ValuePart } from "../../utils/rows";
 import { tokenLabels } from "../../utils/valueDom";
 import { PREVIEW_DOCUMENT_STYLES } from "./previewStyles";
+import { PREVIEW_HEIGHT_BRIDGE_SCRIPT } from "./previewBridge";
+
+// Strict CSP for the preview document (Step 6). Since Step 6 grants the frame
+// `allow-scripts`, this bounds it tightly: `default-src 'none'` forbids ALL
+// network egress (img/connect/font/frame/etc.), and only our own inline `<style>`
+// (Step 4) and inline shim (Step 6) are permitted to run. So even if the Step 2
+// escaping ever failed, injected markup could neither load nor exec anything nor
+// make any request. Placed before the `<style>`/`<script>` it governs.
+const PREVIEW_CSP_META = `<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'">`;
+
+// Preview-ONLY empty state (Step 7). The storefront renders nothing for an empty
+// template (`renderSpecTableHtml` → ""), which in the editor preview reads as a
+// blank/broken frame. This friendly placeholder is substituted for the body when
+// the rendered fragment has NO rows — covering BOTH zero rows and "rows exist but
+// all are hidden by hideWhenEmpty" (both produce no `<tr>`). It lives at the
+// document level, never in `renderSpecTableHtml`, so storefront fidelity is
+// unchanged. Static, escaped, non-interactive; styled by `.appx-spec-table-preview-
+// empty` (preview-only, in previewStyles.ts). Copy is general enough for both cases.
+const PREVIEW_EMPTY_STATE_HTML = `<div class="appx-spec-table-preview-empty"><p>No spec rows to preview yet — rows with content appear here as they&#39;d render on your storefront.</p></div>`;
 
 // Preview-only class for the inert dynamic-field pill. The storefront CSS has no
 // such selector (it resolves dynamic parts to plain text), so this never collides
@@ -131,10 +150,18 @@ export function renderSpecTableHtml(rows: EditorRow[]): string {
  * inlined as a `<style>` in the `<head>` from its single source of truth
  * (`PREVIEW_DOCUMENT_STYLES`), so the preview is styled by the same bytes the
  * storefront ships — inlined rather than `<link>`ed because the sandboxed,
- * opaque-origin `srcDoc` frame has no reliable URL to the CDN-served asset. Pure
- * and framework-free (string in, string out) so the whole HTML contract stays
+ * opaque-origin `srcDoc` frame has no reliable URL to the CDN-served asset. A
+ * strict CSP meta (Step 6) leads the `<head>`, and the height-measurement shim
+ * (Step 6) trails the `<body>` — both view-independent, so the document is
+ * byte-identical across the three device views (Step 5 changes only the iframe's
+ * outer width), which is why a device-toggle does not reload the frame. Pure and
+ * framework-free (string in, string out) so the whole HTML contract stays
  * Node-unit-testable; the component just drops the return value into `srcDoc`.
  */
 export function renderSpecTablePreviewDocument(rows: EditorRow[]): string {
-  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Spec table preview</title><style>${PREVIEW_DOCUMENT_STYLES}</style></head><body>${renderSpecTableHtml(rows)}</body></html>`;
+  // No rows to preview (zero rows, or all rows hidden by hideWhenEmpty → no `<tr>`)
+  // → show the preview-only empty state instead of a blank body (Step 7).
+  const fragment = renderSpecTableHtml(rows);
+  const body = fragment.includes("<tr") ? fragment : PREVIEW_EMPTY_STATE_HTML;
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8">${PREVIEW_CSP_META}<meta name="viewport" content="width=device-width, initial-scale=1"><title>Spec table preview</title><style>${PREVIEW_DOCUMENT_STYLES}</style></head><body>${body}${PREVIEW_HEIGHT_BRIDGE_SCRIPT}</body></html>`;
 }

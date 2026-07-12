@@ -34,15 +34,147 @@ resolve live** on the storefront (slice 2 / feature 35, browser-verified — dyn
 `SHOPIFY_FIELD`/`METAFIELD` show real values, no placeholders). Remaining: the
 assignment engine — now **rigid, block-on-conflict** (one scope per template: all / product / type / vendor / collection; overlaps blocked at DRAFT→ACTIVE, no `priority`), delivering broad rules via **one shop-level routing metafield** (design locked in `data-model.md` §5/§9, 2026-07-07) — and
 Reshell Phases **B (Style tab) → C (Settings — status control shipped in feature
-36; display rules still pending) → D (device previews — **now in progress**, feature
-49; steps 1–5 of 8 shipped) → E (assignment) →
-F (top-bar status/save model + cleanup)**.
+36; display rules still pending) → D (device previews — **COMPLETE**, feature 49;
+all 8 steps shipped, gate green, live-verified 2026-07-13) → E (assignment — **now
+next**) → F (top-bar status/save model + cleanup)**.
+
+> **Phase D delivered the preview *mechanism*, narrower than the Reshell plan's Phase D.** Three
+> deliberate deltas (recorded in `56-…`, for Phase F to reconcile the plan text): (1) **no live
+> `TableStyling`** — feature 49 front-ran Phase B, so the preview inlines the shared storefront
+> `spec-table.css` (the current storefront styling); (2) **no mobile stacked label-over-value** — only
+> iframe width changes (the stacked layout is the Style-tab mobile row-layout option, out of scope per
+> PRD line 33 / `admin-screen-plan.md` line 142); (3) **mobile width 375px**, not the plan's 390px.
 
 ---
 
 ## Completed
 
 > One line per unit. Detail → the linked `context/features/` doc + git history.
+
+**Editor page width → "large" (UI polish, 2026-07-13)**
+- The editor route's `<s-page>` had no `inlineSize`, so it rendered at the narrow default while the
+  templates list uses `inlineSize="large"`. Added `inlineSize="large"` to `app.templates_.$id/route.tsx`
+  so the editor matches the list's wider layout. **Safe by construction** — the editor is fully fluid:
+  the `EditorShell` card has no max-width, the rows grid columns are proportional, the control row is
+  `flex-wrap`, and the bounded inner-scroll (`useScrollRegionHeight`) measures **height only**. The
+  device-preview `.previewFrame` already clamps with `max-width:100%` + `margin-inline:auto`, so widening
+  only gives the value column + Desktop preview more room and **un-caps the 768px Tablet preview** a
+  narrow column used to shrink (the Step 5 "disclosed fidelity compromise"). One-line change, no schema/
+  server/persistence/test impact. **Full gate green (581 tests, typecheck, lint, format, build).**
+  **Live-verified on the dev store (2026-07-13):** a `/new` template renders the editor grid at the wider
+  width and the **Desktop preview fills the wider card**, no overflow/breakage (scratch `/new`, never
+  saved — zero DB footprint).
+
+**Device previews — Step 8: docs + full gate + live sign-off — FEATURE 49 / RESHELL PHASE D COMPLETE (`56-…`, 2026-07-13)**
+- Eighth and final slice of feature 49 — the feature close. **Ships no runtime code**: a release-gate
+  re-run + a consolidated whole-feature live sign-off + the docs that mark Phase D done. Full gate
+  **green (581 tests, 28 files; typecheck, lint, format, build)** — matches Step 7, as expected for a
+  docs-only step.
+- **Live sign-off (2026-07-13) — substantially complete; two cells DB-blocked.** The dev store's
+  **existing-template editor route would not load** (a transient Neon/tunnel flap — the same instability
+  logged under Step 7): loader-bearing routes hung (CDP screenshot timeouts, spontaneous zoom drift)
+  while client-only interactions worked (the `?status=ACTIVE` list filter navigated fine), so the 44-row
+  **DJI Mavic** and dynamic-pill **Moto G35** couldn't be opened. Verified the whole preview surface on a
+  fresh **`/app/templates/new`** scaffold instead (same `SpecTablePreview`, no stored-template read),
+  typing a real row (`Display | 6.7-inch AMOLED, 120Hz`): **Desktop** full-width storefront-styled table
+  (bold ~33% label, section rule, hairlines, padding) with editor chrome hidden and the frame **hugging**
+  content (auto-height, no inner scrollbar); **Mobile** ~375px centered; **Tablet** ~768px centered;
+  widths scale proportionally; **toggle live** (no reload between views); **read-only** (viewing never
+  touched the SaveBar; **Edit** restored the interactive grid); **empty state** (select-all → Delete
+  [confirm modal showed the correct feature-33 "undo afterward" copy] → 0 rows → centered "No spec rows
+  to preview yet…" message, floored at the Step 6 min-height); **console clean** (previews rendering =
+  CSP + `allow-scripts` sandbox + height shim all working). **Cleanup:** the scratch `/new` was
+  **discarded, never saved** — templates list re-confirmed clean (same 5 templates, no stray "Untitled";
+  zero DB footprint).
+- **Two matrix cells not re-run today (DB-blocked), already verified live in prior steps on this store:**
+  the **dynamic-pill neutral chip** (Step 7, Moto G35) and the **genuinely-long 44-row** no-inner-scrollbar
+  + **mobile re-height-on-wrap** (Step 6, DJI Mavic — the scaffold value fit one line at 375px, so
+  wrap-driven re-height wasn't re-observed; the auto-height *mechanism* was re-confirmed). **No defect
+  found; no source change.**
+- **Phase D closes the preview *mechanism*, narrower than the Reshell plan's Phase D** — three
+  deliberate deltas recorded for Phase F to reconcile: no live `TableStyling` yet (front-ran Phase B →
+  preview inlines the shared storefront CSS), no mobile stacked layout (deferred to the Style-tab mobile
+  row-layout option, per PRD line 33 / `admin-screen-plan.md` line 142), and mobile 375px vs the plan's
+  390px. **Verified 2026-07-13** that `data-model.md` / `prd.md` / `code-standards.md` need no change and
+  that no in-project file except this tracker carries Phase-D status (`admin-screen-plan.md`'s update is
+  a Phase-F cleanup task; `feature-roadmap.md` has no phase entry; the Reshell plan was moved out of the
+  project). Detail →
+  `context/features/56-editor-device-previews-step8-docs-gate-signoff.md`. **Feature 49 complete. Next →
+  Reshell Phase E (product assignment).**
+
+**Device previews — Step 7: a11y + read-only hardening + empty state + dynamic-pill affordance (Reshell Phase D, `55-…`, 2026-07-13)**
+- Seventh slice of feature 49 — the shopper-facing polish/compliance pass that collects the affordances
+  deferred through Steps 3–6. Three preview-facing changes, all strictly **preview-only** (never
+  storefront): (1) the inert **dynamic-field pills** now render as a **neutral grey chip**
+  (`.appx-spec-table__dynamic-pill`), so a merchant sees which values resolve per-product; (2) a
+  friendly **empty state** replaces a blank frame when there are no rows to preview; (3) the iframe's
+  **accessible name** now states "preview + device + read-only".
+- **The preview-only / storefront-fidelity boundary held throughout** — on a real product page a dynamic
+  value resolves to plain text and an empty template renders nothing, so none of this may leak into the
+  fidelity layer. Pill + empty-state CSS live in a new **preview-only** section of `previewStyles.ts`
+  (never in the drift-guarded `SPEC_TABLE_CSS`, whose byte-equality guard still passes); the empty-state
+  HTML lives in `renderSpecTablePreviewDocument` (never in `renderSpecTableHtml`, which is unchanged:
+  still `""` for empty). The empty state triggers on **"no `<tr>` rendered"**, covering both zero rows
+  and all-hidden. Pill is **neutral, self-contained** (the isolated iframe can't see the admin's
+  captured Polaris `--appx-token-color`; neutral ≠ the editor's blue editable-token — correct, it means
+  "resolves later"), WCAG **AA** (text #4a5568 on #eef1f5 ≈ 6.65:1; empty-state #6b7280 on white ≈
+  4.83:1). No motion (Step 6 height is instant), no interactive elements, sandbox unchanged.
+- **4 new/updated unit tests** (empty state for zero-rows **and** all-hidden, non-empty unaffected,
+  `renderSpecTableHtml` contract intact, pill CSS present in preview styles but **absent** from
+  `SPEC_TABLE_CSS`, view-independence). No renderer row-logic / Step 5 width / Step 6 height mechanism /
+  config / extension change; document stays byte-identical across views. **Full gate green (581 tests,
+  typecheck, lint, format, build).**
+- **Live-verified on the dev store (2026-07-13):** on the Motorola Moto G35 5G preview the Brand/Model
+  `vendor` fields render as **neutral grey chips**, clearly distinct from the plain-text resolved values
+  (Network, Dimensions, …); on a **zero-row** template (a scratch new template — deleted-all-rows, then
+  **discarded, not saved**; templates list re-confirmed clean, no stray template) the preview shows the
+  centered empty-state message. Console clean (no CSP/SecurityError); Step 4 styling + Step 5 desktop
+  fill + Step 6 auto-height all still hold. (The session's Neon Postgres was intermittently unreachable
+  — transient DB flapping, unrelated to the code — which caused CDP/interaction flakiness; the pill +
+  empty state rendered correctly whenever the DB was up.) Detail →
+  `context/features/55-editor-device-previews-step7-a11y-readonly-empty-state.md`. **Next → Step 8 (docs
+  + full gate + live sign-off).**
+
+**Device previews — Step 6: content-driven iframe auto-height (Reshell Phase D, `54-…`, 2026-07-12)**
+- Sixth slice of feature 49. The preview iframe now **grows to exactly its content height** — a short
+  table hugs (no dead space) and a long one shows every row with **no inner scrollbar** (the admin page
+  scrolls). Replaces the provisional fixed `32rem`. The framed document measures itself and
+  `postMessage`s the height OUT to the parent, which sizes the iframe.
+- **The hard part — a sandbox capability decision.** An iframe needs an explicit height, and Step 3's
+  `sandbox=""` (opaque origin, no scripts) severed **both** ways a parent learns content height: reading
+  `contentDocument` throws (opaque origin), and no script could run to report it. Auto-height forced
+  relaxing exactly one restriction. **Chose `sandbox="allow-scripts"`** (the route Step 3's own comment
+  reserved: "avoid same-origin DOM access") over `allow-same-origin` + parent-measure — it honors that
+  lock and reacts to **reflow** (a `ResizeObserver` inside the frame), which the toggle needs because
+  Step 5 made the `srcDoc` byte-identical across views (a width change doesn't reload the frame, so a
+  `load`-only signal would never re-fire). Frame stays a **unique opaque origin**; `allow-same-origin`
+  is **never** added (the pair would let a frame clear its own sandbox).
+- **Security bound:** a strict CSP meta (`default-src 'none'; style-src 'unsafe-inline'; script-src
+  'unsafe-inline'`) leads the document `<head>`, so the only code that runs is our own inline style
+  (Step 4) + shim and the frame can make **no network requests** — bounding the newly-granted scripts
+  even if the Step 2 escaping ever failed. Parent trusts by **`event.source` identity, not
+  `event.origin`** (opaque frame → `origin === "null"`), and runs the height through a pure
+  `clampPreviewHeight` (finite/positive/`Math.ceil`/min floor; **no max** — full height, page scrolls).
+  No resize loop: content height is width-driven and independent of the element's outer height (+ a
+  dedupe guard). Still **read-only** — the parent only reads a number.
+- New `previewBridge.ts` holds the single-source `PREVIEW_HEIGHT_MESSAGE_TYPE`, the inline shim, and the
+  pure clamp (imported by both the shim-injecting document builder and the parent listener, so they
+  can't drift). `.previewFrame` drops the fixed height for a `min-height: 6rem` floor. No renderer
+  row-logic / Step 5 width / Step 4 styling / extension / **config** change; the document stays
+  byte-identical across views.
+- **8 new unit tests** (new `previewBridge.test.ts`: exhaustive `clampPreviewHeight` + shim shape/no
+  nested `</script>`; extended `specTablePreviewHtml.test.ts`: shim + CSP + shared constant present,
+  view-independence, empty-rows still valid). **Full gate green (577 tests, typecheck, lint, format,
+  build).**
+- **Live-verified on the dev store (2026-07-12):** on the long **DJI Mavic 4 Pro** (44 rows, ACTIVE)
+  the **Desktop** frame shows every row with **no inner scrollbar** (>700px, well past the old 32rem);
+  switching to **Mobile** the frame **re-heights taller** as labels/values wrap, still with no inner
+  scrollbar (the ResizeObserver reflow path — a load-only signal would have left an inner scrollbar);
+  on the short **Portable Handheld Fan** (7 rows) the frame **hugs** the content (no dead space).
+  Console clean (no CSP/SecurityError), no oscillation; **Edit** restores the interactive grid; Step 4
+  styling (padding, hairlines, bold labels, section rules) + Step 5 widths/centering intact. Detail →
+  `context/features/54-editor-device-previews-step6-iframe-auto-height.md`. **Next → Step 7 (a11y +
+  read-only hardening + empty state + dynamic-pill affordance styling).**
 
 **Device previews — Step 5: size the iframe to each device width (Reshell Phase D, `53-…`, 2026-07-12)**
 - Fifth slice of feature 49. The **Desktop / Tablet / Mobile** toggle now changes the preview's

@@ -62,6 +62,47 @@ const PREVIEW_AMBIENT = `body {
   color: #1a1a1a;
 }`;
 
+// Preview-ONLY affordances (feature 49, Step 7) — deliberately NOT part of
+// `SPEC_TABLE_CSS` (which stays byte-equal to the extension, drift-guarded) and
+// NOT shipped to the storefront. On a real product page a dynamic value resolves
+// to plain text and an empty template renders nothing; these rules exist only so
+// the in-editor preview READS clearly.
+//
+// - `.appx-spec-table__dynamic-pill` — the inert dynamic-field placeholder (Step 2
+//   markup). The storefront CSS has no such selector, so this collides with
+//   nothing. A neutral chip (NOT the editor's blue editable-token look; the iframe
+//   can't see the admin's captured `--appx-token-color` anyway) that reads as "a
+//   value that resolves per-product on the storefront". Self-contained colors,
+//   WCAG AA: text #4a5568 on #eef1f5 ≈ 6.65:1.
+// - `.appx-spec-table-preview-empty` — the empty-state block shown when there are
+//   no rows to preview. Muted, centered; text #6b7280 on the white preview ≈
+//   4.83:1 (AA). Light-surface colors on purpose — the preview is a light,
+//   storefront-like page, not the admin theme.
+const PREVIEW_AFFORDANCES = `.appx-spec-table__dynamic-pill {
+  display: inline-block;
+  padding: 0.05em 0.4em;
+  border-radius: 0.25rem;
+  background: #eef1f5;
+  color: #4a5568;
+  font-size: 0.9em;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.appx-spec-table-preview-empty {
+  margin: 2rem auto;
+  max-width: 22rem;
+  text-align: center;
+  color: #6b7280;
+  font-size: 0.95rem;
+  line-height: 1.5;
+}
+
+.appx-spec-table-preview-empty p {
+  margin: 0;
+}`;
+
 // The full <style> payload for the preview document: the ambient base first (so
-// the storefront rules win any future overlap), then the storefront CSS verbatim.
-export const PREVIEW_DOCUMENT_STYLES = `${PREVIEW_AMBIENT}\n${SPEC_TABLE_CSS}`;
+// the storefront rules win any future overlap), then the preview-only affordances,
+// then the storefront CSS verbatim.
+export const PREVIEW_DOCUMENT_STYLES = `${PREVIEW_AMBIENT}\n${PREVIEW_AFFORDANCES}\n${SPEC_TABLE_CSS}`;

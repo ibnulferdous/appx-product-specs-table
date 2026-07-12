@@ -7,6 +7,10 @@ import {
   renderSpecTablePreviewDocument,
 } from "./specTablePreviewHtml";
 import { PREVIEW_DOCUMENT_STYLES, SPEC_TABLE_CSS } from "./previewStyles";
+import {
+  PREVIEW_HEIGHT_BRIDGE_SCRIPT,
+  PREVIEW_HEIGHT_MESSAGE_TYPE,
+} from "./previewBridge";
 
 // Feature 49 · Step 2. The pure storefront-markup renderer — the fidelity
 // contract that "the preview matches the storefront exactly" hinges on. Because
@@ -213,18 +217,23 @@ describe("renderSpecTablePreviewDocument", () => {
     expect(doc).toContain("</body></html>");
   });
 
-  it("carries the rendered rows fragment in the body", () => {
+  it("carries the rendered rows fragment at the start of the body", () => {
     const rows = [sectionRow({ label: "Display" }), dataRow([text("6.1 in")])];
     const doc = renderSpecTablePreviewDocument(rows);
-    // The body holds the exact renderSpecTableHtml output — same fidelity contract.
-    expect(doc).toContain(`<body>${renderSpecTableHtml(rows)}</body>`);
+    // The body opens with the exact renderSpecTableHtml output — same fidelity
+    // contract; the Step 6 height shim trails it before </body>.
+    expect(doc).toContain(`<body>${renderSpecTableHtml(rows)}`);
+    expect(doc).toContain(`${PREVIEW_HEIGHT_BRIDGE_SCRIPT}</body>`);
   });
 
-  it("stays a valid, complete document for empty rows (blank body, styled)", () => {
+  it("shows the empty state (not a blank body) for zero rows; shim + styles present", () => {
     const doc = renderSpecTablePreviewDocument([]);
     expect(doc.startsWith("<!doctype html>")).toBe(true);
-    // renderSpecTableHtml([]) is "" → an empty body, no crash, no "undefined".
-    expect(doc).toContain("<body></body>");
+    // renderSpecTableHtml([]) is "" (no <tr>) → the preview-only empty state fills
+    // the body (Step 7), then the height shim; no crash, no "undefined".
+    expect(doc).toContain('<body><div class="appx-spec-table-preview-empty">');
+    expect(doc).toContain(`</div>${PREVIEW_HEIGHT_BRIDGE_SCRIPT}</body>`);
+    expect(doc).not.toContain("<tr");
     expect(doc).not.toContain("undefined");
     // The stylesheet is still injected even when there are no rows (Step 4).
     expect(doc).toContain("<style>");
@@ -274,5 +283,90 @@ describe("renderSpecTablePreviewDocument", () => {
     // not storefront table styling and not merchant-theme replication.
     expect(PREVIEW_DOCUMENT_STYLES).toContain("body {");
     expect(PREVIEW_DOCUMENT_STYLES).toContain("font-family");
+  });
+
+  // Feature 49 · Step 6 — the document now carries the auto-height shim (so it can
+  // report its content height) and a strict CSP (to bound the newly-granted
+  // `allow-scripts`).
+  it("injects the height-measurement shim at the end of the body", () => {
+    const doc = renderSpecTablePreviewDocument([dataRow([text("x")])]);
+    // The shim is our single-source bridge script, and it sits just before </body>.
+    expect(doc).toContain(PREVIEW_HEIGHT_BRIDGE_SCRIPT);
+    expect(doc).toContain(`${PREVIEW_HEIGHT_BRIDGE_SCRIPT}</body>`);
+    // The message type the parent listener filters on is present (no drift).
+    expect(doc).toContain(PREVIEW_HEIGHT_MESSAGE_TYPE);
+  });
+
+  it("leads the head with a strict Content-Security-Policy meta", () => {
+    const doc = renderSpecTablePreviewDocument([dataRow([text("x")])]);
+    // Present, inside the head, and before the <style>/<script> it governs.
+    const cspAt = doc.indexOf("Content-Security-Policy");
+    const headEnd = doc.indexOf("</head>");
+    const styleAt = doc.indexOf("<style>");
+    expect(cspAt).toBeGreaterThanOrEqual(0);
+    expect(cspAt).toBeLessThan(headEnd);
+    expect(cspAt).toBeLessThan(styleAt);
+    // default-src 'none' (no network egress); only our inline style + script run.
+    expect(doc).toContain("default-src 'none'");
+    expect(doc).toContain("style-src 'unsafe-inline'");
+    expect(doc).toContain("script-src 'unsafe-inline'");
+  });
+
+  it("is view-independent — the builder takes only rows, so the srcDoc is byte-identical across device views", () => {
+    // Step 5 changes only the iframe's OUTER width; the document must not encode
+    // any device view, so a toggle does not reload the frame (Step 6 relies on the
+    // in-frame ResizeObserver, not a reload, to re-height).
+    const rows = [dataRow([text("x")])];
+    const doc = renderSpecTablePreviewDocument(rows);
+    expect(doc).not.toContain("desktop");
+    expect(doc).not.toContain("tablet");
+    expect(doc).not.toContain("mobile");
+    // Same input → identical output (no hidden per-call variation).
+    expect(renderSpecTablePreviewDocument(rows)).toBe(doc);
+  });
+
+  // Feature 49 · Step 7 — the preview-only empty state + dynamic-pill affordance.
+  it("shows the empty state when rows exist but are all hidden by hideWhenEmpty", () => {
+    const rows = [
+      dataRow([text("")], { id: "d1", hideWhenEmpty: true }),
+      dataRow([text("   ")], { id: "d2", hideWhenEmpty: true }),
+    ];
+    // The storefront fragment renders no rows (empty tbody, no <tr>)...
+    expect(renderSpecTableHtml(rows)).not.toContain("<tr");
+    // ...so the preview document substitutes the empty state.
+    const doc = renderSpecTablePreviewDocument(rows);
+    expect(doc).toContain('<div class="appx-spec-table-preview-empty">');
+    expect(doc).not.toContain("<tr");
+  });
+
+  it("does NOT substitute the empty state when there are visible rows", () => {
+    const doc = renderSpecTablePreviewDocument([dataRow([text("42")])]);
+    expect(doc).toContain("<tr");
+    // The empty-state DIV must be absent (the CSS rule for it still lives in the
+    // <style>, so assert on the body block marker, not the bare class name).
+    expect(doc).not.toContain('<div class="appx-spec-table-preview-empty">');
+  });
+
+  it("keeps the empty state preview-only — renderSpecTableHtml is unchanged", () => {
+    // The storefront-fidelity renderer still returns "" for [] and the empty-tbody
+    // wrapper for all-hidden; the empty state is a document-level addition only.
+    expect(renderSpecTableHtml([])).toBe("");
+    expect(
+      renderSpecTableHtml([dataRow([text("")], { hideWhenEmpty: true })]),
+    ).toBe(
+      '<div class="appx-spec-table"><table class="appx-spec-table__table"><tbody></tbody></table></div>',
+    );
+    expect(renderSpecTableHtml([])).not.toContain(
+      "appx-spec-table-preview-empty",
+    );
+  });
+
+  it("styles the dynamic pill + empty state preview-only (present in preview styles, absent from SPEC_TABLE_CSS)", () => {
+    // The affordance rules ship only in the preview document; the drift-guarded
+    // storefront mirror must stay clean (or its byte-equality test fails).
+    expect(PREVIEW_DOCUMENT_STYLES).toContain(".appx-spec-table__dynamic-pill");
+    expect(PREVIEW_DOCUMENT_STYLES).toContain(".appx-spec-table-preview-empty");
+    expect(SPEC_TABLE_CSS).not.toContain("dynamic-pill");
+    expect(SPEC_TABLE_CSS).not.toContain("preview-empty");
   });
 });

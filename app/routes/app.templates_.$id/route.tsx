@@ -496,7 +496,13 @@ function TemplateOverview({
   }, [searchParams, setSearchParams, shopify]);
 
   return (
-    <s-page heading={engine.name}>
+    // `inlineSize="large"` matches the templates list's page width (app.templates.tsx)
+    // so the editor uses the same wide layout instead of the narrower default. The
+    // editor is fully fluid (the EditorShell card has no max-width; the rows grid is
+    // proportional; the bounded scroll is height-only), so widening only gives the
+    // value column + device previews more room — and un-caps the 768px Tablet preview
+    // that a narrow column used to shrink (see previewDeviceWidth / .previewFrame).
+    <s-page heading={engine.name} inlineSize="large">
       <s-link slot="breadcrumb-actions" href="/app/templates">
         Templates
       </s-link>

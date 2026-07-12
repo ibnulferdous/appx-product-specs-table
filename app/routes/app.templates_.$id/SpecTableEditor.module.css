@@ -448,25 +448,28 @@
   max-width: 32rem;
 }
 
-/* --- Device preview iframe (feature 49, Steps 3–5) ------------------------
+/* --- Device preview iframe (feature 49, Steps 3–6) ------------------------
  * Chrome for the sandboxed <iframe> that renders the read-only storefront markup
  * (SpecTablePreview). This styles only the iframe ELEMENT — its sizing, border,
  * and backdrop — NOT the storefront table inside it (its colors/fonts/padding
  * come from the shared spec-table.css injected in Step 4; deeper theming is a
- * Style-tab concern). The WIDTH is now device-driven (Step 5): the per-view size
+ * Style-tab concern). The WIDTH is device-driven (Step 5): the per-view size
  * arrives as an inline style from previewDeviceWidth(view) — desktop fills,
  * tablet is 768px, mobile is 375px — while this rule supplies the clamp and
  * centering: `max-width: 100%` shrinks a fixed frame wider than the column
  * (rather than overflowing it), and `margin-inline: auto` centers a narrow fixed
- * frame in the stage. The HEIGHT stays PROVISIONAL: Step 6 replaces the fixed
- * 32rem with content-driven auto-height. Hex-free: the hairline border reuses the
- * module's low-alpha currentColor; the surface is a plain white so the preview
- * reads as a page, not the admin card. */
+ * frame in the stage. The HEIGHT is now content-driven (Step 6): the exact pixel
+ * height arrives as an inline style, measured by the framed document's shim; this
+ * `min-height` is only the floor for the brief pre-measurement state and an
+ * empty/very short table, so the frame is never a collapsed sliver. No fixed
+ * height remains. Hex-free: the hairline border reuses the module's low-alpha
+ * currentColor; the surface is a plain white so the preview reads as a page, not
+ * the admin card. */
 .previewFrame {
   display: block;
   max-width: 100%;
   margin-inline: auto;
-  height: 32rem;
+  min-height: 6rem;
   border: 0.0625rem solid color-mix(in srgb, currentColor 14%, transparent);
   border-radius: 0.5rem;
   background: #ffffff;
