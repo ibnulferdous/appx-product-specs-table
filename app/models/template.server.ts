@@ -52,6 +52,11 @@ function resolveStatus(status: unknown): TemplateStatus {
 // first). Status filtering is a client-side concern now — the list page loads
 // the full shop list once and filters in the browser (feature 28), so this no
 // longer takes a status option.
+//
+// Stays pure Postgres (no Admin client): the "Assigned Products" count needs live
+// Shopify data for broad scopes, so the list loader enriches each row with it
+// separately via `resolveAssignedProductCounts` (feature 48) — this function only
+// owns the DB read and the cheap `rowCount`.
 export async function listTemplatesForShop(shopId: string) {
   const templates = await prisma.template.findMany({
     where: { shopId },
@@ -61,7 +66,6 @@ export async function listTemplatesForShop(shopId: string) {
   return templates.map((template) => ({
     ...template,
     rowCount: getRowCount(template.rows),
-    assignedProductCount: 0,
   }));
 }
 

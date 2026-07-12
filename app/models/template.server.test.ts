@@ -60,7 +60,10 @@ describe("listTemplatesForShop", () => {
     const result = await listTemplatesForShop("shop_A");
 
     expect(result.map((t) => t.rowCount)).toEqual([3, 0]);
-    expect(result.every((t) => t.assignedProductCount === 0)).toBe(true);
+    // The "Assigned Products" count is no longer this function's concern (it needs
+    // live Shopify data) — the list loader enriches it via
+    // `resolveAssignedProductCounts` (feature 48), so it isn't returned here.
+    expect(result[0]).not.toHaveProperty("assignedProductCount");
   });
 });
 

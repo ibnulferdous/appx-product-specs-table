@@ -19,6 +19,7 @@ import {
   setTemplateStatusForShop,
 } from "../models/template.server";
 import { deleteSpecTableMetaobject } from "../shopify/metaobjects.server";
+import { resolveAssignedProductCounts } from "../shopify/assignedProductCounts.server";
 import { syncTemplateToMetaobject } from "../shopify/templateSync.server";
 import {
   activationBlockedMessage,
@@ -50,9 +51,19 @@ const RENAME_MODAL_ID = "templates-list-rename-modal";
 // <s-select> value is seeded from that row's current status on open.
 const STATUS_MODAL_ID = "templates-list-status-modal";
 
+// The list row = a persisted template + its cheap `rowCount` (from
+// `listTemplatesForShop`) enriched with the live `assignedProductCount` the loader
+// resolves separately (feature 48). `null` means the count couldn't be determined
+// live (Admin API failure) and renders as "—".
 type TemplateListItem = Awaited<
   ReturnType<typeof listTemplatesForShop>
->[number];
+>[number] & { assignedProductCount: number | null };
+
+// The "Assigned Products" cell: a plain integer (thousands-separated for large
+// "All products" catalogs), or "—" when the live count is unavailable.
+function formatAssignedCount(count: number | null): string {
+  return count === null ? "—" : count.toLocaleString();
+}
 
 function formatDate(value: Date | string) {
   return new Intl.DateTimeFormat("en", {
@@ -136,7 +147,9 @@ const TemplateTableRow = ({
         <s-badge tone={BADGE_TONES[template.status]}>{template.status}</s-badge>
       </s-table-cell>
       <s-table-cell>{template.rowCount}</s-table-cell>
-      <s-table-cell>{template.assignedProductCount}</s-table-cell>
+      <s-table-cell>
+        {formatAssignedCount(template.assignedProductCount)}
+      </s-table-cell>
       <s-table-cell>{formatDate(template.updatedAt)}</s-table-cell>
       <s-table-cell>
         <s-button
@@ -255,16 +268,29 @@ const TemplateTable = ({
 );
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
-  const { session } = await authenticate.admin(request);
+  const { admin, session } = await authenticate.admin(request);
   const shop = await upsertShop(session);
   // One query: ALL of the shop's templates. Status filtering happens on the
   // client now (feature 28), so the loader ignores ?status= entirely and
   // `hasTemplates` derives from the returned list (no separate count query).
   const templates = await listTemplatesForShop(shop.id);
 
+  // Enrich each row with its real "Assigned Products" count (feature 48). One
+  // batched, shop-scoped lookup resolves every scope's product total (broad scopes
+  // read live from Shopify); a template with no assignment rows is absent from the
+  // map → 0. Fail-soft: a live-lookup failure yields `null` for the affected
+  // rows ("—"), never a broken list.
+  const assignedCounts = await resolveAssignedProductCounts(admin, shop.id);
+  const templatesWithCounts = templates.map((template) => ({
+    ...template,
+    assignedProductCount: assignedCounts.has(template.id)
+      ? assignedCounts.get(template.id)!
+      : 0,
+  }));
+
   return {
-    templates,
-    hasTemplates: templates.length > 0,
+    templates: templatesWithCounts,
+    hasTemplates: templatesWithCounts.length > 0,
   };
 };
 

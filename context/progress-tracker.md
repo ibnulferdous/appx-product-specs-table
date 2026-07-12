@@ -34,7 +34,8 @@ resolve live** on the storefront (slice 2 / feature 35, browser-verified — dyn
 `SHOPIFY_FIELD`/`METAFIELD` show real values, no placeholders). Remaining: the
 assignment engine — now **rigid, block-on-conflict** (one scope per template: all / product / type / vendor / collection; overlaps blocked at DRAFT→ACTIVE, no `priority`), delivering broad rules via **one shop-level routing metafield** (design locked in `data-model.md` §5/§9, 2026-07-07) — and
 Reshell Phases **B (Style tab) → C (Settings — status control shipped in feature
-36; display rules still pending) → D (device previews) → E (assignment) →
+36; display rules still pending) → D (device previews — **now in progress**, feature
+49; step 1 of 8 shipped) → E (assignment) →
 F (top-bar status/save model + cleanup)**.
 
 ---
@@ -42,6 +43,53 @@ F (top-bar status/save model + cleanup)**.
 ## Completed
 
 > One line per unit. Detail → the linked `context/features/` doc + git history.
+
+**Device previews — Step 1: toggle swaps the stage (Reshell Phase D, `49-…`, 2026-07-12)**
+- First slice of feature 49 (make the editor's **Desktop / Tablet / Mobile** toggle
+  functional — read-only storefront previews). This step wires **only the plumbing**: the
+  device toggle now **swaps the stage** for a temporary placeholder; **Edit** returns to the
+  editable grid. New pure `deviceView.ts` (`ViewId`/`DeviceView` types + an `isPreviewView`
+  type guard carrying the "render the preview slot only off-Edit" decision); `EditorShell`
+  gains a `preview?: (view) => ReactNode` render-prop rendered in place of `stage` when
+  `isPreviewView(activeView)` (falls back to `stage`, so the prop is backwards-safe), in
+  **both** stage branches; `SpecTableEditor` passes a throwaway `DevicePreviewPlaceholder`.
+  Previews replace the **stage only** — the sidebar's show/hide stays governed by `activeTab`.
+- **No renderer / iframe / stylesheet / width sizing / CSS**, and no reducer / schema /
+  dependency / persistence / server change — all deferred to steps 2–8 (locked design:
+  sandboxed iframe rendering the storefront markup + shared `spec-table.css`; dynamic fields
+  as labeled pills; `TableStyling` + the mobile cards-vs-scroll option deferred to the Style
+  tab). 3 new pure unit tests (`deviceView.test.ts`). **Full gate green (544 tests,
+  typecheck, lint, format, build).**
+- **Live-verified on the dev store (2026-07-12)** in the real editor (Motorola Moto G35 5G):
+  Edit shows the editable grid; **Desktop / Tablet / Mobile** each swap the stage to the
+  correctly-named "{Device} preview" placeholder (grid + toolbar hidden, `view` arg threaded);
+  Edit restores the fully interactive grid; and on the **Settings tab** a device view keeps
+  the Settings sidebar in place while the stage shows the preview. Nothing saved (view state
+  is client-only). Detail → `context/features/49-editor-device-previews-step1-toggle-plumbing.md`.
+
+**Templates list — dynamic assigned-product count (`48-…`, 2026-07-12)**
+- The list's "Assigned Products" column was a hardcoded `0` (`listTemplatesForShop`
+  returned `assignedProductCount: 0`). Now it shows the **real product count** per
+  scope: `PRODUCT` → # distinct INCLUDE rows (Postgres, exact); `ALL_PRODUCTS` →
+  shop `productsCount` − EXCLUDE carve-outs (clamped ≥ 0); `COLLECTION` → Σ
+  `collection.productsCount`; `PRODUCT_TYPE`/`VENDOR` → `productsCount(query:)`;
+  NONE → 0. Merchant chose **true counts** over a scope label.
+- New `app/shopify/assignedProductCounts.server.ts` (pure grouping / lookup-collect /
+  aliased-query builder / response narrower / per-template arithmetic + a live
+  orchestrator, mirroring `assignmentConflict.server.ts`). Every broad-scope lookup is
+  collapsed into **ONE** batched, aliased `productsCount`/`collection` query
+  (**O(1)** Admin requests regardless of template count; **skipped entirely** when only
+  PRODUCT/NONE exist), each value passed as a GraphQL **variable** (injection-safe).
+  **Fail-soft** (cosmetic admin count, not the storefront): an Admin failure → live
+  counts `null` (rendered `—`) while PRODUCT/NONE still resolve. Shop-isolated (Prisma
+  `where { shopId }` + session-bound `admin`).
+- `listTemplatesForShop` stays pure Postgres (drops the fake count); the list loader
+  merges `resolveAssignedProductCounts` (a missing template → 0). `TemplateListItem`
+  gains `assignedProductCount: number | null`; new `formatAssignedCount` renders the
+  integer (thousands-separated) or `—`. GraphQL validated @ 2025-10 (`read_products`).
+  **25 new tests; full gate green (541 tests, typecheck, lint, format, build).**
+  **Live-render on the dev store still pending.** Detail →
+  `context/features/48-templates-list-assigned-product-count.md`.
 
 **Foundation**
 - Shopify app template (React Router / TS) + PostgreSQL (Neon) + Prisma; app installed on the dev store; session + shop record stored in Neon.

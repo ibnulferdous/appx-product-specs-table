@@ -5,8 +5,31 @@ import { ContentTab } from "./ContentTab";
 import { SettingsTab } from "./SettingsTab";
 import { EditorTips } from "./EditorTips";
 import { SAVE_BAR_ID } from "./editorShared";
+import type { DeviceView } from "./deviceView";
 import type { RowEngine } from "./useRowEngine";
 import styles from "./SpecTableEditor.module.css";
+
+// Feature 49 · Step 1 — a TEMPORARY stand-in for the device preview, proving the
+// EditorShell stage-swap plumbing. Step 3 replaces this with the real
+// <SpecTablePreview> (a sandboxed iframe rendering the storefront markup + CSS).
+const DEVICE_LABELS: Record<DeviceView, string> = {
+  desktop: "Desktop",
+  tablet: "Tablet",
+  mobile: "Mobile",
+};
+
+function DevicePreviewPlaceholder({ view }: { view: DeviceView }) {
+  return (
+    <s-box padding="large-500">
+      <s-stack direction="block" gap="small-200" alignItems="center">
+        <s-text type="strong">{DEVICE_LABELS[view]} preview</s-text>
+        <s-text color="subdued">
+          A read-only storefront preview will render here in a later step.
+        </s-text>
+      </s-stack>
+    </s-box>
+  );
+}
 
 // The spec-table editor card (reshell A1; engine lifted in feature 20). The
 // `useRowEngine` instance is now owned one level up by the page component
@@ -47,6 +70,7 @@ export function SpecTableEditor({ engine }: { engine: RowEngine }) {
       >
         <EditorShell
           stage={<ContentTab engine={engine} />}
+          preview={(view) => <DevicePreviewPlaceholder view={view} />}
           settingsPanel={<SettingsTab engine={engine} />}
         />
       </div>

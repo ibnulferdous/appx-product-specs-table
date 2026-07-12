@@ -4,6 +4,7 @@ import type {
   ReactNode,
 } from "react";
 import { useId, useRef, useState } from "react";
+import { isPreviewView, type DeviceView, type ViewId } from "./deviceView";
 import styles from "./SpecTableEditor.module.css";
 
 // The mockup's editor card (design/spec-editor-mockup.html → `.editor`): a
@@ -22,7 +23,6 @@ import styles from "./SpecTableEditor.module.css";
 type SIconType = NonNullable<ComponentProps<"s-icon">["type"]>;
 
 type TabId = "content" | "style" | "settings";
-type ViewId = "edit" | "desktop" | "tablet" | "mobile";
 
 interface SegOption<T extends string> {
   value: T;
@@ -179,6 +179,11 @@ interface EditorShellProps {
   // A1 it becomes the engine-driven <ContentTab>. A presentational slot — never
   // the engine itself.
   stage: ReactNode;
+  // The read-only device preview slot (feature 49). Rendered in place of `stage`
+  // whenever a device view is active; receives the active device view so the
+  // preview can size itself. Optional + a `stage` fallback, so the toggle stays
+  // harmless when no preview is wired.
+  preview?: (view: DeviceView) => ReactNode;
   // Reserved for Phase B / C. Undefined in A2 → an empty placeholder renders.
   stylePanel?: ReactNode;
   settingsPanel?: ReactNode;
@@ -186,6 +191,7 @@ interface EditorShellProps {
 
 export function EditorShell({
   stage,
+  preview,
   stylePanel,
   settingsPanel,
 }: EditorShellProps) {
@@ -193,10 +199,15 @@ export function EditorShell({
   const [activeView, setActiveView] = useState<ViewId>("edit");
 
   // Tabs reveal/hide the sidebar; they never replace the stage (mirrors the
-  // mockup). The device toggle is visual-only in A2 — the stage does not yet
-  // react to activeView (the read-only device previews are Phase D).
+  // mockup). The device toggle drives the stage content (feature 49): on a device
+  // view the stage renders the read-only `preview` slot instead of the editable
+  // `stage`; `edit` keeps the editor. Previews replace the STAGE only — the
+  // sidebar's show/hide stays governed by `activeTab`, unchanged.
   const showSidebar = activeTab !== "content";
   const sidebarContent = activeTab === "style" ? stylePanel : settingsPanel;
+  const stageContent = isPreviewView(activeView)
+    ? (preview?.(activeView) ?? stage)
+    : stage;
 
   return (
     <s-box
@@ -237,10 +248,10 @@ export function EditorShell({
               />
             )}
           </s-box>
-          <s-box>{stage}</s-box>
+          <s-box>{stageContent}</s-box>
         </s-grid>
       ) : (
-        <s-box>{stage}</s-box>
+        <s-box>{stageContent}</s-box>
       )}
     </s-box>
   );
