@@ -318,9 +318,15 @@ describe("renderSpecTablePreviewDocument", () => {
     // in-frame ResizeObserver, not a reload, to re-height).
     const rows = [dataRow([text("x")])];
     const doc = renderSpecTablePreviewDocument(rows);
-    expect(doc).not.toContain("desktop");
-    expect(doc).not.toContain("tablet");
-    expect(doc).not.toContain("mobile");
+    // The shared stylesheet legitimately mentions devices since feature 57
+    // Step 3 (the `--mobile-stacked` selectors + breakpoint comment) — that is
+    // width-responsive CSS inside a still view-independent document, not a
+    // per-view payload. So assert device words are absent from everything
+    // EXCEPT the shared styles.
+    const outsideStyles = doc.replace(PREVIEW_DOCUMENT_STYLES, "");
+    expect(outsideStyles).not.toContain("desktop");
+    expect(outsideStyles).not.toContain("tablet");
+    expect(outsideStyles).not.toContain("mobile");
     // Same input → identical output (no hidden per-call variation).
     expect(renderSpecTablePreviewDocument(rows)).toBe(doc);
   });
