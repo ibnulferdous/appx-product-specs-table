@@ -25,7 +25,7 @@ template lifecycle/create-on-save flows (19–20) — are all **complete and
 browser-verified**, plus the **bulk-delete "Undo" toast (33)**. **Storefront slice
 1 — Theme App Extension first pixel (34) is complete and browser-verified**: a
 product's assigned spec table now renders as a real (unstyled) table on the live
-storefront product page. Test suite: **330 tests green**.
+storefront product page. Test suite: **627 tests green**.
 
 **Next: the full product-assignment engine + storefront styling.** The
 admin→storefront pipeline is proven end to end (editor → Postgres → metaobject →
@@ -35,8 +35,13 @@ resolve live** on the storefront (slice 2 / feature 35, browser-verified — dyn
 assignment engine — now **rigid, block-on-conflict** (one scope per template: all / product / type / vendor / collection; overlaps blocked at DRAFT→ACTIVE, no `priority`), delivering broad rules via **one shop-level routing metafield** (design locked in `data-model.md` §5/§9, 2026-07-07) — and
 Reshell Phases **B (Style tab — spec locked 2026-07-18: `admin-screen-plan.md` §Tab 2, `data-model.md` §5/§10, PRD + code-standards updated) → C (Settings — status control shipped in feature
 36; display rules still pending) → D (device previews — **COMPLETE**, feature 49;
-all 8 steps shipped, gate green, live-verified 2026-07-13) → E (assignment — **now
-next**) → F (top-bar status/save model + cleanup)**.
+all 8 steps shipped, gate green, live-verified 2026-07-13) → E (assignment) → F
+(top-bar status/save model + cleanup)**.
+
+**Phase B (Style tab, feature 57) is now in progress** — 14-step build order
+(B1 = 1–12, B2 = 13–14, B3 outlined). **Step 1 (pure styling domain module) is
+complete**; next is **Step 2 (pure presentation mapping — `stylingToCssVars` /
+`stylingToModifierClasses`)**.
 
 > **Phase D delivered the preview *mechanism*, narrower than the Reshell plan's Phase D.** Three
 > deliberate deltas (recorded in `56-…`, for Phase F to reconcile the plan text): (1) **no live
@@ -50,6 +55,47 @@ next**) → F (top-bar status/save model + cleanup)**.
 ## Completed
 
 > One line per unit. Detail → the linked `context/features/` doc + git history.
+
+**Style tab — Step 1: pure styling domain module (Reshell Phase B, `57-…`, 2026-07-18)**
+- First slice of feature 57 and the **start of Reshell Phase B**. New pure, framework-free
+  `app/utils/tableStyling.ts` owns the styling vocabulary end to end: the per-knob allowed-value
+  `as const` arrays (`ROW_LAYOUTS`, `MOBILE_LAYOUTS`, `SECTION_HEADER_STYLES`,
+  `SECTIONS_INITIAL_STATES`, `ROW_DIVIDER_STYLES`, `DENSITIES`, `STYLING_FONT_SIZES`,
+  `STYLING_FONT_WEIGHTS`, `STYLING_FONT_STYLES`, `LINE_HEIGHTS`, `LABEL_CASES` + the
+  `FONT_SIZE_PX_MIN/_MAX` `10`/`40` and `LABEL_WIDTH_PCT_MIN/_MAX` `20`/`80` bounds), the derived
+  types, the resolved `StylingValues` shape, `STYLING_FIELD_NAMES`, frozen
+  `DEFAULT_STYLING_VALUES`, `parseStylingValues`, `serializeStylingOverrides`, and `stylingEquals`.
+- **One vocabulary end to end** — TS field names = `TableStyling` column names = wire keys =
+  metaobject JSON keys; string values = the `data-model.md` §5 comment constants. No renaming at any
+  boundary. Layout knobs are **non-null** (defaults resolved at parse time, so a control always has a
+  concrete value); colors, typography and `labelWidthPct` are **nullable with null = inherit/theme**
+  (semantic — the "Theme" swatch / `Inherit` segment). The DB's "null column = default" convention
+  stays at the persistence edge (Step 4).
+- **The trust-boundary behavior is the product decision.** `parseStylingValues(unknown)` is tolerant
+  and **never throws**: non-object/array → all defaults, unknown keys ignored, each invalid field
+  degrading to its **own** default, so a malformed blob (old row, hand-edited metaobject, bad deploy)
+  can never blank a merchant's editor or storefront table. Colors are **strict hex only**
+  (`#rgb`/`#rrggbb`/`#rrggbbaa`) — these are later emitted into inline `style` attributes on a live
+  storefront, so the whitelist is CSS-injection defense in depth (`"#fff;background:url(x)"` →
+  `null`). `labelWidthPct` takes integers only, clamped `[20,80]`. `fontSize` is a **union** —
+  keyword (theme-relative preset) | px integer | null — accepting **both** boundary shapes (JSON
+  number and the DB all-digit string `"18"`), normalized to a number clamped `[10,40]`; `16.5` /
+  `"16px"` / `true` → `null`. One parse works unchanged on all three boundaries: Save payload, Prisma
+  row (extra `id`/`templateId` ignored), metaobject JSON.
+- `serializeStylingOverrides` is the **ONE wire shape** — overrides-only (`{}` = all defaults), the
+  exact content of `payload.styling` (Step 5), the metaobject `styling` field (Step 7), and the Step
+  13 preset bundles. **Round-trip law** `parse(serialize(v)) === v` is unit-proven for defaults, a
+  single override, a px `fontSize`, and a fully-overridden value.
+- **Pure + wired to nothing** (verified: the module is imported only by its own test) — no component,
+  CSS, schema, migration, dependency, server, persistence or reducer change; zero behavior change
+  anywhere. **46 new Node unit tests** (`tableStyling.test.ts`: defaults, shape tolerance, the
+  per-knob matrix, `sectionsCollapsible` literal-`true`-only, color accept/reject incl. injection
+  strings, `labelWidthPct` clamp/reject, the `fontSize` union, serialize, the round-trip law,
+  `stylingEquals` field-flip loop, and the Prisma-row shape). **Full gate green (627 tests, 29 files;
+  typecheck, lint, format, build).** **No browser step — the module is pure and renders nothing**
+  (per the feature doc's "Done when" #4). Detail →
+  `context/features/57-style-tab-step1-pure-styling-domain.md`. **Next → Step 2 (pure presentation
+  mapping — `stylingToCssVars` / `stylingToModifierClasses`).**
 
 **Editor page width → "large" (UI polish, 2026-07-13)**
 - The editor route's `<s-page>` had no `inlineSize`, so it rendered at the narrow default while the
