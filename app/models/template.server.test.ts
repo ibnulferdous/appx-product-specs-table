@@ -9,9 +9,65 @@ import {
   saveTemplateForShop,
   setTemplateMetaobjectRef,
   setTemplateStatusForShop,
+  stylingToDbColumns,
 } from "./template.server";
 import { MAX_TEMPLATE_ROWS } from "../utils/rows";
+import {
+  DEFAULT_STYLING_VALUES,
+  parseStylingValues,
+  type StylingValues,
+} from "../utils/tableStyling";
 import { NAME_MAX_LENGTH } from "../utils/templateName";
+
+// Every field away from its default — the totality fixture for the column
+// mapping (mirrors the Step 1 test fixture of the same name).
+const FULLY_OVERRIDDEN: StylingValues = {
+  rowLayout: "STACKED",
+  mobileLayout: "SAME_AS_DESKTOP",
+  sectionHeaderStyle: "TEXT_ONLY",
+  sectionsCollapsible: true,
+  sectionsInitialState: "ALL_CLOSED",
+  rowDividerStyle: "STRIPES",
+  density: "COMPACT",
+  headerBgColor: "#112233",
+  labelBgColor: "#445566",
+  valueBgColor: "#778899",
+  stripeBgColor: "#aabbcc",
+  borderColor: "#ddeeff",
+  labelTextColor: "#123456",
+  valueTextColor: "#654321",
+  fontSize: "LARGE",
+  fontWeight: "BOLD",
+  fontStyle: "ITALIC",
+  lineHeight: "LOOSE",
+  labelCase: "UPPERCASE",
+  labelWidthPct: 45,
+};
+
+// The full-column shape stylingToDbColumns(DEFAULT_STYLING_VALUES) must emit:
+// every override column an explicit null, the boolean at its column default.
+const ALL_DEFAULT_COLUMNS = {
+  rowLayout: null,
+  mobileLayout: null,
+  sectionHeaderStyle: null,
+  sectionsCollapsible: false,
+  sectionsInitialState: null,
+  rowDividerStyle: null,
+  density: null,
+  headerBgColor: null,
+  labelBgColor: null,
+  valueBgColor: null,
+  stripeBgColor: null,
+  borderColor: null,
+  labelTextColor: null,
+  valueTextColor: null,
+  fontSize: null,
+  fontWeight: null,
+  fontStyle: null,
+  lineHeight: null,
+  labelCase: null,
+  labelWidthPct: null,
+};
 
 // Replace the Prisma client (app/db.server.ts default export) with in-memory
 // spies. `vi.hoisted` defines the mock before `vi.mock`'s factory runs, and
@@ -238,20 +294,83 @@ describe("getTemplateByIdForShop — shop isolation (priority #1)", () => {
 
     expect(prismaMock.template.findFirst).toHaveBeenCalledWith({
       where: { id: "tmpl_owned_by_A", shopId: "shop_B" },
+      include: { styling: true },
     });
     expect(result).toBeNull();
   });
 
-  it("returns the template when it belongs to the requesting shop", async () => {
-    const owned = { id: "t1", shopId: "shop_A", name: "Specs" };
+  it("returns the template (with its styling row riding along) when it belongs to the requesting shop", async () => {
+    const owned = { id: "t1", shopId: "shop_A", name: "Specs", styling: null };
     prismaMock.template.findFirst.mockResolvedValue(owned);
 
     const result = await getTemplateByIdForShop("shop_A", "t1");
 
     expect(prismaMock.template.findFirst).toHaveBeenCalledWith({
       where: { id: "t1", shopId: "shop_A" },
+      include: { styling: true },
     });
     expect(result).toBe(owned);
+  });
+});
+
+describe("stylingToDbColumns (feature 57 Step 4 — the DB column mapping)", () => {
+  it("maps all-defaults to every override column null (sectionsCollapsible false)", () => {
+    expect(stylingToDbColumns(DEFAULT_STYLING_VALUES)).toEqual(
+      ALL_DEFAULT_COLUMNS,
+    );
+  });
+
+  it("maps a fully-overridden value to every column populated; keyword fontSize stays a keyword, labelWidthPct stays an Int", () => {
+    const columns = stylingToDbColumns(FULLY_OVERRIDDEN);
+
+    // No null survives a full override…
+    expect(Object.values(columns)).not.toContain(null);
+    // …and the two non-string columns keep their column types.
+    expect(columns.sectionsCollapsible).toBe(true);
+    expect(columns.labelWidthPct).toBe(45);
+    expect(columns.fontSize).toBe("LARGE");
+    // basedOnPreset / extraStyles are NOT this mapping's to emit (Step 13 /
+    // post-MVP own those columns).
+    expect(columns).not.toHaveProperty("basedOnPreset");
+    expect(columns).not.toHaveProperty("extraStyles");
+  });
+
+  it("converts a numeric (px) fontSize to the all-digit string column form", () => {
+    const columns = stylingToDbColumns({
+      ...DEFAULT_STYLING_VALUES,
+      fontSize: 18,
+    });
+
+    expect(columns.fontSize).toBe("18");
+  });
+
+  it("round-trips: parseStylingValues(stylingToDbColumns(v)) deep-equals v (the DB is just another wire)", () => {
+    for (const v of [
+      DEFAULT_STYLING_VALUES,
+      FULLY_OVERRIDDEN,
+      { ...DEFAULT_STYLING_VALUES, fontSize: 18 },
+    ]) {
+      expect(parseStylingValues(stylingToDbColumns(v))).toEqual(v);
+    }
+  });
+
+  it("decodes a realistic DB row via parseStylingValues: extra row keys ignored, NULLs -> defaults, corrupt values degrade per-field", () => {
+    // An all-NULL row (the lazy-created row after a reset) + the row's own keys.
+    const allNullRow = {
+      id: "sty_1",
+      templateId: "t1",
+      ...ALL_DEFAULT_COLUMNS,
+      basedOnPreset: null,
+      extraStyles: {},
+    };
+    expect(parseStylingValues(allNullRow)).toEqual(DEFAULT_STYLING_VALUES);
+
+    // A corrupt legacy column value degrades to THAT field's default only.
+    const corrupt = { ...allNullRow, rowLayout: "LEGACY", density: "COMPACT" };
+    expect(parseStylingValues(corrupt)).toEqual({
+      ...DEFAULT_STYLING_VALUES,
+      density: "COMPACT",
+    });
   });
 });
 
@@ -350,6 +469,81 @@ describe("saveTemplateForShop", () => {
     const updateArg = prismaMock.template.update.mock.calls[0][0];
     expect(updateArg.data.name).toBe("Renamed");
     expect(updateArg.data.status).toBe("ACTIVE");
+  });
+
+  it("leaves styling UNTOUCHED when the payload omits it — a rows-only save can never clobber a template's look", async () => {
+    prismaMock.template.findFirst.mockResolvedValue({
+      id: "t1",
+      shopId: "shop_A",
+      rows: [],
+    });
+    prismaMock.template.update.mockResolvedValue({ id: "t1" });
+
+    await saveTemplateForShop("shop_A", "t1", { rows: [aRow] });
+
+    const updateArg = prismaMock.template.update.mock.calls[0][0];
+    expect(updateArg.data).not.toHaveProperty("styling");
+  });
+
+  it("persists styling as a full-column nested upsert (explicit nulls included) inside the shop-scoped update", async () => {
+    prismaMock.template.findFirst.mockResolvedValue({
+      id: "t1",
+      shopId: "shop_A",
+      rows: [],
+    });
+    prismaMock.template.update.mockResolvedValue({ id: "t1" });
+
+    // The wire shape is overrides-only (Step 1): one knob set, rest absent.
+    await saveTemplateForShop("shop_A", "t1", {
+      rows: [],
+      styling: { rowDividerStyle: "STRIPES" },
+    });
+
+    const updateArg = prismaMock.template.update.mock.calls[0][0];
+    // The styling write only exists inside the shop-scoped template update —
+    // the isolation answer for a model with no shopId column.
+    expect(updateArg.where).toEqual({ id: "t1", shopId: "shop_A" });
+    const expectedColumns = {
+      ...ALL_DEFAULT_COLUMNS,
+      rowDividerStyle: "STRIPES",
+    };
+    // Upsert: create (lazy first row) and update (full replace) are the SAME
+    // full-column shape — a knob back at default writes an explicit null.
+    expect(updateArg.data.styling).toEqual({
+      upsert: { create: expectedColumns, update: expectedColumns },
+    });
+  });
+
+  it("degrades a malformed styling payload to the all-defaults column shape — the tolerant parse never blocks a save", async () => {
+    prismaMock.template.findFirst.mockResolvedValue({
+      id: "t1",
+      shopId: "shop_A",
+      rows: [],
+    });
+    prismaMock.template.update.mockResolvedValue({ id: "t1" });
+
+    const result = await saveTemplateForShop("shop_A", "t1", {
+      rows: [aRow],
+      styling: "not-an-object",
+    });
+
+    expect(result.ok).toBe(true);
+    const updateArg = prismaMock.template.update.mock.calls[0][0];
+    expect(updateArg.data.styling).toEqual({
+      upsert: { create: ALL_DEFAULT_COLUMNS, update: ALL_DEFAULT_COLUMNS },
+    });
+  });
+
+  it("blocks a cross-shop styling write at the ownership read (priority #1) — nothing reaches Prisma", async () => {
+    prismaMock.template.findFirst.mockResolvedValue(null);
+
+    const result = await saveTemplateForShop("shop_B", "tmpl_owned_by_A", {
+      rows: [],
+      styling: { rowDividerStyle: "STRIPES" },
+    });
+
+    expect(result).toEqual({ ok: false, error: "Template not found" });
+    expect(prismaMock.template.update).not.toHaveBeenCalled();
   });
 
   it("rejects an invalid name without writing", async () => {
@@ -551,6 +745,7 @@ describe("duplicateTemplateForShop", () => {
 
     expect(prismaMock.template.findFirst).toHaveBeenCalledWith({
       where: { id: "tmpl_owned_by_A", shopId: "shop_B" },
+      include: { styling: true },
     });
     expect(prismaMock.template.create).not.toHaveBeenCalled();
     expect(result).toEqual({ ok: false, error: "Template not found" });
@@ -588,6 +783,55 @@ describe("duplicateTemplateForShop", () => {
     expect(newIds).not.toContain("r1");
   });
 
+  it("copies the source's styling row in full — columns, basedOnPreset provenance, extraStyles — with no source id/templateId (copy semantics, feature 57 Step 4)", async () => {
+    prismaMock.template.findFirst.mockResolvedValue({
+      id: "t1",
+      shopId: "shop_A",
+      name: "Laptop Specs",
+      status: "ACTIVE",
+      rows: sourceRows,
+      styling: {
+        id: "sty_1",
+        templateId: "t1",
+        ...stylingToDbColumns(FULLY_OVERRIDDEN),
+        basedOnPreset: "striped",
+        extraStyles: { future: true },
+      },
+    });
+    prismaMock.template.create.mockResolvedValue({ id: "t2" });
+
+    await duplicateTemplateForShop("shop_A", "t1");
+
+    const createArg = prismaMock.template.create.mock.calls[0][0];
+    expect(createArg.data.styling).toEqual({
+      create: {
+        ...stylingToDbColumns(FULLY_OVERRIDDEN),
+        basedOnPreset: "striped",
+        extraStyles: { future: true },
+      },
+    });
+    // The copy's row is its own: no source styling id / templateId survives.
+    expect(createArg.data.styling.create).not.toHaveProperty("id");
+    expect(createArg.data.styling.create).not.toHaveProperty("templateId");
+  });
+
+  it("creates no styling for an unstyled source (absence = all defaults)", async () => {
+    prismaMock.template.findFirst.mockResolvedValue({
+      id: "t1",
+      shopId: "shop_A",
+      name: "Laptop Specs",
+      status: "DRAFT",
+      rows: [],
+      styling: null,
+    });
+    prismaMock.template.create.mockResolvedValue({ id: "t2" });
+
+    await duplicateTemplateForShop("shop_A", "t1");
+
+    const createArg = prismaMock.template.create.mock.calls[0][0];
+    expect(createArg.data).not.toHaveProperty("styling");
+  });
+
   it("returns ok:false (not a throw) when the create write fails", async () => {
     prismaMock.template.findFirst.mockResolvedValue({
       id: "t1",
@@ -608,7 +852,7 @@ describe("duplicateTemplateForShop", () => {
 });
 
 describe("deleteTemplateForShop — shop isolation (priority #1)", () => {
-  it("scopes the delete by id AND shopId", async () => {
+  it("scopes the delete by id AND shopId (styling removal is the FK cascade's job — no explicit styling delete)", async () => {
     prismaMock.template.deleteMany.mockResolvedValue({ count: 1 });
 
     const result = await deleteTemplateForShop("shop_A", "t1");
@@ -617,6 +861,10 @@ describe("deleteTemplateForShop — shop isolation (priority #1)", () => {
       where: { id: "t1", shopId: "shop_A" },
     });
     expect(result).toEqual({ ok: true, count: 1 });
+    // Feature 57 Step 4: TableStyling has `onDelete: Cascade` on its template
+    // FK, so the ONE deleteMany above is the whole delete path. The prisma mock
+    // has no `tableStyling` delegate at all — any code path reaching for one
+    // would throw here, which is exactly the pin this comment documents.
   });
 
   it("is a no-op for a cross-shop id (count 0) — deletes nothing from the other shop", async () => {

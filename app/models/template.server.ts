@@ -6,6 +6,11 @@ import {
   parseRows,
   reconcileRowKeys,
 } from "../utils/rowsSerialize";
+import {
+  DEFAULT_STYLING_VALUES,
+  parseStylingValues,
+  type StylingValues,
+} from "../utils/tableStyling";
 import { copyName, validateTemplateName } from "../utils/templateName";
 import { validateTemplateStatus } from "../utils/templateStatus";
 
@@ -37,6 +42,82 @@ function parseRowsWithinCap(
     };
   }
   return { ok: true, rows: incoming };
+}
+
+// The TableStyling column shape (feature 57 Step 4): every styling knob, typed
+// per column. Kept explicit (not a mapped Record) so each field's Prisma input
+// type is checked — the `satisfies` on the return literal below still guarantees
+// completeness against the Step 1 vocabulary.
+type TableStylingColumns = {
+  rowLayout: string | null;
+  mobileLayout: string | null;
+  sectionHeaderStyle: string | null;
+  sectionsCollapsible: boolean;
+  sectionsInitialState: string | null;
+  rowDividerStyle: string | null;
+  density: string | null;
+  headerBgColor: string | null;
+  labelBgColor: string | null;
+  valueBgColor: string | null;
+  stripeBgColor: string | null;
+  borderColor: string | null;
+  labelTextColor: string | null;
+  valueTextColor: string | null;
+  fontSize: string | null;
+  fontWeight: string | null;
+  fontStyle: string | null;
+  lineHeight: string | null;
+  labelCase: string | null;
+  labelWidthPct: number | null;
+};
+
+/**
+ * Domain `StylingValues` -> the full TableStyling column shape (feature 57
+ * Step 4). Columns store OVERRIDES: a layout knob at its flagged default ->
+ * NULL (data-model.md §5: "null = the flagged default"); a nullable field at
+ * inherit is already null; `sectionsCollapsible` is written verbatim (its
+ * `false` default IS the column default); a numeric fontSize becomes the
+ * all-digit px string ("18"). EVERY column is emitted, explicit nulls included,
+ * so a knob reset to default is actually cleared in the DB — the write is a
+ * full replace, never a partial patch (the Step 1 serializer's doc-comment law
+ * made code). Read-side inverse: `parseStylingValues(row)` — the Step 1
+ * tolerant parse doubles as the one DB decoder (NULL -> default/inherit,
+ * "18" -> 18, corrupt legacy values degrade per-field), so the round-trip law
+ * `parseStylingValues(stylingToDbColumns(v))` deep-equals `v` holds for every
+ * valid value (tested). `basedOnPreset` / `extraStyles` are deliberately NOT
+ * emitted — Step 13 (presets) and post-MVP own those columns.
+ */
+export function stylingToDbColumns(values: StylingValues): TableStylingColumns {
+  const d = DEFAULT_STYLING_VALUES;
+  const knob = (value: string, defaultValue: string): string | null =>
+    value === defaultValue ? null : value;
+  return {
+    rowLayout: knob(values.rowLayout, d.rowLayout),
+    mobileLayout: knob(values.mobileLayout, d.mobileLayout),
+    sectionHeaderStyle: knob(values.sectionHeaderStyle, d.sectionHeaderStyle),
+    sectionsCollapsible: values.sectionsCollapsible,
+    sectionsInitialState: knob(
+      values.sectionsInitialState,
+      d.sectionsInitialState,
+    ),
+    rowDividerStyle: knob(values.rowDividerStyle, d.rowDividerStyle),
+    density: knob(values.density, d.density),
+    headerBgColor: values.headerBgColor,
+    labelBgColor: values.labelBgColor,
+    valueBgColor: values.valueBgColor,
+    stripeBgColor: values.stripeBgColor,
+    borderColor: values.borderColor,
+    labelTextColor: values.labelTextColor,
+    valueTextColor: values.valueTextColor,
+    // String("SMALL") is a no-op for keywords; String(18) -> "18" for the px
+    // escape hatch — the one column whose domain type is wider than its column.
+    fontSize: values.fontSize === null ? null : String(values.fontSize),
+    fontWeight: values.fontWeight,
+    fontStyle: values.fontStyle,
+    lineHeight: values.lineHeight,
+    labelCase: values.labelCase,
+    labelWidthPct: values.labelWidthPct,
+  } satisfies Record<keyof StylingValues, string | number | boolean | null>;
 }
 
 // Coerce an untrusted status into a known TemplateStatus for the TOLERANT paths
@@ -108,8 +189,12 @@ export async function getTemplateByIdForShop(shopId: string, id?: string) {
     return null;
   }
 
+  // Styling rides along (feature 57 Step 4): one query serves the editor loader
+  // (which resolves it via `parseStylingValues`) and the action's ownership reads
+  // (which ignore it). No styling row = fully-default styling (no backfill).
   return prisma.template.findFirst({
     where: { id, shopId },
+    include: { styling: true },
   });
 }
 
@@ -131,11 +216,27 @@ export async function getTemplateByIdForShop(shopId: string, id?: string) {
  *
  * `name` / `status` are optional — updated only when provided (and valid), so the
  * editor can save rows alone without disturbing them.
+ *
+ * `styling` (feature 57 Step 4) follows the same optionality: `undefined` leaves
+ * the TableStyling row UNTOUCHED (a rows-only or rename save can never clobber a
+ * template's look); present -> `parseStylingValues` (never trust the client;
+ * tolerant, cannot fail — a malformed payload degrades to defaults rather than
+ * blocking a save that also carries rows) -> full-column nested upsert THROUGH
+ * this shop-scoped template update, so the styling write itself carries shopId.
+ * That nesting is the isolation answer for a model with no shopId column — there
+ * is deliberately no free-standing styling write function anywhere (a
+ * bare-templateId path would be a cross-shop hole waiting for a caller). The
+ * upsert is also the lazy row creation: no row until the first styling save.
  */
 export async function saveTemplateForShop(
   shopId: string,
   id: string,
-  { rows, name, status }: { rows?: unknown; name?: unknown; status?: unknown },
+  {
+    rows,
+    name,
+    status,
+    styling,
+  }: { rows?: unknown; name?: unknown; status?: unknown; styling?: unknown },
 ) {
   const rowsResult = parseRowsWithinCap(rows);
   if (!rowsResult.ok) {
@@ -167,6 +268,10 @@ export async function saveTemplateForShop(
   }
   if (status !== undefined) {
     data.status = resolveStatus(status);
+  }
+  if (styling !== undefined) {
+    const columns = stylingToDbColumns(parseStylingValues(styling));
+    data.styling = { upsert: { create: columns, update: columns } };
   }
 
   try {
@@ -302,6 +407,7 @@ export async function duplicateTemplateForShop(
 ) {
   const source = await prisma.template.findFirst({
     where: { id: templateId, shopId },
+    include: { styling: true },
   });
   if (!source) {
     return { ok: false as const, error: "Template not found" };
@@ -317,6 +423,24 @@ export async function duplicateTemplateForShop(
   const clonedRows = cloneRowsWithNewIds(parseRows(source.rows), newRowId);
   const finalizedRows: EditorRow[] = reconcileRowKeys(clonedRows, []);
 
+  // Copy semantics (data-model.md §5, feature 57 Step 4): a styled template's
+  // duplicate must not silently be an unstyled twin, so the styling row is
+  // copied in full — every override column, `basedOnPreset` provenance, and
+  // `extraStyles` verbatim (only `id`/`templateId` are the fresh row's own).
+  // No source row -> no styling in the create (absence = all defaults).
+  let stylingCreate: Prisma.TemplateCreateInput["styling"];
+  if (source.styling) {
+    // Rest-destructure drops the source row's own identity; the copy mints its own.
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const { id: _id, templateId: _templateId, ...stylingCopy } = source.styling;
+    stylingCreate = {
+      create: {
+        ...stylingCopy,
+        extraStyles: stylingCopy.extraStyles as Prisma.InputJsonValue,
+      },
+    };
+  }
+
   try {
     const template = await prisma.template.create({
       data: {
@@ -324,6 +448,7 @@ export async function duplicateTemplateForShop(
         name: nameResult.name,
         status: TemplateStatus.DRAFT,
         rows: finalizedRows as unknown as Prisma.InputJsonValue,
+        ...(stylingCreate ? { styling: stylingCreate } : {}),
       },
     });
     return { ok: true as const, data: template };

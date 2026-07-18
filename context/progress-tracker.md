@@ -25,7 +25,7 @@ template lifecycle/create-on-save flows (19–20) — are all **complete and
 browser-verified**, plus the **bulk-delete "Undo" toast (33)**. **Storefront slice
 1 — Theme App Extension first pixel (34) is complete and browser-verified**: a
 product's assigned spec table now renders as a real (unstyled) table on the live
-storefront product page. Test suite: **656 tests green**.
+storefront product page. Test suite: **672 tests green**.
 
 **Next: the full product-assignment engine + storefront styling.** The
 admin→storefront pipeline is proven end to end (editor → Postgres → metaobject →
@@ -39,9 +39,12 @@ all 8 steps shipped, gate green, live-verified 2026-07-13) → E (assignment) �
 (top-bar status/save model + cleanup)**.
 
 **Phase B (Style tab, feature 57) is now in progress** — 14-step build order
-(B1 = 1–12, B2 = 13–14, B3 outlined). **Steps 1 (pure styling domain module)
-and 2 (pure presentation mapping) are complete**; next is **Step 3 (storefront
-stylesheet rules, dormant + the mobile-stacked default)**.
+(B1 = 1–12, B2 = 13–14, B3 outlined). **Steps 1 (pure styling domain module),
+2 (pure presentation mapping), 3 (storefront stylesheet rules, dormant +
+the mobile-stacked default), and 4 (`add_table_styling` migration + server
+persistence) are complete**; next is **Step 5 (engine styling state + Dividers
+control + Save round-trip)** — the first slice where a merchant can change
+styling and see it survive a reload.
 
 > **Phase D delivered the preview *mechanism*, narrower than the Reshell plan's Phase D.** Three
 > deliberate deltas (recorded in `56-…`, for Phase F to reconcile the plan text): (1) **no live
@@ -55,6 +58,82 @@ stylesheet rules, dormant + the mobile-stacked default)**.
 ## Completed
 
 > One line per unit. Detail → the linked `context/features/` doc + git history.
+
+**Style tab — Step 4: `add_table_styling` migration + server persistence (Reshell Phase B, `60-…`, 2026-07-18)**
+- Fourth slice of feature 57 — the first Phase B schema change, dormant on arrival (no UI sends or
+  reads styling; Step 5 wires the engine). **Migration `20260718122430_add_table_styling`** applied
+  to the Neon dev branch: `model TableStyling` copied verbatim from `data-model.md` §5 (which
+  already carried the model AND the `styling TableStyling?` back-relation — schema caught up to the
+  doc), `templateId @unique` + `onDelete: Cascade`, purely additive, **no backfill** (no row = all
+  defaults; row lazily created on first styling save).
+- **Column semantics:** columns store OVERRIDES — knob at flagged default → NULL, nullable at
+  inherit → NULL, `sectionsCollapsible` verbatim, numeric fontSize → all-digit string.
+  `stylingToDbColumns` (in `template.server.ts`, exported for tests) emits **every column, explicit
+  NULLs included** (full replace, never a patch — the Step 1 serializer's doc-comment law made
+  code); **`parseStylingValues` doubles as the one DB decoder** (NULL → default/inherit, `"18"` →
+  `18`, corrupt legacy values degrade per-field, extra row keys ignored) — round-trip law
+  `parseStylingValues(stylingToDbColumns(v)) === v` tested. Three encodings, one vocabulary: wire =
+  overrides-only, DB = full columns, domain = resolved `StylingValues`.
+- **Isolation for a model with no shopId column:** all styling writes ride the **shop-scoped
+  template update** as a nested upsert (`data.styling.upsert`, `where: { id, shopId }`) on top of
+  the ownership read — double enforcement; deliberately NO free-standing styling write function.
+  `saveTemplateForShop` gains optional `styling`: **`undefined` = untouched** (rows-only saves
+  can't clobber), present = parse (tolerant, never blocks) → full-column upsert.
+  `getTemplateByIdForShop` includes styling; **duplicate copies the styling row** (columns +
+  `basedOnPreset` provenance + `extraStyles`, fresh identity); delete rides the FK cascade.
+  Route: action accepts `payload.styling` on both branches (create persists it via the same save
+  function post-create); loader returns resolved `styling: StylingValues` (defaults for `/new`).
+  `basedOnPreset`/`extraStyles` created by the migration but never written (Step 13 / post-MVP);
+  metaobject sync untouched (Step 7).
+- **+11 unit tests** (mapping totality incl. px→string, round-trip law, DB-row decode with corrupt
+  column, styling-undefined no-clobber, full-column upsert shape, malformed-payload degradation,
+  cross-shop block, duplicate copy ×2, cascade pin); 3 existing assertions updated for the new
+  `include`. **Full gate green (672 tests, 31 files).** **Live-verified on Neon + dev store:**
+  migration applied (zero styling rows, no backfill), a throwaway-template integration run proved
+  lazy create → override write → no-clobber → reset-clears → duplicate-copies → cascade live, and
+  the editor regression (rows-only save + revert on Moto G45) left styling rows at zero. One op
+  note: the running `shopify app dev` held the Prisma query-engine DLL, so `prisma generate`
+  needed a dev-server stop/start (EPERM on Windows, client regenerated cleanly after). Detail →
+  `context/features/60-style-tab-step4-migration-server-persistence.md`. **Next → Step 5 (engine
+  styling state + Dividers control + Save round-trip).**
+
+**Style tab — Step 3: storefront stylesheet rules (dormant) + mobile-stacked default (Reshell Phase B, `59-…`, 2026-07-18)**
+- Third slice of feature 57 — the CSS half of the Step 2 contract. `extensions/product-specs-table/
+  assets/spec-table.css` rewritten: **Part A** — every base-rule literal became
+  `var(--appx-spec-*, <that same literal>)` (label `width`/`font-weight`/`background`/`color`/
+  `text-transform`, value `background`/`color`, cell + section borders on `--appx-spec-border-color`,
+  typography vars on `__table` so `em` multiplies the theme base once; `font-weight` on `__label`
+  only — it is the LABEL-weight knob). **Part B** — one dormant rule set per modifier member,
+  defaults included, all compound selectors at equal specificity (no `!important`): layouts
+  (two-column restated explicitly; stacked = `display:block` chain with the label's divider dropped
+  so pairs read as units), section banded (real band, fallback `rgba(0,0,0,0.06)`, rule dropped) /
+  text-only, dividers lines / stripes (`nth-child(even)`, NOT `nth-of-type` — section headers are
+  rows too; fallback `rgba(0,0,0,0.04)`) / none, densities (padding only: `0.25/0.5/1rem` block).
+  **Part C** — the `--mobile-stacked` body inside `@media (max-width: 749px)` (Dawn's breakpoint;
+  puts preview widths 375/768 on the intended sides), LAST in the file so it beats the desktop
+  layout at equal specificity. Two locked exemptions: `--mobile-same-as-desktop` deliberately
+  rule-less ("same as desktop" = no override exists), `--collapsible` comment-placeholder until
+  Step 9's `<details>` markup. Source order is deliberate where knobs meet (layout AFTER
+  dividers/density; stacked's longhand `padding-block-start` layers over density's shorthand).
+- **`previewStyles.ts` re-copied** (mechanically, byte-exact) — the feature 49 drift guard failed on
+  the CSS edit as predicted, then re-greened. **New `specTableCssContract.test.ts` (5 tests)** pins
+  the CSS to the Step 2 vocabulary both ways: all 13 `SPEC_TABLE_CSS_VARS` present, all 13
+  producible modifier classes present as selectors **except the two exemptions asserted
+  known-absent** (the list must shrink consciously in Step 9), and no `!important`. One existing
+  feature 49 assertion updated: the view-independence word check now strips the shared stylesheet
+  first, since `--mobile-stacked` selectors legitimately contain device words (width-responsive CSS
+  in a still view-independent document — byte-identical across calls, unchanged).
+- **Dormancy browser-verified live** (dev store): product page (Moto G35, 37 rows) renders
+  identically — served CSS confirmed NEW, wrapper carries zero modifier classes, computed styles
+  exact (label 33%/600, cells 0.5/0.75rem + `rgba(0,0,0,0.1)` hairline, section 700 + 2px
+  currentColor, typography inherited). Devtools experiment: adding `--dividers-stripes` /
+  `--layout-stacked` by hand flips stripes/stacking instantly and was reverted — Part B is
+  live-but-unreferenced. Editor device previews (desktop + mobile 375px) unchanged; mobile stays
+  two-column, proving the media query is inert without the class. **Full gate green (661 tests, 31
+  files).** Carried forward: stacked-mode `display:block` strips implicit table semantics → **Step
+  12 a11y item**; `--collapsible` rules + stripe `nth-child` re-check → **Step 9**. Detail →
+  `context/features/59-style-tab-step3-storefront-stylesheet-rules.md`. **Next → Step 4
+  (`add-table-styling` migration + server persistence).**
 
 **Style tab — Step 2: pure presentation mapping (Reshell Phase B, `58-…`, 2026-07-18)**
 - Second slice of feature 57. New pure, framework-free `app/utils/tableStylingCss.ts` — the single

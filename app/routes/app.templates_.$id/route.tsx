@@ -48,6 +48,10 @@ import {
 } from "./pendingAssignment";
 import { createInitialRows } from "../../utils/rows";
 import { parseRows } from "../../utils/rowsSerialize";
+import {
+  DEFAULT_STYLING_VALUES,
+  parseStylingValues,
+} from "../../utils/tableStyling";
 import { SpecTableEditor } from "./SpecTableEditor";
 import { TemplateHeaderActions } from "./TemplateHeaderActions";
 import { useRowEngine } from "./useRowEngine";
@@ -124,6 +128,9 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
       },
       assignment: null,
       excludes: [],
+      // Feature 57 Step 4: a never-saved template has no styling row — all
+      // defaults. Dormant (no component reads it); Step 5 seeds the engine.
+      styling: DEFAULT_STYLING_VALUES,
     };
   }
 
@@ -163,7 +170,13 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
     };
   });
 
-  return { template, assignment, excludes };
+  // Feature 57 Step 4: the client's one styling vocabulary is the RESOLVED
+  // domain shape — the DB columns are decoded server-side exactly once, here.
+  // No styling row (styling: null) = fully-default styling, by the no-backfill
+  // rule. Dormant until Step 5 seeds the engine from it.
+  const styling = parseStylingValues(template.styling ?? {});
+
+  return { template, assignment, excludes, styling };
 };
 
 export const action = async ({ request, params }: ActionFunctionArgs) => {
@@ -178,6 +191,7 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
     scopeValue?: unknown;
     scopeValues?: unknown;
     excludes?: unknown;
+    styling?: unknown;
     intent?: unknown;
   };
 
@@ -244,6 +258,17 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
     // Persist the EXCLUDE carve-outs (feature 45), same best-effort posture.
     if (reconciledExcludes.length > 0) {
       await setTemplateExcludes(shop.id, result.data.id, reconciledExcludes);
+    }
+
+    // Persist styling arriving with the first save (feature 57 Step 4; dormant —
+    // no UI sends it until Step 5). Rides the same shop-scoped save path as an
+    // edit save; `rows` are the just-persisted finalized rows, so this write is
+    // styling-only in effect. Best-effort, like the scope write above.
+    if (payload.styling !== undefined) {
+      await saveTemplateForShop(shop.id, result.data.id, {
+        rows: result.data.rows,
+        styling: payload.styling,
+      });
     }
 
     // Best-effort storefront sync; the template is already durable in Postgres, so

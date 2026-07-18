@@ -169,6 +169,7 @@ describe("setTemplateScope (feature 46 — multi-value)", () => {
 
     expect(prismaMock.template.findFirst).toHaveBeenCalledWith({
       where: { id: "tmpl_owned_by_A", shopId: "shop_B" },
+      include: { styling: true },
     });
     expect(prismaMock.$transaction).not.toHaveBeenCalled();
     expect(prismaMock.productAssignment.createMany).not.toHaveBeenCalled();
@@ -476,6 +477,7 @@ describe("setTemplateExcludes (feature 45)", () => {
 
     expect(prismaMock.template.findFirst).toHaveBeenCalledWith({
       where: { id: "tmpl_owned_by_A", shopId: "shop_B" },
+      include: { styling: true },
     });
     expect(prismaMock.$transaction).not.toHaveBeenCalled();
     expect(prismaMock.productAssignment.createMany).not.toHaveBeenCalled();

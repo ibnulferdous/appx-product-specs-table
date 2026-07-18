@@ -99,6 +99,7 @@ model Template {
 
   assignments       ProductAssignment[]
   assignmentIndexes ProductAssignmentIndex[]
+  styling           TableStyling?
 
   @@unique([shopId, shopifyMetaobjectHandle])
   @@index([shopId])
@@ -109,6 +110,48 @@ enum TemplateStatus {
   DRAFT
   ACTIVE
   ARCHIVED
+}
+
+model TableStyling {
+  id         String   @id @default(cuid())
+  templateId String   @unique
+  template   Template @relation(fields: [templateId], references: [id], onDelete: Cascade)
+
+  // Layout knobs (Style-tab spec 2026-07-18). String knobs hold app-validated
+  // constants (shared TS constants + server re-validation, not Prisma enums —
+  // matching the fontSize/fontWeight convention); null = the flagged default.
+  rowLayout            String? // "TWO_COLUMN" (null default) | "STACKED"
+  mobileLayout         String? // "STACKED" (null default) | "SAME_AS_DESKTOP" — only meaningful when rowLayout is TWO_COLUMN
+  sectionHeaderStyle   String? // "BANDED" (null default) | "TEXT_ONLY"
+  sectionsCollapsible  Boolean @default(false)
+  sectionsInitialState String? // "ALL_OPEN" (null default) | "FIRST_OPEN" | "ALL_CLOSED" — only meaningful when sectionsCollapsible
+  rowDividerStyle      String? // "LINES" (null default) | "STRIPES" | "NONE"
+  density              String? // "DEFAULT" (null default) | "COMPACT" | "SPACIOUS"
+
+  headerBgColor  String?
+  labelBgColor   String?
+  valueBgColor   String?
+  stripeBgColor  String? // zebra-stripe surface — used when rowDividerStyle = "STRIPES"
+  borderColor    String?
+  labelTextColor String?
+  valueTextColor String?
+
+  // Typography (2026-07-18 addendum — adopts the Horizon theme-editor pattern:
+  // bounded segments, preset-first with a Custom px escape hatch; null = inherit).
+  fontSize      String? // "SMALL" | "MEDIUM" | "LARGE" (theme-relative presets, em-scale) OR an all-digit px string ("18"), app-clamped to 10–40
+  fontWeight    String? // "REGULAR" | "MEDIUM" | "BOLD"
+  fontStyle     String? // "NORMAL" | "ITALIC" (kept — merchant decision 2026-07-18)
+  lineHeight    String? // "TIGHT" | "NORMAL" | "LOOSE" — density's vertical-rhythm partner
+  labelCase     String? // "DEFAULT" | "UPPERCASE" — label column only
+  labelWidthPct Int?
+
+  // Provenance only: the preset id these values were copied from at pick time
+  // (a built-in preset id or a saved-preset id). Informational (gallery UI,
+  // support/debugging) — never re-read as a live link; the template owns its
+  // values outright (copy semantics, see data-model.md §5).
+  basedOnPreset String?
+
+  extraStyles Json @default("{}")
 }
 
 model ProductAssignment {
