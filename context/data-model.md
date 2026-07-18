@@ -378,21 +378,51 @@ model TableStyling {
   templateId String   @unique
   template   Template @relation(fields: [templateId], references: [id], onDelete: Cascade)
 
+  // Layout knobs (Style-tab spec 2026-07-18). String knobs hold app-validated
+  // constants (shared TS constants + server re-validation, not Prisma enums —
+  // matching the fontSize/fontWeight convention); null = the flagged default.
+  rowLayout            String?  // "TWO_COLUMN" (null default) | "STACKED"
+  mobileLayout         String?  // "STACKED" (null default) | "SAME_AS_DESKTOP" — only meaningful when rowLayout is TWO_COLUMN
+  sectionHeaderStyle   String?  // "BANDED" (null default) | "TEXT_ONLY"
+  sectionsCollapsible  Boolean  @default(false)
+  sectionsInitialState String?  // "ALL_OPEN" (null default) | "FIRST_OPEN" | "ALL_CLOSED" — only meaningful when sectionsCollapsible
+  rowDividerStyle      String?  // "LINES" (null default) | "STRIPES" | "NONE"
+  density              String?  // "DEFAULT" (null default) | "COMPACT" | "SPACIOUS"
+
   headerBgColor    String?
   labelBgColor     String?
   valueBgColor     String?
+  stripeBgColor    String?  // zebra-stripe surface — used when rowDividerStyle = "STRIPES"
   borderColor      String?
   labelTextColor   String?
   valueTextColor   String?
-  fontSize         String?
-  fontWeight       String?
-  fontStyle        String?
+  // Typography (2026-07-18 addendum — adopts the Horizon theme-editor pattern:
+  // bounded segments, preset-first with a Custom px escape hatch; null = inherit).
+  fontSize         String?  // "SMALL" | "MEDIUM" | "LARGE" (theme-relative presets, em-scale) OR an all-digit px string ("18"), app-clamped to 10–40
+  fontWeight       String?  // "REGULAR" | "MEDIUM" | "BOLD"
+  fontStyle        String?  // "NORMAL" | "ITALIC" (kept — merchant decision 2026-07-18)
+  lineHeight       String?  // "TIGHT" | "NORMAL" | "LOOSE" — density's vertical-rhythm partner
+  labelCase        String?  // "DEFAULT" | "UPPERCASE" — label column only
   labelWidthPct    Int?
+
+  // Provenance only: the preset id these values were copied from at pick time
+  // (a built-in preset id or a saved-preset id). Informational (gallery UI,
+  // support/debugging) — never re-read as a live link; the template owns its
+  // values outright (copy semantics, see the note below).
+  basedOnPreset    String?
 
   extraStyles      Json     @default("{}")
 }
 
-> **Color fields are merchant overrides, not the whole palette.** Each `*Color` field is nullable: `null` means "inherit the theme," a value means the merchant set it in the Style tab. On the storefront these resolve to **CSS custom properties on the `.appx-spec-table` wrapper** — the same variables that carry the inherited-theme defaults — so saved and default colors flow through one source of truth (see `code-standards.md` → Color & Theming). The app is not colorless: color is centralized in variables, not scattered as hex literals. `extraStyles` is the forward-compatible escape hatch for new themeable surfaces (presets, dark-mode tokens, additional surfaces) added post-MVP without a migration per color.
+> **Color fields are merchant overrides, not the whole palette.** Each `*Color` field is nullable: `null` means "inherit the theme," a value means the merchant set it in the Style tab. On the storefront these resolve to **CSS custom properties on the `.appx-spec-table` wrapper** — the same variables that carry the inherited-theme defaults — so saved and default colors flow through one source of truth (see `code-standards.md` → Color & Theming). The app is not colorless: color is centralized in variables, not scattered as hex literals. `extraStyles` is the forward-compatible escape hatch for new themeable surfaces (dark-mode tokens, additional surfaces) added post-MVP without a migration per color. MVP-shipping knobs are **real columns** (typed, queryable — locked 2026-07-18), never `extraStyles` entries.
+
+> **Styling is per-template with COPY semantics — locked 2026-07-18.** `TableStyling` is the **single styling home**; the style knobs are **orthogonal controls on one table primitive**, not monolithic "layouts" (every real-world archetype — striped, banded, stacked, accordion — is a knob combination). Choosing a preset (the creation-gallery popup or an in-rail preset card) **copies** the preset's values into the template's `TableStyling`; there is **no template→preset link and no shop-level default styling record** (a "store default cascade" was designed and rejected: copy keeps every style edit side-effect-free on live storefronts, makes preset deletion trivial, and collapses storefront delivery to one path). Consequences:
+>
+> - **Built-in presets are code constants** (stable ids: `classic`, `striped`, `banded`, `stacked`, `accordion`), never DB rows.
+> - **Merchant-saved presets** are a phase-2 slice: a `StylePreset` model — shop-scoped (`shopId` + name, shop-isolated like every model), carrying the **same style columns** as `TableStyling` (guard the intentional column duplication with a field-set drift test, the same pattern as the preview-CSS byte-equality guard). Created via "Save as preset"; "editing" a preset is save-as-again (same name = overwrite after confirm) — consistent with copy semantics, no separate preset editor.
+> - **Retroactive "set once and done" is a post-MVP explicit bulk action** (future app-settings route): pick a preset → confirm against a pre-checked template list → batch-write N `TableStyling` rows + **throttled** sequential metaobject resyncs (merchant-triggered write amplification is acceptable; per-edit propagation is not).
+>
+> Full UI spec: `admin-screen-plan.md` §Screen 3 → Tab 2 — Style.
 
 model AppSubscription {
   id                       String   @id @default(cuid())
@@ -816,7 +846,7 @@ shop on install/deploy. **Implemented and round-trip-tested live (Editor Step
   | `template_id` | `single_line_text_field` | Internal Appx template ID. |
   | `status` | `single_line_text_field` | `ACTIVE` / `DRAFT` / `ARCHIVED`. |
   | `rows` | `json` | Storefront-ready rows — a JSON **string** (`JSON.stringify(rows)`); the **same** `EditorRow[]` shape, no reshape needed. |
-  | `styling` | `json` | Storefront-ready styling (JSON string). |
+  | `styling` | `json` | Storefront-ready styling — the template's `TableStyling` as a JSON string, **overrides only** (non-default knobs + non-null colors; `{}`/absent = full theme inherit). Spec: §5 `TableStyling` + the serialization note below. |
   | `updated_at` | `single_line_text_field` | Debugging/sync visibility. |
 
 - **Definition:** declared in `shopify.app.toml`, not created at runtime (see the update note above). The definition is read-only through the Admin API.
@@ -829,6 +859,8 @@ shop on install/deploy. **Implemented and round-trip-tested live (Editor Step
 ### Storefront serialization
 
 The metaobject stores template structure — the same `EditorRow[]` rows JSON (see the §6 example); two pointers reach it: for broad rules the **shop routing map** (`shop.metafields["$app"].routing`) yields a template **handle** resolved directly via `metaobjects["$app:appx_spec_table"][handle]` (§9, proven 2026-07-07), and for bounded single-product overrides a per-product `metaobject_reference` metafield (`product.metafields["$app"].spec_table`, **not** a handle string) points at the same metaobject. Liquid resolves each value by joining its parts in order via `snippets/spec-table-value.liquid`: `TEXT` from row JSON, `SHOPIFY_FIELD` from the Shopify product object, `METAFIELD` from `product.metafields`, `LINE_BREAK` as a hard break (`<br>`, no content). Variant `SHOPIFY_FIELD`s (price, sku, weight, …) resolve against `product.first_available_variant` — the **default** variant, not a shopper selection (feature 35 decision; live variant-switch re-rendering is deferred until requested).
+
+**Styling serialization (Style-tab spec 2026-07-18).** The metaobject's `styling` field carries the template's `TableStyling` as a JSON string, written on every sync exactly like `rows`: the layout knobs (`rowLayout`, `mobileLayout`, `sectionHeaderStyle`, `sectionsCollapsible`, `sectionsInitialState`, `rowDividerStyle`, `density`) plus the non-null color/typography overrides — **overrides only**, so an absent/empty object means the table inherits the theme entirely (the zero-config path). Liquid maps colors/typography to **CSS custom properties on the `.appx-spec-table` wrapper** and layout knobs to **modifier classes** on the same wrapper (e.g. stacked / striped / banded); collapsible sections render as native `<details>/<summary>` groups, with data rows grouped under the preceding `SECTION_HEADER` **at render time** — sections remain flat rows in the data (§7); grouping is strictly a render concern. Because styling is per-template with copy semantics (§5), there is **no shop-level styling metafield** — one delivery path, and no template resync is ever triggered by another template's (or a preset's) style change. The `styling` json field **already exists in the deployed TOML definition** (shipped with slice 1), so Phase B requires **no definition change** — it only starts writing real content into the already-defined field. (If a future change ever does touch the definition, keep it additive — never delete/recreate; that poisons existing handles.)
 
 `hideWhenEmpty` is a **whole-cell character test**, evaluated for the entire row (never per line). The row is hidden when `hideWhenEmpty = true` **and** the fully resolved value cell — all parts joined, all dynamic parts resolved, with `LINE_BREAK` `<br>`s stripped (`strip_html`) so they never count — contains zero non-whitespace characters:
 

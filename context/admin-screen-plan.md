@@ -115,7 +115,7 @@ Shown when `Shop.onboardingStatus` is `DISMISSED`. This is the permanent dashboa
 
 **Content:**
 
-- Page title: "Templates" + primary action: "Create template" → `/app/templates/new`
+- Page title: "Templates" + primary action: "Create template" → opens the **style preset gallery popup** first (pick a preset, or "Start with your theme's styles"), then `/app/templates/new` seeded with the choice _(Style-tab spec 2026-07-18 — see Screen 3 → Tab 2 → Preset gallery popup)_
 - `IndexTable` columns: Template Name | Status (`DRAFT` / `ACTIVE` / `ARCHIVED`) | Rows | Assigned Products | Last Updated
 - Status shown as Polaris `Badge` (success = ACTIVE, warning = DRAFT, neutral = ARCHIVED)
 - Row click → `/app/templates/:id`
@@ -170,16 +170,39 @@ The rows-and-sections editor — where most of the work happens. (Labeled **Cont
 - Row count indicator — `Rows: N / 200`; hard-block at the 200-row cap (no early-warning threshold).
 - **Undo / Redo (MVP)** — available while editing.
 
-### Tab 2 — Style
+### Tab 2 — Style _(spec locked 2026-07-18 — supersedes the mockup's illustrative widgets and the earlier colors-only control list)_
 
-Rendered in the **left controls panel** beside the live table (see Layout). The control widgets shown in the mockup are **illustrative** — the schema-backed spec (mapped to `TableStyling`) is:
+Rendered in the **left controls panel** beside the live table (see Layout). Design model: **one spec-table primitive with orthogonal style knobs** — there are no monolithic "layouts". Every real-world archetype (Best Buy striped, Amazon accordion, Dell stacked, StarTech banded) is a combination of the knobs below. All knobs are **real columns on `TableStyling`** (`data-model.md` §5); all changes apply live to the WYSIWYG table and ride the contextual SaveBar (Save persists, Discard reverts — which also gives preset application free undo, so no confirm dialog is needed when a preset overwrites current knobs).
 
-- Color controls: **section-header background**, label background, value background, border color, label text color, value text color (six independent colors). _(Mockup shows these as swatch rows; "Section header" maps to `TableStyling.headerBgColor`.)_ Each writes a `TableStyling` color that resolves to a CSS variable on the storefront table — `null` inherits the theme, a set value overrides it — so the palette stays a single source of truth and the control set can grow post-MVP (more surfaces, presets) without new hardcoded values. See `code-standards.md` → Color & Theming.
-- Font size — Small / Medium / Large, with **theme-inherit as the unset default** (`fontSize` null = inherit). _(Mockup shows an S / M / L segmented control; it omits an explicit "Inherit" segment because inherit is the default state.)_
-- Font weight / style — `TableStyling.fontWeight` / `fontStyle`. _(Mockup shows a "Label weight" Regular / Medium / Bold segmented control; whether weight applies to the label only or label + value is not yet locked.)_
-- Column width — a single **label-width %** slider (value % = 100 − label %), persisted as `TableStyling.labelWidthPct`.
-- "Reset to theme defaults" link — retained from the original spec (not drawn in the mockup); confirm before building.
-- All styling changes apply live to the WYSIWYG editor table — no save required (saving persists `TableStyling`).
+**Styling is per-template with COPY semantics** (locked 2026-07-18 — rationale + consequences in `data-model.md` §5). Choosing a preset copies its values into the template's `TableStyling`; the template owns its style independently afterwards. No template→preset link, no shop-level default styling record. Retroactive restyling of many templates arrives post-MVP as an explicit **apply-to-all bulk action** on a future app-settings route (see PRD Out of Scope).
+
+#### Preset gallery popup (on template creation)
+
+- Triggered by **Create template** (Screen 2): a popup shows styled **mini-table previews** — the built-in presets plus (phase 2) the merchant's saved presets — rendered from real knob bundles via the existing preview renderer over sample rows.
+- **Skippable is first-class**: a "Start with your theme's styles" option creates the template with **no styling overrides** (pure theme inherit — the PRD's zero-config promise). The popup must never be a styling gate on creating a template.
+- Picking a preset seeds the new editor's **client styling state**; the `TableStyling` row is written on first Save (create-on-first-save extends to styling — no DB footprint for an abandoned scaffold).
+- **Built-in presets are code constants** (stable ids), not DB rows. MVP set — exact knob bundles to be locked at build time (open question in `progress-tracker.md`):
+  - **Classic** — two-column · line dividers · text-only section headers _(the default)_
+  - **Striped** — two-column · zebra stripes
+  - **Banded** — two-column · line dividers · filled section-header bands
+  - **Stacked** — label-on-top · whitespace separation
+  - **Accordion** — Classic + collapsible sections
+
+#### Style rail (top → bottom, disclosure groups)
+
+1. **Style presets** — the same preset cards in-editor: clicking one **overwrites the knobs in editor state** (copy; undoable via SaveBar Discard). Show a "Customized" hint once knobs diverge from the picked preset (`basedOnPreset` is provenance only). **Save as preset** _(phase 2)_ promotes the current values into the shop's saved-preset library (`StylePreset`); same-name save = overwrite after confirm — presets are "edited" by save-as-again, never in a separate editor.
+2. **Layout** — Row layout: `Two-column | Stacked` (`rowLayout`). Label width % slider, **visible for two-column only** (`labelWidthPct`; value % = 100 − label %). On mobile: `Stacked (default) | Same as desktop` (`mobileLayout`, meaningful for two-column only — stacked desktop is already stacked everywhere).
+3. **Sections** — Header style: `Banded | Text only` (`sectionHeaderStyle`). Collapsible: off/on (`sectionsCollapsible` — storefront renders native `<details>/<summary>`: zero JS, keyboard + SR support for free). Initially: `All open | First open | All closed` (`sectionsInitialState`, visible only when collapsible).
+4. **Rows** — Dividers: `Lines | Stripes | None` (`rowDividerStyle`; Stripes paints the `stripeBgColor` surface). Density: `Compact | Default | Spacious` (`density` — a padding scale; values are an open question).
+5. **Colors** — **seven** independent swatches: section-header bg (`headerBgColor`), label bg, value bg, **stripe bg** (`stripeBgColor`), border, label text, value text. Each `null` = inherit theme (swatch shows a "Theme" state); set values resolve to CSS variables on the storefront wrapper — single source of truth, see `code-standards.md` → Color & Theming.
+6. **Typography** _(2026-07-18 addendum — adopts the Horizon theme-editor pattern: preset-first with a Custom escape hatch, bounded segments only, no free-form typography inputs)_ — Font size `Inherit | S | M | L | Custom` (`fontSize`): S/M/L are **theme-relative** presets (em-scale — they scale with the merchant's theme base font); picking `Custom` reveals a bounded px input **clamped to 10–40** (an **absolute** override; the floor is an accessibility guard). Label weight Regular / Medium / Bold (`fontWeight`) and style Normal / Italic (`fontStyle`). Line height `Tight | Normal | Loose` (`lineHeight`) — density's vertical-rhythm partner, the key "clean table" knob. Label case `Default | Uppercase` (`labelCase`) — label column only (confirm the section header's existing case treatment in the storefront CSS during the build). _(Whether weight applies to the label only or label + value is still an open detail, carried over.)_ **Deliberately not adopted from Horizon** (option-overload guard): font-family picker, letter spacing, wrap control, per-side px padding (density covers it).
+7. **Reset to theme defaults** — clears every override (knobs to defaults, colors to null). Confirm before clearing.
+
+#### Build sequencing (Phase B slices)
+
+1. **B1 — knobs + rail + rendering:** `TableStyling` columns (`add-table-styling` migration), the rail controls, live WYSIWYG application, metaobject `styling` serialization, storefront modifier classes + CSS variables.
+2. **B2 — preset gallery:** built-in preset constants + the creation popup + in-rail preset cards.
+3. **B3 — saved presets** _(cuttable to post-MVP without rework)_: `StylePreset` model + "Save as preset" + saved styles in the gallery.
 
 ### Tab 3 — Settings _(Spec-Editor Mockup sync 2026-06-21)_
 

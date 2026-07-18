@@ -48,7 +48,7 @@ Shopify's native product pages have no structured way to display specifications.
 ### Storefront Display
 
 - Rendered via Theme App Extension (app blocks) — merchant decides placement in the theme editor
-- Mobile-first: two-column layout on desktop, stacked label-over-value on mobile (same approach as Amazon mobile)
+- Mobile-first: two-column layout on desktop, stacked label-over-value on mobile (same approach as Amazon mobile) — the default; the Style tab's mobile knob can opt a table into same-as-desktop _(Style-tab spec 2026-07-18)_
 - Semantic, accessible HTML: `<table>`, `<thead>`, `scope="row"`, ARIA labels, keyboard navigation
 - Tested and compatible with the top 10 Shopify themes (free and paid)
 
@@ -57,10 +57,12 @@ Shopify's native product pages have no structured way to display specifications.
 The app uses color deliberately and keeps it organized: every color — admin dashboard and storefront alike — flows from CSS variables as a single source of truth, so the palette can be retuned centrally and the Style tab can grow new themeable surfaces without scattering hardcoded values. The admin UI mirrors Shopify's Polaris design system so merchants feel they are inside Shopify, not a third-party app.
 
 - Inherit theme styles by default — zero configuration needed
-- Full color control: label background, value background, header row background, border color, text colors — each individually
-- Font size and font style control
+- Layout style knobs — one table primitive with orthogonal controls, not monolithic layouts _(Style-tab spec 2026-07-18)_: row layout (two-column / stacked label-on-top), section header style (banded / text-only), collapsible sections (native `<details>`, with initial-state control), row dividers (lines / zebra stripes / none), density (compact / default / spacious), mobile behavior (stacked by default / same as desktop)
+- Style presets with **copy semantics**: a skippable preset gallery on template creation (built-ins: Classic, Striped, Banded, Stacked, Accordion) — picking one copies its values into the template, which owns its style independently afterwards; merchants can save a customized style as a reusable preset _(phase-2 slice of the Style tab — see `admin-screen-plan.md` §Tab 2)_
+- Full color control: label background, value background, header row background, stripe background, border color, text colors — each individually
+- Typography controls — font size (theme-relative S / M / L presets, or a bounded custom px value), label weight, font style, line height, and label case (uppercase); bounded segments in the Shopify Horizon theme-editor pattern — no free-form typography inputs _(2026-07-18 addendum; font-family picker, letter spacing, and wrap control deliberately excluded)_
 - Column width ratio (label % vs value %)
-- Colors resolve through CSS variables (one source of truth across admin + storefront), leaving room to extend the Style tab post-MVP with more surfaces, presets, or saved themes
+- Colors resolve through CSS variables (one source of truth across admin + storefront), leaving room to extend the Style tab post-MVP with more surfaces or saved themes
 
 ### Onboarding
 
@@ -111,7 +113,7 @@ The app uses color deliberately and keeps it organized: every color — admin da
 - Assignment conflict avoidance for overlapping product and product-type rules
 - Storefront rendering via Theme App Extension app block
 - Mobile-responsive, accessible table output
-- Basic styling customization (colors, font size/style, column width)
+- Styling customization: layout knobs (row layout, section header style, collapsible sections, row dividers, density, mobile behavior), colors, font size/style, column width; built-in style-preset gallery on template creation; merchant-saved presets (phase-2 slice, cuttable without rework)
 - Simple onboarding flow
 - Archive and hard-delete template actions
 - Early bird pricing and review reward flow
@@ -120,7 +122,8 @@ The app uses color deliberately and keeps it organized: every color — admin da
 
 - Bulk product assignment (by collection, by tag, 50+ products at once)
 - Variant-level metafield mapping
-- Multiple display styles (card grid, accordion, tab layout)
+- Additional display styles beyond the MVP knob set (card grid, tab layout, modal/drawer container, multi-column "newspaper" flow) — collapsible sections and stacked layout moved INTO scope with the Style-tab spec 2026-07-18
+- Apply-a-preset-to-all-templates bulk action (future app-settings route — the copy-semantics companion that restores retroactive "set once and done"; design the confirm as a pre-checked template list so scoped apply stays a UI tweak)
 - Product comparison tables
 - Localization and RTL support
 - CSV import / export
