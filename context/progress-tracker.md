@@ -25,7 +25,7 @@ template lifecycle/create-on-save flows (19–20) — are all **complete and
 browser-verified**, plus the **bulk-delete "Undo" toast (33)**. **Storefront slice
 1 — Theme App Extension first pixel (34) is complete and browser-verified**: a
 product's assigned spec table now renders as a real (unstyled) table on the live
-storefront product page. Test suite: **627 tests green**.
+storefront product page. Test suite: **656 tests green**.
 
 **Next: the full product-assignment engine + storefront styling.** The
 admin→storefront pipeline is proven end to end (editor → Postgres → metaobject →
@@ -39,9 +39,9 @@ all 8 steps shipped, gate green, live-verified 2026-07-13) → E (assignment) �
 (top-bar status/save model + cleanup)**.
 
 **Phase B (Style tab, feature 57) is now in progress** — 14-step build order
-(B1 = 1–12, B2 = 13–14, B3 outlined). **Step 1 (pure styling domain module) is
-complete**; next is **Step 2 (pure presentation mapping — `stylingToCssVars` /
-`stylingToModifierClasses`)**.
+(B1 = 1–12, B2 = 13–14, B3 outlined). **Steps 1 (pure styling domain module)
+and 2 (pure presentation mapping) are complete**; next is **Step 3 (storefront
+stylesheet rules, dormant + the mobile-stacked default)**.
 
 > **Phase D delivered the preview *mechanism*, narrower than the Reshell plan's Phase D.** Three
 > deliberate deltas (recorded in `56-…`, for Phase F to reconcile the plan text): (1) **no live
@@ -55,6 +55,48 @@ complete**; next is **Step 2 (pure presentation mapping — `stylingToCssVars` /
 ## Completed
 
 > One line per unit. Detail → the linked `context/features/` doc + git history.
+
+**Style tab — Step 2: pure presentation mapping (Reshell Phase B, `58-…`, 2026-07-18)**
+- Second slice of feature 57. New pure, framework-free `app/utils/tableStylingCss.ts` — the single
+  translation layer between the Step 1 domain and every renderer (storefront Liquid Step 7, preview
+  iframe Step 6, editing grid Step 11), so three renderers can never drift. Exports
+  `stylingToCssVars`, `stylingToModifierClasses`, `formatCssVarDeclarations`, the frozen
+  `SPEC_TABLE_CSS_VARS` property-name map (keyed by `StylingValues` field name, `--appx-spec-*`
+  prefix per the existing `--appx-*` convention), and the four shared scales (`FONT_SIZE_EM_SCALE`
+  `0.875em`/`1em`/`1.125em`, `FONT_WEIGHT_SCALE` `400`/`500`/`700`, `LINE_HEIGHT_SCALE`
+  `1.25`/`1.5`/`1.8` **unitless**, `LABEL_CASE_TRANSFORMS`) that Step 3's stylesheet fallbacks and
+  the Step 10 control previews will read.
+- **The organizing rule (the step's real design decision): nullable → CSS var, non-null knob →
+  modifier class.** `stylingToCssVars` emits a key **only when non-null** (never `""`/`"inherit"`;
+  all-inherit → `{}`) so Step 3's `var(--x, <fallback>)` keeps the merchant's theme the true default
+  (zero-config promise). `stylingToModifierClasses` emits **every knob's class, defaults included**
+  (equal specificity, total function, exact-array-assertable) as BEM modifiers on the existing
+  `appx-spec-table` block; `sectionsCollapsible` is the one presence-flag (only when `true`);
+  **`sectionsInitialState` maps to nothing** (it's the Step 9 `<details open>` markup decision) —
+  no-leak asserted in tests. Both outputs are deterministic in `STYLING_FIELD_NAMES` order (Step 6
+  recomputes the preview `srcDoc` per render; unstable order would churn the iframe document).
+- **Typography lock carried into CSS:** fontSize keywords are theme-relative **em** multipliers, the
+  Custom escape hatch is absolute `px`; `lineHeight` is unitless (inherits as a ratio, not a frozen
+  length). **Security posture:** the signature accepts `StylingValues`, never `unknown` (a caller
+  must parse first); every mapping is total (`switch` + exhaustive `never` default, or
+  `satisfies Record<Union, string>`), so a future allowed-value addition is a **compile error**, not
+  a silently-interpolated `undefined`; an injection shape-guard test asserts every emitted value
+  matches the strict whitelist (hex / `\d+px` / `\d+%` / keyword literal, no `;{}<`/`url(`/newline).
+  `formatCssVarDeclarations` is the ONE shared `--k: v;` join both the Step 6 `<style>` block and
+  the Step 7 inline `style` attribute will use.
+- **Pure + wired to nothing** (grep-verified: imported only by its own test) — no component, CSS
+  file, Liquid, schema, dependency, server, persistence or reducer change; `spec-table.css`
+  untouched (Step 3 owns the `var(--appx-spec-*, <current value>)` rewrite + the expected preview
+  drift-guard update). **29 new Node unit tests** (`tableStylingCss.test.ts`: all-defaults `{}` +
+  exact default class array, the seven-color matrix with absent-key assertions, the fontSize union,
+  all four typography scales, `labelWidthPct`, the per-knob class matrix with constant-length loop,
+  collapsible presence flag, the `sectionsInitialState` no-leak, determinism/order, totality over a
+  fully-overridden value, the injection shape guard, and `formatCssVarDeclarations` incl. the
+  Step 1 → Step 2 round-trip chain). **Full gate green (656 tests, 30 files; typecheck, lint,
+  format, build).** **No browser step — pure, renders nothing** (per the feature doc's "Done when"
+  #4; the first live-verifiable slice is Step 5/6). Detail →
+  `context/features/58-style-tab-step2-pure-presentation-mapping.md`. **Next → Step 3 (storefront
+  stylesheet rules, dormant + the mobile-stacked default).**
 
 **Style tab — Step 1: pure styling domain module (Reshell Phase B, `57-…`, 2026-07-18)**
 - First slice of feature 57 and the **start of Reshell Phase B**. New pure, framework-free
