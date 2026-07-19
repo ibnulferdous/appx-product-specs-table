@@ -46,8 +46,7 @@ persistence), 5 (engine styling state + Dividers control + Save
 round-trip), 6 (live styling in the device previews), 7 (metaobject
 serialization + Liquid emission), 8 (the remaining non-structural knobs),
 9 (collapsible sections — 9a markup/CSS + 9b controls), and **10 (Colors +
-Typography — 10a/10b, code complete and gate-green but ⚠️ NOT yet
-browser-verified, see below)** are complete. Step 5 closed
+Typography — 10a/10b)** are complete and browser-verified. Step 5 closed
 the persistence circuit, Step 6 made the knob visible, **Step 7 completed the
 pipe** — styling now reaches the live storefront — Step 8 made four more knobs
 reachable with zero non-UI diff, **Step 9 was the only B1 step to change
@@ -56,26 +55,28 @@ target it, and **Step 10 was the last step that adds knobs — every field in
 `STYLING_FIELD_NAMES` now has a control.** The one remaining consumer is the
 editing grid (Step 11).
 
-> ⚠️ **OPEN — Step 10's live verification is NOT done (2026-07-19).** Both halves
-> pass the full gate (812 tests, typecheck, lint, build) with zero non-UI diff,
-> but the eight-point live matrix in
-> `context/features/66-style-tab-step10-colors-typography.md` §Testing → Live
-> verification has **not been run**: the embedded-app browser surface became
-> unusable mid-session (repeated 30s CDP screenshot timeouts, a tiled compositor
-> artifact, then a blank app iframe), so no control was ever exercised by hand.
-> **Nothing was written** — every `TableStyling` row still predates the session
-> and all thirteen Step 10 columns are NULL across all five templates, so the DB
-> and storefront are exactly as found. **Step 10 is therefore code-complete but
-> NOT signed off**, and the live matrix (especially the `stripeBgColor` +
-> `labelWidthPct` composition traps, the `fontSize` matrix, and the four hide
-> rules) is the first thing to run before Step 11.
+> ⚠️ **DEV-STORE STATE — `Unikyy Blade Pro Turbo Fan` is deliberately left carrying
+> Step 10 test overrides (2026-07-19, agreed with the project owner).** It is
+> ACTIVE and assigned to ALL products except the two DJI Mavic ones, so the live
+> storefront currently renders **`fontSize=22`, `fontWeight=BOLD`,
+> `labelCase=UPPERCASE`, `labelTextColor=#1A4D8F`**. This is test residue, not a
+> baseline — **clear it before recording any future storefront measurement.** To
+> revert: Unikyy → Style → the three selects back to `Inherit` + clear the Label
+> text swatch → Save (a Save re-syncs the metaobject; a SQL-only reset would
+> not).
 >
-> 🔎 **Noticed while checking the DB, not caused by this step:** `DJI Mavic`
-> (ACTIVE) carries `rowLayout=STACKED` as of 08:36 today, so it no longer matches
-> the two-column baseline Steps 7–9 recorded (44 rows, 9 sections, table height
-> 2980px). Set before this session by an earlier one. Left as found — but the
-> Step 10 live pass should re-establish the baseline before trusting it, rather
-> than comparing against the older recorded numbers.
+> 🔎 **Two things noticed live, neither caused by this step.** (1) `DJI Mavic`
+> (ACTIVE) carries `rowLayout=STACKED` + `sectionsCollapsible`, so it no longer
+> matches the two-column baseline Steps 7–9 recorded (table height 2980px); set
+> by an earlier session, left as found — re-establish the baseline rather than
+> trusting those numbers. (2) **Driving the embedded app through browser
+> automation is unreliable** and cost most of a session: screenshot dimensions
+> vary call to call (1264/1288/1308 px) so click coordinates drift, the a11y tree
+> **cannot cross into the app iframe** (cross-origin — `find`/`read_page` are
+> useless there, only coordinate clicks work), and **native `<select>` popups are
+> not in the page coordinate space**, so an option must be chosen with arrow keys
+> + Enter, never by clicking it. Verify a click landed before sending the next
+> one.
 
 > ✅ **RESOLVED 2026-07-19 — decision (a) ACCEPT. Step 7 is signed off.** The section-header band is
 > the **intended default becoming reachable, not a regression**: BANDED is the documented default, the
@@ -148,9 +149,63 @@ editing grid (Step 11).
   `STYLING_FIELD_NAMES` now has a control** — the claim that closes the
   knob-building half of Phase B. Shipped as the two locked commits, **10a**
   (colors) then **10b** (typography + label width).
-- **⚠️ Code-complete, NOT signed off — the live matrix has not been run.** See the
-  warning note at the top of this file. Everything below is gate-verified, not
-  browser-verified.
+- **Live-verified on the dev store (2026-07-19)** on the ACTIVE 16-row / 4-section
+  **Unikyy Blade Pro Turbo Fan**, which routes to every product except the two DJI
+  Mavic ones:
+  - **The rail renders all five groups** in the locked order Layout · Sections ·
+    Rows · Colors · Typography. **Seven swatches two-up, all empty (the Theme
+    state)**, under "Leave a swatch empty to inherit that color from your theme",
+    each with its help line — including the composition warning *"Alternating rows
+    — needs Row dividers set to Stripes"* on the stripe swatch.
+  - **Two hide rules confirmed by ABSENCE:** the template is `rowLayout=STACKED`,
+    and **neither "Label width" nor "On mobile" is in the rail** — correct, since a
+    stacked table has no label column to size.
+  - **`Inherit` leads every nullable list, live:** the Label case dropdown opened
+    on exactly `Inherit → As typed → Uppercase`, and Font size on
+    `Inherit → Small → Medium → Large → Custom` with **Custom last and outside the
+    domain**.
+  - **The `fontSize` tri-state works end to end:** picking Custom **revealed the px
+    box seeded at `16`** (the fourth hide rule, and the locked seed), with the help
+    line reading **"An exact size in pixels (10–184)"** — the raised ceiling
+    reaching merchant-facing copy. Leaving Custom for Inherit **hid the box again**.
+  - **The clamp is real, at the new ceiling:** typing **`500` clamped to `184`** on
+    commit, confirming the control-boundary clamp Polaris's own `min`/`max` cannot
+    provide.
+  - **Override-only persistence:** saving `fontSize=22`, `fontWeight=BOLD`,
+    `labelCase=UPPERCASE`, `labelTextColor=#1A4D8F` wrote **exactly those four
+    columns**, every other Step 10 column **NULL** — the nine knobs left at Inherit
+    stored nothing. `fontSize` persisted as the all-digit string `"22"` (the DB
+    column shape). Reload restored all four controls with the SaveBar closed.
+  - **🎯 THE PAYOFF, live on a real product page.** The wrapper's inline style read
+    **exactly** `--appx-spec-label-color: #1A4D8F; --appx-spec-font-size: 22px;
+    --appx-spec-font-weight: 700; --appx-spec-label-transform: uppercase;` — four
+    declarations, nothing else, **in `STYLING_FIELD_NAMES` order**. Computed styles
+    confirmed the CSS applied: label `rgb(26,77,143)`, weight `700`, `uppercase`,
+    table `22px`.
+  - **🔑 The §7 scope lock, PROVEN rather than assumed:** on the same page the
+    **value cell computed `fontWeight: 400` and `textTransform: none`**. Had either
+    var landed on the table instead of `.appx-spec-table__label`, these would read
+    700/uppercase. This is the assertion that retires the old "label only or
+    label + value?" open question with evidence.
+  - **Absence is still absence:** a template with no Step 10 override renders
+    **`style=""`** — not `""`-valued vars, not `inherit`. Confirmed both before any
+    override was set and, concurrently, on the **untouched second ACTIVE template**
+    (DJI Mavic), whose labels fell back to the stylesheet literals (600 / 14px /
+    black / none) — so **per-template isolation holds**.
+  - Both resolution tiers still resolve (per-product override → DJI Mavic; routing
+    map → everything else), Step 9's shape intact (9 `<details>` / 9 tables / 35
+    rows on Mavic; 4 sections with `openCount: 1` for FIRST_OPEN on the routed
+    path), 0 `<script>` elements inside the wrapper.
+  - **NOT exercised live, and honestly recorded as such:** the **left-column colour
+    swatches** (Border, Value text, and the three background swatches) never took a
+    typed value, while the right-column **Label text** swatch worked first time.
+    Most likely the coordinate drift described in the note at the top of this file
+    rather than a defect — but **it was not proven either way**, so the `alpha`
+    decision on the five surface colours rests on unit tests + the preview totality
+    test, not on a live render. Worth one manual check. Also unexercised live:
+    `labelWidthPct` and the `stripeBgColor` composition trap (both need
+    `rowLayout=TWO_COLUMN` / `STRIPES`, which this template is not).
+  - **DB left deliberately dirty** — see the ⚠️ note at the top of this file.
 - **One scoped DOMAIN exception, called out rather than smuggled** (§2a):
   `FONT_SIZE_PX_MAX` raised **40 → 184** to match the Horizon theme editor's own
   maximum, landed with the four doc amendments *before* 10a/10b so both halves
@@ -224,9 +279,10 @@ editing grid (Step 11).
 - **Zero non-UI diff, both halves.** No migration, server, `spec-table.css`,
   Liquid, metaobject, `shopify.app.toml`, engine or dependency change; **both CSS
   drift guards passed unedited**. Detail →
-  `context/features/66-style-tab-step10-colors-typography.md`. **Next → run Step
-  10's live matrix and sign it off, then Step 11 (live styling on the editing
-  grid).**
+  `context/features/66-style-tab-step10-colors-typography.md`. **Next → Step 11
+  (live styling on the editing grid)**, carrying two small live-verification debts
+  listed above (the left-column swatches, and `labelWidthPct` / `stripeBgColor`,
+  which need a TWO_COLUMN + STRIPES template to be visible at all).
 
 **Style tab — Step 9: collapsible sections (Reshell Phase B, `65-…`, 2026-07-19)**
 - Ninth slice of feature 57 and **the only B1 step that changes MARKUP**. Steps 1–8 moved a value
