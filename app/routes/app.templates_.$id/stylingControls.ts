@@ -5,6 +5,7 @@ import {
   ROW_LAYOUTS,
   SECTIONS_INITIAL_STATES,
   SECTION_HEADER_STYLES,
+  parseStylingValues,
   type StylingValues,
 } from "../../utils/tableStyling";
 
@@ -20,7 +21,8 @@ import {
 // Step 8 adds the remaining four NON-NULLABLE keyword knobs below (row layout,
 // mobile layout, section headers, density). Step 10 adds the nullable ones
 // (label width, colors, typography), which need a different UI vocabulary
-// because null means "inherit from the theme" rather than a concrete value.
+// because null means "inherit from the theme" rather than a concrete value —
+// see the "the null vocabulary" section near the bottom of this file.
 
 export interface StylingOption<T extends string> {
   value: T;
@@ -222,4 +224,144 @@ export function showsSectionsInitialStateControl(
  */
 export function showsMobileLayoutControl(styling: StylingValues): boolean {
   return styling.rowLayout !== "STACKED";
+}
+
+// --- Step 10 · the `null` vocabulary ----------------------------------------
+//
+// Thirteen fields in `StylingValues` are NULLABLE, and null is semantic there:
+// it means "inherit from the merchant's theme", which is the app's zero-config
+// promise, not a missing value. Steps 5/8/9b only ever touched knobs whose
+// default was a real value, so this is the first step that has to give absence
+// a name a merchant can see and — crucially — get back to.
+//
+// THE TRAP THIS SECTION EXISTS TO CLOSE: a `<s-option>`'s `value` attribute is a
+// string, so null needs a sentinel on the wire between the DOM and the engine.
+// `""` is the natural one (it is also what `s-color-field` itself emits for an
+// invalid value). That sentinel must be converted HERE, at the control boundary,
+// and must never reach `StylingValues`, the Save payload, or the DB. A stray `""`
+// would be coerced to null by `parseStylingValues` anyway, which means the bug
+// would be invisible in the editor and only surface as a wrong metaobject — so
+// the conversion lives in these two helpers and is unit-tested in both
+// directions rather than being open-coded per control.
+export const INHERIT_CONTROL_VALUE = "";
+
+/** A nullable domain value as the string a Polaris control can hold. */
+export function toControlValue<T extends string>(value: T | null): string {
+  return value ?? INHERIT_CONTROL_VALUE;
+}
+
+/**
+ * The inverse: a control's string back to a domain value or null.
+ *
+ * Membership-checked against the domain list rather than cast, so an unexpected
+ * string degrades to null (= inherit) instead of being written into styling
+ * state as a value the mapping has no case for.
+ */
+export function fromControlValue<T extends string>(
+  raw: string,
+  allowed: readonly T[],
+): T | null {
+  return (allowed as readonly string[]).includes(raw) ? (raw as T) : null;
+}
+
+// --- Step 10a · colors -------------------------------------------------------
+
+// The seven color fields, in `admin-screen-plan.md` §Tab 2 order.
+//
+// `alpha` follows the 2026-07-19 lock: ON for the five SURFACE colors, OFF for
+// the two TEXT colors. The stylesheet's own defaults are translucent
+// (`rgba(0,0,0,0.06)` band, `0.04` stripes, `0.1` borders), so an opaque-only
+// picker could not reproduce the default look; translucent body text, by
+// contrast, is a contrast bug rather than a design choice. No domain change is
+// needed — `parseColor` already accepts `#rgb` / `#rrggbb` / `#rrggbbaa`.
+export type StylingColorFieldName =
+  | "headerBgColor"
+  | "labelBgColor"
+  | "valueBgColor"
+  | "stripeBgColor"
+  | "borderColor"
+  | "labelTextColor"
+  | "valueTextColor";
+
+export interface ColorKnob {
+  field: StylingColorFieldName;
+  label: string;
+  // One line, because the rail is ~300px wide. Says which SURFACE the color
+  // paints, since several of them are only visible in certain combinations.
+  helpText: string;
+  alpha: boolean;
+}
+
+export const COLOR_KNOBS: ReadonlyArray<ColorKnob> = [
+  {
+    field: "headerBgColor",
+    label: "Section header background",
+    // Only visible while section headers are Banded, but that is a composition
+    // fact rather than a reason to hide the swatch: unlike the four visibility
+    // rules below, the merchant may legitimately set it before switching.
+    helpText: "The band behind a section title.",
+    alpha: true,
+  },
+  {
+    field: "labelBgColor",
+    label: "Label background",
+    helpText: "Behind the label column.",
+    alpha: true,
+  },
+  {
+    field: "valueBgColor",
+    label: "Value background",
+    helpText: "Behind the value column.",
+    alpha: true,
+  },
+  {
+    field: "stripeBgColor",
+    label: "Stripe background",
+    // The composition trap worth naming in the UI itself, so a merchant who
+    // sets it on a lines table does not read the no-op as a broken control.
+    helpText: "Alternating rows — needs Row dividers set to Stripes.",
+    alpha: true,
+  },
+  {
+    field: "borderColor",
+    label: "Border",
+    helpText: "Row rules and the table outline.",
+    alpha: true,
+  },
+  {
+    field: "labelTextColor",
+    label: "Label text",
+    helpText: "The label column's text.",
+    alpha: false,
+  },
+  {
+    field: "valueTextColor",
+    label: "Value text",
+    helpText: "The value column's text.",
+    alpha: false,
+  },
+];
+
+/** A stored color as the string `s-color-field` holds; null renders as Theme. */
+export function toColorControlValue(color: string | null): string {
+  return toControlValue(color);
+}
+
+/**
+ * A color field's string back to a stored color or null.
+ *
+ * Empty means the merchant cleared the swatch — the explicit way back to Theme,
+ * and also what `s-color-field` emits for an unparseable value.
+ *
+ * Anything else is validated through `parseStylingValues`, THE trust boundary,
+ * rather than by re-typing the hex whitelist here: these values are interpolated
+ * into an inline `style` attribute on a live storefront, and a second copy of
+ * that pattern is a copy that can drift out of agreement with the server's.
+ * A value the domain rejects degrades to null (= Theme), exactly as it would on
+ * the way back out of the database.
+ */
+export function fromColorControlValue(raw: string): string | null {
+  const trimmed = raw.trim();
+  if (trimmed === INHERIT_CONTROL_VALUE) return null;
+  return parseStylingValues({ headerBgColor: trimmed }).headerBgColor;
 }

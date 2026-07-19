@@ -398,7 +398,7 @@ model TableStyling {
   valueTextColor   String?
   // Typography (2026-07-18 addendum — adopts the Horizon theme-editor pattern:
   // bounded segments, preset-first with a Custom px escape hatch; null = inherit).
-  fontSize         String?  // "SMALL" | "MEDIUM" | "LARGE" (theme-relative presets, em-scale) OR an all-digit px string ("18"), app-clamped to 10–40
+  fontSize         String?  // "SMALL" | "MEDIUM" | "LARGE" (theme-relative presets, em-scale) OR an all-digit px string ("18"), app-clamped to 10–184 (ceiling raised from 40 on 2026-07-19 to match the Horizon theme editor's max; floor is an a11y guard)
   fontWeight       String?  // "REGULAR" | "MEDIUM" | "BOLD"
   fontStyle        String?  // "NORMAL" | "ITALIC" (kept — merchant decision 2026-07-18)
   lineHeight       String?  // "TIGHT" | "NORMAL" | "LOOSE" — density's vertical-rhythm partner

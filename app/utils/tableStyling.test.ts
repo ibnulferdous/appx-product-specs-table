@@ -251,14 +251,22 @@ describe("parseStylingValues — fontSize union", () => {
   });
 
   it("clamps out-of-range px values (number and string shapes alike)", () => {
-    expect(parseStylingValues({ fontSize: 9 }).fontSize).toBe(FONT_SIZE_PX_MIN);
-    expect(parseStylingValues({ fontSize: 100 }).fontSize).toBe(
-      FONT_SIZE_PX_MAX,
-    );
-    expect(parseStylingValues({ fontSize: "9" }).fontSize).toBe(
+    // Both out-of-range probes are DERIVED from the bounds, never hard-coded:
+    // the ceiling moved 40 → 184 in 2026-07-19, and a literal `100` here would
+    // have silently become an IN-range value that no longer clamps — the test
+    // would still pass its name while asserting nothing.
+    const below = FONT_SIZE_PX_MIN - 1;
+    const above = FONT_SIZE_PX_MAX + 1;
+    expect(parseStylingValues({ fontSize: below }).fontSize).toBe(
       FONT_SIZE_PX_MIN,
     );
-    expect(parseStylingValues({ fontSize: "100" }).fontSize).toBe(
+    expect(parseStylingValues({ fontSize: above }).fontSize).toBe(
+      FONT_SIZE_PX_MAX,
+    );
+    expect(parseStylingValues({ fontSize: String(below) }).fontSize).toBe(
+      FONT_SIZE_PX_MIN,
+    );
+    expect(parseStylingValues({ fontSize: String(above) }).fontSize).toBe(
       FONT_SIZE_PX_MAX,
     );
   });

@@ -37,8 +37,19 @@ export const LABEL_CASES = ["DEFAULT", "UPPERCASE"] as const;
 // Custom-px bounds for `fontSize`. The floor is an accessibility guard; the
 // ceiling keeps a hand-edited blob from blowing up a storefront table. Clamped
 // (not rejected) so a slightly out-of-range stored value still renders.
+// The Custom-px escape hatch's bounds. The FLOOR is an accessibility guard and
+// is not negotiable; the CEILING is a taste guard only, and was raised 40 → 184
+// on 2026-07-19 to match the maximum offered by the Horizon theme editor's own
+// font-size control, so a merchant is never more constrained here than in the
+// theme editor they came from.
+//
+// 184 is deliberately generous for a DATA TABLE: this var lands on
+// `.appx-spec-table__table`, so it scales labels and values together rather than
+// a single heading. A merchant who picks a very large size will get a table that
+// overflows its column on narrow viewports — that is their call, it is visible
+// the instant they pick it, and it is one control away from being undone.
 export const FONT_SIZE_PX_MIN = 10;
-export const FONT_SIZE_PX_MAX = 40;
+export const FONT_SIZE_PX_MAX = 184;
 
 // Label-column width bounds, in percent. Locks the Step 10 slider range.
 export const LABEL_WIDTH_PCT_MIN = 20;

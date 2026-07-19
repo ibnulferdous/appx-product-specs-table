@@ -1,12 +1,15 @@
 import {
+  COLOR_KNOBS,
   DENSITY_OPTIONS,
   MOBILE_LAYOUT_OPTIONS,
   ROW_DIVIDER_OPTIONS,
   ROW_LAYOUT_OPTIONS,
   SECTIONS_INITIAL_STATE_OPTIONS,
   SECTION_HEADER_OPTIONS,
+  fromColorControlValue,
   showsMobileLayoutControl,
   showsSectionsInitialStateControl,
+  toColorControlValue,
   type StylingOption,
 } from "./stylingControls";
 import type { RowEngine } from "./useRowEngine";
@@ -29,18 +32,20 @@ import type { RowEngine } from "./useRowEngine";
 // mapping, so these are UI-only additions. If flipping one of them fails to
 // repaint the preview, the bug is in Step 6, not here.
 //
-// The groups are knowingly incomplete: `labelWidthPct` belongs visually under
-// Layout and the colors/typography groups come with it in Step 10, because
-// "null = inherit from the theme" needs a UI vocabulary this step doesn't build.
 // Step 9b completes the Sections group with the two collapsible knobs, whose
-// `<details>/<summary>` markup landed dormant in 9a — so this is again a
-// UI-only change with zero non-UI diff.
+// `<details>/<summary>` markup landed dormant in 9a.
+//
+// Step 10a adds the Colors group — the rail's first NULLABLE knobs, where the
+// merchant has to be able to both leave a value unset and get back to unset. The
+// `""`-to-null conversion lives entirely in `stylingControls.ts`; nothing in this
+// file may write a bare `""` into styling state.
 //
 // NO GENERIC CONTROL WRAPPER, deliberately. Five near-identical selects look like
 // they want a `<StylingSelect knob={…}>`, but at this size the abstraction would
-// be bigger than what it removes, and Step 10 brings toggles, swatches and
-// sliders that would break its assumptions immediately. Revisit only if Step 10
-// turns up real duplication.
+// be bigger than what it removes. Step 9b's switch and Step 10's color fields and
+// number fields have since confirmed the call: the shapes really do diverge, and
+// only the `selectedHelpText` lookup — which knows nothing about how a value is
+// picked — turned out to be worth sharing.
 
 // Read the `value` off a Polaris web-component change event (the elements are
 // custom, so `currentTarget.value` isn't in the DOM typings). Same helper as
@@ -242,6 +247,40 @@ export function StyleTab({ engine }: { engine: RowEngine }) {
         <s-text color="subdued">
           {selectedHelpText(DENSITY_OPTIONS, styling.density)}
         </s-text>
+      </s-stack>
+
+      {/* Colors (Step 10a) — the rail's first NULLABLE group, and the first
+          place "inherit from the theme" needs to be visible and reachable.
+          An empty swatch IS the Theme state, and clearing the field is the
+          explicit way back to it; `fromColorControlValue` is what keeps the
+          `""` sentinel from ever reaching styling state.
+
+          Two-up because seven full-width fields would push the rest of the rail
+          off-screen. `alpha` is per-knob, not a group setting — see the lock in
+          `stylingControls.ts`. */}
+      <s-stack direction="block" gap="base">
+        <s-text type="strong">Colors</s-text>
+        <s-text color="subdued">
+          Leave a swatch empty to inherit that color from your theme.
+        </s-text>
+
+        <s-grid gridTemplateColumns="1fr 1fr" gap="base">
+          {COLOR_KNOBS.map((knob) => (
+            <s-color-field
+              key={knob.field}
+              label={knob.label}
+              details={knob.helpText}
+              alpha={knob.alpha}
+              value={toColorControlValue(styling[knob.field])}
+              onChange={(event: Event) => {
+                setStylingField(
+                  knob.field,
+                  fromColorControlValue(readValue(event)),
+                );
+              }}
+            />
+          ))}
+        </s-grid>
       </s-stack>
     </s-stack>
   );
