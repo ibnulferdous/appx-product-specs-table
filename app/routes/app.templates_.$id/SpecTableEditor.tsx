@@ -3,6 +3,7 @@ import { SaveBar } from "@shopify/app-bridge-react";
 import { EditorShell } from "./EditorShell";
 import { ContentTab } from "./ContentTab";
 import { SettingsTab } from "./SettingsTab";
+import { StyleTab } from "./StyleTab";
 import { SpecTablePreview } from "./SpecTablePreview";
 import { EditorTips } from "./EditorTips";
 import { SAVE_BAR_ID } from "./editorShared";
@@ -51,6 +52,7 @@ export function SpecTableEditor({ engine }: { engine: RowEngine }) {
           preview={(view) => (
             <SpecTablePreview rows={engine.rows} view={view} />
           )}
+          stylePanel={<StyleTab engine={engine} />}
           settingsPanel={<SettingsTab engine={engine} />}
         />
       </div>

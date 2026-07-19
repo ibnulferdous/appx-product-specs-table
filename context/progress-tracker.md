@@ -25,7 +25,7 @@ template lifecycle/create-on-save flows (19–20) — are all **complete and
 browser-verified**, plus the **bulk-delete "Undo" toast (33)**. **Storefront slice
 1 — Theme App Extension first pixel (34) is complete and browser-verified**: a
 product's assigned spec table now renders as a real (unstyled) table on the live
-storefront product page. Test suite: **672 tests green**.
+storefront product page. Test suite: **684 tests green**.
 
 **Next: the full product-assignment engine + storefront styling.** The
 admin→storefront pipeline is proven end to end (editor → Postgres → metaobject →
@@ -41,10 +41,13 @@ all 8 steps shipped, gate green, live-verified 2026-07-13) → E (assignment) �
 **Phase B (Style tab, feature 57) is now in progress** — 14-step build order
 (B1 = 1–12, B2 = 13–14, B3 outlined). **Steps 1 (pure styling domain module),
 2 (pure presentation mapping), 3 (storefront stylesheet rules, dormant +
-the mobile-stacked default), and 4 (`add_table_styling` migration + server
-persistence) are complete**; next is **Step 5 (engine styling state + Dividers
-control + Save round-trip)** — the first slice where a merchant can change
-styling and see it survive a reload.
+the mobile-stacked default), 4 (`add_table_styling` migration + server
+persistence), and 5 (engine styling state + Dividers control + Save
+round-trip) are complete**; next is **Step 6 (live styling in the device
+previews)**. Step 5 closed the circuit — a merchant can now change Row
+dividers and see it survive a reload — but **nothing renders it yet**: the
+knob persists and repaints nothing until the previews (Step 6), the grid
+(Step 11), and the storefront (Step 7, via the metaobject) consume it.
 
 > **Phase D delivered the preview *mechanism*, narrower than the Reshell plan's Phase D.** Three
 > deliberate deltas (recorded in `56-…`, for Phase F to reconcile the plan text): (1) **no live
@@ -58,6 +61,51 @@ styling and see it survive a reload.
 ## Completed
 
 > One line per unit. Detail → the linked `context/features/` doc + git history.
+
+**Style tab — Step 5: engine styling state + Dividers control + Save round-trip (Reshell Phase B, `61-…`, 2026-07-19)**
+- Fifth slice of feature 57 and **the first one a merchant can see**. Steps 1–4 were each provably
+  dormant; this one joins them into a working circuit: loader → engine state → rail control → dirty
+  snapshot → Save payload → DB → reload. **Client-only — no server, schema, CSS, Liquid, metaobject,
+  or dependency change** (Step 4 had already finished the action/loader plumbing, so this step only
+  sends and reads what existed).
+- **Engine** (`useRowEngine.ts`): new `initialStyling: StylingValues` arg seeded from the loader
+  (reseeded on remount, so **Discard reverts styling for free**); **one state cell holds the whole
+  resolved value** — never a cell per knob — mutated only through a generic
+  `setStylingField<K extends keyof StylingValues>(field, value)`, so Steps 8/10 add ~19 more controls
+  without touching the engine again. The Save payload carries
+  **`serializeStylingOverrides(styling)`** — the overrides-only wire shape, so an all-default table
+  sends `{}` and a reset-to-default genuinely CLEARS the column.
+- **The drift fix this step forced:** the dirty baseline (`currentMetaJson`) and the Save-click
+  snapshot (`submittedMetaJsonRef`) were two hand-built object literals kept in sync by eye — a
+  silent-until-it-bites edit-during-save hazard. Both now call one pure
+  **`editorMetaSnapshot`** (new `editorSnapshot.ts`), which owns the fixed key order, the
+  set-sorting for `scopeValues`/`excludes`, and the styling wire shape. Agreement is now structural,
+  not conventional.
+- **UI**: new `StyleTab.tsx` fills EditorShell's long-empty `stylePanel` slot (placeholder gone),
+  sibling of `SettingsTab` in every respect. One control — **Row dividers (Lines / Stripes / None)**
+  — with options **derived from `ROW_DIVIDER_STYLES`** via a new pure `stylingControls.ts`, never a
+  hand-typed list, plus per-option help text. Deliberately one knob: it is the simplest shape in
+  `StylingValues`, so it proves the pattern the other nineteen copy.
+- **+12 unit tests** (new `editorSnapshot.test.ts`: stability, styling-flips-dirty, back-to-default
+  returns to baseline (no false dirty), snapshot styling === the payload's serialization, `{}` when
+  all-default, set-sorting, no caller-array mutation, the pre-styling surfaces still flip; new
+  `stylingControls.test.ts`: options match the domain in order, default leads, prose labels distinct
+  and never the raw constant). **Full gate green (684 tests, 33 files; typecheck, lint, build).**
+- **Live-verified on the dev store (2026-07-19)** on the real Moto G45 template: Style tab shows
+  **Lines** by default → **Stripes** opens the SaveBar on a styling change alone (no row edit) →
+  **Discard** reverts to Lines and closes the bar → Stripes + **Save** writes exactly one
+  `TableStyling` row with `rowDividerStyle='STRIPES'` and **every other override column NULL** →
+  **reload** still reads Stripes with the SaveBar closed → **None** persists as `'NONE'` → back to
+  **Lines** (the default) sets the column to **NULL**, proving a reset clears the override rather
+  than storing the default as data. **Create-on-first-save** (never before run with a real payload):
+  a `/new` template saved with Stripes got its rows **and** a styling row in one flow. **Duplicate**
+  copied the styling row with a fresh row id (Step 4's copy semantics, first live proof); **delete**
+  cascaded the styling row away — scratch template and copy both cleaned up, **zero orphans**,
+  template count back to 5. Console clean.
+- **Expected non-behavior, confirmed live:** with Dividers set to None the Desktop preview still
+  rendered hairline rules — the previews do not consume styling until Step 6. Detail →
+  `context/features/61-style-tab-step5-engine-state-dividers-save.md`. **Next → Step 6 (live styling
+  in the device previews)** — the step that finally makes the knob visible.
 
 **Style tab — Step 4: `add_table_styling` migration + server persistence (Reshell Phase B, `60-…`, 2026-07-18)**
 - Fourth slice of feature 57 — the first Phase B schema change, dormant on arrival (no UI sends or

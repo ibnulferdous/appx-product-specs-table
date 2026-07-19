@@ -31,6 +31,11 @@ import {
 } from "../../utils/rows";
 import { linearToPartOffset, partOffsetToLinear } from "../../utils/valueParts";
 import {
+  serializeStylingOverrides,
+  type StylingValues,
+} from "../../utils/tableStyling";
+import { editorMetaSnapshot } from "./editorSnapshot";
+import {
   filterMetafieldDefinitions,
   filterNativeFields,
 } from "../../utils/shopifyFields";
@@ -106,6 +111,13 @@ export interface UseRowEngineArgs {
   // `{ gid, label }` pairs. Rides the dirty snapshot + Save payload like `scope`;
   // reseeded on every remount so Discard reverts an exclude change.
   initialExcludes: ExcludeSeed[];
+  // The persisted table styling, already RESOLVED by the loader (feature 57
+  // Step 5): the server decodes the `TableStyling` row — or the absence of one —
+  // into a complete `StylingValues` exactly once, so the client only ever handles
+  // the resolved domain shape, never raw DB columns. Rides the dirty snapshot +
+  // Save payload like `status`; reseeded on every remount so Discard reverts a
+  // styling change with no dedicated reset.
+  initialStyling: StylingValues;
   // True only for the `/app/templates/new` sentinel mount (route.tsx). A stable
   // per-mount fact: after the first Save the URL flips to the real cuid and the
   // engine remounts with `isNew = false`, so the scaffold-replace (file 23) can
@@ -170,6 +182,7 @@ export function useRowEngine({
   initialScope,
   initialScopeValues,
   initialExcludes,
+  initialStyling,
   isNew,
   onDiscard,
 }: UseRowEngineArgs) {
@@ -194,6 +207,23 @@ export function useRowEngine({
   // engine owner is keyed on `${id}:${nonce}`), so Discard reverts a change.
   const [name, setName] = useState(initialName);
   const [status, setStatus] = useState(initialStatus);
+
+  // Table styling (feature 57 Step 5). ONE state cell holding the WHOLE resolved
+  // value — never a cell per knob. That is what keeps the Save payload a
+  // whole-value replace (the server has no field-level patch API by design, see
+  // Step 4) and what lets Steps 8/10 add the remaining ~19 controls without
+  // touching the engine again: they all go through `setStylingField`.
+  const [styling, setStyling] = useState<StylingValues>(initialStyling);
+
+  // The ONE mutator every Style-tab control calls. Generic over the field so the
+  // value type is checked against that field's type at the call site — a control
+  // cannot write "STRIPES" into `density`. No knob gets a bespoke setter.
+  const setStylingField = useCallback(
+    <K extends keyof StylingValues>(field: K, value: StylingValues[K]) => {
+      setStyling((previous) => ({ ...previous, [field]: value }));
+    },
+    [],
+  );
 
   // Assignment scope (features 44/46/47). Two pieces of state: the picker kind
   // (`scope`) and its value SET (`scopeValues` — `{ value, label }[]`: 0 members for
@@ -333,20 +363,23 @@ export function useRowEngine({
 
   // Dirty-tracking against the last-saved baseline. The baseline is a
   // META-SNAPSHOT of every editable surface — the row array, the template
-  // name/status, AND the assignment scope (feature 44) — so a rename, a status
-  // change, or a scope change each flips isDirty and opens the SaveBar, not just a
-  // row edit (feature 20). The key order is fixed so the JSON compare is stable.
-  // Excludes are a SET (order is meaningless), so the snapshot sorts a copy — a
-  // reorder alone never flips isDirty, only a real membership change does.
-  const currentMetaJson = JSON.stringify({
+  // name/status, the assignment scope (feature 44), AND the table styling
+  // (feature 57 Step 5) — so a rename, a status change, a scope change, or a
+  // styling change each flips isDirty and opens the SaveBar, not just a row edit
+  // (feature 20).
+  //
+  // The serialization itself lives in the pure `editorMetaSnapshot` (key order,
+  // set-sorting, and the styling wire shape all documented there) and is called
+  // again verbatim in `handleSave` — one function, two call sites, so the
+  // baseline and the submitted snapshot cannot drift apart.
+  const currentMetaJson = editorMetaSnapshot({
     rows,
     name,
     status,
     scope,
-    // The value SET is order-independent (features 46/47), so the snapshot sorts the
-    // raw values — a chip reorder never flips isDirty, only a membership/kind change.
-    scopeValues: [...scopeValues].map((item) => item.value).sort(),
-    excludes: [...excludes].sort(),
+    scopeValues: scopeValues.map((item) => item.value),
+    excludes,
+    styling,
   });
   const metaJsonRef = useRef(currentMetaJson);
   metaJsonRef.current = currentMetaJson;
@@ -371,13 +404,14 @@ export function useRowEngine({
     // is sent as `scopeValues` (the raw values); the action's `parsePendingScope`
     // reads it into a homogeneous `ScopeSelector[]` (features 46/47).
     const scopeValuesPayload = scopeValues.map((item) => item.value);
-    submittedMetaJsonRef.current = JSON.stringify({
+    submittedMetaJsonRef.current = editorMetaSnapshot({
       rows,
       name,
       status,
       scope,
-      scopeValues: [...scopeValuesPayload].sort(),
-      excludes: [...excludes].sort(),
+      scopeValues: scopeValuesPayload,
+      excludes,
+      styling,
     });
     saveFetcher.submit(
       {
@@ -387,6 +421,12 @@ export function useRowEngine({
         scope,
         scopeValues: scopeValuesPayload,
         excludes,
+        // The OVERRIDES-ONLY wire shape (Step 1), not the resolved value: an
+        // all-default table sends `{}`, which the server writes as an all-NULL
+        // row — so resetting a knob to its default genuinely CLEARS the stored
+        // override rather than persisting the default as data. This is the same
+        // serialization the dirty snapshot above uses.
+        styling: serializeStylingOverrides(styling),
       } as unknown as Parameters<typeof saveFetcher.submit>[0],
       { method: "post", encType: "application/json" },
     );
@@ -398,6 +438,7 @@ export function useRowEngine({
     scope,
     scopeValues,
     excludes,
+    styling,
     scopeComplete,
   ]);
 
@@ -1112,6 +1153,10 @@ export function useRowEngine({
     excludeLabels,
     excludeImages,
     setExcludes,
+    // Table styling (feature 57 Step 5). Read by StyleTab now; the device
+    // previews (Step 6) and the editing grid (Step 11) read it next.
+    styling,
+    setStylingField,
     // Save / dirty
     isDirty,
     saving,

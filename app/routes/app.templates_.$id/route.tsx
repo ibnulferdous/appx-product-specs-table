@@ -51,6 +51,7 @@ import { parseRows } from "../../utils/rowsSerialize";
 import {
   DEFAULT_STYLING_VALUES,
   parseStylingValues,
+  type StylingValues,
 } from "../../utils/tableStyling";
 import { SpecTableEditor } from "./SpecTableEditor";
 import { TemplateHeaderActions } from "./TemplateHeaderActions";
@@ -479,11 +480,13 @@ function TemplateOverview({
   template,
   assignment,
   excludes,
+  styling,
   onDiscard,
 }: {
   template: { id: string; name: string; status: TemplateStatus; rows: unknown };
   assignment: AssignmentSeed | null;
   excludes: Array<{ gid: string; label: string; image: string | null }>;
+  styling: StylingValues;
   onDiscard: () => void;
 }) {
   const engine = useRowEngine({
@@ -496,6 +499,9 @@ function TemplateOverview({
     initialScopeValues: assignment?.values ?? [],
     // Seed the EXCLUDE carve-outs (feature 45); empty for a new/unassigned template.
     initialExcludes: excludes,
+    // Seed the Style tab from the loader's RESOLVED styling (feature 57 Step 5);
+    // fully-default for a template with no styling row.
+    initialStyling: styling,
     // The "new" sentinel id (loader) marks a never-saved template; the engine uses
     // it to gate the file-23 first-paste scaffold replace. A real cuid is never
     // "new", and the create-on-first-save remount reseeds this to false.
@@ -546,7 +552,8 @@ function TemplateOverview({
 }
 
 export default function TemplateEditorPage() {
-  const { template, assignment, excludes } = useLoaderData<typeof loader>();
+  const { template, assignment, excludes, styling } =
+    useLoaderData<typeof loader>();
 
   // Bumped to remount the engine owner (TemplateOverview) — resetting its reducer
   // to the persisted rows and reseeding name/status — when the merchant discards
@@ -568,6 +575,7 @@ export default function TemplateEditorPage() {
       template={template}
       assignment={assignment}
       excludes={excludes}
+      styling={styling}
       onDiscard={() => setEditorNonce((nonce) => nonce + 1)}
     />
   );
