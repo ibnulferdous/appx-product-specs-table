@@ -846,7 +846,8 @@ shop on install/deploy. **Implemented and round-trip-tested live (Editor Step
   | `template_id` | `single_line_text_field` | Internal Appx template ID. |
   | `status` | `single_line_text_field` | `ACTIVE` / `DRAFT` / `ARCHIVED`. |
   | `rows` | `json` | Storefront-ready rows — a JSON **string** (`JSON.stringify(rows)`); the **same** `EditorRow[]` shape, no reshape needed. |
-  | `styling` | `json` | Storefront-ready styling — the template's `TableStyling` as a JSON string, **overrides only** (non-default knobs + non-null colors; `{}`/absent = full theme inherit). Spec: §5 `TableStyling` + the serialization note below. |
+  | `styling` | `json` | Storefront-ready styling **data** — the template's `TableStyling` as a JSON string, **overrides only** (non-default knobs + non-null colors; `{}`/absent = full theme inherit). Spec: §5 `TableStyling` + the serialization note below. |
+  | `styling_css` | `json` | Storefront-ready styling **presentation**, precomputed by the server: `{ "classes": "<space-joined modifier classes>", "vars": "<--k: v; declarations>" }`. Liquid prints both verbatim; it derives nothing. Added feature 57 Step 7 (2026-07-19) — see the styling-serialization note below. |
   | `updated_at` | `single_line_text_field` | Debugging/sync visibility. |
 
 - **Definition:** declared in `shopify.app.toml`, not created at runtime (see the update note above). The definition is read-only through the Admin API.
@@ -860,7 +861,29 @@ shop on install/deploy. **Implemented and round-trip-tested live (Editor Step
 
 The metaobject stores template structure — the same `EditorRow[]` rows JSON (see the §6 example); two pointers reach it: for broad rules the **shop routing map** (`shop.metafields["$app"].routing`) yields a template **handle** resolved directly via `metaobjects["$app:appx_spec_table"][handle]` (§9, proven 2026-07-07), and for bounded single-product overrides a per-product `metaobject_reference` metafield (`product.metafields["$app"].spec_table`, **not** a handle string) points at the same metaobject. Liquid resolves each value by joining its parts in order via `snippets/spec-table-value.liquid`: `TEXT` from row JSON, `SHOPIFY_FIELD` from the Shopify product object, `METAFIELD` from `product.metafields`, `LINE_BREAK` as a hard break (`<br>`, no content). Variant `SHOPIFY_FIELD`s (price, sku, weight, …) resolve against `product.first_available_variant` — the **default** variant, not a shopper selection (feature 35 decision; live variant-switch re-rendering is deferred until requested).
 
-**Styling serialization (Style-tab spec 2026-07-18).** The metaobject's `styling` field carries the template's `TableStyling` as a JSON string, written on every sync exactly like `rows`: the layout knobs (`rowLayout`, `mobileLayout`, `sectionHeaderStyle`, `sectionsCollapsible`, `sectionsInitialState`, `rowDividerStyle`, `density`) plus the non-null color/typography overrides — **overrides only**, so an absent/empty object means the table inherits the theme entirely (the zero-config path). Liquid maps colors/typography to **CSS custom properties on the `.appx-spec-table` wrapper** and layout knobs to **modifier classes** on the same wrapper (e.g. stacked / striped / banded); collapsible sections render as native `<details>/<summary>` groups, with data rows grouped under the preceding `SECTION_HEADER` **at render time** — sections remain flat rows in the data (§7); grouping is strictly a render concern. Because styling is per-template with copy semantics (§5), there is **no shop-level styling metafield** — one delivery path, and no template resync is ever triggered by another template's (or a preset's) style change. The `styling` json field **already exists in the deployed TOML definition** (shipped with slice 1), so Phase B requires **no definition change** — it only starts writing real content into the already-defined field. (If a future change ever does touch the definition, keep it additive — never delete/recreate; that poisons existing handles.)
+**Styling serialization (Style-tab spec 2026-07-18).** The metaobject's `styling` field carries the template's `TableStyling` as a JSON string, written on every sync exactly like `rows`: the layout knobs (`rowLayout`, `mobileLayout`, `sectionHeaderStyle`, `sectionsCollapsible`, `sectionsInitialState`, `rowDividerStyle`, `density`) plus the non-null color/typography overrides — **overrides only**, so an absent/empty object means the table inherits the theme entirely (the zero-config path). Colors/typography become **CSS custom properties on the `.appx-spec-table` wrapper** and layout knobs become **modifier classes** on the same wrapper (e.g. stacked / striped / banded); collapsible sections render as native `<details>/<summary>` groups, with data rows grouped under the preceding `SECTION_HEADER` **at render time** — sections remain flat rows in the data (§7); grouping is strictly a render concern. Because styling is per-template with copy semantics (§5), there is **no shop-level styling metafield** — one delivery path, and no template resync is ever triggered by another template's (or a preset's) style change.
+
+> **Update (2026-07-19, feature 57 Step 7) — the server precomputes; Liquid only prints.** The
+> classes/vars translation above is **not** performed in Liquid. Liquid cannot import the TypeScript
+> mapping (`app/utils/tableStylingCss.ts`), so deriving there would mean a fourth hand-maintained
+> copy of a 20-knob mapping in a language with no exhaustiveness checking — a knob added later would
+> silently fail on the storefront only. Instead the sync writes a **second field**, `styling_css`,
+> holding the already-joined `{classes, vars}` pair, and `spec_table.liquid` interpolates them into
+> the wrapper's `class` and `style` attributes with **zero styling logic**. The split is deliberate:
+> `styling` is the **data** (debuggable, migration-proof, independent of CSS naming, and the source
+> for Step 13 preset provenance); `styling_css` is a **derived cache** of the presentation, so a
+> future CSS-variable rename is a resync, not a data migration. `styling_css` is typed `json` rather
+> than `single_line_text_field` because a fully-overridden value produces ~450 characters of
+> declarations. Both fields are written together on every sync, from the same resolved
+> `StylingValues`, so they cannot disagree.
+>
+> **Backfill is lazy by design.** An entry synced before this deploy simply lacks `styling_css`; both
+> interpolations render blank, which is byte-identical to the pre-Step-7 markup. Entries gain the
+> field on their next save or status change — no bulk resync, no migration script.
+>
+> This is the one **definition change** Phase B needs (the `styling` field itself shipped with slice
+> 1). It is strictly **additive** — never delete/recreate a definition, which poisons existing handles
+> with `UNDEFINED_OBJECT_TYPE` — and requires `shopify app deploy` to distribute.
 
 `hideWhenEmpty` is a **whole-cell character test**, evaluated for the entire row (never per line). The row is hidden when `hideWhenEmpty = true` **and** the fully resolved value cell — all parts joined, all dynamic parts resolved, with `LINE_BREAK` `<br>`s stripped (`strip_html`) so they never count — contains zero non-whitespace characters:
 

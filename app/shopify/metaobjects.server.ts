@@ -20,6 +20,15 @@
 import type { AdminApiContext } from "@shopify/shopify-app-react-router/server";
 import type { EditorRow } from "../utils/rows";
 import { parseRows } from "../utils/rowsSerialize";
+import {
+  serializeStylingOverrides,
+  type StylingValues,
+} from "../utils/tableStyling";
+import {
+  formatCssVarDeclarations,
+  stylingToCssVars,
+  stylingToModifierClasses,
+} from "../utils/tableStylingCss";
 
 // The app-reserved metaobject type (data-model.md §10). `$app:` resolves to
 // `app--<app-id>--appx_spec_table` server-side within this app's context, so the
@@ -147,6 +156,32 @@ export function readMetaobjectRows(json: unknown): EditorRow[] | null {
   }
 }
 
+/**
+ * The precomputed PRESENTATION half of a template's styling (feature 57 Step 7) —
+ * the `styling_css` metaobject field. The server derives it here, at sync time,
+ * because Liquid cannot import the Step 2 mapping: re-deriving classes/vars in a
+ * template language would be a fourth copy of a 20-knob mapping with no
+ * exhaustiveness checking, so a knob added in a later step would silently fail on
+ * the storefront ONLY. Precomputing keeps `tableStylingCss.ts` the single source of
+ * truth across every consumer and leaves the Liquid block with zero styling logic
+ * (data-model.md §10).
+ *
+ * `vars` is the SAME `formatCssVarDeclarations` join the Step 6 preview emits into
+ * its `<style>` block, so the preview and the storefront cannot drift — only the
+ * carrier differs (a rule there, an inline `style` attribute here). An all-inherit
+ * value yields `""`, which renders an empty `style` attribute — i.e. the theme's
+ * own look, exactly as before this step.
+ */
+export function stylingCssPayload(styling: StylingValues): {
+  classes: string;
+  vars: string;
+} {
+  return {
+    classes: stylingToModifierClasses(styling).join(" "),
+    vars: formatCssVarDeclarations(stylingToCssVars(styling)),
+  };
+}
+
 /** Read the metaobject GID from a metaobjectByHandle response (id-only query). */
 export function readMetaobjectIdByHandle(json: unknown): string | null {
   if (!isRecord(json)) return null;
@@ -175,9 +210,16 @@ export function readMetaobjectDeleteId(json: unknown): string | null {
  * Upsert (create-or-update by handle) the template's metaobject entry, returning
  * its GID + handle to store back on the Template. The `rows` field is the
  * finalized editor rows serialized to a JSON string (data-model.md §10 — the same
- * row shape, no storefront-only reshape). `styling` is `{}` for now (TableStyling
- * is a later slice). Sync runs for every status; the storefront decides
- * visibility (data-model.md §8). Throws on user errors so the caller can warn.
+ * row shape, no storefront-only reshape).
+ *
+ * Styling rides along in TWO fields (feature 57 Step 7): `styling` is the DATA —
+ * the overrides-only wire shape, the same `serializeStylingOverrides` output the
+ * Save payload carries — and `styling_css` is the PRECOMPUTED presentation Liquid
+ * prints verbatim. `styling` takes a resolved `StylingValues`, never `unknown`:
+ * resolution (and the whitelist validation that makes these values safe to inline
+ * into a storefront `style` attribute) belongs at `parseStylingValues`, upstream of
+ * here. Sync runs for every status; the storefront decides visibility
+ * (data-model.md §8). Throws on user errors so the caller can warn.
  */
 export async function upsertSpecTableMetaobject(
   admin: AdminApiContext,
@@ -185,11 +227,13 @@ export async function upsertSpecTableMetaobject(
     templateId,
     status,
     rows,
+    styling,
     updatedAt,
   }: {
     templateId: string;
     status: string;
     rows: EditorRow[];
+    styling: StylingValues;
     updatedAt: string;
   },
 ): Promise<{ gid: string; handle: string }> {
@@ -202,7 +246,14 @@ export async function upsertSpecTableMetaobject(
           { key: "template_id", value: templateId },
           { key: "status", value: status },
           { key: "rows", value: JSON.stringify(rows) },
-          { key: "styling", value: "{}" },
+          {
+            key: "styling",
+            value: JSON.stringify(serializeStylingOverrides(styling)),
+          },
+          {
+            key: "styling_css",
+            value: JSON.stringify(stylingCssPayload(styling)),
+          },
           { key: "updated_at", value: updatedAt },
         ],
       },

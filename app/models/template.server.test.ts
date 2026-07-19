@@ -160,6 +160,7 @@ describe("createTemplateForShop", () => {
 
     expect(prismaMock.template.create).toHaveBeenCalledWith({
       data: { shopId: "shop_A", name: "Specs", status: "DRAFT", rows: [] },
+      include: { styling: true },
     });
   });
 
@@ -170,6 +171,7 @@ describe("createTemplateForShop", () => {
 
     expect(prismaMock.template.create).toHaveBeenCalledWith({
       data: { shopId: "shop_A", name: "Specs", status: "ACTIVE", rows: [] },
+      include: { styling: true },
     });
   });
 
@@ -692,6 +694,12 @@ describe("setTemplateStatusForShop", () => {
     expect(prismaMock.template.update).toHaveBeenCalledWith({
       where: { id: "t1", shopId: "shop_A" },
       data: { status: "ACTIVE" },
+      // Read-side only (feature 57 Step 7): the caller re-syncs the metaobject
+      // from this row, and every sync REPLACES the storefront's styling — so
+      // without the relation an ACTIVE→DRAFT→ACTIVE flip would reset a
+      // merchant's live table to defaults. Covered end-to-end in
+      // `app/shopify/templateSync.test.ts`.
+      include: { styling: true },
     });
     // Only `status` is written — `rows` and `name` are absent from the payload.
     const updateArg = prismaMock.template.update.mock.calls[0][0];
@@ -714,6 +722,7 @@ describe("setTemplateStatusForShop", () => {
     expect(prismaMock.template.update).toHaveBeenCalledWith({
       where: { id: "tmpl_owned_by_A", shopId: "shop_B" },
       data: { status: "ACTIVE" },
+      include: { styling: true },
     });
     expect(result).toEqual({ ok: false, error: "Could not update status" });
   });

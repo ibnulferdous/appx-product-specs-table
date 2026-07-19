@@ -62,10 +62,25 @@
 {%- endif -%}
 {%- liquid
   assign rows = spec.rows.value
+  assign styling_css = spec.styling_css.value
 -%}
 
+{%- comment -%}
+  Styling (feature 57 Step 7). `styling_css` is PRECOMPUTED server-side at sync
+  time — `.classes` is the space-joined BEM modifier list for the wrapper,
+  `.vars` the `--appx-spec-*: v;` declarations — so this template performs NO
+  styling logic and needs no change when a knob is added. The mapping lives once,
+  in `app/utils/tableStylingCss.ts`, shared with the admin preview (data-model §10).
+
+  An entry synced before this field existed leaves both blank, which renders
+  exactly as it did pre-Step-7 (lazy backfill; self-heals on the next save).
+
+  `escape` is defense in depth only: values are whitelist-validated upstream at
+  `parseStylingValues` (hex-only colors, clamped integers, list-checked keywords),
+  and the output contains no quotes or angle brackets, so it is a no-op here.
+{%- endcomment -%}
 {%- if spec != blank and spec.status.value == "ACTIVE" and rows != blank and rows.size > 0 -%}
-  <div class="appx-spec-table" {{ block.shopify_attributes }}>
+  <div class="appx-spec-table {{ styling_css.classes | escape }}" style="{{ styling_css.vars | escape }}" {{ block.shopify_attributes }}>
     <table class="appx-spec-table__table">
       <tbody>
         {%- comment -%}

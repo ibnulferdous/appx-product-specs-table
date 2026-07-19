@@ -64,6 +64,15 @@ type = "json"
 name = "Styling"
 type = "json"
 
+# Precomputed presentation for the storefront wrapper (feature 57 Step 7):
+# `{ "classes": "...", "vars": "..." }`, derived server-side from the SAME
+# `StylingValues` as `styling` above. Liquid prints both verbatim and contains no
+# styling logic (data-model.md §10). ADDITIVE field — an entry synced before this
+# deploy simply lacks it and renders exactly as it did before.
+[metaobjects.app.appx_spec_table.fields.styling_css]
+name = "Styling CSS"
+type = "json"
+
 [metaobjects.app.appx_spec_table.fields.updated_at]
 name = "Updated At"
 type = "single_line_text_field"

@@ -176,6 +176,11 @@ export async function createTemplateForShop(
         status: resolveStatus(status),
         rows: finalizedRows as unknown as Prisma.InputJsonValue,
       },
+      // Styling rides along so the returned row can feed `syncTemplateToMetaobject`
+      // (feature 57 Step 7). Always `null` here — a brand-new template has no
+      // TableStyling row yet — but including it keeps every sync-feeding write
+      // returning the same shape.
+      include: { styling: true },
     });
 
     return { ok: true as const, data: template };
@@ -284,6 +289,10 @@ export async function saveTemplateForShop(
     const template = await prisma.template.update({
       where: { id, shopId },
       data,
+      // Return the styling the sync must write to the storefront (feature 57
+      // Step 7) — post-write, so it reflects the nested upsert above when this
+      // save carried styling, and the UNCHANGED persisted row when it did not.
+      include: { styling: true },
     });
     return { ok: true as const, data: template };
   } catch {
@@ -378,6 +387,12 @@ export async function setTemplateStatusForShop(
     const template = await prisma.template.update({
       where: { id, shopId },
       data: { status: statusResult.status }, // ONLY status; rows + name untouched
+      // Feature 57 Step 7 — load the persisted styling so the caller's re-sync
+      // REWRITES the metaobject with the merchant's real look. Without this the
+      // relation would be absent, resolve to defaults, and an ACTIVE→DRAFT→ACTIVE
+      // flip would silently reset a live storefront table. This write still
+      // touches `status` only; the include is read-side.
+      include: { styling: true },
     });
     return { ok: true as const, data: template };
   } catch {

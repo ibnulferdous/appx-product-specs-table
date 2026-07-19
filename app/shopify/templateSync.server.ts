@@ -13,6 +13,7 @@ import type { AdminApiContext } from "@shopify/shopify-app-react-router/server";
 import type { TemplateStatus } from "@prisma/client";
 import { setTemplateMetaobjectRef } from "../models/template.server";
 import { parseRows } from "../utils/rowsSerialize";
+import { parseStylingValues } from "../utils/tableStyling";
 import {
   readSpecTableMetaobjectRows,
   upsertSpecTableMetaobject,
@@ -27,11 +28,25 @@ import {
  * `syncError` is a merchant-facing warning string (or null on success);
  * `roundTripOk` reports whether the metaobject read-back matched what we wrote (or
  * null when the sync threw before the read).
+ *
+ * `template.styling` (feature 57 Step 7) is the template's PERSISTED `TableStyling`
+ * row — `unknown` because it arrives straight from Prisma (or as `null` when the
+ * template never touched the Style tab) and is resolved here by the same tolerant
+ * `parseStylingValues` the editor loader uses, so a missing row means fully-default
+ * styling rather than blank. It is a REQUIRED property on purpose: every sync
+ * REPLACES the metaobject's styling fields, so a caller that forgot to load the
+ * relation would silently reset a merchant's live table on the next status flip.
+ * Making it required turns that hazard into a compile error at the call site.
  */
 export async function syncTemplateToMetaobject(
   admin: AdminApiContext,
   shop: { id: string },
-  template: { id: string; status: TemplateStatus; rows: unknown },
+  template: {
+    id: string;
+    status: TemplateStatus;
+    rows: unknown;
+    styling: unknown;
+  },
 ): Promise<{ syncError: string | null; roundTripOk: boolean | null }> {
   let syncError: string | null = null;
   let roundTripOk: boolean | null = null;
@@ -44,6 +59,10 @@ export async function syncTemplateToMetaobject(
       templateId: template.id,
       status: template.status,
       rows: savedRows,
+      // Tolerant by contract: a null relation (no Style-tab save yet) and a
+      // malformed stored row both resolve to defaults rather than throwing, so a
+      // bad styling blob can never block the rows from reaching the storefront.
+      styling: parseStylingValues(template.styling),
       updatedAt: new Date().toISOString(),
     });
     await setTemplateMetaobjectRef(shop.id, template.id, gid, handle);

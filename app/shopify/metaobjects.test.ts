@@ -8,7 +8,20 @@ import {
   readUpsertResult,
   readUserErrors,
   specTableHandle,
+  stylingCssPayload,
+  upsertSpecTableMetaobject,
 } from "./metaobjects.server";
+import {
+  DEFAULT_STYLING_VALUES,
+  parseStylingValues,
+  serializeStylingOverrides,
+  type StylingValues,
+} from "../utils/tableStyling";
+import {
+  formatCssVarDeclarations,
+  stylingToCssVars,
+  stylingToModifierClasses,
+} from "../utils/tableStylingCss";
 
 describe("specTableHandle", () => {
   it("builds the template-{id} handle (data-model §10)", () => {
@@ -309,5 +322,129 @@ describe("deleteSpecTableMetaobject — best-effort", () => {
     expect(errorSpy).toHaveBeenCalled();
 
     errorSpy.mockRestore();
+  });
+});
+
+// --- Styling serialization (feature 57 · Step 7) -----------------------------
+//
+// The storefront half of the pipe: what the sync WRITES onto the metaobject.
+// Every expectation is derived from the Step 2 mapping functions rather than
+// hand-typed strings — a hand-typed class list would pass while the storefront
+// and the preview drifted apart, which is exactly the failure this step exists
+// to prevent. The mapping's own output is exhaustively covered in
+// `app/utils/tableStylingCss.test.ts`.
+
+const OK_UPSERT = {
+  data: {
+    metaobjectUpsert: {
+      metaobject: { id: "gid://x/1", handle: "template-t1" },
+      userErrors: [],
+    },
+  },
+};
+
+/** The `fields` array the upsert sent, as a key -> value lookup. */
+async function upsertFields(styling: StylingValues) {
+  const { admin, graphql } = mockAdmin([OK_UPSERT]);
+  await upsertSpecTableMetaobject(admin, {
+    templateId: "t1",
+    status: "ACTIVE",
+    rows: [],
+    styling,
+    updatedAt: "2026-07-19T00:00:00.000Z",
+  });
+  const variables = graphql.mock.calls[0][1] as {
+    variables: { metaobject: { fields: { key: string; value: string }[] } };
+  };
+  return Object.fromEntries(
+    variables.variables.metaobject.fields.map((f) => [f.key, f.value]),
+  ) as Record<string, string>;
+}
+
+describe("stylingCssPayload — precomputed presentation (feature 57 · Step 7)", () => {
+  it("joins the Step 2 mapping's classes and vars, so Liquid needs no logic", () => {
+    const styling = parseStylingValues({
+      rowDividerStyle: "STRIPES",
+      borderColor: "#ff0000",
+    });
+
+    expect(stylingCssPayload(styling)).toEqual({
+      classes: stylingToModifierClasses(styling).join(" "),
+      vars: formatCssVarDeclarations(stylingToCssVars(styling)),
+    });
+  });
+
+  it("emits every default modifier class but NO vars for all-default styling", () => {
+    const payload = stylingCssPayload(DEFAULT_STYLING_VALUES);
+
+    // Defaults are emitted as real classes (the Step 2 lock: every knob always
+    // emits, so "default" never means "whatever the base rule happens to do").
+    expect(payload.classes.split(" ")).toEqual(
+      stylingToModifierClasses(DEFAULT_STYLING_VALUES),
+    );
+    // …while all-inherit yields no custom properties at all, so the merchant's
+    // theme still wins. This is the case that must render as it did pre-Step-7.
+    expect(payload.vars).toBe("");
+  });
+});
+
+describe("upsertSpecTableMetaobject — styling fields (feature 57 · Step 7)", () => {
+  it("writes styling as the overrides-only wire shape, not the resolved value", async () => {
+    const styling = parseStylingValues({ rowDividerStyle: "STRIPES" });
+    const fields = await upsertFields(styling);
+
+    expect(JSON.parse(fields.styling)).toEqual({ rowDividerStyle: "STRIPES" });
+    // The SAME shape the Save payload carries (Step 1's one wire shape).
+    expect(JSON.parse(fields.styling)).toEqual(
+      serializeStylingOverrides(styling),
+    );
+  });
+
+  it("writes styling_css as the precomputed {classes, vars} pair", async () => {
+    const styling = parseStylingValues({
+      rowDividerStyle: "STRIPES",
+      density: "COMPACT",
+      labelWidthPct: 40,
+    });
+    const fields = await upsertFields(styling);
+
+    expect(JSON.parse(fields.styling_css)).toEqual(stylingCssPayload(styling));
+    // Spot-check the merchant-visible effect rather than only self-consistency.
+    expect(JSON.parse(fields.styling_css).classes).toContain(
+      "appx-spec-table--dividers-stripes",
+    );
+    expect(JSON.parse(fields.styling_css).vars).toContain(
+      "--appx-spec-label-width: 40%;",
+    );
+  });
+
+  it("writes {} + empty vars for an all-default template (renders as before)", async () => {
+    const fields = await upsertFields(DEFAULT_STYLING_VALUES);
+
+    expect(fields.styling).toBe("{}");
+    expect(JSON.parse(fields.styling_css).vars).toBe("");
+  });
+
+  it("never emits null/undefined into either field", async () => {
+    for (const styling of [
+      DEFAULT_STYLING_VALUES,
+      parseStylingValues({ rowDividerStyle: "NONE" }),
+    ]) {
+      const fields = await upsertFields(styling);
+      for (const key of ["styling", "styling_css"]) {
+        expect(fields[key]).toBeTypeOf("string");
+        expect(fields[key]).not.toContain("undefined");
+        expect(fields[key]).not.toContain("null");
+      }
+    }
+  });
+
+  it("leaves the rows/status/updated_at fields untouched", async () => {
+    const fields = await upsertFields(DEFAULT_STYLING_VALUES);
+
+    expect(fields.template_id).toBe("t1");
+    expect(fields.status).toBe("ACTIVE");
+    expect(fields.rows).toBe("[]");
+    expect(fields.updated_at).toBe("2026-07-19T00:00:00.000Z");
   });
 });

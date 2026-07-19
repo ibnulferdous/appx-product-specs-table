@@ -261,20 +261,27 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
       await setTemplateExcludes(shop.id, result.data.id, reconciledExcludes);
     }
 
-    // Persist styling arriving with the first save (feature 57 Step 4; dormant —
-    // no UI sends it until Step 5). Rides the same shop-scoped save path as an
-    // edit save; `rows` are the just-persisted finalized rows, so this write is
-    // styling-only in effect. Best-effort, like the scope write above.
+    // Persist styling arriving with the first save (feature 57 Step 4). Rides the
+    // same shop-scoped save path as an edit save; `rows` are the just-persisted
+    // finalized rows, so this write is styling-only in effect. Best-effort, like
+    // the scope write above.
+    let created = result.data;
     if (payload.styling !== undefined) {
-      await saveTemplateForShop(shop.id, result.data.id, {
+      const styled = await saveTemplateForShop(shop.id, result.data.id, {
         rows: result.data.rows,
         styling: payload.styling,
       });
+      // Sync from the STYLED row (feature 57 Step 7). `result.data` predates the
+      // write above and carries no styling relation, so syncing it would publish
+      // default styling for a template the merchant just styled. On failure we
+      // fall through to the unstyled row — the rows still reach the storefront,
+      // and the next Save resyncs.
+      if (styled.ok) created = styled.data;
     }
 
     // Best-effort storefront sync; the template is already durable in Postgres, so
     // a sync failure here does not block the redirect — the next Save resyncs.
-    await syncTemplateToMetaobject(admin, shop, result.data);
+    await syncTemplateToMetaobject(admin, shop, created);
 
     // A new ACTIVE template changes the shop's ACTIVE set → publish the routing map
     // so its scope lights up on the storefront (best-effort; Postgres is durable).

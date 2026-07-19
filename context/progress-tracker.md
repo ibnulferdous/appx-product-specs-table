@@ -43,18 +43,42 @@ all 8 steps shipped, gate green, live-verified 2026-07-13) → E (assignment) �
 2 (pure presentation mapping), 3 (storefront stylesheet rules, dormant +
 the mobile-stacked default), 4 (`add_table_styling` migration + server
 persistence), 5 (engine styling state + Dividers control + Save
-round-trip), and 6 (live styling in the device previews) are complete**;
-next is **Step 7 (metaobject serialization + Liquid emission — the pipe
-complete)**. Step 5 closed the persistence circuit; **Step 6 made the knob
-visible** — changing Row dividers now repaints all three device previews
-live, before any save. The remaining consumers are the storefront (Step 7,
-via the metaobject) and the editing grid (Step 11).
+round-trip), 6 (live styling in the device previews), and 7 (metaobject
+serialization + Liquid emission) are code-complete**; next is **Step 8
+(remaining non-structural knobs)**. Step 5 closed the persistence circuit,
+Step 6 made the knob visible, and **Step 7 completed the pipe** — styling now
+reaches the live storefront. The one remaining consumer is the editing grid
+(Step 11).
 
-> **The preview now LEADS the storefront by one step.** A merchant changing a Style knob sees the
-> device previews repaint immediately, while the live storefront product page still renders the
-> unstyled default — verified live 2026-07-19 (the storefront wrapper is bare `class="appx-spec-table"`
-> with no modifier classes and no inline style). This is expected until Step 7 delivers styling through
-> the metaobject; it is **not** a bug. Worth saying plainly to anyone testing Phase B mid-flight.
+> 🛑 **OPEN QUESTION blocking Step 7 sign-off — the section-header default is NOT byte-identical
+> (found live 2026-07-19).** Step 7's own locked decision required a default-styled template to render
+> exactly as before. It does not, in one knob: `sectionHeaderStyle`. The **base** rule
+> `.appx-spec-table__section` uses `background: var(--appx-spec-header-bg, transparent)` +
+> `border-block-end: 2px solid …`, while the **default modifier**
+> `.appx-spec-table--section-banded .appx-spec-table__section` uses
+> `background: var(--appx-spec-header-bg, rgba(0,0,0,0.06))` + `border-block-end: none`. So the moment
+> Step 7 started emitting classes, section headers flipped from *transparent + 2px underline* to
+> *faint gray band, no underline* (measured live: `sectionBg` `rgba(0,0,0,0)` → `rgba(0,0,0,0.06)`;
+> table height 2997px → 2980px across 9 section headers). **Every other knob was byte-identical**
+> (hairline dividers `0.909px rgba(0,0,0,0.1)`, label column 441/1337 = 33%, padding, font weights,
+> row/section counts all unchanged).
+>
+> **This is a Step 3 question, not a Step 7 bug** — per Step 7's locked decision ("if that turns out to
+> be false anywhere, it is a **Step 3 revision** with its own drift-guard re-copy, not an inline CSS fix
+> here"), so nothing was patched. Note the banded fallback is *deliberate* in Step 3's CSS comment ("a
+> faint neutral so the band reads even before a merchant picks a header color"), and BANDED is the
+> documented default; the Step 6 preview has rendered banded since it shipped. So the honest reading is
+> that the **pre-Step-7 storefront was never rendering the intended default** (it rendered the unclassed
+> base), and Step 7 brought it into line with the preview. **Decide:** (a) accept — the storefront now
+> matches the preview and the documented default, and amend Step 7's byte-identical criterion to
+> "identical except the intended section band"; or (b) revise Step 3 so the base and `--section-banded`
+> rules agree, with the drift-guard re-copy. Until this is decided, Step 7 is **not signed off**.
+
+> **The preview-leads-storefront gap is CLOSED by Step 7** (superseding the Step 6 note). A merchant's
+> Style-tab change now reaches the live product page on save, matching the preview, because both
+> render from the same `tableStylingCss.ts` mapping. **Backfill is lazy by design:** a template not
+> re-saved since the Step 7 deploy has no `styling_css` field, so its wrapper renders exactly as it did
+> before — unchanged, not broken. It self-heals on the next save or status change. No bulk resync.
 
 > **Phase D delivered the preview *mechanism*, narrower than the Reshell plan's Phase D.** Three
 > deliberate deltas (recorded in `56-…`, for Phase F to reconcile the plan text): (1) **no live
@@ -71,6 +95,76 @@ via the metaobject) and the editing grid (Step 11).
 ## Completed
 
 > One line per unit. Detail → the linked `context/features/` doc + git history.
+
+**Style tab — Step 7: metaobject serialization + Liquid emission (Reshell Phase B, `63-…`, 2026-07-19)**
+- Seventh slice of feature 57 and **the step that completed the pipe** — the first Phase B slice to
+  change what real shoppers see. Styling now travels template → Postgres → metaobject → Liquid →
+  live product page, matching the preview it was authored against.
+- **The central decision: the server precomputes; Liquid only prints.** Liquid cannot import
+  `tableStylingCss.ts`, so deriving classes/vars there would have been a **fourth** hand-maintained
+  copy of a 20-knob mapping in a language with no exhaustiveness checking — a knob added in Step 8 or
+  10 would then fail on the storefront ONLY. Instead the sync writes the already-joined strings and
+  `spec_table.liquid` interpolates them. **The Liquid block gained zero styling logic**, so Steps 8
+  and 10 need **no storefront work at all** — the pipe is already total over `StylingValues`.
+- **Two fields, two lifetimes** (`data-model.md` §10, updated **before** the code per the standing
+  rules): `styling` stays the raw overrides-only wire shape (the DATA — debuggable, migration-proof,
+  independent of CSS naming, and the source for Step 13 preset provenance), while the **new
+  `styling_css` (`json`)** carries the derived `{classes, vars}` cache. A future CSS-variable rename
+  is therefore a resync, not a data migration. `json` not `single_line_text_field`: a fully-overridden
+  value is ~450 characters of declarations.
+- **`shopify.app.toml` gains `styling_css`** — strictly **additive**, never delete/recreate (that
+  poisons existing handles with `UNDEFINED_OBJECT_TYPE`, see the deploy/clean lifecycle note).
+- **The status-change hazard, closed.** Every sync REPLACES the metaobject's styling, and the
+  templates-list status action re-syncs through the same function — so a status flip arriving without
+  the template's styling would have **silently reset a merchant's live table** on ACTIVE→DRAFT→ACTIVE.
+  Fixed at the source: `setTemplateStatusForShop` (and the save/create writes) now `include: { styling:
+  true }`, and `syncTemplateToMetaobject`'s `styling` param is **required**, turning "caller forgot to
+  load the relation" into a compile error rather than a silent storefront regression. Regression-tested
+  in the new `app/shopify/templateSync.test.ts`.
+- **A latent create-path bug found and fixed en route:** the create action persisted styling via a
+  follow-up `saveTemplateForShop` but then synced the *pre-styling* row, so a create-with-styling would
+  have published defaults. It now syncs the styled row.
+- **Liquid change is the wrapper only** — `class="appx-spec-table {{ styling_css.classes }}"` plus an
+  inline `style="{{ styling_css.vars }}"`. Resolution tiers, 50-row chunking, the `hideWhenEmpty` gate,
+  and `spec-table-value.liquid` are untouched. `escape` is applied as defense in depth (a no-op:
+  values are whitelist-validated at `parseStylingValues`, and a malformed blob degrades to defaults —
+  regression-tested with a `#fff;background:url(x)` injection attempt, which never reaches the
+  attribute).
+- **No CSS change** — Step 3's rules already shipped dormant; the storefront was one `class` attribute
+  away from being styled. No schema change, no dependency, no admin-UI change.
+- **+18 unit tests** (new `templateSync.test.ts`; `stylingCssPayload` + upsert-payload block in
+  `metaobjects.test.ts`), every expectation derived from the Step 2 mapping functions rather than
+  hand-typed class strings — a hand-typed list would pass while preview and storefront drifted, which
+  is the exact failure this step exists to prevent. **705 tests / 34 files, full gate green.**
+- **Deployed 2026-07-19** (`appx-product-specs-table-6`) and **live-verified on the dev store**, with
+  one open question (the section-header band — see the 🛑 note at the top of this file):
+  - **The payoff, live:** Moto G35 set to **Stripes** → the real product page renders striped
+    (`--dividers-stripes` on the wrapper; cell backgrounds alternate transparent / `rgba(0,0,0,0.04)`),
+    matching the Desktop preview. Set to **None** → `--dividers-none`, no rules, no shading. **The
+    first time the preview and the storefront agree.**
+  - **The pipe carries all five knobs**, not just the one with a control: the live wrapper reads
+    `appx-spec-table appx-spec-table--layout-two-column appx-spec-table--mobile-stacked
+    appx-spec-table--section-banded appx-spec-table--dividers-stripes appx-spec-table--density-default`
+    — so Steps 8/10 really do need no storefront work.
+  - **`style=""` for an all-inherit template**, exactly as designed (no vars emitted → theme wins).
+  - **Legacy entry (the lazy-backfill window):** a metaobject synced before the deploy renders
+    `class="appx-spec-table "` with an empty `style` — byte-identical to pre-Step-7, no `undefined`,
+    no broken markup. Verified before any re-save.
+  - **Status-change hazard, live-confirmed fixed:** ACTIVE→DRAFT→ACTIVE on DJI Mavic (a template with
+    **no `TableStyling` row at all**, so it also exercises `parseStylingValues(null)` → defaults) came
+    back rendering correctly, the metaobject rewritten from the persisted styling — no reset.
+  - **Non-regressions:** DRAFT renders nothing (silent by design); all 44 rows resolve (35 data + 9
+    section headers); both resolution tiers still resolve (per-product override → DJI Mavic, routing
+    map → Moto G35 across 43 products); storefront console clean.
+  - **Mobile stacking** is verified by construction, not by eye: the deployed `spec-table.css` carries
+    the `@media (max-width: 749px)` block scoped to `--mobile-stacked`, and the live wrapper carries
+    that class. The browser surface used here would not honor a 375px viewport resize, so the visual
+    stack itself rests on Step 6's Mobile preview (byte-identical CSS, drift-guarded).
+  - **Zero net DB footprint:** Moto G35 restored to `STRIPES`, DJI Mavic left ACTIVE, no scratch
+    templates, all five templates exactly as found.
+  Detail → `context/features/63-style-tab-step7-metaobject-liquid-emission.md`. **Next → resolve the
+  section-header question, then Step 8 (remaining non-structural knobs — controls only, no storefront
+  work).**
 
 **Style tab — Step 6: live styling in the device previews (Reshell Phase B, `62-…`, 2026-07-19)**
 - Sixth slice of feature 57 and **the step that made the knob visible**. Steps 1–5 built a knob that
@@ -119,9 +213,10 @@ via the metaobject) and the editing grid (Step 11).
   Console clean (no CSP violation on the new inline `<style>`, no hydration/Polaris warnings; only
   pre-existing Shopify platform warnings from their own CDN bundle).
 - **Boundary checks, both live-confirmed:** the **storefront is untouched** — a product page's wrapper is
-  bare `class="appx-spec-table"`, no modifier classes, no inline style (Step 7 not shipped); the
-  **editing grid is unchanged** (Step 11). **Zero DB footprint from testing** — every change discarded,
-  the two pre-existing styling rows and both ACTIVE templates exactly as found, no scratch template.
+  bare `class="appx-spec-table"`, no modifier classes, no inline style (Step 7 not shipped **at the time
+  of this entry; superseded by Step 7 above**); the **editing grid is unchanged** (Step 11). **Zero DB
+  footprint from testing** — every change discarded, the two pre-existing styling rows and both ACTIVE
+  templates exactly as found, no scratch template.
   Detail → `context/features/62-style-tab-step6-live-preview-styling.md`. **Next → Step 7 (metaobject
   serialization + Liquid emission — the pipe complete).**
 
