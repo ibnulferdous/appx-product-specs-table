@@ -50,7 +50,11 @@ export function SpecTableEditor({ engine }: { engine: RowEngine }) {
         <EditorShell
           stage={<ContentTab engine={engine} />}
           preview={(view) => (
-            <SpecTablePreview rows={engine.rows} view={view} />
+            <SpecTablePreview
+              rows={engine.rows}
+              styling={engine.styling}
+              view={view}
+            />
           )}
           stylePanel={<StyleTab engine={engine} />}
           settingsPanel={<SettingsTab engine={engine} />}

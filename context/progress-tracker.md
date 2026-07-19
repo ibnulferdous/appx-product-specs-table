@@ -42,12 +42,19 @@ all 8 steps shipped, gate green, live-verified 2026-07-13) → E (assignment) �
 (B1 = 1–12, B2 = 13–14, B3 outlined). **Steps 1 (pure styling domain module),
 2 (pure presentation mapping), 3 (storefront stylesheet rules, dormant +
 the mobile-stacked default), 4 (`add_table_styling` migration + server
-persistence), and 5 (engine styling state + Dividers control + Save
-round-trip) are complete**; next is **Step 6 (live styling in the device
-previews)**. Step 5 closed the circuit — a merchant can now change Row
-dividers and see it survive a reload — but **nothing renders it yet**: the
-knob persists and repaints nothing until the previews (Step 6), the grid
-(Step 11), and the storefront (Step 7, via the metaobject) consume it.
+persistence), 5 (engine styling state + Dividers control + Save
+round-trip), and 6 (live styling in the device previews) are complete**;
+next is **Step 7 (metaobject serialization + Liquid emission — the pipe
+complete)**. Step 5 closed the persistence circuit; **Step 6 made the knob
+visible** — changing Row dividers now repaints all three device previews
+live, before any save. The remaining consumers are the storefront (Step 7,
+via the metaobject) and the editing grid (Step 11).
+
+> **The preview now LEADS the storefront by one step.** A merchant changing a Style knob sees the
+> device previews repaint immediately, while the live storefront product page still renders the
+> unstyled default — verified live 2026-07-19 (the storefront wrapper is bare `class="appx-spec-table"`
+> with no modifier classes and no inline style). This is expected until Step 7 delivers styling through
+> the metaobject; it is **not** a bug. Worth saying plainly to anyone testing Phase B mid-flight.
 
 > **Phase D delivered the preview *mechanism*, narrower than the Reshell plan's Phase D.** Three
 > deliberate deltas (recorded in `56-…`, for Phase F to reconcile the plan text): (1) **no live
@@ -55,12 +62,68 @@ knob persists and repaints nothing until the previews (Step 6), the grid
 > `spec-table.css` (the current storefront styling); (2) **no mobile stacked label-over-value** — only
 > iframe width changes (the stacked layout is the Style-tab mobile row-layout option, out of scope per
 > PRD line 33 / `admin-screen-plan.md` line 142); (3) **mobile width 375px**, not the plan's 390px.
+> **Deltas (1) and (2) are SUPERSEDED by feature 57 Step 6** (`62-…`, 2026-07-19): the preview now
+> consumes live `TableStyling`, and the Mobile 375px frame renders the stacked label-over-value layout.
+> Delta (3) still stands. The `56-…` doc stays as history; Phase F reconciles the plan text.
 
 ---
 
 ## Completed
 
 > One line per unit. Detail → the linked `context/features/` doc + git history.
+
+**Style tab — Step 6: live styling in the device previews (Reshell Phase B, `62-…`, 2026-07-19)**
+- Sixth slice of feature 57 and **the step that made the knob visible**. Steps 1–5 built a knob that
+  persisted and repainted nothing; this one closes the feedback loop the Style tab exists for:
+  knob → preview, live, **before any save**. **Client-only — no server, schema, CSS, Liquid,
+  metaobject, or dependency change**; exactly four files touched, and **both CSS drift guards passed
+  unedited** (the step is forbidden from editing `spec-table.css` / `previewStyles.ts`).
+- **First consumer of the Step 2 mapping** (until now imported only by its own test). Two pure
+  extensions: `renderSpecTableHtml(rows, styling)` puts `stylingToModifierClasses(styling)` on the
+  `.appx-spec-table` wrapper (Step 3's rules are compound selectors on the block, so they cannot live
+  at the document level), and `renderSpecTablePreviewDocument(rows, styling)` adds a **second
+  `<style>`** holding one rule, `.appx-spec-table { …stylingToCssVars… }`. Vars sit **on the block, not
+  `:root`**, so they inherit down to `__table` where Step 3 reads typography — the placement that makes
+  an `em` font-size multiply the theme base exactly once. The rule is **emitted unconditionally**,
+  empty body included (one document shape, no branch). Zero class-name or var-name literals in the
+  preview layer: adding a knob never touches these files.
+- **The fidelity mirror now LEADS the Liquid by one step** — `spec_table.liquid` grows the same wrapper
+  classes at Step 7, and the two must emit the same mapping output or preview and storefront drift
+  (noted in the renderer's header comment). Per the Step 2 lock the preview uses a `<style>` block while
+  Step 7's Liquid uses an inline `style` attribute — both join through `formatCssVarDeclarations`, so
+  they cannot disagree on the declaration text.
+- **Liveness needed no new machinery**: `SpecTablePreview` already recomputed `srcDoc` every render, so
+  threading `engine.styling` in was the whole mechanism. Two invariants kept apart deliberately — a
+  **styling** change yields a new document (frame reloads, height shim re-reports; accepted, same class
+  of event as a row edit), while the **device toggle** still changes only the outer width, so the
+  document stays byte-identical across views and a toggle never reloads. The view-independence test now
+  strips the wrapper class list too, since `--mobile-stacked` encodes the merchant's mobile-layout knob,
+  not which device tab is active.
+- **+10 unit tests** (new Step 6 describe block: default classes derived from the mapping, knob-flip
+  swap, totality over a fully-overridden value, unconditional var rule with empty body, exact
+  declarations for overrides, block-not-`:root` placement after the shared stylesheet, styling-dependence
+  + determinism, fidelity contract intact under non-default styling, empty state intact, `--collapsible`
+  still unreachable). Three existing exact-string wrapper assertions now derive from
+  `stylingToModifierClasses` instead of hand-typed literals. **Full gate green (694 tests, 33 files;
+  typecheck, lint, format, build).**
+- **Live-verified on the dev store (2026-07-19)** across four real templates: all-defaults Desktop
+  renders **identically to before** (Moto G35); **Stripes** repaints instantly and **unsaved**, opening
+  the SaveBar on a styling change alone; **None** removes the hairlines — the exact "expected
+  non-behavior" Step 5's sign-off logged is now behavior; **Mobile 375px renders STACKED** (label over
+  value, pairs as units — Step 3 Part C live for the first time) while **Tablet 768px stays
+  two-column**, confirming the 749px breakpoint; **Discard** reverts control and preview together.
+  **The loader path was proven without saving anything**: AGX TF36 already carried `STRIPES` from Step 5
+  and rendered striped straight from the DB on load, SaveBar closed. On the 44-row **DJI Mavic (9
+  section headers)** the **`nth-child(even)` decision rendered correctly in anger** — striping counts
+  section rows in the sequence rather than restarting per section, and headers keep their banded look.
+  Console clean (no CSP violation on the new inline `<style>`, no hydration/Polaris warnings; only
+  pre-existing Shopify platform warnings from their own CDN bundle).
+- **Boundary checks, both live-confirmed:** the **storefront is untouched** — a product page's wrapper is
+  bare `class="appx-spec-table"`, no modifier classes, no inline style (Step 7 not shipped); the
+  **editing grid is unchanged** (Step 11). **Zero DB footprint from testing** — every change discarded,
+  the two pre-existing styling rows and both ACTIVE templates exactly as found, no scratch template.
+  Detail → `context/features/62-style-tab-step6-live-preview-styling.md`. **Next → Step 7 (metaobject
+  serialization + Liquid emission — the pipe complete).**
 
 **Style tab — Step 5: engine styling state + Dividers control + Save round-trip (Reshell Phase B, `61-…`, 2026-07-19)**
 - Fifth slice of feature 57 and **the first one a merchant can see**. Steps 1–4 were each provably

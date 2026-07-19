@@ -1,16 +1,43 @@
 import { describe, expect, it } from "vitest";
-import type { DataRow, SectionHeaderRow, ValuePart } from "../../utils/rows";
+import type {
+  DataRow,
+  EditorRow,
+  SectionHeaderRow,
+  ValuePart,
+} from "../../utils/rows";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
+import type { StylingValues } from "../../utils/tableStyling";
+import { DEFAULT_STYLING_VALUES } from "../../utils/tableStyling";
 import {
-  renderSpecTableHtml,
-  renderSpecTablePreviewDocument,
+  formatCssVarDeclarations,
+  stylingToCssVars,
+  stylingToModifierClasses,
+} from "../../utils/tableStylingCss";
+import {
+  renderSpecTableHtml as renderSpecTableHtmlStyled,
+  renderSpecTablePreviewDocument as renderSpecTablePreviewDocumentStyled,
 } from "./specTablePreviewHtml";
 import { PREVIEW_DOCUMENT_STYLES, SPEC_TABLE_CSS } from "./previewStyles";
 import {
   PREVIEW_HEIGHT_BRIDGE_SCRIPT,
   PREVIEW_HEIGHT_MESSAGE_TYPE,
 } from "./previewBridge";
+
+// Both renderers REQUIRE a resolved `StylingValues` (feature 57 · Step 6). The
+// feature-49 assertions below all predate styling and exercise the markup
+// fidelity contract, which is styling-independent — so bind the default value
+// once here rather than repeating it at two dozen call sites. The Step 6
+// describe block calls the real functions with explicit non-default values.
+const renderSpecTableHtml = (
+  rows: EditorRow[],
+  styling: StylingValues = DEFAULT_STYLING_VALUES,
+) => renderSpecTableHtmlStyled(rows, styling);
+
+const renderSpecTablePreviewDocument = (
+  rows: EditorRow[],
+  styling: StylingValues = DEFAULT_STYLING_VALUES,
+) => renderSpecTablePreviewDocumentStyled(rows, styling);
 
 // Feature 49 · Step 2. The pure storefront-markup renderer — the fidelity
 // contract that "the preview matches the storefront exactly" hinges on. Because
@@ -46,6 +73,11 @@ function sectionRow(
   };
 }
 
+// The expected wrapper open tag for a given styling — derived from the Step 2
+// mapping, never hand-typed, so adding a knob can't leave a stale literal here.
+const wrapperOpenTag = (styling: StylingValues = DEFAULT_STYLING_VALUES) =>
+  `<div class="${["appx-spec-table", ...stylingToModifierClasses(styling)].join(" ")}">`;
+
 const text = (t: string): ValuePart => ({ type: "TEXT", text: t });
 const lineBreak: ValuePart = { type: "LINE_BREAK" };
 const vendorField: ValuePart = { type: "SHOPIFY_FIELD", field: "vendor" };
@@ -63,7 +95,7 @@ describe("renderSpecTableHtml", () => {
   it("wraps non-empty rows in the storefront div/table/tbody", () => {
     const html = renderSpecTableHtml([dataRow([text("42")])]);
     expect(html).toContain(
-      '<div class="appx-spec-table"><table class="appx-spec-table__table"><tbody>',
+      `${wrapperOpenTag()}<table class="appx-spec-table__table"><tbody>`,
     );
     expect(html).toContain("</tbody></table></div>");
     // No storefront-only bits leak into the preview.
@@ -141,7 +173,7 @@ describe("renderSpecTableHtml", () => {
       expect(html).not.toContain("Empty");
       // No rows survive → wrapper still renders (rows.length > 0), tbody empty.
       expect(html).toBe(
-        '<div class="appx-spec-table"><table class="appx-spec-table__table"><tbody></tbody></table></div>',
+        `${wrapperOpenTag()}<table class="appx-spec-table__table"><tbody></tbody></table></div>`,
       );
     });
 
@@ -318,12 +350,17 @@ describe("renderSpecTablePreviewDocument", () => {
     // in-frame ResizeObserver, not a reload, to re-height).
     const rows = [dataRow([text("x")])];
     const doc = renderSpecTablePreviewDocument(rows);
-    // The shared stylesheet legitimately mentions devices since feature 57
-    // Step 3 (the `--mobile-stacked` selectors + breakpoint comment) — that is
-    // width-responsive CSS inside a still view-independent document, not a
-    // per-view payload. So assert device words are absent from everything
-    // EXCEPT the shared styles.
-    const outsideStyles = doc.replace(PREVIEW_DOCUMENT_STYLES, "");
+    // Two legitimate sources of device WORDS that are not device VIEWS:
+    //   1. the shared stylesheet (feature 57 Step 3's `--mobile-stacked`
+    //      selectors + breakpoint comment) — width-responsive CSS;
+    //   2. the wrapper's modifier classes (Step 6) — `--mobile-stacked` /
+    //      `--mobile-same-as-desktop` encode the MERCHANT'S mobile-layout knob,
+    //      a property of the styling value, not of which device tab is active.
+    // Both are view-independent; strip them and assert nothing else names a
+    // device, i.e. the document still carries no per-view payload.
+    const outsideStyles = doc
+      .replace(PREVIEW_DOCUMENT_STYLES, "")
+      .replace(wrapperOpenTag(), "");
     expect(outsideStyles).not.toContain("desktop");
     expect(outsideStyles).not.toContain("tablet");
     expect(outsideStyles).not.toContain("mobile");
@@ -360,7 +397,7 @@ describe("renderSpecTablePreviewDocument", () => {
     expect(
       renderSpecTableHtml([dataRow([text("")], { hideWhenEmpty: true })]),
     ).toBe(
-      '<div class="appx-spec-table"><table class="appx-spec-table__table"><tbody></tbody></table></div>',
+      `${wrapperOpenTag()}<table class="appx-spec-table__table"><tbody></tbody></table></div>`,
     );
     expect(renderSpecTableHtml([])).not.toContain(
       "appx-spec-table-preview-empty",
@@ -374,5 +411,132 @@ describe("renderSpecTablePreviewDocument", () => {
     expect(PREVIEW_DOCUMENT_STYLES).toContain(".appx-spec-table-preview-empty");
     expect(SPEC_TABLE_CSS).not.toContain("dynamic-pill");
     expect(SPEC_TABLE_CSS).not.toContain("preview-empty");
+  });
+});
+
+// Feature 57 · Step 6 — live styling in the previews. The renderers now consume
+// the Step 2 presentation mapping: modifier classes on the wrapper, custom
+// properties in a head <style>. These assertions pin the WIRING (that the mapping
+// output reaches the document intact and totally); the mapping's own semantics are
+// exhaustively covered in `app/utils/tableStylingCss.test.ts`.
+describe("styling → preview document (feature 57 · Step 6)", () => {
+  const rows = [dataRow([text("42")], { label: "Weight" })];
+
+  // A value with every nullable field overridden, so the var path is exercised
+  // beyond the all-inherit default.
+  const styled: StylingValues = {
+    ...DEFAULT_STYLING_VALUES,
+    rowDividerStyle: "STRIPES",
+    density: "COMPACT",
+    borderColor: "#ff0000",
+    labelTextColor: "#123456",
+    fontSize: 18,
+    labelWidthPct: 40,
+  };
+
+  it("puts the mapping's modifier classes on the wrapper, defaults included", () => {
+    const html = renderSpecTableHtmlStyled(rows, DEFAULT_STYLING_VALUES);
+    const expected = stylingToModifierClasses(DEFAULT_STYLING_VALUES);
+    // Exactly `appx-spec-table` + the mapping output, in mapping order.
+    expect(html).toContain(
+      `<div class="${["appx-spec-table", ...expected].join(" ")}">`,
+    );
+    // Defaults are emitted (not omitted) — equal specificity for every knob.
+    expect(expected.length).toBeGreaterThan(0);
+    expect(html).toContain("appx-spec-table--dividers-lines");
+  });
+
+  it("swaps the modifier class when a knob changes", () => {
+    const html = renderSpecTableHtmlStyled(rows, {
+      ...DEFAULT_STYLING_VALUES,
+      rowDividerStyle: "STRIPES",
+    });
+    expect(html).toContain("appx-spec-table--dividers-stripes");
+    expect(html).not.toContain("appx-spec-table--dividers-lines");
+  });
+
+  it("renders every modifier for a fully non-default value", () => {
+    const html = renderSpecTableHtmlStyled(rows, styled);
+    for (const cls of stylingToModifierClasses(styled)) {
+      expect(html).toContain(cls);
+    }
+  });
+
+  it("emits the custom-property rule unconditionally — empty body when all-inherit", () => {
+    const doc = renderSpecTablePreviewDocument(rows, DEFAULT_STYLING_VALUES);
+    // Defaults are all-inherit for the nullable fields → no declarations, but the
+    // rule (and so the document shape) is still there.
+    expect(stylingToCssVars(DEFAULT_STYLING_VALUES)).toEqual({});
+    expect(doc).toContain("<style>.appx-spec-table {  }</style>");
+  });
+
+  it("emits exactly the mapping's declarations for an overridden value", () => {
+    const doc = renderSpecTablePreviewDocument(rows, styled);
+    const declarations = formatCssVarDeclarations(stylingToCssVars(styled));
+    expect(doc).toContain(
+      `<style>.appx-spec-table { ${declarations} }</style>`,
+    );
+    // Sanity: the overrides really did reach the document.
+    expect(declarations).toContain("--appx-spec-border-color: #ff0000;");
+    expect(declarations).toContain("--appx-spec-font-size: 18px;");
+    expect(declarations).toContain("--appx-spec-label-width: 40%;");
+  });
+
+  it("declares the vars on the block, after the shared stylesheet", () => {
+    const doc = renderSpecTablePreviewDocument(rows, styled);
+    // On `.appx-spec-table` (not :root) so they inherit down to __table, where
+    // Step 3's typography rules read them.
+    const varsAt = doc.indexOf("<style>.appx-spec-table {");
+    const sharedAt = doc.indexOf(PREVIEW_DOCUMENT_STYLES);
+    const headEnd = doc.indexOf("</head>");
+    expect(sharedAt).toBeGreaterThanOrEqual(0);
+    // Overrides follow the shared rules, so they win at equal specificity...
+    expect(varsAt).toBeGreaterThan(sharedAt);
+    // ...and both sit in the head.
+    expect(varsAt).toBeLessThan(headEnd);
+  });
+
+  it("is styling-DEPENDENT — different styling yields a different document", () => {
+    // The liveness mechanism: the component recomputes srcDoc every render, so a
+    // knob change must produce new bytes or the frame would never repaint.
+    const a = renderSpecTablePreviewDocument(rows, DEFAULT_STYLING_VALUES);
+    const b = renderSpecTablePreviewDocument(rows, styled);
+    expect(a).not.toBe(b);
+    // ...while staying deterministic for a fixed (rows, styling).
+    expect(renderSpecTablePreviewDocument(rows, styled)).toBe(b);
+  });
+
+  it("leaves the fidelity contract untouched under non-default styling", () => {
+    // Escaping, the hideWhenEmpty gate, section rows and the empty-array contract
+    // are all styling-independent.
+    expect(renderSpecTableHtmlStyled([], styled)).toBe("");
+    const html = renderSpecTableHtmlStyled(
+      [
+        sectionRow({ label: "A & B" }),
+        dataRow([text("<script>")], { id: "d1", label: "Esc" }),
+        dataRow([text("  ")], { id: "d2", hideWhenEmpty: true, label: "Gone" }),
+      ],
+      styled,
+    );
+    expect(html).toContain('colgroup">A &amp; B</th>');
+    expect(html).toContain("&lt;script&gt;");
+    expect(html).not.toContain("<script>");
+    expect(html).not.toContain("Gone");
+  });
+
+  it("keeps the empty state intact when styling is set", () => {
+    const doc = renderSpecTablePreviewDocument([], styled);
+    expect(doc).toContain('<div class="appx-spec-table-preview-empty">');
+    // The var rule is still emitted (harmless with no wrapper to style).
+    expect(doc).toContain("<style>.appx-spec-table {");
+  });
+
+  it("does not emit the collapsible class until Step 9 wires the control", () => {
+    // `sectionsCollapsible` is a presence flag and no control sets it yet, so the
+    // CSS-contract test's known-absent exemption still holds. Assert on the
+    // MARKUP, not the document — Step 3 left a `--collapsible` placeholder
+    // comment in the stylesheet, which the document legitimately inlines.
+    const html = renderSpecTableHtmlStyled(rows, DEFAULT_STYLING_VALUES);
+    expect(html).not.toContain("appx-spec-table--collapsible");
   });
 });

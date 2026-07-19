@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type { EditorRow } from "../../utils/rows";
+import type { StylingValues } from "../../utils/tableStyling";
 import type { DeviceView } from "./deviceView";
 import { previewDeviceWidth } from "./deviceView";
 import {
@@ -34,8 +35,16 @@ import styles from "./SpecTableEditor.module.css";
 // let the frame clear its own sandbox), and a strict CSP in the document forbids
 // all network egress, so the newly-granted scripts are our shim and nothing else.
 // Still read-only: the parent only READS a height number; it never posts into the
-// frame or mutates the model. Deferred to Step 7: dynamic-pill affordance styling
-// + richer a11y + the empty-rows state.
+// frame or mutates the model.
+//
+// Feature 57 · Step 6 makes the preview STYLED: the engine's live `styling` is
+// threaded straight into the document builder, which turns it into wrapper
+// modifier classes + CSS custom properties. Liveness needs no new machinery — the
+// `srcDoc` was already recomputed on every render, so a Style-tab change repaints
+// the preview immediately, before (and independently of) any save. Unlike a
+// device toggle (outer width only), a styling change yields a NEW document, so
+// the frame reloads and the height shim re-reports — accepted, and the same class
+// of event as a row edit.
 
 const DEVICE_LABELS: Record<DeviceView, string> = {
   desktop: "Desktop",
@@ -45,9 +54,11 @@ const DEVICE_LABELS: Record<DeviceView, string> = {
 
 export function SpecTablePreview({
   rows,
+  styling,
   view,
 }: {
   rows: EditorRow[];
+  styling: StylingValues;
   view: DeviceView;
 }) {
   const frameRef = useRef<HTMLIFrameElement>(null);
@@ -81,7 +92,7 @@ export function SpecTablePreview({
         // scripts, the pair lets a frame remove its own sandbox. Egress is further
         // barred by the document's CSP.
         sandbox="allow-scripts"
-        srcDoc={renderSpecTablePreviewDocument(rows)}
+        srcDoc={renderSpecTablePreviewDocument(rows, styling)}
         // Width is the per-device size (Step 5); height is the shim-measured
         // content height (Step 6), falling back to the `.previewFrame` min-height
         // until the first measurement arrives.

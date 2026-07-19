@@ -20,8 +20,25 @@
 // `tokenLabels`), so the whole fidelity contract is exhaustively unit-testable in
 // the Node vitest env. Wired to no UI at Step 2; Step 3 feeds its output into the
 // iframe `srcDoc`.
+//
+// Feature 57 · Step 6 — the renderer now also carries STYLING. Both entry points
+// take a resolved `StylingValues` and consume the Step 2 presentation mapping
+// verbatim: modifier classes land on the `.appx-spec-table` wrapper (Step 3's
+// rules are compound selectors on the block, so they cannot live at the document
+// level), and the nullable colors/typography land as CSS custom properties. This
+// is the FIRST consumer of that mapping, which means the fidelity mirror now
+// LEADS the Liquid by one step: `spec_table.liquid` grows the same wrapper
+// classes at Step 7. Keep the two in lockstep from here — when Step 7 lands, the
+// class list emitted below and the one Liquid emits must be the same mapping
+// output, or preview and storefront drift.
 
 import type { EditorRow, ValuePart } from "../../utils/rows";
+import type { StylingValues } from "../../utils/tableStyling";
+import {
+  formatCssVarDeclarations,
+  stylingToCssVars,
+  stylingToModifierClasses,
+} from "../../utils/tableStylingCss";
 import { tokenLabels } from "../../utils/valueDom";
 import { PREVIEW_DOCUMENT_STYLES } from "./previewStyles";
 import { PREVIEW_HEIGHT_BRIDGE_SCRIPT } from "./previewBridge";
@@ -105,10 +122,10 @@ function cellPlainText(parts: ValuePart[]): string {
 }
 
 /**
- * Render `rows` to the storefront's spec-table HTML string.
+ * Render `rows` to the storefront's spec-table HTML string, styled by `styling`.
  *
  * Empty array → `""` (the storefront renders nothing without rows). Otherwise the
- * rows are wrapped in `<div class="appx-spec-table"><table
+ * rows are wrapped in `<div class="appx-spec-table <modifiers>"><table
  * class="appx-spec-table__table"><tbody>…` in array order:
  *   - SECTION_HEADER → a full-width `<th colspan="2" scope="colgroup">` row,
  *     always rendered (no hideWhenEmpty gate on sections, mirroring the block).
@@ -116,9 +133,19 @@ function cellPlainText(parts: ValuePart[]): string {
  *     hideWhenEmpty gate: the row is skipped when `hideWhenEmpty` is set AND the
  *     cell's visible text (TEXT + pill labels; `<br>` ignored) is all-whitespace.
  *
+ * The wrapper's class list is `appx-spec-table` plus every modifier class the
+ * Step 2 mapping derives from `styling` (defaults included — the mapping is a
+ * total function of the value, which is what keeps every knob's rules at equal
+ * specificity). `styling` is a REQUIRED resolved value, never optional: a caller
+ * without one has a bug upstream, and defaulting here would silently re-invent
+ * `DEFAULT_STYLING_VALUES` at each call site.
+ *
  * No ACTIVE-status gate and no `block.shopify_attributes` (storefront-only).
  */
-export function renderSpecTableHtml(rows: EditorRow[]): string {
+export function renderSpecTableHtml(
+  rows: EditorRow[],
+  styling: StylingValues,
+): string {
   if (rows.length === 0) {
     return "";
   }
@@ -138,13 +165,40 @@ export function renderSpecTableHtml(rows: EditorRow[]): string {
     body += `<tr class="appx-spec-table__row"><th class="appx-spec-table__label" scope="row">${escapeHtml(row.label)}</th><td class="appx-spec-table__value">${cell}</td></tr>`;
   }
 
-  return `<div class="appx-spec-table"><table class="appx-spec-table__table"><tbody>${body}</tbody></table></div>`;
+  // Modifier classes come straight from the Step 2 mapping — no class-name
+  // literals here, so adding a knob never touches this file.
+  const wrapperClass = ["appx-spec-table", ...stylingToModifierClasses(styling)]
+    .join(" ")
+    .trim();
+  return `<div class="${wrapperClass}"><table class="appx-spec-table__table"><tbody>${body}</tbody></table></div>`;
+}
+
+// The styling custom properties as their own `<style>` block (feature 57 ·
+// Step 6). Declared ON the block (`.appx-spec-table`) rather than `:root` so the
+// vars inherit down to `__table`, where Step 3's typography rules read them — the
+// placement that makes an `em` font-size multiply the theme base exactly once.
+// It follows the shared stylesheet so an override always wins at equal
+// specificity.
+//
+// Emitted UNCONDITIONALLY, empty rule body included (an all-inherit value yields
+// no declarations). One document shape, no conditional branch, and the
+// all-default case stays trivially assertable.
+//
+// The preview uses a `<style>` block; Step 7's Liquid will use an inline `style`
+// attribute on the same element. Both join via `formatCssVarDeclarations`, so the
+// two renderers cannot drift on the declaration text itself. No escaping here:
+// `parseStylingValues` is the trust boundary and the mapping only accepts an
+// already-parsed `StylingValues` (hex-whitelisted colors, clamped integers,
+// list-checked keywords).
+function stylingVarStyleBlock(styling: StylingValues): string {
+  const declarations = formatCssVarDeclarations(stylingToCssVars(styling));
+  return `<style>.appx-spec-table { ${declarations} }</style>`;
 }
 
 /**
- * Wrap `renderSpecTableHtml(rows)` in a minimal, complete HTML document suitable
- * for an iframe `srcDoc` — a `<!doctype html>` shell with `<meta charset>` +
- * responsive viewport and the rendered rows in the `<body>`.
+ * Wrap `renderSpecTableHtml(rows, styling)` in a minimal, complete HTML document
+ * suitable for an iframe `srcDoc` — a `<!doctype html>` shell with `<meta
+ * charset>` + responsive viewport and the rendered rows in the `<body>`.
  *
  * The shared storefront `spec-table.css` (plus a minimal preview-page ambient) is
  * inlined as a `<style>` in the `<head>` from its single source of truth
@@ -157,11 +211,20 @@ export function renderSpecTableHtml(rows: EditorRow[]): string {
  * outer width), which is why a device-toggle does not reload the frame. Pure and
  * framework-free (string in, string out) so the whole HTML contract stays
  * Node-unit-testable; the component just drops the return value into `srcDoc`.
+ *
+ * Feature 57 · Step 6 adds a SECOND `<style>` carrying the styling custom
+ * properties (see `stylingVarStyleBlock`). The document is now a function of
+ * `(rows, styling)` and nothing else — still view-independent, so the toggle
+ * still doesn't reload the frame, while a styling change legitimately produces a
+ * new document (the frame reloads and the height shim re-reports).
  */
-export function renderSpecTablePreviewDocument(rows: EditorRow[]): string {
+export function renderSpecTablePreviewDocument(
+  rows: EditorRow[],
+  styling: StylingValues,
+): string {
   // No rows to preview (zero rows, or all rows hidden by hideWhenEmpty → no `<tr>`)
   // → show the preview-only empty state instead of a blank body (Step 7).
-  const fragment = renderSpecTableHtml(rows);
+  const fragment = renderSpecTableHtml(rows, styling);
   const body = fragment.includes("<tr") ? fragment : PREVIEW_EMPTY_STATE_HTML;
-  return `<!doctype html><html lang="en"><head><meta charset="utf-8">${PREVIEW_CSP_META}<meta name="viewport" content="width=device-width, initial-scale=1"><title>Spec table preview</title><style>${PREVIEW_DOCUMENT_STYLES}</style></head><body>${body}${PREVIEW_HEIGHT_BRIDGE_SCRIPT}</body></html>`;
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8">${PREVIEW_CSP_META}<meta name="viewport" content="width=device-width, initial-scale=1"><title>Spec table preview</title><style>${PREVIEW_DOCUMENT_STYLES}</style>${stylingVarStyleBlock(styling)}</head><body>${body}${PREVIEW_HEIGHT_BRIDGE_SCRIPT}</body></html>`;
 }

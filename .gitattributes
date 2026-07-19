@@ -1,0 +1,26 @@
+# Normalize line endings.
+#
+# The repo already stores every text file with LF in the index. Without this
+# file, a Windows checkout under `core.autocrlf=true` rewrites them to CRLF in
+# the WORKING TREE, which git then hides (it compares post-normalization) but
+# Prettier does not — its default `endOfLine: "lf"` fails `npm run format:check`
+# on files nobody edited. Pinning `eol=lf` keeps the working tree matching the
+# index, so the format gate reflects real formatting rather than the OS that
+# happened to clone the repo.
+#
+# `text=auto` still lets git decide what is text; only the checkout EOL is
+# forced. Binary assets are unaffected.
+* text=auto eol=lf
+
+# Explicitly binary, so git never line-ending-normalizes them.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.webp binary
+*.woff binary
+*.woff2 binary
+*.ttf binary
+*.eot binary
+*.pdf binary
