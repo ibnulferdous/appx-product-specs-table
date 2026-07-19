@@ -1,31 +1,56 @@
 import { describe, expect, it } from "vitest";
 import {
   COLOR_KNOBS,
+  CUSTOM_FONT_SIZE_CONTROL_VALUE,
+  CUSTOM_FONT_SIZE_SEED_PX,
   DENSITY_OPTIONS,
+  FONT_SIZE_OPTIONS,
+  FONT_STYLE_OPTIONS,
+  FONT_WEIGHT_OPTIONS,
   INHERIT_CONTROL_VALUE,
+  LABEL_CASE_OPTIONS,
+  LINE_HEIGHT_OPTIONS,
   MOBILE_LAYOUT_OPTIONS,
   ROW_DIVIDER_OPTIONS,
   ROW_LAYOUT_OPTIONS,
   SECTIONS_INITIAL_STATE_OPTIONS,
   SECTION_HEADER_OPTIONS,
+  fontSizeControlValue,
   fromColorControlValue,
   fromControlValue,
+  fromLabelWidthControlValue,
+  nextFontSizeForControl,
+  parseCustomFontSizePx,
+  rememberedCustomFontSizePx,
+  showsCustomFontSizeInput,
+  showsLabelWidthControl,
   showsMobileLayoutControl,
   showsSectionsInitialStateControl,
   toColorControlValue,
   toControlValue,
+  toLabelWidthControlValue,
   type StylingOption,
 } from "./stylingControls";
 import {
   DEFAULT_STYLING_VALUES,
   DENSITIES,
+  FONT_SIZE_PX_MAX,
+  FONT_SIZE_PX_MIN,
+  LABEL_CASES,
+  LABEL_WIDTH_PCT_MAX,
+  LABEL_WIDTH_PCT_MIN,
+  LINE_HEIGHTS,
   MOBILE_LAYOUTS,
   ROW_DIVIDER_STYLES,
   ROW_LAYOUTS,
   SECTIONS_INITIAL_STATES,
   SECTION_HEADER_STYLES,
   STYLING_FIELD_NAMES,
+  STYLING_FONT_SIZES,
+  STYLING_FONT_STYLES,
+  STYLING_FONT_WEIGHTS,
   parseStylingValues,
+  type StylingFontSize,
   type StylingValues,
 } from "../../utils/tableStyling";
 
@@ -321,3 +346,347 @@ describe("fromColorControlValue (feature 57 Step 10a)", () => {
     }
   });
 });
+
+// --- Step 10b · typography + label width -------------------------------------
+
+// The four NULLABLE keyword lists get their own table with an ADAPTED contract,
+// rather than joining the Step 8/9b table with its assertions loosened. Two of
+// the five change meaning here — "exactly the domain's values" becomes "Inherit
+// plus the domain's values", and "leads with the default" becomes "leads with
+// Inherit, whose value is the null sentinel" — and loosening the original table
+// to fit would stop it catching a regression in the seven non-nullable lists.
+const NULLABLE_KEYWORD_KNOB_LISTS: ReadonlyArray<{
+  name: string;
+  options: ReadonlyArray<StylingOption<string>>;
+  domain: ReadonlyArray<string>;
+}> = [
+  {
+    name: "FONT_WEIGHT_OPTIONS",
+    options: FONT_WEIGHT_OPTIONS,
+    domain: STYLING_FONT_WEIGHTS,
+  },
+  {
+    name: "FONT_STYLE_OPTIONS",
+    options: FONT_STYLE_OPTIONS,
+    domain: STYLING_FONT_STYLES,
+  },
+  {
+    name: "LINE_HEIGHT_OPTIONS",
+    options: LINE_HEIGHT_OPTIONS,
+    domain: LINE_HEIGHTS,
+  },
+  {
+    name: "LABEL_CASE_OPTIONS",
+    options: LABEL_CASE_OPTIONS,
+    domain: LABEL_CASES,
+  },
+];
+
+describe.each(NULLABLE_KEYWORD_KNOB_LISTS)(
+  "$name (feature 57 Step 10b — the nullable keyword lists)",
+  ({ options, domain }) => {
+    it("offers Inherit plus exactly the domain's values, in domain order", () => {
+      expect(options.map((option) => option.value)).toEqual([
+        INHERIT_CONTROL_VALUE,
+        ...domain,
+      ]);
+    });
+
+    it("is derived from the domain constant, not hand-typed", () => {
+      expect(options.length).toBe(domain.length + 1);
+    });
+
+    it("leads with Inherit, whose value is the null sentinel", () => {
+      expect(options[0].value).toBe(INHERIT_CONTROL_VALUE);
+      expect(fromControlValue(options[0].value, domain)).toBeNull();
+    });
+
+    it("gives every option merchant-facing prose", () => {
+      for (const option of options) {
+        expect(option.label.length).toBeGreaterThan(0);
+        expect(option.helpText.length).toBeGreaterThan(0);
+        expect(option.label).not.toBe(option.value);
+      }
+    });
+
+    it("has a distinct label per option", () => {
+      const labels = options.map((option) => option.label);
+      expect(new Set(labels).size).toBe(labels.length);
+    });
+  },
+);
+
+describe("FONT_SIZE_OPTIONS (feature 57 Step 10b — the three-shaped knob)", () => {
+  it("offers Inherit, the domain's presets, and Custom last", () => {
+    expect(FONT_SIZE_OPTIONS.map((option) => option.value)).toEqual([
+      INHERIT_CONTROL_VALUE,
+      ...STYLING_FONT_SIZES,
+      CUSTOM_FONT_SIZE_CONTROL_VALUE,
+    ]);
+  });
+
+  it("keeps the Custom mode marker out of the domain, so it cannot be stored", () => {
+    // If a keyword named CUSTOM were ever added to the domain, the select would
+    // have two options with the same value and one of them would be unreachable.
+    expect([...STYLING_FONT_SIZES]).not.toContain(
+      CUSTOM_FONT_SIZE_CONTROL_VALUE,
+    );
+    expect(
+      fromControlValue(CUSTOM_FONT_SIZE_CONTROL_VALUE, STYLING_FONT_SIZES),
+    ).toBeNull();
+  });
+});
+
+describe("the fontSize tri-state (feature 57 Step 10b)", () => {
+  it("selects the right option for each of the three shapes", () => {
+    expect(fontSizeControlValue(null)).toBe(INHERIT_CONTROL_VALUE);
+    expect(fontSizeControlValue("SMALL")).toBe("SMALL");
+    expect(fontSizeControlValue(24)).toBe(CUSTOM_FONT_SIZE_CONTROL_VALUE);
+  });
+
+  it("stores null for Inherit and the keyword for a preset", () => {
+    expect(
+      nextFontSizeForControl(INHERIT_CONTROL_VALUE, CUSTOM_FONT_SIZE_SEED_PX),
+    ).toBeNull();
+    for (const keyword of STYLING_FONT_SIZES) {
+      expect(nextFontSizeForControl(keyword, CUSTOM_FONT_SIZE_SEED_PX)).toBe(
+        keyword,
+      );
+    }
+  });
+
+  it("seeds Custom at 16 — the web default, not the accessibility floor", () => {
+    expect(CUSTOM_FONT_SIZE_SEED_PX).toBe(16);
+    // Seeding at the floor would shrink the table to its smallest legal size the
+    // instant a merchant clicked Custom, leaving them to type their way back up.
+    expect(CUSTOM_FONT_SIZE_SEED_PX).not.toBe(FONT_SIZE_PX_MIN);
+    expect(
+      nextFontSizeForControl(
+        CUSTOM_FONT_SIZE_CONTROL_VALUE,
+        CUSTOM_FONT_SIZE_SEED_PX,
+      ),
+    ).toBe(CUSTOM_FONT_SIZE_SEED_PX);
+  });
+
+  it("returns the merchant's px on re-entering Custom, not the seed", () => {
+    // The round trip the spec names: S -> Custom -> S -> Custom.
+    let fontSize: StylingFontSize = "SMALL";
+    let remembered = CUSTOM_FONT_SIZE_SEED_PX;
+
+    fontSize = nextFontSizeForControl(
+      CUSTOM_FONT_SIZE_CONTROL_VALUE,
+      remembered,
+    );
+    fontSize = 31; // the merchant types a size
+    remembered = rememberedCustomFontSizePx(fontSize, remembered);
+
+    fontSize = nextFontSizeForControl("SMALL", remembered);
+    expect(fontSize).toBe("SMALL");
+    // Leaving Custom must not disturb the memory.
+    remembered = rememberedCustomFontSizePx(fontSize, remembered);
+    expect(remembered).toBe(31);
+
+    fontSize = nextFontSizeForControl(
+      CUSTOM_FONT_SIZE_CONTROL_VALUE,
+      remembered,
+    );
+    expect(fontSize).toBe(31);
+    expect(fontSize).not.toBe(CUSTOM_FONT_SIZE_SEED_PX);
+  });
+});
+
+describe("the bounded numeric inputs (feature 57 Step 10b)", () => {
+  // Probes DERIVED from the constants, never literals: the px ceiling moved
+  // 40 -> 184 on 2026-07-19, and a hard-coded probe is exactly what went stale.
+  it("clamps a custom px into the domain's bounds rather than rejecting it", () => {
+    expect(parseCustomFontSizePx(String(FONT_SIZE_PX_MIN - 1))).toBe(
+      FONT_SIZE_PX_MIN,
+    );
+    expect(parseCustomFontSizePx(String(FONT_SIZE_PX_MAX + 1))).toBe(
+      FONT_SIZE_PX_MAX,
+    );
+    expect(parseCustomFontSizePx("24")).toBe(24);
+    expect(parseCustomFontSizePx("24.6")).toBe(25);
+  });
+
+  it("ignores an unusable px entry rather than flipping the mode to Inherit", () => {
+    // Inherit is its own option on the select, so an emptied box must not
+    // silently become one. Null here means "no change", and the panel skips it.
+    expect(parseCustomFontSizePx("")).toBeNull();
+    expect(parseCustomFontSizePx("abc")).toBeNull();
+  });
+
+  it("clamps a label width into the domain's bounds", () => {
+    expect(fromLabelWidthControlValue(String(LABEL_WIDTH_PCT_MIN - 1))).toBe(
+      LABEL_WIDTH_PCT_MIN,
+    );
+    expect(fromLabelWidthControlValue(String(LABEL_WIDTH_PCT_MAX + 1))).toBe(
+      LABEL_WIDTH_PCT_MAX,
+    );
+    expect(fromLabelWidthControlValue("40")).toBe(40);
+  });
+
+  it("treats an emptied label-width box as Theme — its only way back", () => {
+    // Unlike the px box, this control has no separate Inherit option, so
+    // clearing it IS the merchant's route back to the default column split.
+    expect(fromLabelWidthControlValue("")).toBeNull();
+    expect(toLabelWidthControlValue(null)).toBe(INHERIT_CONTROL_VALUE);
+    expect(toLabelWidthControlValue(35)).toBe("35");
+  });
+
+  it("keeps every clamped value acceptable to the domain parser", () => {
+    // The clamp at the control boundary and the clamp at the trust boundary
+    // must agree, or a value would round-trip differently once saved.
+    for (const raw of [
+      String(FONT_SIZE_PX_MIN - 1),
+      String(FONT_SIZE_PX_MAX + 1),
+      "24",
+    ]) {
+      const px = parseCustomFontSizePx(raw);
+      expect(parseStylingValues({ fontSize: px }).fontSize).toBe(px);
+    }
+    for (const raw of [
+      String(LABEL_WIDTH_PCT_MIN - 1),
+      String(LABEL_WIDTH_PCT_MAX + 1),
+      "40",
+    ]) {
+      const pct = fromLabelWidthControlValue(raw);
+      expect(parseStylingValues({ labelWidthPct: pct }).labelWidthPct).toBe(
+        pct,
+      );
+    }
+  });
+});
+
+describe("showsLabelWidthControl (feature 57 Step 10b)", () => {
+  it("shows for a two-column table and hides for a stacked one", () => {
+    expect(
+      showsLabelWidthControl({
+        ...DEFAULT_STYLING_VALUES,
+        rowLayout: "TWO_COLUMN",
+      }),
+    ).toBe(true);
+    expect(
+      showsLabelWidthControl({
+        ...DEFAULT_STYLING_VALUES,
+        rowLayout: "STACKED",
+      }),
+    ).toBe(false);
+  });
+});
+
+describe("showsCustomFontSizeInput (feature 57 Step 10b)", () => {
+  it("shows only while fontSize is a px number", () => {
+    expect(
+      showsCustomFontSizeInput({ ...DEFAULT_STYLING_VALUES, fontSize: 24 }),
+    ).toBe(true);
+    expect(
+      showsCustomFontSizeInput({
+        ...DEFAULT_STYLING_VALUES,
+        fontSize: "SMALL",
+      }),
+    ).toBe(false);
+    expect(
+      showsCustomFontSizeInput({ ...DEFAULT_STYLING_VALUES, fontSize: null }),
+    ).toBe(false);
+  });
+});
+
+// --- The preserve-on-hide law, generalised (feature 57 Step 10 §4) ------------
+//
+// Four hide rules now exist, and the 2026-07-19 lock was to keep the four
+// PREDICATES independent (they read genuinely different fields, so merging them
+// into a record would buy indirection, not safety) and generalise the LAW
+// instead. The value in this pattern was never the predicate — it was the rule
+// that HIDING IS A READ, NEVER A WRITE. The real risk is not "someone wrote a
+// similar one-liner again", it is "someone adds a fifth control and forgets the
+// law", and only a shared test catches that. A fifth knob inherits the law by
+// adding one row below.
+const VISIBILITY_PREDICATES: ReadonlyArray<{
+  name: string;
+  predicate: (styling: StylingValues) => boolean;
+  // A value the control is VISIBLE for, and the edit that hides it. The hidden
+  // variant deliberately carries a non-default value in the hidden field, so
+  // "the value survived" is a real assertion rather than a tautology.
+  visible: StylingValues;
+  hide: (styling: StylingValues) => StylingValues;
+  // The field the control edits, which hiding must not disturb. Null for
+  // `fontSize`, whose hide-edit IS a write to the guarded field — its
+  // remember-the-px behaviour is UI memory and is covered by the tri-state
+  // round-trip test above rather than by the predicate.
+  preservedField: keyof StylingValues | null;
+}> = [
+  {
+    name: "showsMobileLayoutControl",
+    predicate: showsMobileLayoutControl,
+    visible: {
+      ...DEFAULT_STYLING_VALUES,
+      rowLayout: "TWO_COLUMN",
+      mobileLayout: "SAME_AS_DESKTOP",
+    },
+    hide: (styling) => ({ ...styling, rowLayout: "STACKED" }),
+    preservedField: "mobileLayout",
+  },
+  {
+    name: "showsSectionsInitialStateControl",
+    predicate: showsSectionsInitialStateControl,
+    visible: {
+      ...DEFAULT_STYLING_VALUES,
+      sectionsCollapsible: true,
+      sectionsInitialState: "ALL_CLOSED",
+    },
+    hide: (styling) => ({ ...styling, sectionsCollapsible: false }),
+    preservedField: "sectionsInitialState",
+  },
+  {
+    name: "showsLabelWidthControl",
+    predicate: showsLabelWidthControl,
+    visible: {
+      ...DEFAULT_STYLING_VALUES,
+      rowLayout: "TWO_COLUMN",
+      labelWidthPct: 35,
+    },
+    hide: (styling) => ({ ...styling, rowLayout: "STACKED" }),
+    preservedField: "labelWidthPct",
+  },
+  {
+    name: "showsCustomFontSizeInput",
+    predicate: showsCustomFontSizeInput,
+    visible: { ...DEFAULT_STYLING_VALUES, fontSize: 31 },
+    hide: (styling) => ({ ...styling, fontSize: "SMALL" }),
+    preservedField: null,
+  },
+];
+
+describe.each(VISIBILITY_PREDICATES)(
+  "$name — the preserve-on-hide law (feature 57 Step 10 §4)",
+  ({ predicate, visible, hide, preservedField }) => {
+    it("agrees that the control is visible for the shown value", () => {
+      expect(predicate(visible)).toBe(true);
+    });
+
+    it("hides once the irrelevant-making edit is made", () => {
+      expect(predicate(hide(visible))).toBe(false);
+    });
+
+    it("never writes — the styling it is handed comes back untouched", () => {
+      // THE LAW. A predicate that cleared the field it guards would be silent
+      // data loss, and a frozen input turns any attempt into a throw.
+      const frozen = Object.freeze({ ...visible });
+      const before = JSON.stringify(frozen);
+      predicate(frozen);
+      predicate(hide(frozen));
+      expect(JSON.stringify(frozen)).toBe(before);
+    });
+
+    it("leaves the merchant's own value intact while hidden", () => {
+      if (preservedField === null) return;
+      const hidden = hide(visible);
+      expect(hidden[preservedField]).toBe(visible[preservedField]);
+      // ...and it is NOT the default, or the assertion above proves nothing.
+      expect(hidden[preservedField]).not.toBe(
+        DEFAULT_STYLING_VALUES[preservedField],
+      );
+    });
+  },
+);

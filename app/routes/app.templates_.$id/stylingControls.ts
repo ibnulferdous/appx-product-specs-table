@@ -1,11 +1,21 @@
 import {
   DENSITIES,
+  FONT_SIZE_PX_MAX,
+  FONT_SIZE_PX_MIN,
+  LABEL_CASES,
+  LABEL_WIDTH_PCT_MAX,
+  LABEL_WIDTH_PCT_MIN,
+  LINE_HEIGHTS,
   MOBILE_LAYOUTS,
   ROW_DIVIDER_STYLES,
   ROW_LAYOUTS,
   SECTIONS_INITIAL_STATES,
   SECTION_HEADER_STYLES,
+  STYLING_FONT_SIZES,
+  STYLING_FONT_STYLES,
+  STYLING_FONT_WEIGHTS,
   parseStylingValues,
+  type StylingFontSize,
   type StylingValues,
 } from "../../utils/tableStyling";
 
@@ -364,4 +374,265 @@ export function fromColorControlValue(raw: string): string | null {
   const trimmed = raw.trim();
   if (trimmed === INHERIT_CONTROL_VALUE) return null;
   return parseStylingValues({ headerBgColor: trimmed }).headerBgColor;
+}
+
+// --- Step 10b · typography + label width -------------------------------------
+
+/**
+ * A nullable keyword knob's option list: `Inherit` first, then the domain's
+ * values in domain order.
+ *
+ * Shared because four lists want the identical shape, and — unlike the
+ * `<StylingSelect>` wrapper rejected in Step 8 — this abstracts DATA, not
+ * rendering, so it has no opinion about how the value is picked. The `Record`
+ * key type is still what makes adding a domain value a compile error.
+ *
+ * `Inherit` leads for the same reason every other list leads with its default:
+ * the control opens on the current look. The difference is only that this
+ * list's leading value is `null` rather than a domain member.
+ */
+function withInheritOption<T extends string>(
+  domain: readonly T[],
+  labels: Record<T, { label: string; helpText: string }>,
+  inheritHelpText: string,
+): ReadonlyArray<StylingOption<string>> {
+  return [
+    {
+      value: INHERIT_CONTROL_VALUE,
+      label: "Inherit",
+      helpText: inheritHelpText,
+    },
+    ...domain.map((value) => ({
+      value: value as string,
+      label: labels[value].label,
+      helpText: labels[value].helpText,
+    })),
+  ];
+}
+
+// Font size — the one genuinely THREE-shaped knob in `StylingValues`
+// (`keyword | number | null`), so its list carries a fifth entry that is not a
+// domain value at all: `Custom` is a MODE, and picking it reveals a bounded px
+// input. S/M/L are theme-relative em multipliers (they survive a theme switch);
+// Custom is the absolute escape hatch.
+export const CUSTOM_FONT_SIZE_CONTROL_VALUE = "CUSTOM";
+
+/**
+ * What the px box shows the first time a merchant picks Custom.
+ *
+ * Lives HERE and not in `tableStyling.ts` deliberately: it is a UI affordance
+ * ("what the box shows when you open it"), not a domain fact. The domain owns
+ * the numbers that CONSTRAIN it (`FONT_SIZE_PX_MIN`/`MAX`); putting a *default*
+ * beside those *bounds* would imply the domain has an opinion about unset
+ * values, which it deliberately does not — unset is `null`.
+ *
+ * `16` because it is the web default and therefore what `MEDIUM` (`1em`)
+ * resolves to on most themes, so picking Custom lands close to where the table
+ * already was. The clamp floor of `10` was considered and REJECTED as the seed:
+ * it is an accessibility guard rail, not a sensible default, and seeding there
+ * would shrink the table to its smallest legal size the instant a merchant
+ * clicked Custom, leaving them to type their way back up.
+ */
+export const CUSTOM_FONT_SIZE_SEED_PX = 16;
+
+const FONT_SIZE_LABELS: Record<
+  (typeof STYLING_FONT_SIZES)[number],
+  { label: string; helpText: string }
+> = {
+  SMALL: { label: "Small", helpText: "Slightly smaller than your theme's." },
+  MEDIUM: { label: "Medium", helpText: "Matches your theme's body text." },
+  LARGE: { label: "Large", helpText: "Slightly larger than your theme's." },
+};
+
+export const FONT_SIZE_OPTIONS: ReadonlyArray<StylingOption<string>> = [
+  ...withInheritOption(
+    STYLING_FONT_SIZES,
+    FONT_SIZE_LABELS,
+    "Use your theme's table text size.",
+  ),
+  {
+    value: CUSTOM_FONT_SIZE_CONTROL_VALUE,
+    label: "Custom",
+    helpText: `An exact size in pixels (${FONT_SIZE_PX_MIN}–${FONT_SIZE_PX_MAX}).`,
+  },
+];
+
+// Label weight — LABEL COLUMN ONLY, settled in Step 3 when the stylesheet put
+// `--appx-spec-font-weight` on `.appx-spec-table__label` rather than the table.
+// The control says "Label weight" so the UI itself states the scope; do not
+// rename it to "Font weight" without also moving the var, which would change
+// every merchant's live table.
+const FONT_WEIGHT_LABELS: Record<
+  (typeof STYLING_FONT_WEIGHTS)[number],
+  { label: string; helpText: string }
+> = {
+  REGULAR: { label: "Regular", helpText: "Labels read as body text." },
+  MEDIUM: { label: "Medium", helpText: "Labels stand out a little." },
+  BOLD: { label: "Bold", helpText: "Labels stand out strongly." },
+};
+
+export const FONT_WEIGHT_OPTIONS = withInheritOption(
+  STYLING_FONT_WEIGHTS,
+  FONT_WEIGHT_LABELS,
+  "Use your theme's label weight.",
+);
+
+const FONT_STYLE_LABELS: Record<
+  (typeof STYLING_FONT_STYLES)[number],
+  { label: string; helpText: string }
+> = {
+  NORMAL: { label: "Normal", helpText: "Upright text." },
+  ITALIC: { label: "Italic", helpText: "Slanted text." },
+};
+
+export const FONT_STYLE_OPTIONS = withInheritOption(
+  STYLING_FONT_STYLES,
+  FONT_STYLE_LABELS,
+  "Use your theme's text style.",
+);
+
+const LINE_HEIGHT_LABELS: Record<
+  (typeof LINE_HEIGHTS)[number],
+  { label: string; helpText: string }
+> = {
+  TIGHT: { label: "Tight", helpText: "Lines sit close together." },
+  NORMAL: { label: "Normal", helpText: "Comfortable line spacing." },
+  LOOSE: { label: "Loose", helpText: "Airy lines, easier to scan." },
+};
+
+export const LINE_HEIGHT_OPTIONS = withInheritOption(
+  LINE_HEIGHTS,
+  LINE_HEIGHT_LABELS,
+  "Use your theme's line spacing.",
+);
+
+// Label case — label column only. The section header sets `font-weight: 700` as
+// a literal and takes no case var, so this never touches section titles.
+const LABEL_CASE_LABELS: Record<
+  (typeof LABEL_CASES)[number],
+  { label: string; helpText: string }
+> = {
+  DEFAULT: { label: "As typed", helpText: "Labels appear as you wrote them." },
+  UPPERCASE: { label: "Uppercase", helpText: "Labels render in capitals." },
+};
+
+export const LABEL_CASE_OPTIONS = withInheritOption(
+  LABEL_CASES,
+  LABEL_CASE_LABELS,
+  "Use your theme's letter casing.",
+);
+
+// --- The font-size tri-state -------------------------------------------------
+//
+// Kept as pure functions rather than inline logic in the panel so all three
+// shapes are testable without rendering Polaris web components, which jsdom
+// cannot do.
+
+function clampToRange(value: number, min: number, max: number): number {
+  return Math.min(Math.max(value, min), max);
+}
+
+/** Which of the five font-size options is selected for a stored value. */
+export function fontSizeControlValue(fontSize: StylingFontSize): string {
+  if (fontSize === null) return INHERIT_CONTROL_VALUE;
+  if (typeof fontSize === "number") return CUSTOM_FONT_SIZE_CONTROL_VALUE;
+  return fontSize;
+}
+
+/**
+ * The stored value a font-size selection produces.
+ *
+ * `rememberedPx` is what makes leaving and re-entering Custom non-destructive:
+ * S → Custom → S → Custom must return the merchant's number, not the seed. It
+ * cannot live in `StylingValues` (the field holds ONE of the three shapes at a
+ * time), so it is UI memory the panel carries and hands back in — the same
+ * data-loss class as the four hide rules, solved the same way: never write on a
+ * mode change, only read.
+ */
+export function nextFontSizeForControl(
+  choice: string,
+  rememberedPx: number,
+): StylingFontSize {
+  if (choice === CUSTOM_FONT_SIZE_CONTROL_VALUE) {
+    return clampToRange(
+      Math.round(rememberedPx),
+      FONT_SIZE_PX_MIN,
+      FONT_SIZE_PX_MAX,
+    );
+  }
+  return fromControlValue(choice, STYLING_FONT_SIZES);
+}
+
+/** The px to hand back the next time Custom is picked. */
+export function rememberedCustomFontSizePx(
+  fontSize: StylingFontSize,
+  previous: number,
+): number {
+  return typeof fontSize === "number" ? fontSize : previous;
+}
+
+/**
+ * The Custom px box's string to a stored px, or null when there is nothing
+ * usable to store.
+ *
+ * Null here means "ignore this entry", NOT "inherit" — Inherit is its own
+ * option on the select above, so an emptied px box must not silently flip the
+ * mode. Clamped rather than rejected, because Polaris's `min`/`max` are display
+ * affordances only: its own docs note a keyboard user can still type past them.
+ */
+export function parseCustomFontSizePx(raw: string): number | null {
+  const trimmed = raw.trim();
+  const value = Number(trimmed);
+  if (trimmed === "" || !Number.isFinite(value)) return null;
+  return clampToRange(Math.round(value), FONT_SIZE_PX_MIN, FONT_SIZE_PX_MAX);
+}
+
+/**
+ * Whether the rail shows the Custom px input.
+ *
+ * The FOURTH instance of hide-when-irrelevant. Per the 2026-07-19 lock the four
+ * predicates stay as independent one-line reads — they look at genuinely
+ * different fields, so a `VISIBILITY_RULES` record would save ~4 lines while
+ * adding a layer of indirection — and the LAW is generalised instead: one shared
+ * test asserts over all four that hiding is a read and never a write. The risk
+ * was never "someone wrote a similar one-liner again", it is "someone adds a
+ * fifth control and forgets the law", and a shared test catches that.
+ */
+export function showsCustomFontSizeInput(styling: StylingValues): boolean {
+  return typeof styling.fontSize === "number";
+}
+
+// --- Label width -------------------------------------------------------------
+
+/**
+ * Whether the rail shows the label-width control.
+ *
+ * A stacked table has no label column to size, so the control means nothing
+ * there. Hidden, not disabled — and a pure read, so a trip through Stacked and
+ * back returns the merchant's percentage.
+ */
+export function showsLabelWidthControl(styling: StylingValues): boolean {
+  return styling.rowLayout === "TWO_COLUMN";
+}
+
+export function toLabelWidthControlValue(pct: number | null): string {
+  return pct === null ? INHERIT_CONTROL_VALUE : String(pct);
+}
+
+/**
+ * The label-width box's string to a stored percentage or null.
+ *
+ * Empty DOES mean inherit here, unlike the Custom px box above: label width has
+ * no separate Inherit option, so clearing the field is the merchant's only way
+ * back to the stylesheet's default ratio. Same clamp reasoning as the px box.
+ */
+export function fromLabelWidthControlValue(raw: string): number | null {
+  const trimmed = raw.trim();
+  const value = Number(trimmed);
+  if (trimmed === "" || !Number.isFinite(value)) return null;
+  return clampToRange(
+    Math.round(value),
+    LABEL_WIDTH_PCT_MIN,
+    LABEL_WIDTH_PCT_MAX,
+  );
 }

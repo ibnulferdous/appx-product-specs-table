@@ -11,6 +11,7 @@ import type { StylingValues } from "../../utils/tableStyling";
 import { DEFAULT_STYLING_VALUES } from "../../utils/tableStyling";
 import {
   formatCssVarDeclarations,
+  SPEC_TABLE_CSS_VARS,
   stylingToCssVars,
   stylingToModifierClasses,
 } from "../../utils/tableStylingCss";
@@ -480,6 +481,43 @@ describe("styling → preview document (feature 57 · Step 6)", () => {
     expect(declarations).toContain("--appx-spec-border-color: #ff0000;");
     expect(declarations).toContain("--appx-spec-font-size: 18px;");
     expect(declarations).toContain("--appx-spec-label-width: 40%;");
+  });
+
+  // Feature 57 · Step 10 — the one new preview assertion this step warrants.
+  // Steps 5/8/9b could only reach the class half of the mapping; Step 10 is
+  // where the LAST of the thirteen nullable knobs gains a control, so for the
+  // first time a merchant can drive every custom property from the UI. This
+  // pins that the preview carries all thirteen, not merely the six the Step 6
+  // fixture happened to set — the pipe's totality through the now-complete
+  // UI-reachable range.
+  it("carries every custom property for a fully-overridden value (Step 10 totality)", () => {
+    const everyKnobSet: StylingValues = {
+      ...DEFAULT_STYLING_VALUES,
+      headerBgColor: "#111111",
+      labelBgColor: "#222222",
+      valueBgColor: "#333333",
+      stripeBgColor: "#44444480", // the 8-digit shape the alpha swatches emit
+      borderColor: "#555555",
+      labelTextColor: "#666666",
+      valueTextColor: "#777777",
+      fontSize: 31,
+      fontWeight: "BOLD",
+      fontStyle: "ITALIC",
+      lineHeight: "LOOSE",
+      labelCase: "UPPERCASE",
+      labelWidthPct: 35,
+    };
+
+    const doc = renderSpecTablePreviewDocument(rows, everyKnobSet);
+    const vars = stylingToCssVars(everyKnobSet);
+
+    // Asserted against SPEC_TABLE_CSS_VARS rather than a hand-typed list, so a
+    // fourteenth nullable knob fails here instead of silently never rendering.
+    const varNames = Object.values(SPEC_TABLE_CSS_VARS);
+    expect(Object.keys(vars).sort()).toEqual([...varNames].sort());
+    for (const name of varNames) {
+      expect(doc).toContain(`${name}: ${vars[name]};`);
+    }
   });
 
   it("declares the vars on the block, after the shared stylesheet", () => {
