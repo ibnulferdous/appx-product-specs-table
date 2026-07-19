@@ -52,18 +52,40 @@ pipe** — styling now reaches the live storefront — Step 8 made four more kno
 reachable with zero non-UI diff, **Step 9 was the only B1 step to change
 MARKUP**, landing the `<details>/<summary>` shape before Step 10's selectors
 target it, and **Step 10 was the last step that adds knobs — every field in
-`STYLING_FIELD_NAMES` now has a control.** The one remaining consumer is the
-editing grid (Step 11).
+`STYLING_FIELD_NAMES` now has a control.**
 
-> ⚠️ **DEV-STORE STATE — `Unikyy Blade Pro Turbo Fan` is deliberately left carrying
-> Step 10 test overrides (2026-07-19, agreed with the project owner).** It is
-> ACTIVE and assigned to ALL products except the two DJI Mavic ones, so the live
-> storefront currently renders **`fontSize=22`, `fontWeight=BOLD`,
-> `labelCase=UPPERCASE`, `labelTextColor=#1A4D8F`**. This is test residue, not a
-> baseline — **clear it before recording any future storefront measurement.** To
-> revert: Unikyy → Style → the three selects back to `Inherit` + clear the Label
-> text swatch → Save (a Save re-syncs the metaobject; a SQL-only reset would
-> not).
+> 🚫 **STEP 11 AS ORIGINALLY PLANNED IS WITHDRAWN (2026-07-19).** The step map in
+> feature docs `57-…` through `66-…` lists step 11 as *"live styling on the
+> editing grid"*. **That step was built, rejected on review, and fully reverted**
+> — see `context/features/67-…` for the record and the reasoning.
+>
+> **The rule it violated, now binding:** **the Edit grid is a fixed editing
+> surface and never reflects merchant styling.** The Desktop / Tablet / Mobile
+> preview views are the *only* place Style and Settings changes appear, and they
+> are already storefront-faithful (Step 6). There is no third renderer — the
+> `tableStylingCss.ts` header comment naming "the live editing grid (Step 11)" as
+> a future consumer is **stale and should not be acted on**.
+>
+> Those earlier docs' step maps stay as written — they were accurate when
+> authored, and this tracker is the entry point that supersedes them (the same
+> convention Step 6 used when it superseded feature 49's deltas while leaving
+> doc `56-…` alone). **Numbering is unchanged**: 12/13/14 keep their numbers, so
+> older notes and commit messages still point at the right steps.
+
+**Step 11 is now: reveal the preview when the merchant opens the Style tab.**
+The withdrawal exposed a real gap the wrong step had been groping at. The tab
+(Content/Style/Settings) and the view (Edit/Desktop/Tablet/Mobile) are
+**independent** segmented controls in `EditorShell`, so a merchant sitting in
+Edit view can change every colour and typography knob and **see nothing happen at
+all**. The fix is to show them the surface that already renders styling
+correctly, not to style the grid. Spec to be written (`68-…`).
+
+> ✅ **DEV-STORE STATE — clean as of 2026-07-19.** The Step 10 test overrides are
+> gone: `Unikyy Blade Pro Turbo Fan` was deleted and recreated by the project
+> owner, and the withdrawn Step 11's test colours were **never saved** (verified
+> by SQL — `labelBgColor` / `valueBgColor` are NULL on every row of
+> `TableStyling`). No template carries deliberate test residue. Re-verify before
+> trusting this line if much time has passed.
 >
 > 🔎 **Two things noticed live, neither caused by this step.** (1) `DJI Mavic`
 > (ACTIVE) carries `rowLayout=STACKED` + `sectionsCollapsible`, so it no longer
@@ -279,10 +301,16 @@ editing grid (Step 11).
 - **Zero non-UI diff, both halves.** No migration, server, `spec-table.css`,
   Liquid, metaobject, `shopify.app.toml`, engine or dependency change; **both CSS
   drift guards passed unedited**. Detail →
-  `context/features/66-style-tab-step10-colors-typography.md`. **Next → Step 11
-  (live styling on the editing grid)**, carrying two small live-verification debts
-  listed above (the left-column swatches, and `labelWidthPct` / `stripeBgColor`,
-  which need a TWO_COLUMN + STRIPES template to be visible at all).
+  `context/features/66-style-tab-step10-colors-typography.md`.
+- **One debt from this entry is now PAID, one still stands.** The **left-column
+  colour swatches** were driven live on 2026-07-19 (Value background accepted a
+  typed `#E8F5E9` first try and rendered in the Desktop preview) — the Step 10
+  doubt was coordinate drift in the automation, **not** a real defect, so the
+  left/right column asymmetry recorded there can be dismissed. Still unpaid:
+  **`labelWidthPct` / `stripeBgColor`**, which need a `TWO_COLUMN` + `STRIPES`
+  template to be visible at all.
+- **What followed was NOT Step 11 as planned** — see the withdrawal note at the
+  top of this file.
 
 **Style tab — Step 9: collapsible sections (Reshell Phase B, `65-…`, 2026-07-19)**
 - Ninth slice of feature 57 and **the only B1 step that changes MARKUP**. Steps 1–8 moved a value
