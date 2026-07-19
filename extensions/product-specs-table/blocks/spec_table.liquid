@@ -63,6 +63,33 @@
 {%- liquid
   assign rows = spec.rows.value
   assign styling_css = spec.styling_css.value
+  assign styling = spec.styling.value
+-%}
+
+{%- comment -%}
+  Collapsible sections (feature 57 Step 9a). These two knobs are the ONLY ones
+  Liquid reads from the raw `styling` field rather than the precomputed
+  `styling_css`, and deliberately so: they are MARKUP decisions (`<details>` and
+  its `open` attribute), not part of the CSS mapping, so Step 7's "the server
+  precomputes; Liquid only prints" rule is not violated — there is no per-knob
+  table here to fall out of sync, just two scalars.
+
+  The wire shape is OVERRIDES-ONLY, which is what makes this free of defaulting
+  logic: a default-styled template has no `sectionsCollapsible` key at all, so
+  the lookup is nil, so it is falsy — the correct default (false) with zero code.
+  Same for the initial state via `| default:`.
+
+  Collapsible degrades to the flat shape when the template has no section
+  headers (nothing to collapse), matching the admin preview renderer exactly —
+  see app/routes/app.templates_.$id/specTablePreviewHtml.ts.
+{%- endcomment -%}
+{%- liquid
+  assign section_rows = rows | where: "rowType", "SECTION_HEADER"
+  assign collapsible = false
+  if styling.sectionsCollapsible and section_rows.size > 0
+    assign collapsible = true
+  endif
+  assign initial_state = styling.sectionsInitialState | default: "ALL_OPEN"
 -%}
 
 {%- comment -%}
@@ -81,34 +108,83 @@
 {%- endcomment -%}
 {%- if spec != blank and spec.status.value == "ACTIVE" and rows != blank and rows.size > 0 -%}
   <div class="appx-spec-table {{ styling_css.classes | escape }}" style="{{ styling_css.vars | escape }}" {{ block.shopify_attributes }}>
-    <table class="appx-spec-table__table">
-      <tbody>
-        {%- comment -%}
-          Shopify caps for-loops at 50 iterations; templates hold up to
-          MAX_TEMPLATE_ROWS (200) rows, so iterate in 50-row chunks.
-        {%- endcomment -%}
-        {%- assign row_chunks = rows.size | plus: 49 | divided_by: 50 -%}
-        {%- for chunk in (1..row_chunks) -%}
-          {%- assign row_offset = chunk | minus: 1 | times: 50 -%}
-          {%- for row in rows offset: row_offset limit: 50 -%}
-            {%- if row.rowType == "SECTION_HEADER" -%}
-              <tr class="appx-spec-table__section-row">
-                <th class="appx-spec-table__section" colspan="2" scope="colgroup">{{ row.label | escape }}</th>
-              </tr>
-            {%- else -%}
-              {%- capture cell -%}{% render "spec-table-value", row: row, product: product %}{%- endcapture -%}
-              {%- assign cell_plain = cell | strip_html | strip -%}
-              {%- unless row.hideWhenEmpty and cell_plain == blank -%}
-                <tr class="appx-spec-table__row">
-                  <th class="appx-spec-table__label" scope="row">{{ row.label | escape }}</th>
-                  <td class="appx-spec-table__value">{{ cell }}</td>
-                </tr>
-              {%- endunless -%}
-            {%- endif -%}
-          {%- endfor -%}
-        {%- endfor -%}
-      </tbody>
-    </table>
+    {%- comment -%}
+      TWO markup shapes, switched by `collapsible`, sharing ONE row loop so the
+      hideWhenEmpty gate can never differ between them:
+
+      - OFF (the default): one <table>, section headers as full-width <tr>. Byte
+        for byte what shipped before Step 9a — every existing template renders
+        through here and must not move.
+      - ON: one <details> per section header, each wrapping its OWN <table>.
+        Rows appearing BEFORE the first section header render in a leading bare
+        <table> with no <details> (there is no section to name), so `table_open`
+        opens lazily. A section whose rows are all hidden renders as an empty
+        collapsible — no new emptiness logic, which would change the OFF path
+        too. Each per-section table carries an aria-label with the section
+        title, because the split costs it the <th scope="colgroup"> heading.
+
+      No JavaScript: <details> is native, keyboard-operable, and announces its
+      own expanded state.
+    {%- endcomment -%}
+    {%- if collapsible -%}
+      {%- assign table_open = false -%}
+    {%- else -%}
+      <table class="appx-spec-table__table"><tbody>
+      {%- assign table_open = true -%}
+    {%- endif -%}
+    {%- assign details_open = false -%}
+    {%- assign section_index = 0 -%}
+    {%- comment -%}
+      Shopify caps for-loops at 50 iterations; templates hold up to
+      MAX_TEMPLATE_ROWS (200) rows, so iterate in 50-row chunks.
+    {%- endcomment -%}
+    {%- assign row_chunks = rows.size | plus: 49 | divided_by: 50 -%}
+    {%- for chunk in (1..row_chunks) -%}
+      {%- assign row_offset = chunk | minus: 1 | times: 50 -%}
+      {%- for row in rows offset: row_offset limit: 50 -%}
+        {%- if row.rowType == "SECTION_HEADER" -%}
+          {%- if collapsible -%}
+            {%- if table_open -%}</tbody></table>{%- assign table_open = false -%}{%- endif -%}
+            {%- if details_open -%}</details>{%- assign details_open = false -%}{%- endif -%}
+            {%- liquid
+              assign is_open = false
+              if initial_state == "ALL_OPEN"
+                assign is_open = true
+              elsif initial_state == "FIRST_OPEN" and section_index == 0
+                assign is_open = true
+              endif
+            -%}
+            <details class="appx-spec-table__section-group"{% if is_open %} open{% endif %}>
+              <summary class="appx-spec-table__section-summary">{{ row.label | escape }}</summary>
+              <table class="appx-spec-table__table" aria-label="{{ row.label | escape }}"><tbody>
+            {%- liquid
+              assign details_open = true
+              assign table_open = true
+              assign section_index = section_index | plus: 1
+            -%}
+          {%- else -%}
+            <tr class="appx-spec-table__section-row">
+              <th class="appx-spec-table__section" colspan="2" scope="colgroup">{{ row.label | escape }}</th>
+            </tr>
+          {%- endif -%}
+        {%- else -%}
+          {%- capture cell -%}{% render "spec-table-value", row: row, product: product %}{%- endcapture -%}
+          {%- assign cell_plain = cell | strip_html | strip -%}
+          {%- unless row.hideWhenEmpty and cell_plain == blank -%}
+            {%- unless table_open -%}
+              <table class="appx-spec-table__table"><tbody>
+              {%- assign table_open = true -%}
+            {%- endunless -%}
+            <tr class="appx-spec-table__row">
+              <th class="appx-spec-table__label" scope="row">{{ row.label | escape }}</th>
+              <td class="appx-spec-table__value">{{ cell }}</td>
+            </tr>
+          {%- endunless -%}
+        {%- endif -%}
+      {%- endfor -%}
+    {%- endfor -%}
+    {%- if table_open -%}</tbody></table>{%- endif -%}
+    {%- if details_open -%}</details>{%- endif -%}
   </div>
 {%- endif -%}
 

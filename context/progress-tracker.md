@@ -43,13 +43,31 @@ all 8 steps shipped, gate green, live-verified 2026-07-13) → E (assignment) �
 2 (pure presentation mapping), 3 (storefront stylesheet rules, dormant +
 the mobile-stacked default), 4 (`add_table_styling` migration + server
 persistence), 5 (engine styling state + Dividers control + Save
-round-trip), 6 (live styling in the device previews), and 7 (metaobject
-serialization + Liquid emission) are code-complete**; next is **Step 8
-(remaining non-structural knobs)**. Step 5 closed the persistence circuit,
-Step 6 made the knob visible, and **Step 7 completed the pipe** — styling now
-reaches the live storefront. The one remaining consumer is the editing grid
-(Step 11).
+round-trip), 6 (live styling in the device previews), 7 (metaobject
+serialization + Liquid emission), 8 (the remaining non-structural knobs),
+and 9 (collapsible sections — 9a markup/CSS + 9b controls) are complete and
+browser-verified**; next is **Step 10 (Colors + Typography)**. Step 5 closed
+the persistence circuit, Step 6 made the knob visible, **Step 7 completed the
+pipe** — styling now reaches the live storefront — Step 8 made four more knobs
+reachable with zero non-UI diff, and **Step 9 was the only B1 step to change
+MARKUP**, landing the `<details>/<summary>` shape before Step 10's selectors
+target it. The one remaining consumer is the editing grid (Step 11).
 
+> ✅ **RESOLVED 2026-07-19 — decision (a) ACCEPT. Step 7 is signed off.** The section-header band is
+> the **intended default becoming reachable, not a regression**: BANDED is the documented default, the
+> Step 6 preview has rendered banded since it shipped, and the banded fallback is deliberate in Step 3's
+> CSS comment. The honest reading is that the pre-Step-7 storefront was rendering the *unclassed base*,
+> never the intended default — Step 7 brought the storefront into line with the preview, which is the
+> whole point of the step. **Step 7's byte-identical criterion is amended to "identical except the
+> intended section band."** No code change: `spec-table.css` is not revised, the drift guard is not
+> re-copied, and `--section-banded` keeps its `rgba(0,0,0,0.06)` + no-underline treatment as the
+> default that `Banded | Text only` (Step 8) will offer. Blast radius is zero — the app is in
+> development on a dev store with no real merchant data, so no live table changes appearance for
+> anyone. The base rule `.appx-spec-table__section` stays as-is and is now simply the unreachable
+> pre-class fallback. **Step 8's `sectionHeaderStyle` control is unblocked.**
+>
+> <details><summary>Original open question (kept as history)</summary>
+>
 > 🛑 **OPEN QUESTION blocking Step 7 sign-off — the section-header default is NOT byte-identical
 > (found live 2026-07-19).** Step 7's own locked decision required a default-styled template to render
 > exactly as before. It does not, in one knob: `sectionHeaderStyle`. The **base** rule
@@ -73,6 +91,8 @@ reaches the live storefront. The one remaining consumer is the editing grid
 > matches the preview and the documented default, and amend Step 7's byte-identical criterion to
 > "identical except the intended section band"; or (b) revise Step 3 so the base and `--section-banded`
 > rules agree, with the drift-guard re-copy. Until this is decided, Step 7 is **not signed off**.
+>
+> </details>
 
 > **The preview-leads-storefront gap is CLOSED by Step 7** (superseding the Step 6 note). A merchant's
 > Style-tab change now reaches the live product page on save, matching the preview, because both
@@ -95,6 +115,173 @@ reaches the live storefront. The one remaining consumer is the editing grid
 ## Completed
 
 > One line per unit. Detail → the linked `context/features/` doc + git history.
+
+**Style tab — Step 9: collapsible sections (Reshell Phase B, `65-…`, 2026-07-19)**
+- Ninth slice of feature 57 and **the only B1 step that changes MARKUP**. Steps 1–8 moved a value
+  through a pipeline that never altered the document's shape; this one restructures the table itself.
+  Shipped as the two commits locked before any code: **9a** (markup + CSS, dormant) then **9b** (the
+  two controls, UI-only). Exactly the seven files the spec named — **no schema, server,
+  `metaobjects.server.ts`, `templateSync.server.ts`, `shopify.app.toml`, `useRowEngine.ts` or
+  dependency change**.
+- **Two shapes, one flag.** `sectionsCollapsible: false` (the default) renders today's markup **byte
+  for byte**; `true` renders one `<details>` per section, each wrapping its **own `<table>`**. The
+  byte-identical default is what confines all risk to a knob the merchant turned on deliberately —
+  the lesson taken from Step 7's after-the-fact band reasoning.
+- **Liquid reads `spec.styling.value` for these two knobs, and this does NOT violate Step 7's "the
+  server precomputes; Liquid only prints".** They are markup decisions (`<details>`, its `open`
+  attribute), not part of the CSS mapping — two scalars, no per-knob table to drift. The
+  overrides-only wire shape makes the defaulting free: a default-styled template has no
+  `sectionsCollapsible` key → `nil` → falsy → the correct default with **zero defaulting logic**.
+  No new metaobject field, no `shopify.app.toml` edit, no sync change.
+- **The four edge cases were written as tests FIRST**, since with no control in 9a the unit tests were
+  the only thing between correct and silently broken: leading rows before the first section render in
+  a **bare table with no `<details>`** (an invented "Ungrouped" summary would put words on the
+  storefront nobody wrote); a template with **no sections degrades to the OFF shape** (the
+  `--collapsible` presence flag stays on the wrapper with nothing to act on); an **all-hidden section
+  renders as an empty collapsible** (no new emptiness logic — that would change the OFF path too);
+  and `sectionsInitialState` is **inert while collapsible is off**.
+- **Both renderers moved in ONE commit, not preview-first.** Step 6 had the preview leading the
+  Liquid by a step; here structural drift would be worse than a colour drift, so `spec_table.liquid`
+  grew the identical branch alongside `specTablePreviewHtml.ts`. Both share ONE row renderer, so the
+  `hideWhenEmpty` gate cannot differ between the shapes (pinned by a test). Liquid tracks the shape
+  with `table_open`/`details_open`/`section_index` across the 50-row chunk loop; `shopify theme check`
+  passes (its 13 warnings are the HTML-balance heuristic, which cannot statically track tags opened
+  and closed across state variables).
+- **A11y:** each per-section table carries an `aria-label` with the section title — the split costs it
+  the `<th scope="colgroup">` heading, and six unnamed tables would be a regression over one named
+  one. `<details>` is natively keyboard-operable and announces its own state, so **no JavaScript** was
+  added; a `:focus-visible` ring was, since themes don't reliably provide one.
+- **Striping restarts per section in the collapsible shape**, deliberately (each section owns its own
+  `<tbody>`, so `:nth-child(even)` restarts). The CSS comment at the striping rule was rewritten to
+  say so instead of pointing forward to this step. No `nth-of-type` gymnastics, no server-computed
+  odd/even classes.
+- **The contract test's exemption list shrank as designed:** `appx-spec-table--collapsible` left
+  `KNOWN_ABSENT_SELECTORS`, so its rules are now asserted like every other knob's;
+  `--mobile-same-as-desktop` stays. Both CSS drift guards re-greened after the mechanical byte-exact
+  re-copy into `previewStyles.ts`.
+- **9b is the rail's first NON-select control** — `sectionsCollapsible` is the one boolean, so it is
+  an `s-switch` with no option list, which **confirms Step 8's rejection of a generic
+  `<StylingSelect>`**. `SECTIONS_INITIAL_STATE_OPTIONS` joined the Step 8 `describe.each` table and
+  satisfied its five assertions unchanged. `showsSectionsInitialStateControl` is the **second**
+  instance of hide-when-irrelevant; a third in Step 10 is when to consider generalising it.
+- **+24 unit tests** (752 total / 34 files). **Full gate green** (typecheck, lint, format, build).
+- **Live-verified on the dev store (2026-07-19)** on the 44-row / 9-section **DJI Mavic** (ACTIVE):
+  toggle ON restructures both previews and opens the SaveBar on a styling change alone; the **full
+  initial-state matrix** renders correctly (All open → 9 expanded; First open → only Aircraft; All
+  closed → 9 collapsed); **Banded ↔ Text only composes with collapsing** (Text only cleared the bands
+  and revealed the 2px underline on the summaries); and the **data-loss guard held live** — collapsible
+  off → on returned "First open", the merchant's choice, not the default. Saved, reloaded, and
+  confirmed on the **real product page**: 9 `<details>`, 9 summaries, **9 tables each with the right
+  `aria-label`**, `openCount: 1` for FIRST_OPEN, 0 legacy section rows, 35 data rows, and **0 `<script>`
+  elements inside the wrapper** — native disclosure, keyboard-operable (summary `tabIndex: 0`, focus
+  and activation both verified).
+- 🔎 **A real bug found live and fixed, which is why the live pass exists:** the summary rendered with
+  **no visible disclosure marker on the storefront** while the theme-less preview showed one. Cause:
+  themes commonly ship a bare element-level `summary` rule setting `list-style: none` to style their
+  own accordions (Horizon does), and while our two-class selector won on `display: list-item`, we had
+  never set `list-style-type`, so the theme's `none` applied. Fixed by taking the marker under our own
+  control — `list-style-type: disclosure-closed`, plus a `details[open] >` rule for
+  `disclosure-open` so the marker actually reports state. Re-verified live (▼ open / ▶ closed).
+  **A preview-only pass would have shipped this**, which is the argument for the storefront check.
+- **Zero net DB footprint:** DJI Mavic restored through the UI (not SQL, so the metaobject re-synced)
+  and confirmed byte-identical to the Step 8 baseline — all-default classes, no `--collapsible`,
+  `style=""`, one table, zero `<details>`, banded `rgba(0,0,0,0.06)`, `borderBottom 0px`, `8px`
+  padding, 44 rows / 9 sections, **table height 2980px, the exact value Steps 7 and 8 recorded**.
+  Detail → `context/features/65-style-tab-step9-collapsible-sections.md`. **Next → Step 10 (Colors +
+  Typography), where nullable "inherit" gets its UI vocabulary and its selectors target the shape this
+  step just froze.**
+
+**Style tab — Step 8: the remaining non-structural knobs (Reshell Phase B, `64-…`, 2026-07-19)**
+- Eighth slice of feature 57 and **the cheapest one in Phase B, which is the point**. Four controls —
+  **Row layout**, **On mobile**, **Section headers**, **Density** — for the four remaining
+  **non-nullable keyword knobs**, so every knob the pipe already carries becomes reachable.
+  **Exactly three files changed**, all UI: option lists, the rail, the tests.
+- **The claim it converts into proof:** Step 7's entry asserted "Steps 8 and 10 need no storefront
+  work" from a single knob. This step landed four more with **zero non-UI diff** — no migration, no
+  `shopify.app.toml`, no `spec-table.css`, no Liquid, no engine, no server/route change, no new
+  dependency, and **both CSS drift guards passed unedited**. The pipe really is total over
+  `StylingValues`, not just over `rowDividerStyle`.
+- **Nullability was the scope boundary, not grouping.** `labelWidthPct` sits visually in the Layout
+  group and still waits for **Step 10** with the colors and typography, because "null = inherit"
+  needs its own UI vocabulary (a Theme swatch state, an Inherit segment). `sectionsCollapsible` /
+  `sectionsInitialState` wait for **Step 9** and its `<details>/<summary>` markup — so the Sections
+  group knowingly ships with one control. Rail order follows `admin-screen-plan.md` §Tab 2:
+  **Layout · Sections · Rows**, with the Step 5 Dividers control moved under Rows unchanged (same
+  control, new heading, no behavior diff).
+- **The one piece of real logic: the On-mobile control hides when `rowLayout === "STACKED"`** — both
+  its options render identically on a stacked table, so it is noise. Hidden, not disabled. **Hiding
+  is not clearing:** `showsMobileLayoutControl(styling)` is a pure read that never mutates, so a trip
+  through Stacked and back restores the merchant's choice — a silent reset would be data loss, and it
+  is unit-tested as such. **The emitted class is deliberately unaffected**:
+  `stylingToModifierClasses` still puts the mobile modifier on a stacked wrapper (the stacked-layout
+  CSS wins anyway), and the mapping must not be special-cased to match rail visibility.
+- **A generic `<StylingSelect knob={…}>` was explicitly rejected** — at five controls the abstraction
+  is bigger than what it removes, and Step 10's toggles/swatches/sliders would break its assumptions
+  immediately. Only a `selectedHelpText` lookup is shared (it knows nothing about how a value is
+  picked, so it survives Step 10). Every option list stays a `Record` keyed on the domain union then
+  `.map`ped over the domain constant, so **adding a domain value is a compile error here**, never a
+  control silently offering a stale set.
+- **+23 unit tests** (`describe.each` over the four lists: exhaustive-and-ordered against the domain
+  constant, length asserted against the constant rather than a literal, default-leads, complete prose,
+  distinct labels; plus the visibility predicate incl. the hiding-preserves-state case).
+  **Full gate green (728 tests / 34 files; typecheck, lint, format, build).**
+- **Section-header precondition resolved first, as its own decision:** (a) accept — see the ✅ note at
+  the top of this file. No CSS commit was needed, so this step's "zero non-UI diff" bar stands
+  unqualified.
+- **Live-verified on the dev store (2026-07-19)** on the 44-row / 9-section **DJI Mavic** (ACTIVE):
+  - **All five controls render** in the locked group order **Layout · Sections · Rows**, each at its
+    current value with its help line; **tab order matches the visual grouping** (Row layout → On
+    mobile → Section headers → Row dividers → Density), and each help line updates reactively on
+    selection.
+  - **The hide rule, and the data-loss guard, both live-confirmed:** set On mobile to *Same as
+    desktop* → Row layout to **Stacked** → the **On-mobile control disappears** → back to
+    **Two-column** → it reappears **at "Same as desktop"**, the merchant's choice, *not* the default.
+    The unit test's scenario reproduced by hand.
+  - **Every knob repaints the preview live and unsaved**: Density → Compact visibly tightened the
+    rows (Gimbal moved y=513 → 473); Section headers → Text only cleared the bands and revealed the
+    2px underline. **The two section-header options read as a deliberate pair** — the visual
+    confirmation decision (a) needed.
+  - **Override-only persistence, exactly as designed.** Saved a mixed combination (three overrides +
+    two knobs left at their defaults); the DB row came back
+    `mobileLayout=SAME_AS_DESKTOP, sectionHeaderStyle=TEXT_ONLY, density=COMPACT` with
+    **`rowLayout` and `rowDividerStyle` NULL**. Reload restored all five controls, NULLs decoding
+    back to defaults, SaveBar closed.
+  - **THE PAYOFF, live on the real product page:** the wrapper read
+    `appx-spec-table --layout-two-column --mobile-same-as-desktop --section-text-only
+    --dividers-lines --density-compact` — all four Step 8 knobs reaching real shoppers **with no
+    storefront diff of any kind**. Computed styles confirmed the CSS actually applied: section
+    background `rgba(0,0,0,0)` + `1.82px` underline (TEXT_ONLY, vs banded's `rgba(0,0,0,0.06)` + 0px)
+    and label padding `4px/4px` (COMPACT, vs default `8px`). `style=""` (all-inherit, no nullable
+    knobs set). 44 rows / 9 sections intact, storefront console clean.
+  - **`--mobile-same-as-desktop` confirmed deliberately rule-less** by fetching the deployed
+    `spec-table.css` (8,518 bytes): the token appears **once**, as the Step 3 exemption comment, with
+    no selector — while `--mobile-stacked`, the 749px breakpoint, `--section-text-only` and
+    `--density-compact` all carry real rules. (A first attempt to check this via `cssRules` was
+    **vacuous** — the extension stylesheet is CDN-hosted and cross-origin, so the scan silently
+    skipped it; recorded here so the technique is not reused.)
+  - **Zero net DB footprint:** DJI Mavic reset through the UI (not SQL, so the metaobject re-synced
+    too) and confirmed byte-identical to before — all-default classes, banded `rgba(0,0,0,0.06)`,
+    `borderBottom 0px`, `8px` padding, **table height 2980px, the exact value Step 7 recorded**. All
+    five templates' styling rows and statuses match the pre-test baseline. The reset also proved the
+    **clear-on-default** path for the new knobs: all three overrides went back to NULL rather than
+    storing defaults as data.
+- 🔎 **Incidental finding, not caused by this step: `Unikyy Blade Pro Turbo Fan` (ACTIVE) already
+  carried `rowLayout=STACKED` + `density=SPACIOUS`** before Step 8 shipped — knobs that had **no UI
+  until now**. Provenance unknown (most likely a hand-written row or a Step 4-era integration run).
+  Harmless on a dev store, and arguably an accidental confirmation that the Step 7 pipe was total
+  before any control existed; **left as found**. Worth a glance if it recurs, since nothing in the
+  app should have been able to write those columns. Detail →
+  `context/features/64-style-tab-step8-remaining-non-structural-knobs.md`. **Next → Step 9
+  (collapsible sections — the one later step that adds real markup); spec written to
+  `context/features/65-style-tab-step9-collapsible-sections.md`, with three decisions locked with the
+  project owner 2026-07-19 before any code: (1) Step 9 ships as TWO commits — 9a markup + CSS dormant
+  (Step 3's posture, no control can set the flag), then 9b the two controls (UI-only, zero non-UI
+  diff, Step 8's shape); (2) row striping RESTARTS per section in the collapsible shape, deliberately
+  — global parity would need server-computed odd/even classes for a look that is invisible once a
+  section is collapsed; (3) the Unikyy anomaly is left as found with its note. Also settled from the
+  code rather than assumed: Liquid needs NO new metaobject field for the two markup knobs — the raw
+  `styling` field is already synced, and the overrides-only wire shape makes an absent key `nil`,
+  hence falsy, hence the correct default with zero defaulting logic.**
 
 **Style tab — Step 7: metaobject serialization + Liquid emission (Reshell Phase B, `63-…`, 2026-07-19)**
 - Seventh slice of feature 57 and **the step that completed the pipe** — the first Phase B slice to
@@ -162,9 +349,9 @@ reaches the live storefront. The one remaining consumer is the editing grid
     stack itself rests on Step 6's Mobile preview (byte-identical CSS, drift-guarded).
   - **Zero net DB footprint:** Moto G35 restored to `STRIPES`, DJI Mavic left ACTIVE, no scratch
     templates, all five templates exactly as found.
-  Detail → `context/features/63-style-tab-step7-metaobject-liquid-emission.md`. **Next → resolve the
-  section-header question, then Step 8 (remaining non-structural knobs — controls only, no storefront
-  work).**
+  Detail → `context/features/63-style-tab-step7-metaobject-liquid-emission.md`. **Section-header
+  question resolved 2026-07-19 as (a) accept — see the ✅ note at the top of this file; Step 7 is
+  signed off. Next → Step 8 (remaining non-structural knobs — controls only, no storefront work).**
 
 **Style tab — Step 6: live styling in the device previews (Reshell Phase B, `62-…`, 2026-07-19)**
 - Sixth slice of feature 57 and **the step that made the knob visible**. Steps 1–5 built a knob that

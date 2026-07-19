@@ -172,9 +172,16 @@ saved before this deploy sees no storefront change until they re-save, which is 
 - **`styling_css` is `json`**, not a single-line text field (length headroom + consistency).
 - **The definition edit is additive only** — never delete/recreate; deploy deliberately.
 - **A status change must preserve the persisted styling** in the metaobject. Unit-tested.
-- **Default-styled templates must render byte-identically to today.** Step 3 restated the defaults to
-  be equivalent to the base rules; if that turns out to be false anywhere, it is a **Step 3 revision**
-  with its own drift-guard re-copy, not an inline CSS fix here.
+- **Default-styled templates must render byte-identically to today** — **AMENDED 2026-07-19 to
+  "identical except the intended section band."** Step 3 restated the defaults to be equivalent to the
+  base rules; live verification found one exception, `sectionHeaderStyle`, where the base rule
+  (transparent + 2px underline) and the default modifier `--section-banded` (`rgba(0,0,0,0.06)` + no
+  underline) disagree. Resolved as **(a) accept**, not as a Step 3 revision: BANDED is the documented
+  default and the Step 6 preview has rendered banded since it shipped, so the pre-Step-7 storefront was
+  rendering the *unclassed base* and never the intended default. Step 7 brought the storefront into
+  line with the preview, which is what the step is for. **No CSS change, no drift-guard re-copy.**
+  Every other knob was byte-identical. The remaining rule stands: any *other* base/modifier
+  disagreement is a **Step 3 revision** with its own drift-guard re-copy, not an inline CSS fix here.
 - **Lazy backfill.** No bulk resync, no migration script.
 - **No `spec-table.css` change** (the rules already ship) and **no admin UI change** (Step 6 already
   renders the preview).
@@ -285,7 +292,8 @@ Deploy first (`shopify app deploy`) so the `styling_css` field exists, then, on 
    not reset it.
 4. `spec_table.liquid` emits the classes and the inline `style` on the wrapper, and a legacy entry
    without the field still renders exactly as today.
-5. **Live-verified:** a default-styled template renders byte-identically to before; a Stripes/None
+5. **Live-verified:** a default-styled template renders identically to before **except the intended
+   section band** (see the amended criterion above); a Stripes/None
    change reaches the live product page and matches the preview; the mobile stacked layout reaches
    real shoppers; status flips preserve styling.
 6. No CSS, schema, dependency, or admin-UI change shipped; all new tests green; full gate passes.

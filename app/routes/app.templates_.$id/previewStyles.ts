@@ -100,9 +100,76 @@ export const SPEC_TABLE_CSS = `/* Appx — Product Specs Table storefront styles
   border-block-end: 2px solid var(--appx-spec-border-color, currentColor);
 }
 
-/* appx-spec-table--collapsible is a presence flag with NO rules yet: its
-   <details> markup arrives in Step 9 (feature 57). Rules for markup that
-   does not exist would be speculative drift — add them there, not here. */
+/* --- Collapsible sections (Step 9a) ---------------------------------------
+   The ON shape replaces each section-header row with a native disclosure
+   wrapping that section's own table, so the summary must inherit the look
+   the section-header cell had. The two knobs COMPOSE: a merchant who picked
+   "Text only" must not get a band back the moment they enable collapsing,
+   so --section-banded and --section-text-only each get a summary variant
+   mirroring their section-header rule above.
+
+   A template with the flag but no section headers degrades to the flat
+   shape; the class then simply has nothing to act on, which is fine — it is
+   a presence flag, not a layout switch. No JavaScript is involved: the
+   disclosure element is native, keyboard-operable, and announces its own
+   expanded state.
+
+   NOTE: this file is mirrored verbatim into a TS template literal
+   (previewStyles.ts) and inlined into the preview document, which unit tests
+   scan as a string — so keep comments free of backticks and of literal
+   angle-bracket markup. */
+
+.appx-spec-table--collapsible .appx-spec-table__section-summary {
+  /* display:list-item keeps the native disclosure marker in browsers that
+     drop it otherwise; list-style-position:inside keeps the triangle within
+     the padding box, aligned with the section text rather than hanging off
+     the edge.
+
+     list-style-type is set EXPLICITLY rather than left to the default, and
+     this is not belt-and-braces: themes commonly ship a bare element-level
+     summary rule setting list-style to none, to style their own accordions
+     (Horizon does), which would otherwise leave our disclosures with no visible
+     affordance on the storefront while the theme-less preview still showed
+     one — found live on the dev store, 2026-07-19. Our two-class selector
+     beats the theme's element selector, so the marker is ours to control. */
+  display: list-item;
+  list-style-position: inside;
+  list-style-type: disclosure-closed;
+  cursor: pointer;
+  padding: 0.75rem;
+  text-align: left;
+  font-weight: 700;
+  background: var(--appx-spec-header-bg, transparent);
+  border-block-end: 2px solid var(--appx-spec-border-color, currentColor);
+}
+
+/* The open counterpart, so the marker actually reports state rather than
+   sitting on one glyph. Same two-class weight as the rule above plus the
+   attribute, so it wins only while the section is open. */
+.appx-spec-table--collapsible
+  details[open]
+  > .appx-spec-table__section-summary {
+  list-style-type: disclosure-open;
+}
+
+.appx-spec-table--collapsible.appx-spec-table--section-banded
+  .appx-spec-table__section-summary {
+  background: var(--appx-spec-header-bg, rgba(0, 0, 0, 0.06));
+  border-block-end: none;
+}
+
+.appx-spec-table--collapsible.appx-spec-table--section-text-only
+  .appx-spec-table__section-summary {
+  background: transparent;
+  border-block-end: 2px solid var(--appx-spec-border-color, currentColor);
+}
+
+/* Keyboard users must be able to SEE which summary they are on — <details>
+   gives operability for free, but not a visible focus ring in every theme. */
+.appx-spec-table--collapsible .appx-spec-table__section-summary:focus-visible {
+  outline: 2px solid currentColor;
+  outline-offset: -2px;
+}
 
 /* --- Row dividers ---------------------------------------------------------- */
 
@@ -116,9 +183,16 @@ export const SPEC_TABLE_CSS = `/* Appx — Product Specs Table storefront styles
   border-block-end: none;
 }
 
-/* nth-child, not nth-of-type: section-header rows are table rows too, and
-   banding must count real rendered rows. Step 9's one-table-per-section
-   markup will re-open this — noted there, not solved here. */
+/* nth-child, not nth-of-type: in the flat shape section-header rows are
+   table rows too, and banding must count real rendered rows.
+
+   In the COLLAPSIBLE shape each section owns its own <tbody>, so striping
+   RESTARTS at every section. That is deliberate (locked Step 9a): within a
+   disclosure, alternation is a within-section reading aid, and continuing a
+   global parity across a collapsed boundary would look arbitrary the moment
+   a section is closed. Do NOT "fix" this with nth-of-type gymnastics or
+   server-computed odd/even classes — that is real complexity bought for a
+   look nobody asked for. */
 .appx-spec-table--dividers-stripes
   .appx-spec-table__row:nth-child(even)
   .appx-spec-table__label,

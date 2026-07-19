@@ -531,12 +531,282 @@ describe("styling → preview document (feature 57 · Step 6)", () => {
     expect(doc).toContain("<style>.appx-spec-table {");
   });
 
-  it("does not emit the collapsible class until Step 9 wires the control", () => {
-    // `sectionsCollapsible` is a presence flag and no control sets it yet, so the
-    // CSS-contract test's known-absent exemption still holds. Assert on the
-    // MARKUP, not the document — Step 3 left a `--collapsible` placeholder
-    // comment in the stylesheet, which the document legitimately inlines.
-    const html = renderSpecTableHtmlStyled(rows, DEFAULT_STYLING_VALUES);
-    expect(html).not.toContain("appx-spec-table--collapsible");
+  it("emits the collapsible class only when the knob is on (Step 9a)", () => {
+    // Was "does not emit the collapsible class until Step 9 wires the control".
+    // Step 9a turns that into the POSITIVE assertion: the presence flag is now
+    // reachable and drives real markup. Assert on the MARKUP, not the document
+    // — the stylesheet the document inlines mentions the class legitimately.
+    expect(
+      renderSpecTableHtmlStyled(rows, DEFAULT_STYLING_VALUES),
+    ).not.toContain("appx-spec-table--collapsible");
+    expect(
+      renderSpecTableHtmlStyled(rows, {
+        ...DEFAULT_STYLING_VALUES,
+        sectionsCollapsible: true,
+      }),
+    ).toContain("appx-spec-table--collapsible");
+  });
+});
+
+// Feature 57 · Step 9a — collapsible sections, the one B1 step that changes
+// MARKUP. Two shapes switched by one flag: OFF must stay byte-identical to what
+// shipped before (every existing template renders through it), ON becomes one
+// <details> per section wrapping its own <table>. With no control able to set
+// the flag until 9b, these tests are the ONLY thing standing between "correct"
+// and "silently broken" — so the four locked edge cases are covered first.
+describe("collapsible sections (feature 57 · Step 9a)", () => {
+  const collapsible = (
+    overrides: Partial<StylingValues> = {},
+  ): StylingValues => ({
+    ...DEFAULT_STYLING_VALUES,
+    sectionsCollapsible: true,
+    ...overrides,
+  });
+
+  // A shape that actually exercises grouping: two sections, two rows each.
+  const twoSections: EditorRow[] = [
+    sectionRow({ id: "s1", label: "Aircraft" }),
+    dataRow([text("249 g")], { id: "d1", label: "Weight" }),
+    dataRow([text("34 min")], { id: "d2", label: "Flight time" }),
+    sectionRow({ id: "s2", label: "Camera" }),
+    dataRow([text("48 MP")], { id: "d3", label: "Photo" }),
+    dataRow([text("4K/60")], { id: "d4", label: "Video" }),
+  ];
+
+  const detailsOpenings = (html: string) => html.match(/<details[^>]*>/g) ?? [];
+
+  it("OFF renders the pre-Step-9a single-table shape, byte for byte", () => {
+    // The regression that matters most. If this moves, the step is wrong.
+    const off = renderSpecTableHtmlStyled(twoSections, DEFAULT_STYLING_VALUES);
+    expect(off).toBe(
+      `<div class="appx-spec-table ${stylingToModifierClasses(DEFAULT_STYLING_VALUES).join(" ")}">` +
+        `<table class="appx-spec-table__table"><tbody>` +
+        `<tr class="appx-spec-table__section-row"><th class="appx-spec-table__section" colspan="2" scope="colgroup">Aircraft</th></tr>` +
+        `<tr class="appx-spec-table__row"><th class="appx-spec-table__label" scope="row">Weight</th><td class="appx-spec-table__value">249 g</td></tr>` +
+        `<tr class="appx-spec-table__row"><th class="appx-spec-table__label" scope="row">Flight time</th><td class="appx-spec-table__value">34 min</td></tr>` +
+        `<tr class="appx-spec-table__section-row"><th class="appx-spec-table__section" colspan="2" scope="colgroup">Camera</th></tr>` +
+        `<tr class="appx-spec-table__row"><th class="appx-spec-table__label" scope="row">Photo</th><td class="appx-spec-table__value">48 MP</td></tr>` +
+        `<tr class="appx-spec-table__row"><th class="appx-spec-table__label" scope="row">Video</th><td class="appx-spec-table__value">4K/60</td></tr>` +
+        `</tbody></table></div>`,
+    );
+    expect(off).not.toContain("<details");
+    expect(off).not.toContain("<summary");
+  });
+
+  it("ON emits one <details> per section header, each wrapping its own table", () => {
+    const html = renderSpecTableHtmlStyled(twoSections, collapsible());
+    expect(detailsOpenings(html)).toHaveLength(2);
+    expect(html.match(/<\/details>/g)).toHaveLength(2);
+    expect(html.match(/<table class="appx-spec-table__table"/g)).toHaveLength(
+      2,
+    );
+    // No section-header <tr> survives — the summary replaced it entirely.
+    expect(html).not.toContain("appx-spec-table__section-row");
+    expect(html).not.toContain('scope="colgroup"');
+  });
+
+  it("ON puts exactly that section's rows inside its own <details>, in order", () => {
+    const html = renderSpecTableHtmlStyled(twoSections, collapsible());
+    const groups = html.split("<details").slice(1);
+    expect(groups).toHaveLength(2);
+    expect(groups[0]).toContain("Aircraft");
+    expect(groups[0]).toContain("Weight");
+    expect(groups[0]).toContain("Flight time");
+    expect(groups[0]).not.toContain("Photo");
+    expect(groups[1]).toContain("Camera");
+    expect(groups[1]).toContain("Photo");
+    expect(groups[1]).toContain("Video");
+    expect(groups[1]).not.toContain("Weight");
+    // Row order preserved within the section.
+    expect(groups[0].indexOf("Weight")).toBeLessThan(
+      groups[0].indexOf("Flight time"),
+    );
+  });
+
+  it("maps sectionsInitialState onto the `open` attribute (the full matrix)", () => {
+    const openFlags = (state: StylingValues["sectionsInitialState"]) =>
+      detailsOpenings(
+        renderSpecTableHtmlStyled(
+          twoSections,
+          collapsible({ sectionsInitialState: state }),
+        ),
+      ).map((tag) => tag.includes(" open"));
+
+    expect(openFlags("ALL_OPEN")).toEqual([true, true]);
+    expect(openFlags("FIRST_OPEN")).toEqual([true, false]);
+    expect(openFlags("ALL_CLOSED")).toEqual([false, false]);
+  });
+
+  it("never turns sectionsInitialState into a CSS class (Step 2's no-leak law)", () => {
+    // The initial state is the `open` ATTRIBUTE and nothing else.
+    for (const state of ["ALL_OPEN", "FIRST_OPEN", "ALL_CLOSED"] as const) {
+      const html = renderSpecTableHtmlStyled(
+        twoSections,
+        collapsible({ sectionsInitialState: state }),
+      );
+      expect(html).not.toContain(state.toLowerCase().replace("_", "-"));
+      expect(html).not.toContain(state);
+    }
+  });
+
+  it("gives every per-section table an accessible name (the a11y cost of the split)", () => {
+    // Each table lost its <th scope="colgroup"> heading; unnamed tables would be
+    // a regression over one named one.
+    const html = renderSpecTableHtmlStyled(twoSections, collapsible());
+    expect(html).toContain(
+      '<table class="appx-spec-table__table" aria-label="Aircraft">',
+    );
+    expect(html).toContain(
+      '<table class="appx-spec-table__table" aria-label="Camera">',
+    );
+  });
+
+  it("escapes the section title in BOTH the summary and the aria-label", () => {
+    const html = renderSpecTableHtmlStyled(
+      [
+        sectionRow({ id: "s1", label: 'A & "B"' }),
+        dataRow([text("x")], { id: "d1", label: "L" }),
+      ],
+      collapsible(),
+    );
+    expect(html).toContain(
+      '<summary class="appx-spec-table__section-summary">A &amp; &quot;B&quot;</summary>',
+    );
+    expect(html).toContain('aria-label="A &amp; &quot;B&quot;"');
+    expect(html).not.toContain('aria-label="A & "B""');
+  });
+
+  // --- the four locked edge cases (§2 of the feature doc) ---------------------
+
+  it("edge 1 · rows before the first section render in a leading bare table", () => {
+    const html = renderSpecTableHtmlStyled(
+      [
+        dataRow([text("Acme")], { id: "d0", label: "Brand" }),
+        sectionRow({ id: "s1", label: "Aircraft" }),
+        dataRow([text("249 g")], { id: "d1", label: "Weight" }),
+      ],
+      collapsible(),
+    );
+    // The leading table comes FIRST and is not inside a <details> — inventing an
+    // "Ungrouped" summary would put words on the storefront nobody wrote.
+    const lead = html.slice(0, html.indexOf("<details"));
+    expect(lead).toContain('<table class="appx-spec-table__table"><tbody>');
+    expect(lead).toContain("Brand");
+    expect(lead).toContain("</tbody></table>");
+    expect(lead).not.toContain("<summary");
+    // ...and the leading table has no aria-label (there is no section to name).
+    expect(lead).not.toContain("aria-label");
+    expect(detailsOpenings(html)).toHaveLength(1);
+  });
+
+  it("edge 1b · no leading table is emitted when the first row IS a section", () => {
+    const html = renderSpecTableHtmlStyled(twoSections, collapsible());
+    expect(html.indexOf("<details")).toBe(
+      '<div class="appx-spec-table '.length +
+        stylingToModifierClasses(collapsible()).join(" ").length +
+        '">'.length,
+    );
+  });
+
+  it("edge 2 · a template with NO section headers degrades to the single-table shape", () => {
+    const rowsOnly = [
+      dataRow([text("249 g")], { id: "d1", label: "Weight" }),
+      dataRow([text("34 min")], { id: "d2", label: "Flight time" }),
+    ];
+    const on = renderSpecTableHtmlStyled(rowsOnly, collapsible());
+    const off = renderSpecTableHtmlStyled(
+      rowsOnly,
+      collapsible({ sectionsCollapsible: false }),
+    );
+    expect(on).not.toContain("<details");
+    // Identical but for the wrapper's presence flag — the class stays (it IS a
+    // presence flag) and the CSS tolerates it with nothing to act on.
+    expect(on.replace(" appx-spec-table--collapsible", "")).toBe(off);
+  });
+
+  it("edge 3 · a section whose rows are all hidden renders as an empty collapsible", () => {
+    // No new emptiness logic: it renders exactly as a lone section-header row
+    // does in the OFF shape. Skipping it here would beg to change the OFF path.
+    const html = renderSpecTableHtmlStyled(
+      [
+        sectionRow({ id: "s1", label: "Aircraft" }),
+        dataRow([text("   ")], {
+          id: "d1",
+          label: "Weight",
+          hideWhenEmpty: true,
+        }),
+        sectionRow({ id: "s2", label: "Camera" }),
+        dataRow([text("48 MP")], { id: "d2", label: "Photo" }),
+      ],
+      collapsible(),
+    );
+    expect(detailsOpenings(html)).toHaveLength(2);
+    expect(html).toContain(
+      '<table class="appx-spec-table__table" aria-label="Aircraft"><tbody></tbody></table>',
+    );
+    expect(html).not.toContain("Weight");
+    expect(html).toContain("Photo");
+  });
+
+  it("edge 4 · sectionsInitialState is inert while collapsible is OFF", () => {
+    // Stored but ignored: the markup must not react to it at all.
+    const base = renderSpecTableHtmlStyled(twoSections, DEFAULT_STYLING_VALUES);
+    for (const state of ["ALL_OPEN", "FIRST_OPEN", "ALL_CLOSED"] as const) {
+      expect(
+        renderSpecTableHtmlStyled(twoSections, {
+          ...DEFAULT_STYLING_VALUES,
+          sectionsInitialState: state,
+        }),
+      ).toBe(base);
+    }
+  });
+
+  it("keeps the hideWhenEmpty gate identical across both shapes", () => {
+    // One shared row renderer, so the gate cannot differ — pinned here because a
+    // future refactor could easily duplicate it.
+    const rows: EditorRow[] = [
+      sectionRow({ id: "s1", label: "Aircraft" }),
+      dataRow([text("  ")], { id: "d1", hideWhenEmpty: true, label: "Gone" }),
+      dataRow([text("")], { id: "d2", hideWhenEmpty: false, label: "Kept" }),
+    ];
+    for (const styling of [DEFAULT_STYLING_VALUES, collapsible()]) {
+      const html = renderSpecTableHtmlStyled(rows, styling);
+      expect(html).not.toContain("Gone");
+      expect(html).toContain("Kept");
+    }
+  });
+
+  it("composes with the other knobs without special-casing (totality)", () => {
+    // Collapsible is orthogonal to every other knob: the wrapper still carries
+    // the full mapping output, unchanged.
+    const styling = collapsible({
+      sectionHeaderStyle: "TEXT_ONLY",
+      density: "COMPACT",
+      rowDividerStyle: "STRIPES",
+    });
+    const html = renderSpecTableHtmlStyled(twoSections, styling);
+    for (const cls of stylingToModifierClasses(styling)) {
+      expect(html).toContain(cls);
+    }
+  });
+
+  it("renders through the preview document, empty state untouched", () => {
+    const doc = renderSpecTablePreviewDocumentStyled(
+      twoSections,
+      collapsible(),
+    );
+    // Match the OPENING TAG, not the bare word: the document inlines the
+    // stylesheet, whose Step 9a comment legitimately mentions <details>.
+    expect(doc).toContain('<details class="appx-spec-table__section-group"');
+    // Zero rows still yields the preview-only empty state, not a stray <details>.
+    const empty = renderSpecTablePreviewDocumentStyled([], collapsible());
+    expect(empty).toContain('<div class="appx-spec-table-preview-empty">');
+    expect(empty).not.toContain(
+      '<details class="appx-spec-table__section-group"',
+    );
+  });
+
+  it('returns "" for zero rows regardless of the flag', () => {
+    expect(renderSpecTableHtmlStyled([], collapsible())).toBe("");
   });
 });

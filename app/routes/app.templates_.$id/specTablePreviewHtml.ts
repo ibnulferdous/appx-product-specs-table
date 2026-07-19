@@ -31,8 +31,18 @@
 // classes at Step 7. Keep the two in lockstep from here — when Step 7 lands, the
 // class list emitted below and the one Liquid emits must be the same mapping
 // output, or preview and storefront drift.
+//
+// Feature 57 · Step 9a — the renderer now has TWO markup shapes. Every step
+// before this one moved a value through a pipeline that never altered the
+// document's structure; `sectionsCollapsible` does. The OFF path (the default)
+// is byte-identical to what shipped before — one table, section headers as
+// `<tr><th colspan="2">` — and the ON path emits one `<details>` per section,
+// each wrapping its own `<table>`. This step is where preview and Liquid move
+// TOGETHER rather than the preview leading: structural drift is a worse failure
+// than a colour drift, so `spec_table.liquid` grows the identical branch in the
+// same commit.
 
-import type { EditorRow, ValuePart } from "../../utils/rows";
+import type { DataRow, EditorRow, ValuePart } from "../../utils/rows";
 import type { StylingValues } from "../../utils/tableStyling";
 import {
   formatCssVarDeclarations,
@@ -121,6 +131,100 @@ function cellPlainText(parts: ValuePart[]): string {
   return text.trim();
 }
 
+// One DATA row's `<tr>`, or "" when the whole-cell hideWhenEmpty gate skips it.
+// Shared by both markup shapes so the gate can never differ between them.
+function renderDataRow(row: DataRow): string {
+  if (row.hideWhenEmpty && cellPlainText(row.valueParts) === "") {
+    return "";
+  }
+  const cell = renderValueCell(row.valueParts);
+  return `<tr class="appx-spec-table__row"><th class="appx-spec-table__label" scope="row">${escapeHtml(row.label)}</th><td class="appx-spec-table__value">${cell}</td></tr>`;
+}
+
+// The OFF shape (the default): one table, one tbody, section headers as
+// full-width `<tr>`s. This is the markup that shipped before Step 9a and it must
+// stay byte-identical — every existing template renders through here.
+function renderSingleTableBody(rows: EditorRow[]): string {
+  let body = "";
+  for (const row of rows) {
+    if (row.rowType === "SECTION_HEADER") {
+      body += `<tr class="appx-spec-table__section-row"><th class="appx-spec-table__section" colspan="2" scope="colgroup">${escapeHtml(row.label)}</th></tr>`;
+      continue;
+    }
+    body += renderDataRow(row);
+  }
+  return `<table class="appx-spec-table__table"><tbody>${body}</tbody></table>`;
+}
+
+// The ON shape: one `<details>` per section header, each wrapping its own
+// `<table>`. Four edge cases are decided in the feature doc (§2) and encoded
+// here rather than discovered later:
+//
+//  - Rows BEFORE the first section header render in a leading bare `<table>`
+//    with no `<details>` — there is no section to name, and inventing an
+//    "Ungrouped" summary would put words on the storefront nobody wrote. The
+//    table opens lazily, so a template with no leading rows emits no empty one.
+//  - A section whose rows are ALL hidden by hideWhenEmpty still renders, as an
+//    empty collapsible — exactly as it renders as a lone section-header row in
+//    the OFF shape. No new emptiness logic (that would change the OFF path too).
+//  - A template with NO section headers never reaches here (see the caller).
+//  - `sectionsInitialState` is the `open` ATTRIBUTE, never a class — Step 2 has
+//    a standing test that it leaks into neither CSS output.
+//
+// Each per-section table gets an `aria-label` carrying the section title: the
+// split costs each table its `<th scope="colgroup">` heading, and a screen
+// reader meeting six unnamed tables is a regression over one named one.
+function renderCollapsibleBody(
+  rows: EditorRow[],
+  initialState: StylingValues["sectionsInitialState"],
+): string {
+  let html = "";
+  let tableOpen = false;
+  let detailsOpen = false;
+  let sectionIndex = 0;
+
+  const closeTable = () => {
+    if (tableOpen) {
+      html += "</tbody></table>";
+      tableOpen = false;
+    }
+  };
+  const closeDetails = () => {
+    if (detailsOpen) {
+      html += "</details>";
+      detailsOpen = false;
+    }
+  };
+
+  for (const row of rows) {
+    if (row.rowType === "SECTION_HEADER") {
+      closeTable();
+      closeDetails();
+      const open =
+        initialState === "ALL_OPEN" ||
+        (initialState === "FIRST_OPEN" && sectionIndex === 0);
+      const label = escapeHtml(row.label);
+      html += `<details class="appx-spec-table__section-group"${open ? " open" : ""}><summary class="appx-spec-table__section-summary">${label}</summary><table class="appx-spec-table__table" aria-label="${label}"><tbody>`;
+      detailsOpen = true;
+      tableOpen = true;
+      sectionIndex += 1;
+      continue;
+    }
+    const tr = renderDataRow(row);
+    if (tr === "") continue;
+    if (!tableOpen) {
+      // Leading rows before the first section header — a bare table, no <details>.
+      html += `<table class="appx-spec-table__table"><tbody>`;
+      tableOpen = true;
+    }
+    html += tr;
+  }
+
+  closeTable();
+  closeDetails();
+  return html;
+}
+
 /**
  * Render `rows` to the storefront's spec-table HTML string, styled by `styling`.
  *
@@ -140,6 +244,12 @@ function cellPlainText(parts: ValuePart[]): string {
  * without one has a bug upstream, and defaulting here would silently re-invent
  * `DEFAULT_STYLING_VALUES` at each call site.
  *
+ * Step 9a: when `styling.sectionsCollapsible` is true AND the template has at
+ * least one section header, the body instead becomes one `<details>` per
+ * section, each wrapping its own `<table>` (see `renderCollapsibleBody`).
+ * Otherwise the single-table shape above is emitted byte-identically to
+ * pre-Step-9a.
+ *
  * No ACTIVE-status gate and no `block.shopify_attributes` (storefront-only).
  */
 export function renderSpecTableHtml(
@@ -150,27 +260,22 @@ export function renderSpecTableHtml(
     return "";
   }
 
-  let body = "";
-  for (const row of rows) {
-    if (row.rowType === "SECTION_HEADER") {
-      body += `<tr class="appx-spec-table__section-row"><th class="appx-spec-table__section" colspan="2" scope="colgroup">${escapeHtml(row.label)}</th></tr>`;
-      continue;
-    }
-    // Whole-cell hideWhenEmpty gate (mirrors `unless row.hideWhenEmpty and
-    // cell_plain == blank`). A cell with any dynamic pill never reads blank here.
-    if (row.hideWhenEmpty && cellPlainText(row.valueParts) === "") {
-      continue;
-    }
-    const cell = renderValueCell(row.valueParts);
-    body += `<tr class="appx-spec-table__row"><th class="appx-spec-table__label" scope="row">${escapeHtml(row.label)}</th><td class="appx-spec-table__value">${cell}</td></tr>`;
-  }
+  // Collapsible is meaningless without sections, so a template with none
+  // DEGRADES to the single-table shape — identical to the OFF path. The
+  // `--collapsible` class may still sit on the wrapper: it is a presence flag,
+  // and the CSS tolerates it with nothing to act on.
+  const hasSections = rows.some((row) => row.rowType === "SECTION_HEADER");
+  const body =
+    styling.sectionsCollapsible && hasSections
+      ? renderCollapsibleBody(rows, styling.sectionsInitialState)
+      : renderSingleTableBody(rows);
 
   // Modifier classes come straight from the Step 2 mapping — no class-name
   // literals here, so adding a knob never touches this file.
   const wrapperClass = ["appx-spec-table", ...stylingToModifierClasses(styling)]
     .join(" ")
     .trim();
-  return `<div class="${wrapperClass}"><table class="appx-spec-table__table"><tbody>${body}</tbody></table></div>`;
+  return `<div class="${wrapperClass}">${body}</div>`;
 }
 
 // The styling custom properties as their own `<style>` block (feature 57 ·

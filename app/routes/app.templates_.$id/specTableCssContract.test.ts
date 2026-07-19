@@ -56,15 +56,14 @@ for (const values of [
   }
 }
 
-// The Step 3 exemptions (both locked in the feature doc):
+// The remaining Step 3 exemption (locked in the feature doc):
 // - mobile-same-as-desktop is DELIBERATELY rule-less — "same as desktop"
 //   means no mobile override exists, so the stylesheet never mentions it.
-// - collapsible has no <details> markup until Step 9; speculative rules for
-//   nonexistent markup are drift.
-const KNOWN_ABSENT_SELECTORS = [
-  "appx-spec-table--mobile-same-as-desktop",
-  "appx-spec-table--collapsible",
-];
+//
+// `appx-spec-table--collapsible` LEFT this list in Step 9a, exactly as Step 3
+// intended: its <details> markup now exists, so its rules are asserted like
+// every other knob's rather than going unchecked.
+const KNOWN_ABSENT_SELECTORS = ["appx-spec-table--mobile-same-as-desktop"];
 
 describe("spec-table.css ↔ styling vocabulary contract (feature 57 Step 3)", () => {
   it("contains every custom property in SPEC_TABLE_CSS_VARS", () => {
