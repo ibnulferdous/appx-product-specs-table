@@ -1,10 +1,19 @@
 import type {
   ComponentProps,
+  CSSProperties,
   KeyboardEvent as ReactKeyboardEvent,
   ReactNode,
 } from "react";
 import { useId, useRef, useState } from "react";
 import { isPreviewView, type DeviceView, type ViewId } from "./deviceView";
+import {
+  DEFAULT_TAB_VIEWS,
+  rememberView,
+  viewAnnouncement,
+  viewForTab,
+  type TabId,
+  type TabViewMemory,
+} from "./tabViewMemory";
 import styles from "./SpecTableEditor.module.css";
 
 // The mockup's editor card (design/spec-editor-mockup.html → `.editor`): a
@@ -22,8 +31,6 @@ import styles from "./SpecTableEditor.module.css";
 // import, no drift).
 type SIconType = NonNullable<ComponentProps<"s-icon">["type"]>;
 
-type TabId = "content" | "style" | "settings";
-
 interface SegOption<T extends string> {
   value: T;
   label: string;
@@ -38,6 +45,23 @@ const TABS: ReadonlyArray<SegOption<TabId>> = [
   { value: "style", label: "Style", icon: "paint-brush-flat" },
   { value: "settings", label: "Settings", icon: "settings" },
 ];
+
+// The standard clip-rect visually-hidden recipe, inline rather than a CSS-module
+// class on purpose: Step 11's definition of done requires
+// `SpecTableEditor.module.css` to diff clean against the Step 10 sign-off, which
+// is the tripwire that stops this step quietly becoming the withdrawn one. A
+// live region is not a style, so it does not earn an exception.
+const VISUALLY_HIDDEN: CSSProperties = {
+  position: "absolute",
+  width: "1px",
+  height: "1px",
+  margin: "-1px",
+  padding: 0,
+  overflow: "hidden",
+  clipPath: "inset(50%)",
+  whiteSpace: "nowrap",
+  border: 0,
+};
 
 const VIEWS: ReadonlyArray<SegOption<ViewId>> = [
   { value: "edit", label: "Edit", icon: "edit" },
@@ -196,7 +220,28 @@ export function EditorShell({
   settingsPanel,
 }: EditorShellProps) {
   const [activeTab, setActiveTab] = useState<TabId>("content");
-  const [activeView, setActiveView] = useState<ViewId>("edit");
+  // Feature 57 · Step 11: the active view is DERIVED from the active tab, because
+  // each tab remembers its own (`tabViewMemory.ts`). Opening Style therefore lands
+  // on a preview — the only surface that shows styling — without disabling or
+  // hiding the view control, and without re-overriding a merchant who chose Edit
+  // there last time. In-memory only: a reload returns to Content/`edit`.
+  const [tabViews, setTabViews] = useState<TabViewMemory>(DEFAULT_TAB_VIEWS);
+  const activeView = viewForTab(tabViews, activeTab);
+
+  // Announced only when a TAB switch moved the view under the merchant. A view
+  // the merchant clicked themselves announces via the radio's own state change.
+  const [announcement, setAnnouncement] = useState("");
+
+  const handleTabChange = (next: TabId) => {
+    setActiveTab(next);
+    const nextView = viewForTab(tabViews, next);
+    setAnnouncement(nextView === activeView ? "" : viewAnnouncement(nextView));
+  };
+
+  const handleViewChange = (next: ViewId) => {
+    setTabViews((memory) => rememberView(memory, activeTab, next));
+    setAnnouncement("");
+  };
 
   // Tabs reveal/hide the sidebar; they never replace the stage (mirrors the
   // mockup). The device toggle drives the stage content (feature 49): on a device
@@ -223,16 +268,24 @@ export function EditorShell({
             ariaLabel="Editor tab"
             options={TABS}
             value={activeTab}
-            onChange={setActiveTab}
+            onChange={handleTabChange}
           />
           <SegmentedControl
             ariaLabel="Preview device"
             options={VIEWS}
             value={activeView}
-            onChange={setActiveView}
+            onChange={handleViewChange}
           />
         </div>
       </s-box>
+
+      {/* Polite live region for a view change the merchant did NOT click (a tab
+          switch moving the stage under them). Visually hidden — the segmented
+          control already shows the change to sighted users. Kept OUTSIDE the
+          control row so it never affects that layout. */}
+      <div aria-live="polite" aria-atomic="true" style={VISUALLY_HIDDEN}>
+        {announcement}
+      </div>
 
       <s-divider></s-divider>
 

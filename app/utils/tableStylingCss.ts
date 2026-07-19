@@ -14,10 +14,14 @@
 // sets, which a value substitution cannot express — hence a class.
 //
 // This module is framework-free on purpose (same rationale as `tableStyling.ts`):
-// the storefront Liquid block (Step 7), the preview iframe (Step 6), and the
-// live editing grid (Step 11) all consume THE SAME mapping, so it must stay
-// client-safe and Node-testable. It is imported by nothing yet — later steps do
-// the wiring.
+// the storefront Liquid block (Step 7) and the preview iframe (Step 6) consume
+// THE SAME mapping, so it must stay client-safe and Node-testable.
+//
+// TWO consumers, and that is correct — not an unfinished job. This comment once
+// named "the live editing grid (Step 11)" as a third. That step was built and
+// then WITHDRAWN (`context/features/67-…`): the Edit grid is a fixed editing
+// surface that never reflects merchant styling, and the device previews are the
+// only place styling appears. Do not wire a third consumer here.
 //
 // Security posture: `parseStylingValues` is the only trust boundary — colors are
 // hex-whitelisted, fontSize/labelWidthPct are clamped integers, keywords are

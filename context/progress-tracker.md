@@ -78,7 +78,48 @@ The withdrawal exposed a real gap the wrong step had been groping at. The tab
 **independent** segmented controls in `EditorShell`, so a merchant sitting in
 Edit view can change every colour and typography knob and **see nothing happen at
 all**. The fix is to show them the surface that already renders styling
-correctly, not to style the grid. Spec to be written (`68-…`).
+correctly, not to style the grid. **Spec written 2026-07-19:**
+`context/features/68-style-tab-step11-reveal-preview-on-style-tab.md` — per-tab
+view memory (Content→`edit`, Style/Settings→`desktop`, each tab remembering its
+own last choice).
+
+**Step 11 IMPLEMENTED 2026-07-19.** New pure module
+`app/routes/app.templates_.$id/tabViewMemory.ts` (`DEFAULT_TAB_VIEWS`,
+`viewForTab`, `rememberView`, `viewAnnouncement`) + 12 unit tests; `EditorShell`
+now derives `activeView` from the active tab instead of holding it independently,
+and announces a view the merchant did **not** click via a polite live region.
+Suite 824 tests / 35 files, `npm run build` passes.
+
+- **The tripwire held**: `SpecTableEditor.module.css` and `RowGrid.tsx` diff
+  **clean** against the Step 10 sign-off `a7b304c`. The grid renders exactly as it
+  did — this step did not become the withdrawn one by the back door. The live
+  region uses an inline `VISUALLY_HIDDEN` style rather than a CSS-module class
+  specifically so the stylesheet stayed byte-identical.
+- **Stale-comment debt PAID**: `tableStylingCss.ts` no longer advertises "the live
+  editing grid (Step 11)" as a third consumer of the mapping; the header now says
+  two consumers and states outright that a third must not be wired.
+- ✅ **Live dev-store verification PASSED 2026-07-19** on `Unikyy Blade Pro Turbo
+  Fan`, all five checks:
+  1. Content opens on the editable grid (baseline).
+  2. Clicking **Style** flipped the view to Desktop preview on its own — the
+     merchant never touched the view control.
+  3. Typing `#FFD54F` into *Section header background* turned the preview's
+     section bands yellow immediately. **This is the whole point of the step**:
+     pre-Step-11 the merchant would have been staring at the Edit grid and seen
+     nothing.
+  4. Clicking **Edit** on the Style tab returned the grid **completely unstyled**
+     — no yellow anywhere. The binding rule holds live, not just in the diff. The
+     Style sidebar correctly stayed visible (tab governs sidebar, view governs
+     stage).
+  5. Round trip Style→Content→Style returned to **Edit**, the merchant's own
+     choice — the case a naive "force a preview on entry" rule gets wrong. Setting
+     Style to Mobile then round-tripping confirmed independence: Content stayed on
+     `edit`, Style came back on Mobile.
+- **Dev store left clean** — the test colour was **Discarded**, never saved.
+- Two pre-existing behaviours observed in passing (neither introduced nor changed
+  by this step, both correct): the colour text inputs commit **on blur**, not per
+  keystroke; and **Discard remounts the editor**, which resets the per-tab view
+  memory to Content/`edit` (consistent with the memory being in-component state).
 
 > ✅ **DEV-STORE STATE — clean as of 2026-07-19.** The Step 10 test overrides are
 > gone: `Unikyy Blade Pro Turbo Fan` was deleted and recreated by the project
