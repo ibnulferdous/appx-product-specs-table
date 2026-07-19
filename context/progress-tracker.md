@@ -45,13 +45,37 @@ the mobile-stacked default), 4 (`add_table_styling` migration + server
 persistence), 5 (engine styling state + Dividers control + Save
 round-trip), 6 (live styling in the device previews), 7 (metaobject
 serialization + Liquid emission), 8 (the remaining non-structural knobs),
-and 9 (collapsible sections — 9a markup/CSS + 9b controls) are complete and
-browser-verified**; next is **Step 10 (Colors + Typography)**. Step 5 closed
+9 (collapsible sections — 9a markup/CSS + 9b controls), and **10 (Colors +
+Typography — 10a/10b, code complete and gate-green but ⚠️ NOT yet
+browser-verified, see below)** are complete. Step 5 closed
 the persistence circuit, Step 6 made the knob visible, **Step 7 completed the
 pipe** — styling now reaches the live storefront — Step 8 made four more knobs
-reachable with zero non-UI diff, and **Step 9 was the only B1 step to change
+reachable with zero non-UI diff, **Step 9 was the only B1 step to change
 MARKUP**, landing the `<details>/<summary>` shape before Step 10's selectors
-target it. The one remaining consumer is the editing grid (Step 11).
+target it, and **Step 10 was the last step that adds knobs — every field in
+`STYLING_FIELD_NAMES` now has a control.** The one remaining consumer is the
+editing grid (Step 11).
+
+> ⚠️ **OPEN — Step 10's live verification is NOT done (2026-07-19).** Both halves
+> pass the full gate (812 tests, typecheck, lint, build) with zero non-UI diff,
+> but the eight-point live matrix in
+> `context/features/66-style-tab-step10-colors-typography.md` §Testing → Live
+> verification has **not been run**: the embedded-app browser surface became
+> unusable mid-session (repeated 30s CDP screenshot timeouts, a tiled compositor
+> artifact, then a blank app iframe), so no control was ever exercised by hand.
+> **Nothing was written** — every `TableStyling` row still predates the session
+> and all thirteen Step 10 columns are NULL across all five templates, so the DB
+> and storefront are exactly as found. **Step 10 is therefore code-complete but
+> NOT signed off**, and the live matrix (especially the `stripeBgColor` +
+> `labelWidthPct` composition traps, the `fontSize` matrix, and the four hide
+> rules) is the first thing to run before Step 11.
+>
+> 🔎 **Noticed while checking the DB, not caused by this step:** `DJI Mavic`
+> (ACTIVE) carries `rowLayout=STACKED` as of 08:36 today, so it no longer matches
+> the two-column baseline Steps 7–9 recorded (44 rows, 9 sections, table height
+> 2980px). Set before this session by an earlier one. Left as found — but the
+> Step 10 live pass should re-establish the baseline before trusting it, rather
+> than comparing against the older recorded numbers.
 
 > ✅ **RESOLVED 2026-07-19 — decision (a) ACCEPT. Step 7 is signed off.** The section-header band is
 > the **intended default becoming reachable, not a regression**: BANDED is the documented default, the
@@ -115,6 +139,94 @@ target it. The one remaining consumer is the editing grid (Step 11).
 ## Completed
 
 > One line per unit. Detail → the linked `context/features/` doc + git history.
+
+**Style tab — Step 10: Colors + Typography (Reshell Phase B, `66-…`, 2026-07-19)**
+- Tenth slice of feature 57 and **the last step that adds knobs**: the thirteen
+  remaining fields were exactly the NULLABLE ones, deferred together because
+  `null = inherit from the theme` needed a UI vocabulary no earlier step had. This
+  step builds that vocabulary once and spends it thirteen times. **Every field in
+  `STYLING_FIELD_NAMES` now has a control** — the claim that closes the
+  knob-building half of Phase B. Shipped as the two locked commits, **10a**
+  (colors) then **10b** (typography + label width).
+- **⚠️ Code-complete, NOT signed off — the live matrix has not been run.** See the
+  warning note at the top of this file. Everything below is gate-verified, not
+  browser-verified.
+- **One scoped DOMAIN exception, called out rather than smuggled** (§2a):
+  `FONT_SIZE_PX_MAX` raised **40 → 184** to match the Horizon theme editor's own
+  maximum, landed with the four doc amendments *before* 10a/10b so both halves
+  still shipped against an unchanged domain. The floor stays `10` (an
+  accessibility guard, not a taste guard). **This was a live trap, not a
+  hypothetical:** the old out-of-range probe `100` becomes an *in-range* value
+  under a 184 ceiling, so the test would have kept its name and its green tick
+  while asserting nothing. Both probes now DERIVE from the bounds.
+- **The null sentinel is converted in ONE helper and never escapes the control
+  layer.** An `<s-option>`'s value is a string, so null needs a sentinel (`""` —
+  also what `s-color-field` itself emits for an invalid value). A stray `""`
+  reaching styling state would be coerced back to null by `parseStylingValues` on
+  the way to the DB, so **the bug would be invisible in the editor and surface
+  only as a wrong metaobject** — hence `toControlValue`/`fromControlValue`, tested
+  in both directions, with membership checked against the domain list rather than
+  cast.
+- **Colors (10a):** seven `s-color-field` swatches, two-up in a grid, empty = the
+  Theme state. **`alpha` ON for the five SURFACE colors, OFF for the two TEXT
+  colors** — the stylesheet's own defaults are translucent (`rgba(0,0,0,0.06)`
+  band, `0.04` stripes, `0.1` borders), so an opaque-only picker could not
+  reproduce the default look, while translucent body text is a contrast bug. No
+  domain change needed: `parseColor` already accepted `#rrggbbaa`.
+  `fromColorControlValue` validates **through `parseStylingValues`** rather than
+  re-typing the hex whitelist — these values land in an inline `style` on a live
+  storefront, and a second copy of that pattern is one that can drift out of
+  agreement with the server's. `COLOR_KNOBS` coverage is asserted by DERIVING the
+  color fields from the domain (the ones `parseStylingValues` accepts a hex for),
+  so an eighth color fails the suite instead of silently having no swatch.
+- **Typography + label width (10b):** four nullable keyword selects **led by
+  `Inherit`** (built through one shared `withInheritOption` — it abstracts DATA,
+  not rendering, so it does not re-open the `<StylingSelect>` question Step 8
+  settled), plus the `fontSize` tri-state. `Custom` is a **MODE**, not a domain
+  value, and the tri-state is three pure functions so it is testable without
+  rendering Polaris (jsdom cannot).
+- **Leaving Custom REMEMBERS the typed px** (S → Custom → S → Custom returns the
+  merchant's number, not the seed). That memory **cannot live in `StylingValues`**
+  — `fontSize` holds one of its three shapes at a time — so it is a ref in the
+  panel: the same data-loss class as the hide rules, solved the same way, never
+  writing on a mode change. `CUSTOM_FONT_SIZE_SEED_PX = 16` lives in the **UI
+  layer, not the domain**: it is what the box shows when opened, not a fact about
+  unset values (unset is `null`). The clamp floor `10` was considered and rejected
+  as the seed — it would shrink the table to its smallest legal size the instant
+  Custom was clicked.
+- **`labelWidthPct` is an `s-number-field`** (20–80, `%` suffix), **not the plan's
+  original "slider"** — Polaris web components ship no range element (verified
+  against `@shopify/polaris-types`); `admin-screen-plan.md` line 194 was amended
+  before any code. Both numeric inputs **CLAMP at the control boundary**, because
+  Polaris's own docs note `min`/`max` are display affordances a keyboard user can
+  type past.
+- **The hide-when-irrelevant generalisation came due and was answered
+  deliberately:** four predicates now exist, and the lock was **keep the four
+  independent one-line reads, generalise the TEST**. They look at genuinely
+  different fields, so a `VISIBILITY_RULES` record would buy indirection, not
+  safety. One shared `describe.each` asserts over all four that **hiding is a
+  read, never a write**. The reasoning generalises: the value here was never the
+  predicate, it was the law — and the real risk is *"someone adds a fifth control
+  and forgets the law"*, which a shared test catches and merged code does not.
+- **A documentation contradiction resolved from the code, not by guessing:**
+  `fontWeight` is **LABEL COLUMN ONLY**, settled back in Step 3 when the
+  stylesheet put the var on `.appx-spec-table__label`. The control is labelled
+  **"Label weight"** so the UI states its own scope; the plan text was amended
+  rather than left inviting someone to "complete" it later. `labelCase` was
+  checked the same way and likewise never touches section headers.
+- **Tests:** the four nullable lists get their **own** table with an *adapted*
+  contract rather than loosening the Step 8/9b table — which must keep failing if
+  the seven non-nullable lists regress. One new preview test pins that a
+  fully-overridden value carries **all thirteen** custom properties, asserted
+  against `SPEC_TABLE_CSS_VARS` so a fourteenth knob fails rather than silently
+  never rendering. **+60 unit tests (812 total / 34 files); full gate green**
+  (typecheck, lint, format, build).
+- **Zero non-UI diff, both halves.** No migration, server, `spec-table.css`,
+  Liquid, metaobject, `shopify.app.toml`, engine or dependency change; **both CSS
+  drift guards passed unedited**. Detail →
+  `context/features/66-style-tab-step10-colors-typography.md`. **Next → run Step
+  10's live matrix and sign it off, then Step 11 (live styling on the editing
+  grid).**
 
 **Style tab — Step 9: collapsible sections (Reshell Phase B, `65-…`, 2026-07-19)**
 - Ninth slice of feature 57 and **the only B1 step that changes MARKUP**. Steps 1–8 moved a value
@@ -1386,4 +1498,4 @@ target it. The one remaining consumer is the editing grid (Step 11).
 - **Testing strategy:** Vitest; Phases 1–2 done (unit + shop-isolation, mocked Prisma); reach Phase 4 (route loaders/actions + GDPR webhooks) before App Store submission, E2E (Playwright) as fast-follow. Polaris web components don't render in jsdom → editor UI is browser-verified, pure logic is unit-tested. Full doc: `~/.claude/plans/there-is-no-automated-encapsulated-yeti.md`.
 - **Pre-submission gaps to close:** mandatory privacy webhooks (`customers/data_request`, `customers/redact`, `shop/redact`) and Billing (defined in `prd.md`, not yet implemented). See `context/app-store-review-checklist.md`.
 - **Embedded-app verification:** the editor is a cross-origin iframe (top frame can't read its DOM/AOM/console); verify via Claude-in-Chrome on the `shopify app dev` preview + direct Postgres/Neon checks. Polaris CDN-build gotchas live in the `polaris-web-component-gotchas` memory.
-- **Style tab design (2026-07-18 — spec: `admin-screen-plan.md` §Tab 2, `data-model.md` §5 `TableStyling` + §10 styling serialization, PRD Styling section, code-standards Color & Theming).** One spec-table primitive with **orthogonal style knobs**, not monolithic layouts: row layout (two-column / stacked), mobile behavior (stacked default / same-as-desktop), section headers (banded / text-only), collapsible sections (native `<details>/<summary>`, zero JS, initial-state knob), row dividers (lines / zebra / none — zebra adds the `stripeBgColor` surface), density. Modal/drawer containers + multi-column "newspaper" flow **rejected**. **Presets = COPY semantics**: skippable gallery popup on Create (built-ins as code constants; phase-2 merchant-saved `StylePreset` model with a field-set drift test) copies values into per-template `TableStyling` — **real columns, not `extraStyles`**; `basedOnPreset` is provenance only. **No shop-level default styling record** (store-default cascade considered + rejected — copy keeps style edits side-effect-free on live storefronts); retroactive "set once and done" = post-MVP bulk apply-to-all on a future settings route (explicit throttled batch + metaobject resync). Storefront delivery: **one path** — the template metaobject's existing `styling` json field (already in the deployed TOML; no definition change needed); layout knobs → wrapper modifier classes, colors/typography → CSS variables. Build order: B1 knobs/rail/rendering → B2 preset gallery → B3 saved presets (cuttable). **Typography addendum (2026-07-18, Horizon theme-editor pattern):** `fontSize` = S/M/L theme-relative presets **or** bounded Custom px (10–40, clamped; JSON number on the wire, digit-string in the DB column); new `lineHeight` (TIGHT/NORMAL/LOOSE) + `labelCase` (DEFAULT/UPPERCASE, labels only) knobs; `fontStyle` **kept**; font-family picker, letter spacing, wrap, per-side px padding **rejected** (option-overload guard).
+- **Style tab design (2026-07-18 — spec: `admin-screen-plan.md` §Tab 2, `data-model.md` §5 `TableStyling` + §10 styling serialization, PRD Styling section, code-standards Color & Theming).** One spec-table primitive with **orthogonal style knobs**, not monolithic layouts: row layout (two-column / stacked), mobile behavior (stacked default / same-as-desktop), section headers (banded / text-only), collapsible sections (native `<details>/<summary>`, zero JS, initial-state knob), row dividers (lines / zebra / none — zebra adds the `stripeBgColor` surface), density. Modal/drawer containers + multi-column "newspaper" flow **rejected**. **Presets = COPY semantics**: skippable gallery popup on Create (built-ins as code constants; phase-2 merchant-saved `StylePreset` model with a field-set drift test) copies values into per-template `TableStyling` — **real columns, not `extraStyles`**; `basedOnPreset` is provenance only. **No shop-level default styling record** (store-default cascade considered + rejected — copy keeps style edits side-effect-free on live storefronts); retroactive "set once and done" = post-MVP bulk apply-to-all on a future settings route (explicit throttled batch + metaobject resync). Storefront delivery: **one path** — the template metaobject's existing `styling` json field (already in the deployed TOML; no definition change needed); layout knobs → wrapper modifier classes, colors/typography → CSS variables. Build order: B1 knobs/rail/rendering → B2 preset gallery → B3 saved presets (cuttable). **Typography addendum (2026-07-18, Horizon theme-editor pattern):** `fontSize` = S/M/L theme-relative presets **or** bounded Custom px (10–40, clamped **— ceiling raised to 184 on 2026-07-19 to match the Horizon theme editor's max; see `admin-screen-plan.md` §Tab 2**; JSON number on the wire, digit-string in the DB column); new `lineHeight` (TIGHT/NORMAL/LOOSE) + `labelCase` (DEFAULT/UPPERCASE, labels only) knobs; `fontStyle` **kept**; font-family picker, letter spacing, wrap, per-side px padding **rejected** (option-overload guard).
