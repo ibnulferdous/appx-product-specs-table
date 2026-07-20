@@ -210,9 +210,27 @@ verified-available routes:
 Note `s-box`'s `accessibilityRole` union does **not** include `group`, so that shortcut is
 unavailable.
 
-**Also:** audit `SpecTableEditor.module.css` for focus-suppressing rules reaching rail controls;
-confirm every control is keyboard-operable; and the new Reset dialog must trap focus, restore it
-to the trigger on close, and close on `Escape`.
+**Second non-gap — focus visibility is already clean.** The `outline: none` rules in
+`SpecTableEditor.module.css` are scoped to the **editing-grid cells** and compensated by an inset
+ring, and `StyleTab` imports **no CSS module at all**. Record it as audited; do not go looking.
+
+**Two lower-priority items — flagged, not recommended:**
+
+- **Four controls mount/unmount silently** when another knob changes (e.g. the custom-px input
+  appearing when Font size becomes Custom), with no announcement. The pattern to reuse already
+  ships — it is the polite live region added in Step 11 (`EditorShell.tsx`).
+- **The sidebar container itself is an unlabeled, role-less `s-box`.** But it lives in
+  `EditorShell` and is **shared with the Settings tab**, so fixing it widens Step 12 beyond the
+  Style rail. That is an **explicit owner decision**, not a quiet expansion — raise it rather
+  than absorbing it.
+
+**One thing source-reading cannot settle:** Polaris's own shadow-DOM keyboard behaviour inside
+`s-color-field` (opening and navigating the swatch popover). Put it on the dev-store browser
+list, the way `55-…` handled assertions jsdom cannot make — do not assert it either way from the
+type definitions.
+
+**Also:** confirm every control is keyboard-operable, and the new Reset dialog must trap focus,
+restore it to the trigger on close, and close on `Escape`.
 
 ### 3. Contrast — the decision Step 12 must make (not inherit)
 
