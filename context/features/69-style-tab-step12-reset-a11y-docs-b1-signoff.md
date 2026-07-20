@@ -174,7 +174,9 @@ operability + focus return (`:263-264`), and accessibility-tree verification (`:
 elements at all** (`55:95-97`), so it has no precedent for focus visibility, description
 association, or group semantics — the three things this step actually needs.
 
-The audit found **two real gaps and one non-gap** — spend the budget accordingly.
+**Three real gaps (A, B, C) and two non-gaps** — spend the budget accordingly. All three gaps are
+the same underlying fault: **the rail conveys structure and description visually but not
+programmatically.**
 
 **NOT a gap — do not spend effort here.** All **21** controls already have a programmatic
 accessible name via the Polaris `label` attribute (`StyleTab.tsx:130, 157, 190, 217, 241, 258,
@@ -214,15 +216,42 @@ unavailable.
 `SpecTableEditor.module.css` are scoped to the **editing-grid cells** and compensated by an inset
 ring, and `StyleTab` imports **no CSS module at all**. Record it as audited; do not go looking.
 
-**Two lower-priority items — flagged, not recommended:**
+**Gap C — the rail container is not a landmark. DECIDED 2026-07-20: IN SCOPE, fix it.**
+
+`EditorShell.tsx:297` renders the ~300px controls panel as
+`<s-box background="subdued" padding="base">` — a styled `<div>` with **visual identity only**:
+no `role`, no accessible name.
+
+Sighted users see two areas instantly (controls left, table right) from the grey background and
+position. Screen-reader users get none of that. Landmarks are a primary navigation mechanism —
+jump between regions instead of arrowing linearly — and because this panel is not one, there is
+**no region to jump to and no way to skip past it** to reach the table. It is an unannounced run
+of controls that simply ends.
+
+The fix is two attributes; `EditorShell` already knows the active tab, so the name costs nothing:
+
+```jsx
+<s-box background="subdued" padding="base"
+       role="region" aria-label={activeTab === "style" ? "Style" : "Settings"}>
+```
+
+**Why this is in scope despite living outside `StyleTab.tsx`.** It is the *same* a11y concern as
+Gaps A and B — labelling the groups inside a container while leaving the container itself
+anonymous is an incoherent half-job. Two attributes is not scope creep.
+
+**But it necessarily touches the Settings tab**, because `EditorShell.tsx:252`
+(`activeTab === "style" ? stylePanel : settingsPanel`) puts **one box behind both tabs**. That is
+accepted deliberately, with one obligation attached:
+
+> **Record it in `progress-tracker.md` as work that landed for Settings too**, so Phase C neither
+> redoes it nor mistakes it for "Settings a11y is handled." **Silent partial work in a shared
+> file is the real risk here — not the two attributes.**
+
+**One lower-priority item — flagged, not recommended:**
 
 - **Four controls mount/unmount silently** when another knob changes (e.g. the custom-px input
   appearing when Font size becomes Custom), with no announcement. The pattern to reuse already
   ships — it is the polite live region added in Step 11 (`EditorShell.tsx`).
-- **The sidebar container itself is an unlabeled, role-less `s-box`.** But it lives in
-  `EditorShell` and is **shared with the Settings tab**, so fixing it widens Step 12 beyond the
-  Style rail. That is an **explicit owner decision**, not a quiet expansion — raise it rather
-  than absorbing it.
 
 **One thing source-reading cannot settle:** Polaris's own shadow-DOM keyboard behaviour inside
 `s-color-field` (opening and navigating the swatch popover). Put it on the dev-store browser
@@ -377,8 +406,11 @@ drives B1 as one surface rather than one step's slice.
 ## Done when
 
 1. Reset ships: confirm dialog → `DEFAULT_STYLING_VALUES` → SaveBar → Discard reverts it.
-2. Rail groups are programmatically grouped, help text is associated on all 21 controls, and
-   keyboard + focus are verified. **No contrast work ships** (§3) — verify nothing was added.
+2. Rail groups are programmatically grouped, help text is associated on all 21 controls, the
+   rail container is a named landmark, and keyboard + focus are verified. **No contrast work
+   ships** (§3) — verify nothing was added.
+   - The landmark edit lands in `EditorShell`, so it applies to **Settings** as well. The tracker
+     must say so explicitly — Phase C should neither redo it nor read it as "Settings a11y done."
 3. `admin-screen-plan.md:140` no longer contradicts the binding rule.
 4. Every context file is individually checked, with "verified, no edit" recorded where true.
 5. `labelWidthPct` and `stripeBgColor` are **driven live at least once** on a
