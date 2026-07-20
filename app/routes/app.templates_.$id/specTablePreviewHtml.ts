@@ -133,12 +133,20 @@ function cellPlainText(parts: ValuePart[]): string {
 
 // One DATA row's `<tr>`, or "" when the whole-cell hideWhenEmpty gate skips it.
 // Shared by both markup shapes so the gate can never differ between them.
+//
+// The explicit ARIA roles (feature 70) exist because the stacked layouts apply
+// `display: block`, which strips the browser's implicit table semantics; roles
+// are immune to `display`. They are unconditional because the mobile stacked
+// rule is a media query no server-side renderer can see. Full reasoning lives in
+// `spec_table.liquid`'s header — and these two files are HAND-MIRRORED, so the
+// role sets must move together. `specTableAriaContract.test.ts` enforces both
+// the completeness of the chain and the parity between the two files.
 function renderDataRow(row: DataRow): string {
   if (row.hideWhenEmpty && cellPlainText(row.valueParts) === "") {
     return "";
   }
   const cell = renderValueCell(row.valueParts);
-  return `<tr class="appx-spec-table__row"><th class="appx-spec-table__label" scope="row">${escapeHtml(row.label)}</th><td class="appx-spec-table__value">${cell}</td></tr>`;
+  return `<tr class="appx-spec-table__row" role="row"><th class="appx-spec-table__label" scope="row" role="rowheader">${escapeHtml(row.label)}</th><td class="appx-spec-table__value" role="cell">${cell}</td></tr>`;
 }
 
 // The OFF shape (the default): one table, one tbody, section headers as
@@ -148,12 +156,12 @@ function renderSingleTableBody(rows: EditorRow[]): string {
   let body = "";
   for (const row of rows) {
     if (row.rowType === "SECTION_HEADER") {
-      body += `<tr class="appx-spec-table__section-row"><th class="appx-spec-table__section" colspan="2" scope="colgroup">${escapeHtml(row.label)}</th></tr>`;
+      body += `<tr class="appx-spec-table__section-row" role="row"><th class="appx-spec-table__section" colspan="2" scope="colgroup" role="columnheader" aria-colspan="2">${escapeHtml(row.label)}</th></tr>`;
       continue;
     }
     body += renderDataRow(row);
   }
-  return `<table class="appx-spec-table__table"><tbody>${body}</tbody></table>`;
+  return `<table class="appx-spec-table__table" role="table"><tbody role="rowgroup">${body}</tbody></table>`;
 }
 
 // The ON shape: one `<details>` per section header, each wrapping its own
@@ -204,7 +212,7 @@ function renderCollapsibleBody(
         initialState === "ALL_OPEN" ||
         (initialState === "FIRST_OPEN" && sectionIndex === 0);
       const label = escapeHtml(row.label);
-      html += `<details class="appx-spec-table__section-group"${open ? " open" : ""}><summary class="appx-spec-table__section-summary">${label}</summary><table class="appx-spec-table__table" aria-label="${label}"><tbody>`;
+      html += `<details class="appx-spec-table__section-group"${open ? " open" : ""}><summary class="appx-spec-table__section-summary">${label}</summary><table class="appx-spec-table__table" role="table" aria-label="${label}"><tbody role="rowgroup">`;
       detailsOpen = true;
       tableOpen = true;
       sectionIndex += 1;
@@ -214,7 +222,7 @@ function renderCollapsibleBody(
     if (tr === "") continue;
     if (!tableOpen) {
       // Leading rows before the first section header — a bare table, no <details>.
-      html += `<table class="appx-spec-table__table"><tbody>`;
+      html += `<table class="appx-spec-table__table" role="table"><tbody role="rowgroup">`;
       tableOpen = true;
     }
     html += tr;

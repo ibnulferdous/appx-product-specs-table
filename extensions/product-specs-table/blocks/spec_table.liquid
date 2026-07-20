@@ -125,11 +125,30 @@
 
       No JavaScript: <details> is native, keyboard-operable, and announces its
       own expanded state.
+
+      EXPLICIT ARIA ROLES (feature 70) restate semantics this markup already
+      expresses correctly via the tags + scope attributes. They are here because
+      the STACKED layouts apply `display: block` (spec-table.css), which drops an
+      element out of the CSS table model and takes the browser's implicit table
+      semantics with it — a screen reader stops announcing label/value as a
+      header/cell pair. ARIA roles are immune to `display`, so they survive it.
+
+      They are UNCONDITIONAL on purpose. The mobile stacked rule is a MEDIA
+      QUERY, and Liquid renders server-side with no idea how wide the shopper's
+      screen is — so a role emitted only when `rowLayout == STACKED` would leave
+      every narrow-screen shopper of every two-column template broken. In
+      two-column mode these roles are harmless restatements of what the tags
+      already mean.
+
+      ALL OR NOTHING: table -> rowgroup -> row -> rowheader/cell must stay
+      complete. A `role="row"` with no table role above it can be dropped
+      outright by assistive tech, children included — a partial chain is worse
+      than none. `specTableAriaContract.test.ts` fails if one goes missing.
     {%- endcomment -%}
     {%- if collapsible -%}
       {%- assign table_open = false -%}
     {%- else -%}
-      <table class="appx-spec-table__table"><tbody>
+      <table class="appx-spec-table__table" role="table"><tbody role="rowgroup">
       {%- assign table_open = true -%}
     {%- endif -%}
     {%- assign details_open = false -%}
@@ -156,15 +175,15 @@
             -%}
             <details class="appx-spec-table__section-group"{% if is_open %} open{% endif %}>
               <summary class="appx-spec-table__section-summary">{{ row.label | escape }}</summary>
-              <table class="appx-spec-table__table" aria-label="{{ row.label | escape }}"><tbody>
+              <table class="appx-spec-table__table" role="table" aria-label="{{ row.label | escape }}"><tbody role="rowgroup">
             {%- liquid
               assign details_open = true
               assign table_open = true
               assign section_index = section_index | plus: 1
             -%}
           {%- else -%}
-            <tr class="appx-spec-table__section-row">
-              <th class="appx-spec-table__section" colspan="2" scope="colgroup">{{ row.label | escape }}</th>
+            <tr class="appx-spec-table__section-row" role="row">
+              <th class="appx-spec-table__section" colspan="2" scope="colgroup" role="columnheader" aria-colspan="2">{{ row.label | escape }}</th>
             </tr>
           {%- endif -%}
         {%- else -%}
@@ -172,12 +191,12 @@
           {%- assign cell_plain = cell | strip_html | strip -%}
           {%- unless row.hideWhenEmpty and cell_plain == blank -%}
             {%- unless table_open -%}
-              <table class="appx-spec-table__table"><tbody>
+              <table class="appx-spec-table__table" role="table"><tbody role="rowgroup">
               {%- assign table_open = true -%}
             {%- endunless -%}
-            <tr class="appx-spec-table__row">
-              <th class="appx-spec-table__label" scope="row">{{ row.label | escape }}</th>
-              <td class="appx-spec-table__value">{{ cell }}</td>
+            <tr class="appx-spec-table__row" role="row">
+              <th class="appx-spec-table__label" scope="row" role="rowheader">{{ row.label | escape }}</th>
+              <td class="appx-spec-table__value" role="cell">{{ cell }}</td>
             </tr>
           {%- endunless -%}
         {%- endif -%}

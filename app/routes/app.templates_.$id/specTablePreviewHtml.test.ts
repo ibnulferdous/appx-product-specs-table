@@ -96,7 +96,7 @@ describe("renderSpecTableHtml", () => {
   it("wraps non-empty rows in the storefront div/table/tbody", () => {
     const html = renderSpecTableHtml([dataRow([text("42")])]);
     expect(html).toContain(
-      `${wrapperOpenTag()}<table class="appx-spec-table__table"><tbody>`,
+      `${wrapperOpenTag()}<table class="appx-spec-table__table" role="table"><tbody role="rowgroup">`,
     );
     expect(html).toContain("</tbody></table></div>");
     // No storefront-only bits leak into the preview.
@@ -106,7 +106,7 @@ describe("renderSpecTableHtml", () => {
   it("renders a section header row spanning both columns", () => {
     const html = renderSpecTableHtml([sectionRow({ label: "Display" })]);
     expect(html).toContain(
-      '<tr class="appx-spec-table__section-row"><th class="appx-spec-table__section" colspan="2" scope="colgroup">Display</th></tr>',
+      '<tr class="appx-spec-table__section-row" role="row"><th class="appx-spec-table__section" colspan="2" scope="colgroup" role="columnheader" aria-colspan="2">Display</th></tr>',
     );
   });
 
@@ -115,7 +115,7 @@ describe("renderSpecTableHtml", () => {
       dataRow([text("6.1 inches")], { label: "Screen" }),
     ]);
     expect(html).toContain(
-      '<tr class="appx-spec-table__row"><th class="appx-spec-table__label" scope="row">Screen</th><td class="appx-spec-table__value">6.1 inches</td></tr>',
+      '<tr class="appx-spec-table__row" role="row"><th class="appx-spec-table__label" scope="row" role="rowheader">Screen</th><td class="appx-spec-table__value" role="cell">6.1 inches</td></tr>',
     );
   });
 
@@ -124,7 +124,7 @@ describe("renderSpecTableHtml", () => {
       dataRow([text("line one"), lineBreak, text("line two")]),
     ]);
     expect(html).toContain(
-      '<td class="appx-spec-table__value">line one<br>line two</td>',
+      '<td class="appx-spec-table__value" role="cell">line one<br>line two</td>',
     );
   });
 
@@ -147,7 +147,7 @@ describe("renderSpecTableHtml", () => {
       dataRow([text("Up to "), metafield, text(" hours")]),
     ]);
     expect(html).toContain(
-      '<td class="appx-spec-table__value">Up to <span class="appx-spec-table__dynamic-pill" title="custom · battery_life">Metafield · battery_life</span> hours</td>',
+      '<td class="appx-spec-table__value" role="cell">Up to <span class="appx-spec-table__dynamic-pill" title="custom · battery_life">Metafield · battery_life</span> hours</td>',
     );
   });
 
@@ -158,10 +158,10 @@ describe("renderSpecTableHtml", () => {
       }),
     ]);
     expect(html).toContain(
-      '<th class="appx-spec-table__label" scope="row">Weird &amp; &lt;Label&gt;</th>',
+      '<th class="appx-spec-table__label" scope="row" role="rowheader">Weird &amp; &lt;Label&gt;</th>',
     );
     expect(html).toContain(
-      '<td class="appx-spec-table__value">a &lt; b &amp; c &gt; d &quot; &#39; &lt;script&gt;</td>',
+      '<td class="appx-spec-table__value" role="cell">a &lt; b &amp; c &gt; d &quot; &#39; &lt;script&gt;</td>',
     );
     expect(html).not.toContain("<script>");
   });
@@ -174,7 +174,7 @@ describe("renderSpecTableHtml", () => {
       expect(html).not.toContain("Empty");
       // No rows survive → wrapper still renders (rows.length > 0), tbody empty.
       expect(html).toBe(
-        `${wrapperOpenTag()}<table class="appx-spec-table__table"><tbody></tbody></table></div>`,
+        `${wrapperOpenTag()}<table class="appx-spec-table__table" role="table"><tbody role="rowgroup"></tbody></table></div>`,
       );
     });
 
@@ -183,7 +183,7 @@ describe("renderSpecTableHtml", () => {
         dataRow([text("")], { label: "Empty", hideWhenEmpty: false }),
       ]);
       expect(html).toContain(
-        '<th class="appx-spec-table__label" scope="row">Empty</th>',
+        '<th class="appx-spec-table__label" scope="row" role="rowheader">Empty</th>',
       );
     });
 
@@ -209,7 +209,7 @@ describe("renderSpecTableHtml", () => {
         dataRow([vendorField], { label: "Vendor", hideWhenEmpty: true }),
       ]);
       expect(html).toContain(
-        '<th class="appx-spec-table__label" scope="row">Vendor</th>',
+        '<th class="appx-spec-table__label" scope="row" role="rowheader">Vendor</th>',
       );
       expect(html).toContain("Field · vendor");
     });
@@ -224,10 +224,10 @@ describe("renderSpecTableHtml", () => {
       dataRow([text("three")], { id: "d3", label: "Third" }),
     ]);
     const order = [
-      'colgroup">A</th>',
+      'aria-colspan="2">A</th>',
       ">First</th>",
       ">Second</th>",
-      'colgroup">B</th>',
+      'aria-colspan="2">B</th>',
       ">Third</th>",
     ].map((needle) => html.indexOf(needle));
     // Every needle is present and strictly increasing (array order preserved).
@@ -398,7 +398,7 @@ describe("renderSpecTablePreviewDocument", () => {
     expect(
       renderSpecTableHtml([dataRow([text("")], { hideWhenEmpty: true })]),
     ).toBe(
-      `${wrapperOpenTag()}<table class="appx-spec-table__table"><tbody></tbody></table></div>`,
+      `${wrapperOpenTag()}<table class="appx-spec-table__table" role="table"><tbody role="rowgroup"></tbody></table></div>`,
     );
     expect(renderSpecTableHtml([])).not.toContain(
       "appx-spec-table-preview-empty",
@@ -556,7 +556,7 @@ describe("styling → preview document (feature 57 · Step 6)", () => {
       ],
       styled,
     );
-    expect(html).toContain('colgroup">A &amp; B</th>');
+    expect(html).toContain('aria-colspan="2">A &amp; B</th>');
     expect(html).toContain("&lt;script&gt;");
     expect(html).not.toContain("<script>");
     expect(html).not.toContain("Gone");
@@ -618,13 +618,13 @@ describe("collapsible sections (feature 57 · Step 9a)", () => {
     const off = renderSpecTableHtmlStyled(twoSections, DEFAULT_STYLING_VALUES);
     expect(off).toBe(
       `<div class="appx-spec-table ${stylingToModifierClasses(DEFAULT_STYLING_VALUES).join(" ")}">` +
-        `<table class="appx-spec-table__table"><tbody>` +
-        `<tr class="appx-spec-table__section-row"><th class="appx-spec-table__section" colspan="2" scope="colgroup">Aircraft</th></tr>` +
-        `<tr class="appx-spec-table__row"><th class="appx-spec-table__label" scope="row">Weight</th><td class="appx-spec-table__value">249 g</td></tr>` +
-        `<tr class="appx-spec-table__row"><th class="appx-spec-table__label" scope="row">Flight time</th><td class="appx-spec-table__value">34 min</td></tr>` +
-        `<tr class="appx-spec-table__section-row"><th class="appx-spec-table__section" colspan="2" scope="colgroup">Camera</th></tr>` +
-        `<tr class="appx-spec-table__row"><th class="appx-spec-table__label" scope="row">Photo</th><td class="appx-spec-table__value">48 MP</td></tr>` +
-        `<tr class="appx-spec-table__row"><th class="appx-spec-table__label" scope="row">Video</th><td class="appx-spec-table__value">4K/60</td></tr>` +
+        `<table class="appx-spec-table__table" role="table"><tbody role="rowgroup">` +
+        `<tr class="appx-spec-table__section-row" role="row"><th class="appx-spec-table__section" colspan="2" scope="colgroup" role="columnheader" aria-colspan="2">Aircraft</th></tr>` +
+        `<tr class="appx-spec-table__row" role="row"><th class="appx-spec-table__label" scope="row" role="rowheader">Weight</th><td class="appx-spec-table__value" role="cell">249 g</td></tr>` +
+        `<tr class="appx-spec-table__row" role="row"><th class="appx-spec-table__label" scope="row" role="rowheader">Flight time</th><td class="appx-spec-table__value" role="cell">34 min</td></tr>` +
+        `<tr class="appx-spec-table__section-row" role="row"><th class="appx-spec-table__section" colspan="2" scope="colgroup" role="columnheader" aria-colspan="2">Camera</th></tr>` +
+        `<tr class="appx-spec-table__row" role="row"><th class="appx-spec-table__label" scope="row" role="rowheader">Photo</th><td class="appx-spec-table__value" role="cell">48 MP</td></tr>` +
+        `<tr class="appx-spec-table__row" role="row"><th class="appx-spec-table__label" scope="row" role="rowheader">Video</th><td class="appx-spec-table__value" role="cell">4K/60</td></tr>` +
         `</tbody></table></div>`,
     );
     expect(off).not.toContain("<details");
@@ -692,10 +692,10 @@ describe("collapsible sections (feature 57 · Step 9a)", () => {
     // a regression over one named one.
     const html = renderSpecTableHtmlStyled(twoSections, collapsible());
     expect(html).toContain(
-      '<table class="appx-spec-table__table" aria-label="Aircraft">',
+      '<table class="appx-spec-table__table" role="table" aria-label="Aircraft">',
     );
     expect(html).toContain(
-      '<table class="appx-spec-table__table" aria-label="Camera">',
+      '<table class="appx-spec-table__table" role="table" aria-label="Camera">',
     );
   });
 
@@ -728,7 +728,9 @@ describe("collapsible sections (feature 57 · Step 9a)", () => {
     // The leading table comes FIRST and is not inside a <details> — inventing an
     // "Ungrouped" summary would put words on the storefront nobody wrote.
     const lead = html.slice(0, html.indexOf("<details"));
-    expect(lead).toContain('<table class="appx-spec-table__table"><tbody>');
+    expect(lead).toContain(
+      '<table class="appx-spec-table__table" role="table"><tbody role="rowgroup">',
+    );
     expect(lead).toContain("Brand");
     expect(lead).toContain("</tbody></table>");
     expect(lead).not.toContain("<summary");
@@ -780,7 +782,7 @@ describe("collapsible sections (feature 57 · Step 9a)", () => {
     );
     expect(detailsOpenings(html)).toHaveLength(2);
     expect(html).toContain(
-      '<table class="appx-spec-table__table" aria-label="Aircraft"><tbody></tbody></table>',
+      '<table class="appx-spec-table__table" role="table" aria-label="Aircraft"><tbody role="rowgroup"></tbody></table>',
     );
     expect(html).not.toContain("Weight");
     expect(html).toContain("Photo");
