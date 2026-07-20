@@ -294,7 +294,20 @@ export function EditorShell({
           the `base` stage with no border needed. */}
       {showSidebar ? (
         <s-grid gridTemplateColumns="18.75rem 1fr">
-          <s-box background="subdued" padding="base">
+          {/* A named LANDMARK, not just a grey box (feature 57 Step 12). Sighted
+              users read "controls left, table right" instantly from the
+              background and position; without a region role there is nothing for
+              a screen-reader user to jump to and no way to skip past the rail to
+              reach the table — it is an unannounced run of controls that just
+              ends. One box sits behind BOTH tabs, so this lands for Settings too;
+              that is deliberate and recorded in the tracker so Phase C neither
+              redoes it nor reads it as "Settings a11y is handled." */}
+          <s-box
+            background="subdued"
+            padding="base"
+            accessibilityRole="region"
+            accessibilityLabel={activeTab === "style" ? "Style" : "Settings"}
+          >
             {sidebarContent ?? (
               <SidebarPlaceholder
                 label={activeTab === "style" ? "Style" : "Settings"}

@@ -121,6 +121,93 @@ Suite 824 tests / 35 files, `npm run build` passes.
   keystroke; and **Discard remounts the editor**, which resets the per-tab view
   memory to Content/`edit` (consistent with the memory being in-component state).
 
+**Step 12 IMPLEMENTED 2026-07-20 — Reset + rail a11y + docs reconciliation. PHASE B1 IS COMPLETE.**
+Spec: `context/features/69-style-tab-step12-reset-a11y-docs-b1-signoff.md`.
+
+- **Reset to theme defaults.** New engine callback `resetStyling` — a wholesale
+  `setStyling(DEFAULT_STYLING_VALUES)`, not a loop over `setStylingField` (one
+  render, one dirty-check). Low-emphasis button at the bottom of the Style rail
+  behind a confirm dialog (`ResetStylingModal.tsx`, `RESET_STYLING_MODAL_ID`).
+  **Zero server work by construction**: an all-default value serializes to `{}`,
+  which the existing Save path already writes as an all-NULL row — so reset state
+  and never-styled state are identical in the database.
+  - **The modal is mounted in `SpecTableEditor`, not in `StyleTab`.** `EditorShell`
+    unmounts the whole rail on a switch to Content, which would tear an open dialog
+    out mid-confirm. It sits beside the `<SaveBar>`, outside the inert freeze — so
+    it carries the same two guards as the other portalled modals
+    (hide-on-save-start + a `saving` re-guard in the confirm handler).
+  - Stale comment corrected: `useRowEngine.ts` no longer says styling reverts
+    "with no dedicated reset". Discard reverts to the **last saved** styling;
+    Reset goes to **theme defaults** — not the same thing.
+- **Rail accessibility — all three gaps closed.** One underlying fault: the rail
+  conveyed structure and description **visually but not programmatically**.
+  - *Gap A* — help text moved from an unassociated sibling `<s-text color="subdued">`
+    onto each control's own `details` attribute (12 JSX blocks removed). The Colors
+    group already did this right; the rest now matches.
+  - *Gap B* — the five group headings became real `<s-heading>`s inside
+    `role="group"` wrappers that reference them by `aria-labelledby`. (`s-text`'s
+    `type` union has no heading variant; `s-box`'s `accessibilityRole` union has no
+    `group` — hence a raw light-DOM div, the same pattern as EditorShell's
+    radiogroup.) The Colors group note is attached via `aria-describedby`.
+  - *Gap C* — the rail container is now a **named landmark**, via `s-box`'s own
+    `accessibilityRole="region"` + `accessibilityLabel` (the typed Polaris prop —
+    a raw `role` attribute is rejected by `s-box`'s prop type; `region` **is** in
+    its `AccessibilityRole` union even though `group` is not).
+  - ⚠️ **THIS LANDED FOR SETTINGS TOO, deliberately.** `EditorShell.tsx` puts **one
+    box behind both tabs** (`activeTab === "style" ? stylePanel : settingsPanel`),
+    so the landmark names itself "Style" or "Settings" from the active tab.
+    **Phase C must neither redo this nor read it as "Settings a11y is handled"** —
+    only the *container* is done; the Settings rail's own controls have had no
+    a11y pass.
+  - Two non-gaps audited and recorded so nobody re-audits them: all 21 controls
+    already had accessible names via `label`, and focus visibility was already
+    clean (`StyleTab` imports no CSS module; the `outline: none` rules are scoped
+    to editing-grid cells with a compensating inset ring).
+- **NO contrast checking ships, and that is a decision, not a deferral** (spec §3,
+  decided by the project owner 2026-07-20). The app cannot compute contrast — a
+  null colour inherits an unknown theme value and alpha is enabled on every
+  background knob — so any signal would be a guess, and an unreliable a11y warning
+  is worse than none. Do not reintroduce it in B2/B3 or a "polish" pass without a
+  new decision.
+- **Docs reconciled** — `admin-screen-plan.md` (all five binding-rule
+  contradictions corrected, incl. line ~209 inside the **Settings** spec, which a
+  sweep stopping at the Style tab would have missed; the "would change every
+  merchant's live table" line is a **false positive about the storefront** and was
+  left alone), `prd.md:33`, `feature-roadmap.md` (three post-MVP entries had
+  actually shipped), `code-standards.md` (**added** the binding rule — the existing
+  no-hardcoded-hex line does **not** encode it; the withdrawn Step 11 used the
+  shared `--appx-spec-*` vars and was fully compliant with it), `68-…` status,
+  plus the `fontSize` 40→184 ceiling drift in `prisma/schema.prisma:141` and the
+  `parseFontSize` docstring.
+- **Tests**: 4 new reset cases on the pure snapshot boundary (dirty on reset,
+  **un**-dirty when the reset lands back on the saved baseline, touches only
+  styling, serializes to `{}`). Suite **828 tests / 35 files**; full gate green
+  (typecheck · lint · format:check · test · build).
+- **The tripwire still holds**: `SpecTableEditor.module.css` and `RowGrid.tsx` diff
+  **clean** against the Step 10 sign-off `a7b304c`.
+- ✅ **Live dev-store verification PASSED 2026-07-20** on `ACEFAST YF4 Turbo Fan`:
+  1. `details` renders identically to the old sibling text **and updates reactively**
+     ("Using your theme's column split." → "Values take up the remaining 70%.").
+  2. **`labelWidthPct` driven live for the first time** — 30% visibly narrowed the
+     label column. Debt paid.
+  3. **`stripeBgColor` driven live for the first time** — `#FFE8CC` on a
+     `TWO_COLUMN` + `STRIPES` template painted the alternating rows. Debt paid.
+     **Both knobs were exercised through the UI, never SQL.**
+  4. Reset dialog: **Escape cancels and restores focus to the trigger**; Enter on
+     the trigger re-opens it and focus moves **into** the dialog (trap confirmed);
+     confirming cleared every override and the preview returned to plain.
+  5. **The SaveBar correctly CLOSED on confirm** — the template had no saved
+     styling, so the reset landed back on the baseline and `isDirty` flipped false.
+     This is the unit-tested un-dirty case, observed live.
+  6. Keyboard operability confirmed throughout (Tab between controls with a visible
+     focus ring; `<select>`s driven by Down+Enter).
+  7. Settings tab re-checked after the shared-`s-box` edit — renders unchanged.
+- **Dev store left clean** — everything was Reset before saving; nothing persisted.
+- ⚠️ **Could NOT verify the a11y tree itself.** The embedded app is a cross-origin
+  iframe, so `read_page`/`find` cannot reach inside it (already recorded below).
+  Gaps A–C were verified **behaviourally** (rendering, keyboard, focus) and by the
+  typed Polaris API. A screen-reader pass belongs in the pre-submission a11y sweep.
+
 > ✅ **DEV-STORE STATE — clean as of 2026-07-19.** The Step 10 test overrides are
 > gone: `Unikyy Blade Pro Turbo Fan` was deleted and recreated by the project
 > owner, and the withdrawn Step 11's test colours were **never saved** (verified
@@ -1578,7 +1665,7 @@ Suite 824 tests / 35 files, `npm run build` passes.
 ## Next Up
 
 1. **Product assignment engine** (design locked 2026-07-07 — `data-model.md` §5/§9): **rigid, block-on-conflict, merchant-controlled** (Moon-Bundles style). Being built on an **8-file plan** (features 37–44, small verifiable steps): **37 data foundation ✅** → **38 scope-overlap resolver ✅** → **39 cross-dimension existence check (Shopify) ✅** → **40 routing-projection builder + `add-routing` migration ✅** → **41 shop routing metafield writer + TOML def ✅** → **42 activation dry-run gate (wired into both status surfaces) ✅** → **43 storefront routing resolution (Liquid) ✅** → **44 assignment UI (scope picker) + rich conflict warnings ✅** (live-verified on the dev store 2026-07-08). Then the **45-series** (split 2026-07-09): **45 EXCLUDE carve-outs ✅** (complete + gate-green + live-verified on the dev store 2026-07-09) → **46 multi-value scopes — server ✅** (complete + gate-green + live-verified on the dev store 2026-07-11; closed a latent feature-45 disjoint-set bug — Decision C) → **47 multi-value scopes — UI ✅** (complete + gate-green + live-verified on the dev store 2026-07-11 — multi-select picker + chip list, full-set loader closing 46's editor round-trip hazard) → materialization **deferred** → docs wrap. **The 37–47 assignment engine is merchant-complete.** With the engine done, the remaining roadmap is the Reshell phases + templates-list Phase 2 (below). Design recap: one scope per template; dry-run **blocks activation** on overlap with another ACTIVE template (O(rules) set-algebra + `products(query,first:1)`); DRAFT may hold a conflict, ACTIVE may not; **no `priority` knob**; broad rules deliver via **one shop-level `[shop.metafields.app.routing]` json map** resolved in Liquid by handle; per-product `metaobject_reference` metafield only for bounded overrides. Rides Reshell Phase E.
-2. **Reshell Phases B–F**: B (Style tab — **spec locked 2026-07-18**: orthogonal knobs + copy-semantics presets; slices B1 knobs/rail/rendering → B2 built-in preset gallery → B3 saved presets [cuttable]; see `admin-screen-plan.md` §Tab 2; **14-step implementation plan: `~/.claude/plans/style-tab-phase-b-implementation-plan.md`** — steps 1–12 = B1, 13–14 = B2, 15+ outline = B3; per-step docs start at `context/features/57-…`) → C (Settings) → D (device previews — read-only Desktop/Tablet/Mobile) → E (assignment) → F (top-bar status+save model + cleanup).
+2. **Reshell Phases B–F**: **B1 (Steps 1–12) is COMPLETE as of 2026-07-20** — every field in `STYLING_FIELD_NAMES` has a control, rides the SaveBar, persists, serializes to the metaobject, and renders on the storefront; the rail has had its a11y pass; Reset ships; the docs no longer contradict the binding rule. **Next is B2 = Steps 13–14** (built-in preset gallery: `stylePresets.ts` constants, the rail's preset cards, and the skippable creation-gallery popup — copy semantics into real `TableStyling` columns, `basedOnPreset` as provenance only). `basedOnPreset` / `extraStyles` are present in the schema and **deliberately unwritten** until Step 13. B (Style tab — **spec locked 2026-07-18**: orthogonal knobs + copy-semantics presets; slices B1 knobs/rail/rendering → B2 built-in preset gallery → B3 saved presets [cuttable]; see `admin-screen-plan.md` §Tab 2; **14-step implementation plan: `~/.claude/plans/style-tab-phase-b-implementation-plan.md`** — steps 1–12 = B1, 13–14 = B2, 15+ outline = B3; per-step docs start at `context/features/57-…`) → C (Settings) → D (device previews — read-only Desktop/Tablet/Mobile) → E (assignment) → F (top-bar status+save model + cleanup).
 3. **Templates-list Phase 2**: search / sort / pagination — server-side filtering returns *with* pagination when the list can grow large. Multi-select bulk actions later.
 
 **Deferred / no longer numbered editor steps:** WYSIWYG storefront styling and the Desktop/Tablet/Mobile viewport toggle move to the later styling/persistence slice. Editor bulk-delete deferrals: range-select (Shift+click), Delete/Backspace shortcut.
@@ -1600,6 +1687,7 @@ Suite 824 tests / 35 files, `npm run build` passes.
 - Best storefront event strategy for selected-variant changes across themes.
 - ~~Exact UX for preventing/warning about assignment conflicts in MVP.~~ **RESOLVED (feature 44, 2026-07-08):** rigid **block-on-conflict** (Moon-Bundles style) — a template can't go ACTIVE while its scope overlaps another ACTIVE template; DRAFT may hold a conflict; no priority tiebreak. **Conflict copy + resolution shipped**: on a blocked Save the Settings tab shows a persistent critical `s-banner` naming each colliding template (with a link) and the **three resolutions** — narrow this template's scope, set it to "No products", or set the other template back to Draft. (An EXCLUDE-exception resolution arrives with feature 45's carve-out UI.)
 - ~~**Assignment location:** direction is to move Product Assignment into the editor's **Settings tab** (not locked).~~ **RESOLVED (feature 44, 2026-07-08):** the editor **Settings tab** is the assignment home — **no standalone `/assign` route**. The scope picker + rich conflict banner live in `SettingsTab.tsx` and ride the same SaveBar as status; assignment is a template-level setting alongside status. A deep "assignment summary" screen can come later if ever needed; MVP does not split it out.
+- 🔴 **Stacked mode strips `<table>` semantics on the storefront — CARRIED OUT OF B1, UNRESOLVED (raised 2026-07-20, Step 12).** `rowLayout=STACKED` (and the mobile stacked layout) applies `display: block`, which removes the implicit table semantics, so a screen reader stops announcing row/column relationships. **This is the app's OWN markup**, not a merchant choice — unlike colour contrast (which Step 12 decided to leave alone entirely, and correctly), CLAUDE.md priority #2 puts this squarely on the app. It was deferred to Step 12 in writing and Step 12 did **not** resolve it: the rail a11y pass was admin-side, and fixing this means touching `spec-table.css` + the Liquid markup, which is storefront work needing its own live verification on real themes. **Do not let it dissolve into "B1 was signed off."** Likely shape of the fix: explicit ARIA roles (`role="table"`/`row`/`cell`) preserved across the `display: block` switch, verified with a screen reader. **Owner: the next storefront-touching step. Decide in scope or schedule it before submission.**
 - **Settings-tab "Display rules"** (mockup's `hide rows with empty values` / `show section dividers` / `show on mobile`) are dummy/illustrative — each needs a real definition + reconciliation with the per-row `hideWhenEmpty` flag before building.
 - **Top-bar name-edit affordance:** inline title edit vs a Rename item in the ⋯ menu — settle when the top bar (Phase F) is built.
 - **Style tab (spec 2026-07-18) — build-time details still to lock:** exact knob-value bundles for the five built-in presets (Classic / Striped / Banded / Stacked / Accordion); the `density` padding-scale values; save-as-preset naming/overwrite UX detail (same-name overwrite confirm copy); whether the creation gallery popup gets a "don't show again" escape; whether `fontWeight` applies to the label only or label + value (carried over from the pre-2026-07-18 spec).

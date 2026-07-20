@@ -1,4 +1,6 @@
-import { useRef } from "react";
+import { useId, useRef } from "react";
+import { useAppBridge } from "@shopify/app-bridge-react";
+import { RESET_STYLING_MODAL_ID } from "./editorShared";
 import {
   COLOR_KNOBS,
   CUSTOM_FONT_SIZE_SEED_PX,
@@ -67,6 +69,29 @@ import type { RowEngine } from "./useRowEngine";
 // `""`-to-null conversion lives entirely in `stylingControls.ts`; nothing in this
 // file may write a bare `""` into styling state.
 //
+// Step 12 closes the rail's accessibility gaps and adds its one missing control.
+// All three gaps were the same fault — the rail conveyed structure and
+// description VISUALLY but not PROGRAMMATICALLY:
+//
+//   · Help text moved from an unassociated sibling `<s-text color="subdued">`
+//     onto the control's own `details` attribute. Identical rendering, but a
+//     screen reader now reads the description with the field instead of leaving
+//     it stranded between controls. The Colors group already did this right; the
+//     other twelve blocks now match it.
+//   · Group headings became real `<s-heading>`s inside `role="group"` wrappers
+//     that reference them, so the rail is navigable by heading and "Border" is
+//     announced as belonging to Colors. `s-text`'s `type` union has no heading
+//     variant, which is why this needed a different element; `s-box`'s
+//     `accessibilityRole` union has no `group`, which is why the wrapper is a raw
+//     light-DOM div (an established pattern here — see EditorShell's radiogroup).
+//   · The rail CONTAINER became a named landmark — but that lives in
+//     `EditorShell`, since one box sits behind both Style and Settings.
+//
+// NO CONTRAST CHECKING, and this is a decision rather than a deferral (see
+// `context/features/69-…` §3): the app cannot compute contrast — a null color
+// inherits an unknown theme value and every background knob allows alpha — so any
+// warning would be a guess, and an unreliable a11y warning is worse than none.
+//
 // NO GENERIC CONTROL WRAPPER, deliberately. Five near-identical selects look like
 // they want a `<StylingSelect knob={…}>`, but at this size the abstraction would
 // be bigger than what it removes. Step 9b's switch and Step 10's color fields and
@@ -101,6 +126,12 @@ function selectedHelpText<T extends string>(
 
 export function StyleTab({ engine }: { engine: RowEngine }) {
   const { styling, setStylingField } = engine;
+  const shopify = useAppBridge();
+
+  // Stable, instance-unique prefix for the group headings each `role="group"`
+  // points at with `aria-labelledby`. Same approach as EditorShell's tooltip ids.
+  const groupId = useId();
+  const headingId = (group: string) => `${groupId}-${group}`;
 
   // The px a merchant last typed, so leaving and re-entering Custom is not
   // destructive: S → Custom → S → Custom must return their number, not the seed.
@@ -119,42 +150,44 @@ export function StyleTab({ engine }: { engine: RowEngine }) {
 
   return (
     <s-stack direction="block" gap="base">
-      <s-text type="strong">Style</s-text>
+      <s-heading>Style</s-heading>
 
       {/* Layout — complete as of Step 10b, which fills the slot Step 8 left
           open for `labelWidthPct`. */}
-      <s-stack direction="block" gap="base">
-        <s-text type="strong">Layout</s-text>
+      <div role="group" aria-labelledby={headingId("layout")}>
+        <s-stack direction="block" gap="base">
+          <s-heading id={headingId("layout")}>Layout</s-heading>
 
-        <s-select
-          label="Row layout"
-          value={styling.rowLayout}
-          onChange={(event: Event) => {
-            // Safe by construction: every option's value comes from ROW_LAYOUTS,
-            // so the select can only ever emit a member of the union.
-            setStylingField(
-              "rowLayout",
-              readValue(event) as typeof styling.rowLayout,
-            );
-          }}
-        >
-          {ROW_LAYOUT_OPTIONS.map((option) => (
-            <s-option key={option.value} value={option.value}>
-              {option.label}
-            </s-option>
-          ))}
-        </s-select>
-        <s-text color="subdued">
-          {selectedHelpText(ROW_LAYOUT_OPTIONS, styling.rowLayout)}
-        </s-text>
+          <s-select
+            label="Row layout"
+            details={selectedHelpText(ROW_LAYOUT_OPTIONS, styling.rowLayout)}
+            value={styling.rowLayout}
+            onChange={(event: Event) => {
+              // Safe by construction: every option's value comes from ROW_LAYOUTS,
+              // so the select can only ever emit a member of the union.
+              setStylingField(
+                "rowLayout",
+                readValue(event) as typeof styling.rowLayout,
+              );
+            }}
+          >
+            {ROW_LAYOUT_OPTIONS.map((option) => (
+              <s-option key={option.value} value={option.value}>
+                {option.label}
+              </s-option>
+            ))}
+          </s-select>
 
-        {/* Hidden for a stacked table, where both options mean the same thing.
+          {/* Hidden for a stacked table, where both options mean the same thing.
             Hiding only — `styling.mobileLayout` keeps the merchant's value, so
             it comes back intact if they switch back to two-column. */}
-        {showsMobileLayoutControl(styling) && (
-          <>
+          {showsMobileLayoutControl(styling) && (
             <s-select
               label="On mobile"
+              details={selectedHelpText(
+                MOBILE_LAYOUT_OPTIONS,
+                styling.mobileLayout,
+              )}
               value={styling.mobileLayout}
               onChange={(event: Event) => {
                 setStylingField(
@@ -169,13 +202,9 @@ export function StyleTab({ engine }: { engine: RowEngine }) {
                 </s-option>
               ))}
             </s-select>
-            <s-text color="subdued">
-              {selectedHelpText(MOBILE_LAYOUT_OPTIONS, styling.mobileLayout)}
-            </s-text>
-          </>
-        )}
+          )}
 
-        {/* Two-column only — a stacked table has no label column to size. The
+          {/* Two-column only — a stacked table has no label column to size. The
             third hide rule, and a pure read like the others, so the merchant's
             percentage survives a trip through Stacked.
 
@@ -184,11 +213,15 @@ export function StyleTab({ engine }: { engine: RowEngine }) {
             `@shopify/polaris-types`), and a hand-rolled `<input type="range">`
             would look foreign in the rail and owe its own a11y pass. Clearing
             the box is the way back to the theme's default ratio. */}
-        {showsLabelWidthControl(styling) && (
-          <>
+          {showsLabelWidthControl(styling) && (
             <s-number-field
               label="Label width"
               suffix="%"
+              details={
+                styling.labelWidthPct === null
+                  ? "Using your theme's column split. Values take up the rest."
+                  : `Values take up the remaining ${100 - styling.labelWidthPct}%.`
+              }
               min={LABEL_WIDTH_PCT_MIN}
               max={LABEL_WIDTH_PCT_MAX}
               step={1}
@@ -200,62 +233,60 @@ export function StyleTab({ engine }: { engine: RowEngine }) {
                 );
               }}
             />
-            <s-text color="subdued">
-              {styling.labelWidthPct === null
-                ? "Using your theme's column split. Values take up the rest."
-                : `Values take up the remaining ${100 - styling.labelWidthPct}%.`}
-            </s-text>
-          </>
-        )}
-      </s-stack>
+          )}
+        </s-stack>
+      </div>
 
       {/* Sections — complete as of Step 9b. */}
-      <s-stack direction="block" gap="base">
-        <s-text type="strong">Sections</s-text>
+      <div role="group" aria-labelledby={headingId("sections")}>
+        <s-stack direction="block" gap="base">
+          <s-heading id={headingId("sections")}>Sections</s-heading>
 
-        <s-select
-          label="Section headers"
-          value={styling.sectionHeaderStyle}
-          onChange={(event: Event) => {
-            setStylingField(
-              "sectionHeaderStyle",
-              readValue(event) as typeof styling.sectionHeaderStyle,
-            );
-          }}
-        >
-          {SECTION_HEADER_OPTIONS.map((option) => (
-            <s-option key={option.value} value={option.value}>
-              {option.label}
-            </s-option>
-          ))}
-        </s-select>
-        <s-text color="subdued">
-          {selectedHelpText(SECTION_HEADER_OPTIONS, styling.sectionHeaderStyle)}
-        </s-text>
+          <s-select
+            label="Section headers"
+            details={selectedHelpText(
+              SECTION_HEADER_OPTIONS,
+              styling.sectionHeaderStyle,
+            )}
+            value={styling.sectionHeaderStyle}
+            onChange={(event: Event) => {
+              setStylingField(
+                "sectionHeaderStyle",
+                readValue(event) as typeof styling.sectionHeaderStyle,
+              );
+            }}
+          >
+            {SECTION_HEADER_OPTIONS.map((option) => (
+              <s-option key={option.value} value={option.value}>
+                {option.label}
+              </s-option>
+            ))}
+          </s-select>
 
-        {/* The rail's first NON-select control (Step 9b) — `sectionsCollapsible`
+          {/* The rail's first NON-select control (Step 9b) — `sectionsCollapsible`
             is the one boolean in `StylingValues`, so it needs no option list.
             This is what confirms Step 8's rejection of a generic
             `<StylingSelect>` wrapper: the shapes really do diverge. */}
-        <s-switch
-          label="Collapsible sections"
-          checked={styling.sectionsCollapsible}
-          onChange={(event: Event) => {
-            setStylingField("sectionsCollapsible", readChecked(event));
-          }}
-        />
-        <s-text color="subdued">
-          Each section becomes an expandable group shoppers can open and close.
-        </s-text>
+          <s-switch
+            label="Collapsible sections"
+            details="Each section becomes an expandable group shoppers can open and close."
+            checked={styling.sectionsCollapsible}
+            onChange={(event: Event) => {
+              setStylingField("sectionsCollapsible", readChecked(event));
+            }}
+          />
 
-        {/* Hidden, not disabled, while collapsing is off — it describes which
+          {/* Hidden, not disabled, while collapsing is off — it describes which
             disclosures start open, which means nothing without disclosures.
             Hiding is a pure READ (see `showsSectionsInitialStateControl`), so
             the merchant's choice survives a trip through off and back on. */}
-        {showsSectionsInitialStateControl(styling) && (
-          <>
+          {showsSectionsInitialStateControl(styling) && (
             <s-select
               label="When the page loads"
+              details={selectedHelpText(
+                SECTIONS_INITIAL_STATE_OPTIONS,
+                styling.sectionsInitialState,
+              )}
               value={styling.sectionsInitialState}
               onChange={(event: Event) => {
                 setStylingField(
@@ -270,60 +301,55 @@ export function StyleTab({ engine }: { engine: RowEngine }) {
                 </s-option>
               ))}
             </s-select>
-            <s-text color="subdued">
-              {selectedHelpText(
-                SECTIONS_INITIAL_STATE_OPTIONS,
-                styling.sectionsInitialState,
-              )}
-            </s-text>
-          </>
-        )}
-      </s-stack>
+          )}
+        </s-stack>
+      </div>
 
       {/* Rows — the Step 5 Dividers control, unchanged, now under a heading. */}
-      <s-stack direction="block" gap="base">
-        <s-text type="strong">Rows</s-text>
+      <div role="group" aria-labelledby={headingId("rows")}>
+        <s-stack direction="block" gap="base">
+          <s-heading id={headingId("rows")}>Rows</s-heading>
 
-        <s-select
-          label="Row dividers"
-          value={styling.rowDividerStyle}
-          onChange={(event: Event) => {
-            setStylingField(
-              "rowDividerStyle",
-              readValue(event) as typeof styling.rowDividerStyle,
-            );
-          }}
-        >
-          {ROW_DIVIDER_OPTIONS.map((option) => (
-            <s-option key={option.value} value={option.value}>
-              {option.label}
-            </s-option>
-          ))}
-        </s-select>
-        <s-text color="subdued">
-          {selectedHelpText(ROW_DIVIDER_OPTIONS, styling.rowDividerStyle)}
-        </s-text>
+          <s-select
+            label="Row dividers"
+            details={selectedHelpText(
+              ROW_DIVIDER_OPTIONS,
+              styling.rowDividerStyle,
+            )}
+            value={styling.rowDividerStyle}
+            onChange={(event: Event) => {
+              setStylingField(
+                "rowDividerStyle",
+                readValue(event) as typeof styling.rowDividerStyle,
+              );
+            }}
+          >
+            {ROW_DIVIDER_OPTIONS.map((option) => (
+              <s-option key={option.value} value={option.value}>
+                {option.label}
+              </s-option>
+            ))}
+          </s-select>
 
-        <s-select
-          label="Density"
-          value={styling.density}
-          onChange={(event: Event) => {
-            setStylingField(
-              "density",
-              readValue(event) as typeof styling.density,
-            );
-          }}
-        >
-          {DENSITY_OPTIONS.map((option) => (
-            <s-option key={option.value} value={option.value}>
-              {option.label}
-            </s-option>
-          ))}
-        </s-select>
-        <s-text color="subdued">
-          {selectedHelpText(DENSITY_OPTIONS, styling.density)}
-        </s-text>
-      </s-stack>
+          <s-select
+            label="Density"
+            details={selectedHelpText(DENSITY_OPTIONS, styling.density)}
+            value={styling.density}
+            onChange={(event: Event) => {
+              setStylingField(
+                "density",
+                readValue(event) as typeof styling.density,
+              );
+            }}
+          >
+            {DENSITY_OPTIONS.map((option) => (
+              <s-option key={option.value} value={option.value}>
+                {option.label}
+              </s-option>
+            ))}
+          </s-select>
+        </s-stack>
+      </div>
 
       {/* Colors (Step 10a) — the rail's first NULLABLE group, and the first
           place "inherit from the theme" needs to be visible and reachable.
@@ -334,181 +360,194 @@ export function StyleTab({ engine }: { engine: RowEngine }) {
           Two-up because seven full-width fields would push the rest of the rail
           off-screen. `alpha` is per-knob, not a group setting — see the lock in
           `stylingControls.ts`. */}
-      <s-stack direction="block" gap="base">
-        <s-text type="strong">Colors</s-text>
-        <s-text color="subdued">
-          Leave a swatch empty to inherit that color from your theme.
-        </s-text>
+      {/* The group note here describes the GROUP, not any one swatch, so it stays
+          a sibling — and `aria-describedby` on the group is what associates it,
+          the same fix as the per-control `details` everywhere else. */}
+      <div
+        role="group"
+        aria-labelledby={headingId("colors")}
+        aria-describedby={headingId("colors-note")}
+      >
+        <s-stack direction="block" gap="base">
+          <s-heading id={headingId("colors")}>Colors</s-heading>
+          <s-text id={headingId("colors-note")} color="subdued">
+            Leave a swatch empty to inherit that color from your theme.
+          </s-text>
 
-        <s-grid gridTemplateColumns="1fr 1fr" gap="base">
-          {COLOR_KNOBS.map((knob) => (
-            <s-color-field
-              key={knob.field}
-              label={knob.label}
-              details={knob.helpText}
-              alpha={knob.alpha}
-              value={toColorControlValue(styling[knob.field])}
-              onChange={(event: Event) => {
-                setStylingField(
-                  knob.field,
-                  fromColorControlValue(readValue(event)),
-                );
-              }}
-            />
-          ))}
-        </s-grid>
-      </s-stack>
+          <s-grid gridTemplateColumns="1fr 1fr" gap="base">
+            {COLOR_KNOBS.map((knob) => (
+              <s-color-field
+                key={knob.field}
+                label={knob.label}
+                details={knob.helpText}
+                alpha={knob.alpha}
+                value={toColorControlValue(styling[knob.field])}
+                onChange={(event: Event) => {
+                  setStylingField(
+                    knob.field,
+                    fromColorControlValue(readValue(event)),
+                  );
+                }}
+              />
+            ))}
+          </s-grid>
+        </s-stack>
+      </div>
 
       {/* Typography (Step 10b). Four nullable keyword selects that lead with
           `Inherit`, plus the one genuinely three-shaped knob. */}
-      <s-stack direction="block" gap="base">
-        <s-text type="strong">Typography</s-text>
+      <div role="group" aria-labelledby={headingId("typography")}>
+        <s-stack direction="block" gap="base">
+          <s-heading id={headingId("typography")}>Typography</s-heading>
 
-        <s-select
-          label="Font size"
-          value={fontSizeControlValue(styling.fontSize)}
-          onChange={(event: Event) => {
-            setStylingField(
-              "fontSize",
-              nextFontSizeForControl(readValue(event), rememberedPx),
-            );
-          }}
-        >
-          {FONT_SIZE_OPTIONS.map((option) => (
-            <s-option key={option.value} value={option.value}>
-              {option.label}
-            </s-option>
-          ))}
-        </s-select>
-        <s-text color="subdued">
-          {selectedHelpText(
-            FONT_SIZE_OPTIONS,
-            fontSizeControlValue(styling.fontSize),
-          )}
-        </s-text>
+          <s-select
+            label="Font size"
+            details={selectedHelpText(
+              FONT_SIZE_OPTIONS,
+              fontSizeControlValue(styling.fontSize),
+            )}
+            value={fontSizeControlValue(styling.fontSize)}
+            onChange={(event: Event) => {
+              setStylingField(
+                "fontSize",
+                nextFontSizeForControl(readValue(event), rememberedPx),
+              );
+            }}
+          >
+            {FONT_SIZE_OPTIONS.map((option) => (
+              <s-option key={option.value} value={option.value}>
+                {option.label}
+              </s-option>
+            ))}
+          </s-select>
 
-        {/* The fourth hide rule. Small / Medium / Large are theme-RELATIVE (an
+          {/* The fourth hide rule. Small / Medium / Large are theme-RELATIVE (an
             em multiplier, so they survive a theme switch); this box is the
             ABSOLUTE escape hatch, which is why it only exists in Custom mode.
             An emptied box is ignored rather than treated as inherit — Inherit is
             its own option above, so clearing must not flip the mode. */}
-        {showsCustomFontSizeInput(styling) && (
-          <s-number-field
-            label="Custom size"
-            suffix="px"
-            min={FONT_SIZE_PX_MIN}
-            max={FONT_SIZE_PX_MAX}
-            step={1}
-            value={String(styling.fontSize)}
-            onChange={(event: Event) => {
-              const px = parseCustomFontSizePx(readValue(event));
-              if (px !== null) setStylingField("fontSize", px);
-            }}
-          />
-        )}
+          {showsCustomFontSizeInput(styling) && (
+            <s-number-field
+              label="Custom size"
+              suffix="px"
+              min={FONT_SIZE_PX_MIN}
+              max={FONT_SIZE_PX_MAX}
+              step={1}
+              value={String(styling.fontSize)}
+              onChange={(event: Event) => {
+                const px = parseCustomFontSizePx(readValue(event));
+                if (px !== null) setStylingField("fontSize", px);
+              }}
+            />
+          )}
 
-        {/* The four nullable keyword knobs. Written out rather than looped, to
+          {/* The four nullable keyword knobs. Written out rather than looped, to
             match every other control in this file — and because a loop would
             need a cast per field to re-narrow the union that
             `fromControlValue` already narrowed correctly.
 
             "Label weight", not "Font weight": Step 3 put the var on
             `.appx-spec-table__label`, so the control names its own scope. */}
-        <s-select
-          label="Label weight"
-          value={toControlValue(styling.fontWeight)}
-          onChange={(event: Event) => {
-            // `fromControlValue` is what keeps the `""` sentinel out of styling
-            // state, and its domain-list check makes the narrowing real.
-            setStylingField(
-              "fontWeight",
-              fromControlValue(readValue(event), STYLING_FONT_WEIGHTS),
-            );
-          }}
-        >
-          {FONT_WEIGHT_OPTIONS.map((option) => (
-            <s-option key={option.value} value={option.value}>
-              {option.label}
-            </s-option>
-          ))}
-        </s-select>
-        <s-text color="subdued">
-          {selectedHelpText(
-            FONT_WEIGHT_OPTIONS,
-            toControlValue(styling.fontWeight),
-          )}
-        </s-text>
+          <s-select
+            label="Label weight"
+            details={selectedHelpText(
+              FONT_WEIGHT_OPTIONS,
+              toControlValue(styling.fontWeight),
+            )}
+            value={toControlValue(styling.fontWeight)}
+            onChange={(event: Event) => {
+              // `fromControlValue` is what keeps the `""` sentinel out of styling
+              // state, and its domain-list check makes the narrowing real.
+              setStylingField(
+                "fontWeight",
+                fromControlValue(readValue(event), STYLING_FONT_WEIGHTS),
+              );
+            }}
+          >
+            {FONT_WEIGHT_OPTIONS.map((option) => (
+              <s-option key={option.value} value={option.value}>
+                {option.label}
+              </s-option>
+            ))}
+          </s-select>
 
-        <s-select
-          label="Text style"
-          value={toControlValue(styling.fontStyle)}
-          onChange={(event: Event) => {
-            setStylingField(
-              "fontStyle",
-              fromControlValue(readValue(event), STYLING_FONT_STYLES),
-            );
-          }}
-        >
-          {FONT_STYLE_OPTIONS.map((option) => (
-            <s-option key={option.value} value={option.value}>
-              {option.label}
-            </s-option>
-          ))}
-        </s-select>
-        <s-text color="subdued">
-          {selectedHelpText(
-            FONT_STYLE_OPTIONS,
-            toControlValue(styling.fontStyle),
-          )}
-        </s-text>
+          <s-select
+            label="Text style"
+            details={selectedHelpText(
+              FONT_STYLE_OPTIONS,
+              toControlValue(styling.fontStyle),
+            )}
+            value={toControlValue(styling.fontStyle)}
+            onChange={(event: Event) => {
+              setStylingField(
+                "fontStyle",
+                fromControlValue(readValue(event), STYLING_FONT_STYLES),
+              );
+            }}
+          >
+            {FONT_STYLE_OPTIONS.map((option) => (
+              <s-option key={option.value} value={option.value}>
+                {option.label}
+              </s-option>
+            ))}
+          </s-select>
 
-        <s-select
-          label="Line height"
-          value={toControlValue(styling.lineHeight)}
-          onChange={(event: Event) => {
-            setStylingField(
-              "lineHeight",
-              fromControlValue(readValue(event), LINE_HEIGHTS),
-            );
-          }}
-        >
-          {LINE_HEIGHT_OPTIONS.map((option) => (
-            <s-option key={option.value} value={option.value}>
-              {option.label}
-            </s-option>
-          ))}
-        </s-select>
-        <s-text color="subdued">
-          {selectedHelpText(
-            LINE_HEIGHT_OPTIONS,
-            toControlValue(styling.lineHeight),
-          )}
-        </s-text>
+          <s-select
+            label="Line height"
+            details={selectedHelpText(
+              LINE_HEIGHT_OPTIONS,
+              toControlValue(styling.lineHeight),
+            )}
+            value={toControlValue(styling.lineHeight)}
+            onChange={(event: Event) => {
+              setStylingField(
+                "lineHeight",
+                fromControlValue(readValue(event), LINE_HEIGHTS),
+              );
+            }}
+          >
+            {LINE_HEIGHT_OPTIONS.map((option) => (
+              <s-option key={option.value} value={option.value}>
+                {option.label}
+              </s-option>
+            ))}
+          </s-select>
 
-        {/* Label column only — the section header takes no case var. */}
-        <s-select
-          label="Label case"
-          value={toControlValue(styling.labelCase)}
-          onChange={(event: Event) => {
-            setStylingField(
-              "labelCase",
-              fromControlValue(readValue(event), LABEL_CASES),
-            );
-          }}
-        >
-          {LABEL_CASE_OPTIONS.map((option) => (
-            <s-option key={option.value} value={option.value}>
-              {option.label}
-            </s-option>
-          ))}
-        </s-select>
-        <s-text color="subdued">
-          {selectedHelpText(
-            LABEL_CASE_OPTIONS,
-            toControlValue(styling.labelCase),
-          )}
-        </s-text>
-      </s-stack>
+          {/* Label column only — the section header takes no case var. */}
+          <s-select
+            label="Label case"
+            details={selectedHelpText(
+              LABEL_CASE_OPTIONS,
+              toControlValue(styling.labelCase),
+            )}
+            value={toControlValue(styling.labelCase)}
+            onChange={(event: Event) => {
+              setStylingField(
+                "labelCase",
+                fromControlValue(readValue(event), LABEL_CASES),
+              );
+            }}
+          >
+            {LABEL_CASE_OPTIONS.map((option) => (
+              <s-option key={option.value} value={option.value}>
+                {option.label}
+              </s-option>
+            ))}
+          </s-select>
+        </s-stack>
+      </div>
+
+      {/* Reset (Step 12) — last in the rail and LOW-emphasis on purpose: it is a
+          bulk undo of every knob above it, not a primary action. It never applies
+          on first click; the confirmation lives in `ResetStylingModal`, mounted up
+          in `SpecTableEditor` so switching tabs cannot tear it out mid-confirm.
+          No `saving` guard here — the whole rail is inside the editor's inert
+          freeze, unlike the portalled modal it opens. */}
+      <s-box paddingBlockStart="base">
+        <s-button onClick={() => shopify.modal.show(RESET_STYLING_MODAL_ID)}>
+          Reset to theme defaults
+        </s-button>
+      </s-box>
     </s-stack>
   );
 }

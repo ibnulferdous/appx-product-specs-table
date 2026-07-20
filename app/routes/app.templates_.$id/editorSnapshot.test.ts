@@ -113,3 +113,67 @@ describe("editorMetaSnapshot (feature 57 Step 5 — the dirty snapshot)", () => 
     );
   });
 });
+
+// Feature 57 Step 12 — "Reset to theme defaults". The engine's `resetStyling` is a
+// one-line wholesale `setStyling(DEFAULT_STYLING_VALUES)`; everything that could
+// actually go wrong with it is here, at the pure boundary: whether the SaveBar
+// notices, whether it un-notices when the reset lands back on the baseline, and
+// whether it leaves the other four editable surfaces alone. The dialog and the
+// rail button are browser-verified ([[testing-strategy]]).
+describe("reset to theme defaults (feature 57 Step 12)", () => {
+  const RESET: StylingValues = DEFAULT_STYLING_VALUES;
+
+  it("makes a styled template dirty when reset", () => {
+    const saved = editorMetaSnapshot({
+      ...BASE,
+      styling: styled({
+        rowDividerStyle: "STRIPES",
+        labelTextColor: "#ff0000",
+      }),
+    });
+    expect(editorMetaSnapshot({ ...BASE, styling: RESET })).not.toBe(saved);
+  });
+
+  it("UN-dirties when the reset lands back on the saved baseline", () => {
+    // A merchant who styles, saves nothing, then resets is back where they
+    // started — the SaveBar must close again. The dirty check is a compare, not
+    // a counter, so this falls out for free; assert it so it stays that way.
+    const saved = editorMetaSnapshot({ ...BASE, styling: RESET });
+    const afterEdit = editorMetaSnapshot({
+      ...BASE,
+      styling: styled({ density: "COMPACT" }),
+    });
+    expect(afterEdit).not.toBe(saved);
+    expect(editorMetaSnapshot({ ...BASE, styling: RESET })).toBe(saved);
+  });
+
+  it("touches ONLY styling — rows, name, status, scope and excludes survive", () => {
+    const before = {
+      ...BASE,
+      name: "Kept",
+      status: "ACTIVE",
+      scope: "PRODUCT",
+      scopeValues: ["gid://p1"],
+      excludes: ["gid://x"],
+      styling: styled({ density: "COMPACT" }),
+    };
+    const after = JSON.parse(
+      editorMetaSnapshot({ ...before, styling: RESET }),
+    ) as Record<string, unknown>;
+    const untouched = JSON.parse(editorMetaSnapshot(before)) as Record<
+      string,
+      unknown
+    >;
+    for (const key of Object.keys(untouched)) {
+      if (key === "styling") continue;
+      expect(after[key]).toEqual(untouched[key]);
+    }
+  });
+
+  it("clears overrides rather than persisting defaults as data", () => {
+    // The whole reason Reset needs no server work: an all-default value
+    // serializes to `{}`, which the existing Save path writes as an all-NULL
+    // row. Reset state and never-styled state are identical in the database.
+    expect(serializeStylingOverrides(RESET)).toEqual({});
+  });
+});

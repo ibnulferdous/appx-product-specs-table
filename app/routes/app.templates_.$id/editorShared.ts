@@ -130,6 +130,14 @@ export const SAVE_BAR_ID = "template-save-bar";
 // 20). The menu is opened declaratively (the trigger button's `commandFor`); the
 // modals are driven imperatively via the App Bridge Modal API
 // (`shopify.modal.show/hide`), like the Insert-field modal.
+// The Style tab's "Reset to theme defaults" confirmation (feature 57 Step 12).
+// A bulk, destructive-feeling styling action, so it confirms rather than applying
+// on first click — and the SaveBar's Discard is not a substitute, since Discard
+// would revert unrelated edits too. Driven imperatively like every other modal
+// here. Mounted in `SpecTableEditor`, NOT in `StyleTab`: the rail unmounts the
+// moment the merchant switches to Content, which would strand an open dialog.
+export const RESET_STYLING_MODAL_ID = "reset-styling-modal";
+
 export const MORE_ACTIONS_MENU_ID = "template-more-actions";
 export const RENAME_MODAL_ID = "rename-template-modal";
 export const DELETE_MODAL_ID = "delete-template-modal";

@@ -229,7 +229,10 @@ function parseLabelWidthPct(value: unknown): number | null {
 /**
  * Keyword | px integer | null. Accepts both boundary shapes for px: a JSON
  * number (the wire shape) and an all-digit string (the DB column shape), both
- * normalized to a number clamped into [10, 40]. Only a validated integer ever
+ * normalized to a number clamped into [`FONT_SIZE_PX_MIN`, `FONT_SIZE_PX_MAX`]
+ * — 10–184 since the 2026-07-19 ceiling amendment (the docstring said 40 until
+ * Step 12 caught the drift; name the constants so it cannot drift again). Only
+ * a validated integer ever
  * reaches an inline style — the same injection defense as hex-only colors.
  */
 function parseFontSize(value: unknown): StylingFontSize {

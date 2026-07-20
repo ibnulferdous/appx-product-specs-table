@@ -1,6 +1,6 @@
 # Feature 57 · Step 12 — Reset, rail a11y, docs reconciliation, Phase B1 sign-off
 
-> **Status: SPEC — not yet implemented.** Closes Phase **B1** (Steps 1–12).
+> **Status: ✅ SHIPPED 2026-07-20**, live-verified on the dev store. Closes Phase **B1** (Steps 1–12).
 > Precedent for the shape of a closing step: `56-…` (feature 49's docs + gate + sign-off).
 
 ## Goal in one sentence

@@ -5,6 +5,7 @@ import { ContentTab } from "./ContentTab";
 import { SettingsTab } from "./SettingsTab";
 import { StyleTab } from "./StyleTab";
 import { SpecTablePreview } from "./SpecTablePreview";
+import { ResetStylingModal } from "./ResetStylingModal";
 import { EditorTips } from "./EditorTips";
 import { SAVE_BAR_ID } from "./editorShared";
 import type { RowEngine } from "./useRowEngine";
@@ -60,6 +61,11 @@ export function SpecTableEditor({ engine }: { engine: RowEngine }) {
           settingsPanel={<SettingsTab engine={engine} />}
         />
       </div>
+
+      {/* The Style rail's reset confirmation (feature 57 Step 12) — a sibling
+          AFTER the freeze <div> like the SaveBar, so it outlives the tab switch
+          that unmounts the rail its trigger lives in. See ResetStylingModal. */}
+      <ResetStylingModal engine={engine} />
 
       {/* Tips footer (feature 32) — a sibling AFTER the freeze <div>, so it sits
           below the editor card, outside it, and outside the save-freeze (tips stay

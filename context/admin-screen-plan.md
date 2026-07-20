@@ -132,12 +132,14 @@ Shown when `Shop.onboardingStatus` is `DISMISSED`. This is the permanent dashboa
 
 > One route serves both create and edit: `:id = "new"` scaffolds a blank template, any other `:id` loads that template (404 when not found or owned by another shop). The create URL `/app/templates/new` resolves to this same dynamic route.
 
-**Purpose:** The core screen. Build or edit the template — rows, section headers, data sources, and styling — in a WYSIWYG editor that renders exactly like the storefront table.
+**Purpose:** The core screen. Build or edit the template — rows, section headers, data sources, and styling — with the **device previews** showing exactly how the storefront table renders.
 
-**Layout:** A WYSIWYG editor card whose **control row** carries the tab group on the left — **Content · Style · Settings** — and the view toggle on the right. The editing table renders with the current `TableStyling` at all times and is itself the live preview.
+> **CORRECTED 2026-07-20 (feature 57 Step 12).** The four paragraphs below originally described the **editing grid** as the live styled surface — "renders exactly like the storefront table", "is itself the live preview", "the still-live table". **That was built, rejected, and reverted** (`context/features/67-…`). The binding rule now is: **the Edit grid is a fixed editing surface and never reflects merchant styling; the Desktop / Tablet / Mobile previews are the only place Style and Settings changes appear.** These sentences are corrected rather than annotated, because the step was withdrawn outright — see Step 11's replacement (`context/features/68-…`), which opens the Style tab on a Desktop preview for exactly this reason.
+
+**Layout:** An editor card whose **control row** carries the tab group on the left — **Content · Style · Settings** — and the view toggle on the right. The editing table renders in a fixed editing style at all times; `TableStyling` is applied in the **device previews**, not in the grid.
 
 - **Content** tab → the table fills the full width of the card (no side panel).
-- **Style** and **Settings** tabs → a **left controls panel (~300px)** appears beside the **still-live table**, so the merchant sees changes reflected in the real table as they work. This is a _controls_ rail, not a separate read-only preview — the editing table remains the preview surface.
+- **Style** and **Settings** tabs → a **left controls panel (~300px)** appears beside the stage, and the stage opens on a **Desktop preview** so the merchant sees their changes as they work. This is a _controls_ rail; the surface it drives is the preview, not the editing grid.
 
 The view toggle has four mutually-exclusive segments — **Edit** (pencil + label), a divider, then **Desktop / Tablet / Mobile**. **Edit** is the only editable view; **Desktop / Tablet / Mobile** are read-only previews of how the table renders for shoppers at that width (mobile shows the stacked label-over-value layout). In a device view all editor chrome is hidden (toolbar, hint, gutter, add-row, edit box, field picker) and the gutter column collapses. _(View Toggle Decision, Session 2026-06-14 — supersedes the earlier "fully editable in every viewport" wording; the mockup's CSS confirms the read-only device previews.)_
 
@@ -172,7 +174,7 @@ The rows-and-sections editor — where most of the work happens. (Labeled **Cont
 
 ### Tab 2 — Style _(spec locked 2026-07-18 — supersedes the mockup's illustrative widgets and the earlier colors-only control list)_
 
-Rendered in the **left controls panel** beside the live table (see Layout). Design model: **one spec-table primitive with orthogonal style knobs** — there are no monolithic "layouts". Every real-world archetype (Best Buy striped, Amazon accordion, Dell stacked, StarTech banded) is a combination of the knobs below. All knobs are **real columns on `TableStyling`** (`data-model.md` §5); all changes apply live to the WYSIWYG table and ride the contextual SaveBar (Save persists, Discard reverts — which also gives preset application free undo, so no confirm dialog is needed when a preset overwrites current knobs).
+Rendered in the **left controls panel** beside the stage (see Layout). Design model: **one spec-table primitive with orthogonal style knobs** — there are no monolithic "layouts". Every real-world archetype (Best Buy striped, Amazon accordion, Dell stacked, StarTech banded) is a combination of the knobs below. All knobs are **real columns on `TableStyling`** (`data-model.md` §5); all changes apply live to the **device previews** (never to the editing grid) and ride the contextual SaveBar (Save persists, Discard reverts — which also gives preset application free undo, so no confirm dialog is needed when a preset overwrites current knobs).
 
 **Styling is per-template with COPY semantics** (locked 2026-07-18 — rationale + consequences in `data-model.md` §5). Choosing a preset copies its values into the template's `TableStyling`; the template owns its style independently afterwards. No template→preset link, no shop-level default styling record. Retroactive restyling of many templates arrives post-MVP as an explicit **apply-to-all bulk action** on a future app-settings route (see PRD Out of Scope).
 
@@ -200,13 +202,13 @@ Rendered in the **left controls panel** beside the live table (see Layout). Desi
 
 #### Build sequencing (Phase B slices)
 
-1. **B1 — knobs + rail + rendering:** `TableStyling` columns (`add-table-styling` migration), the rail controls, live WYSIWYG application, metaobject `styling` serialization, storefront modifier classes + CSS variables.
+1. **B1 — knobs + rail + rendering:** `TableStyling` columns (`add-table-styling` migration), the rail controls, live application **in the device previews**, metaobject `styling` serialization, storefront modifier classes + CSS variables.
 2. **B2 — preset gallery:** built-in preset constants + the creation popup + in-rail preset cards.
 3. **B3 — saved presets** _(cuttable to post-MVP without rework)_: `StylePreset` model + "Save as preset" + saved styles in the gallery.
 
 ### Tab 3 — Settings _(Spec-Editor Mockup sync 2026-06-21)_
 
-Rendered in the **left controls panel** beside the live table (see Layout). The mockup populates it with two groups; treat the specific controls as **illustrative placeholders** pending real definition:
+Rendered in the **left controls panel** beside the stage (see Layout). The mockup populates it with two groups; treat the specific controls as **illustrative placeholders** pending real definition:
 
 - **Product assignment** — the planned home for assignment (see Screen 4). Design direction: let merchants assign a template (to specific products or by product type) from inside the editor, so a template and its assignment are managed in one place. _(Not fully locked — whether this fully replaces the standalone `/assign` screen or coexists with it for conflicts + summary is an open question; tracked in `progress-tracker.md`.)_
 - **Display rules** — toggles shown in the mockup (e.g., _hide rows with empty values_, _show section dividers_, _show on mobile_). These are **dummy/illustrative** and **not yet specified or schema-backed**. Note: row-level empty-hiding already exists as the per-row `hideWhenEmpty` flag (`data-model.md` §7) plus the PRD's storefront auto-hide — a template-level toggle would need its own definition. Do not build these until defined (open questions in `progress-tracker.md`).

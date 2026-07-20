@@ -1,6 +1,6 @@
 # Feature 57 · Step 11 — Reveal the preview when the merchant opens the Style tab
 
-> **Status: SPEC — not yet implemented.**
+> **Status: ✅ SHIPPED 2026-07-20** (commit `76916e6`), live-verified on the dev store.
 > Replaces the withdrawn Step 11 (`67-…`). Read that document's rule first; this
 > step exists *because* of it.
 

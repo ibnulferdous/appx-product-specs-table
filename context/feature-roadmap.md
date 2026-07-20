@@ -71,12 +71,20 @@ Based on App Store competitor research (2026-06-12: Bear Specs & Compare, Equate
 
 These extend the MVP Style tab. They build on the **single source of truth** — every color is a CSS variable, admin and storefront alike (see `code-standards.md` → Color & Theming) — so each item below is a new themeable surface / variable, not a new hardcoded value.
 
-- Header row styling (separate from body rows)
-- Alternating row colors (zebra striping)
+> **Reconciled 2026-07-20 (feature 57 Step 12).** Three entries below **shipped in
+> B1** and are struck through rather than deleted, so this list stays honest about
+> what "post-MVP" still means.
+
+- ~~Header row styling (separate from body rows)~~ — **SHIPPED (B1)** as
+  `sectionHeaderStyle` + `headerBgColor`.
+- ~~Alternating row colors (zebra striping)~~ — **SHIPPED (B1)** as
+  `rowDividerStyle = STRIPES` + `stripeBgColor`.
 - Rounded corners toggle
 - Custom CSS input for advanced users
-- Per-section styling overrides
-- Style presets / saved themes (save a palette once, reuse across templates; room for dark-mode-aware token sets)
+- ~~Per-section styling overrides~~ — **PARTIALLY SHIPPED (B1)**: section headers
+  and collapsible behaviour are template-wide knobs. Genuinely *per-section*
+  overrides (different styling per section) remain post-MVP.
+- Style presets / saved themes (save a palette once, reuse across templates; room for dark-mode-aware token sets) — **in progress**: Steps 13–14 (B2) build template-level presets; shop-level saved themes stay post-MVP.
 
 ### Onboarding Upgrades
 

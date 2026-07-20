@@ -31,6 +31,7 @@ import {
 } from "../../utils/rows";
 import { linearToPartOffset, partOffsetToLinear } from "../../utils/valueParts";
 import {
+  DEFAULT_STYLING_VALUES,
   serializeStylingOverrides,
   type StylingValues,
 } from "../../utils/tableStyling";
@@ -116,7 +117,8 @@ export interface UseRowEngineArgs {
   // into a complete `StylingValues` exactly once, so the client only ever handles
   // the resolved domain shape, never raw DB columns. Rides the dirty snapshot +
   // Save payload like `status`; reseeded on every remount so Discard reverts a
-  // styling change with no dedicated reset.
+  // styling change. NOT the same thing as Step 12's `resetStyling`: Discard
+  // reverts to the LAST SAVED styling, Reset goes to theme defaults.
   initialStyling: StylingValues;
   // True only for the `/app/templates/new` sentinel mount (route.tsx). A stable
   // per-mount fact: after the first Save the URL flips to the real cuid and the
@@ -224,6 +226,20 @@ export function useRowEngine({
     },
     [],
   );
+
+  // Reset to theme defaults (feature 57 Step 12). A WHOLESALE replace, not a loop
+  // over `setStylingField` — twenty per-field writes would be twenty renders and
+  // twenty dirty-checks for one merchant action. The target is
+  // `DEFAULT_STYLING_VALUES`, the same constant the loader resolves an ABSENT
+  // `TableStyling` row into, so reset state and never-styled state are identical
+  // by construction. It needs no server work either: `serializeStylingOverrides`
+  // emits only non-default fields, so an all-default value serializes to `{}` and
+  // the existing Save path writes an all-NULL row. Purely client state riding the
+  // SaveBar — and correctly UN-flips isDirty if the reset lands back on the saved
+  // baseline, since the dirty check is a compare, not a counter.
+  const resetStyling = useCallback(() => {
+    setStyling(DEFAULT_STYLING_VALUES);
+  }, []);
 
   // Assignment scope (features 44/46/47). Two pieces of state: the picker kind
   // (`scope`) and its value SET (`scopeValues` — `{ value, label }[]`: 0 members for
@@ -1153,10 +1169,13 @@ export function useRowEngine({
     excludeLabels,
     excludeImages,
     setExcludes,
-    // Table styling (feature 57 Step 5). Read by StyleTab now; the device
-    // previews (Step 6) and the editing grid (Step 11) read it next.
+    // Table styling (feature 57 Step 5). Read by StyleTab and by the device
+    // previews (Step 6) — and by NOTHING else: the editing grid deliberately
+    // never reflects merchant styling (`context/features/67-…`).
     styling,
     setStylingField,
+    // Step 12's wholesale reset to theme defaults, behind a confirm dialog.
+    resetStyling,
     // Save / dirty
     isDirty,
     saving,
