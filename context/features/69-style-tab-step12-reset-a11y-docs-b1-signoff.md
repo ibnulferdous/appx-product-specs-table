@@ -35,7 +35,8 @@ Two premises inherited from the 14-step plan are **wrong or stale**. Both are re
 rather than silently carried forward, because carrying an inherited line forward until it
 looked decided is exactly what produced the withdrawn Step 11.
 
-**1. There is no contrast decision to inherit.** Step 10 instructed itself to *"record whether
+**1. There was no contrast decision to inherit — and the answer turned out to be "build
+nothing" (decided 2026-07-20, see §3).** Step 10 instructed itself to *"record whether
 it is a warning or a block so Step 12 inherits a decision rather than a discovery"*
 (`66-…` line 304) — **and never recorded one.** Doc `66-…`'s Locked Decisions (`:259-281`) and
 its "ALL RESOLVED, none open" block (`:282-297`) contain no contrast decision; its only contrast
@@ -98,11 +99,10 @@ There is no default-vs-inherit distinction to model: for the thirteen nullable f
 *is* null, and the seven non-nullable ones have no inherit affordance at all (their defaults
 resolve at parse time, so a control always has a concrete value).
 
-*Precision worth keeping, since it will matter to whoever writes the contrast check:* "null =
-inherit from theme" is the project's **vocabulary**, not the mechanism. `stylingToCssVars`
-simply **omits** the custom property, and what actually renders is the **stylesheet's own
-`var(…, fallback)`** in `spec-table.css`. The app never learns the theme's colour — which is
-precisely why §3 recommends warning only on explicitly-set pairs.
+*Precision worth keeping:* "null = inherit from theme" is the project's **vocabulary**, not the
+mechanism. `stylingToCssVars` simply **omits** the custom property, and what actually renders is
+the **stylesheet's own `var(…, fallback)`** in `spec-table.css`. The app never learns the theme's
+colour — which is exactly why §3 rules out contrast checking entirely.
 
 **The engine already has the state setter.** `useRowEngine.ts:216` holds
 `const [styling, setStyling] = useState<StylingValues>(initialStyling)`; only the per-field
@@ -232,24 +232,47 @@ type definitions.
 **Also:** confirm every control is keyboard-operable, and the new Reset dialog must trap focus,
 restore it to the trigger on close, and close on `Escape`.
 
-### 3. Contrast — the decision Step 12 must make (not inherit)
+### 3. Contrast — DECIDED 2026-07-20: no check, no warning, no block
 
-A merchant can set `labelTextColor` / `valueTextColor` to the same value as the background and
-produce unreadable storefront text. CLAUDE.md ranks **storefront correctness & accessibility**
-above maintainability, so this cannot simply be ignored.
+**Decision by the project owner: the app ships NO contrast checking of any kind.** Choosing
+readable colours is the merchant's / store developer's job. Build nothing here.
 
-**Recommendation: a non-blocking warning on the two text colours.** Rationale — the app cannot
-know the *actual* rendered background in every case (a null background inherits an unknown
-theme colour, and `alpha` is enabled on all five background knobs, so the effective colour is a
-composite). A hard block would therefore have to either guess or over-trigger, and blocking a
-merchant from a colour the app only *suspects* is bad is worse than warning them. The merchant
-also now sees the real rendering immediately, because Step 11 puts them on the preview.
+This is a **decision, not a deferral** — do not reintroduce it in B2, B3, or a later "polish"
+pass without a new decision.
 
-Where a background is `null` (inherit), warn only when the **explicit** pair is the problem —
-do not guess at theme colours.
+**Why (so a future reader does not re-litigate it):**
 
-**This is a recommendation, not a settled decision.** If the project owner prefers a block,
-that is a legitimate call and changes only this sub-item.
+1. **The app cannot compute contrast, so any signal would be a guess.** A null background
+   inherits an unknown theme colour, and `alpha` is enabled on all five background knobs — the
+   effective colour is a composite the app never sees. `stylingToCssVars` merely *omits* the
+   custom property and the stylesheet's own `var(…, fallback)` wins, so the app genuinely does
+   not know what renders.
+2. **An unreliable a11y warning is worse than none.** It would over-trigger on cases that are
+   fine and stay silent on cases it cannot see — and silence reads as approval. It also trains
+   merchants to dismiss warnings.
+3. **It is the merchant's storefront and their brand call.** Shopify's own theme editor does not
+   block or warn on merchant colour choices; this app should not be stricter than the theme
+   editor the merchant came from. That is the same reasoning that raised the `fontSize` ceiling
+   40 → 184.
+4. **The recovery path is already good.** Step 11 puts the merchant on the live preview the
+   moment they open Style, so a bad pairing is visible immediately; Step 12's Reset is one click
+   back to theme defaults.
+5. **No compliance requirement was found.** There is no evidence Shopify App Store review
+   requires apps to validate merchant-chosen colours. Do not cite compliance for this.
+
+**On CLAUDE.md priority #2 (storefront correctness & accessibility):** that priority binds *the
+app's own output* — semantic markup, real `<table>` semantics, accessible names, keyboard
+operability. It does not make the app the arbiter of the merchant's brand palette. The genuine
+storefront-a11y debt in this area is **stacked mode's `display: block` stripping table
+semantics** (§4) — that is the app's own markup and *is* the app's responsibility.
+
+> **Process note — why this item survived as long as it did.** It came from Step 10 instructing
+> itself to *"record whether it is a warning or a block"* (`66-…:303-305`) and then never
+> recording one. This spec's first draft correctly caught that the decision was missing — and
+> then asked *"warning or block?"* rather than *"either?"*, which is precisely the failure doc
+> `67-…` documents: **interrogating an inherited item's details makes its existence look
+> settled.** Two steps in a row. The tell is the same both times: the whole item was
+> damage-control against a capability nobody asked for.
 
 ### 4. Docs reconciliation + B1 sign-off
 
@@ -344,9 +367,8 @@ drives B1 as one surface rather than one step's slice.
 ## Testing
 
 - **Unit** — the reset reducer/callback (returns exactly `DEFAULT_STYLING_VALUES`; leaves rows,
-  name, status, scope, excludes untouched; marks dirty). Contrast helper, if built, is pure and
-  fully unit-testable. Keep the rail's own rendering out of unit tests — jsdom cannot render
-  Polaris web components ([[testing-strategy]]).
+  name, status, scope, excludes untouched; marks dirty). Keep the rail's own rendering out of
+  unit tests — jsdom cannot render Polaris web components ([[testing-strategy]]).
 - **Gate** — `npm run typecheck && npm run lint && npm run format:check && npm run test:run &&
   npm run build`, all five green; record the final count. **`npm run build` is the only gate
   that validates CSS syntax** (learned the hard way in the withdrawn step).
@@ -355,8 +377,8 @@ drives B1 as one surface rather than one step's slice.
 ## Done when
 
 1. Reset ships: confirm dialog → `DEFAULT_STYLING_VALUES` → SaveBar → Discard reverts it.
-2. Rail groups are programmatically grouped; keyboard + focus verified; the contrast decision
-   is **made, recorded, and implemented**.
+2. Rail groups are programmatically grouped, help text is associated on all 21 controls, and
+   keyboard + focus are verified. **No contrast work ships** (§3) — verify nothing was added.
 3. `admin-screen-plan.md:140` no longer contradicts the binding rule.
 4. Every context file is individually checked, with "verified, no edit" recorded where true.
 5. `labelWidthPct` and `stripeBgColor` are **driven live at least once** on a
