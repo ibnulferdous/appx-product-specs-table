@@ -1,6 +1,12 @@
 # Feature 70 — Storefront: preserve table semantics in stacked layouts
 
-> **Status: SPEC — not yet implemented.**
+> **Status: ⚠️ CODE SHIPPED 2026-07-20 (`f6ac4aa`) — NOT SIGNED OFF.**
+> Done-when items 1, 2, 3 and 5 are met. **Item 4 (screen-reader verification) has
+> NOT been run**, and item 6 therefore stays open. The attributes are proven
+> present and visually inert; nothing yet proves assistive tech announces the
+> pairs, which is the entire point of the feature. **The §4 falsifier is also
+> unchecked** — if explicit ARIA degrades the two-column control case, this
+> approach reverts rather than gets patched.
 > Carried out of feature 57 Phase B1 (see `69-…` §4 and the red item in
 > `progress-tracker.md` → Open Questions). **Not** a Style-tab step: it ships no
 > knob and no admin UI, so it is independent of B2 (Steps 13–14) and can run
