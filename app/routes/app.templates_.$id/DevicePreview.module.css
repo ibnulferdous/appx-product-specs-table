@@ -20,8 +20,8 @@
 
 .stage {
   /* The one place to retune the device chrome. */
-  --appx-device-body: #1f1f21;
-  --appx-device-speaker: color-mix(in srgb, #ffffff 22%, transparent);
+  --appx-device-body: color-mix(in srgb, currentColor 5%, #ffffff);
+  --appx-device-speaker: color-mix(in srgb, currentColor 28%, transparent);
   --appx-device-screen: #ffffff;
   --appx-device-chrome: color-mix(in srgb, currentColor 5%, transparent);
   --appx-device-hairline: color-mix(in srgb, currentColor 12%, transparent);
@@ -43,32 +43,37 @@
 
 /* --- Mobile: phone mockup ------------------------------------------------- */
 
-/* The phone body: a dark bezel with a soft drop shadow, sized to its screen. */
+/* The phone body: a light, thin outline (not a heavy dark slab) so the specs table
+   inside is the focus. A hairline border + soft shadow read it as a phone frame.
+   Its vertical chrome (padding + speaker + gap + border) must equal PHONE_CHROME_PX
+   in `SpecTablePreview.tsx`, which subtracts it from the measured height. */
 .phone {
   flex: 0 0 auto;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 0.5rem;
-  padding: 0.9rem 0.75rem;
+  gap: 0.375rem;
+  padding: 0.5rem;
   background: var(--appx-device-body);
-  border-radius: 2.25rem;
-  box-shadow: 0 1.25rem 2.5rem var(--appx-device-shadow);
+  border: 0.0625rem solid var(--appx-device-hairline);
+  border-radius: 1.5rem;
+  box-shadow: 0 0.75rem 1.75rem var(--appx-device-shadow);
 }
 
 /* Speaker / notch pill sitting in the top bezel (NOT over the screen, so it never
    overlaps the storefront content). Decorative — `aria-hidden` in the markup. */
 .phoneSpeaker {
-  width: 3.5rem;
-  height: 0.3125rem;
-  border-radius: 0.3125rem;
+  width: 2.5rem;
+  height: 0.25rem;
+  border-radius: 0.25rem;
   background: var(--appx-device-speaker);
 }
 
-/* The screen: clips the iframe to rounded corners. */
+/* The screen: clips the iframe to rounded corners (slightly tighter than the body
+   so the thin bezel reads evenly). */
 .phoneScreen {
   overflow: hidden;
-  border-radius: 1.5rem;
+  border-radius: 1.1rem;
   background: var(--appx-device-screen);
 }
 

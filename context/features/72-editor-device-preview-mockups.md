@@ -23,15 +23,22 @@ unchanged.
   "Storefront preview" address pill) above the screen; the window fills the stage
   column. Keeps the Step 6 content-driven **auto-height** (the window grows with the
   table).
-- **Mobile → phone.** A dark bezel with a top speaker pill around a rounded screen,
-  centered on a subtle backdrop. The screen is pinned to a **fixed device height**
-  (`MOBILE_SCREEN_HEIGHT_PX = 720`, paired with the 375px device width) and the iframe
-  **scrolls internally** like a real phone.
+- **Mobile → phone.** A **light, thin** frame (hairline border + soft shadow + a
+  subtle speaker pill) around a rounded screen — not a heavy dark bezel, so the specs
+  table stays the focus (merchant feedback 2026-07-22). The phone is sized to the
+  **available viewport height** (measured with feature 71's `useScrollRegionHeight`,
+  minus `PHONE_CHROME_PX`), like the Shopify theme editor's mobile preview, and the
+  iframe **scrolls internally** like a real phone.
 
 **Mobile height is a deliberate, view-scoped exception to Step 6, not a reversal.**
-Desktop still auto-heights; only Mobile ignores the shim-reported height and pins a
-fixed one. A grow-with-content phone would be an absurd never-ending device; a fixed
-scrolling viewport is what the references show and what reads as a phone.
+Desktop still auto-heights; only Mobile ignores the shim-reported height and fits the
+measured viewport instead. A grow-with-content phone would be an absurd never-ending
+device; a fixed scrolling viewport that matches the available height is what the
+references show and what reads as a phone.
+
+**Revision (2026-07-22).** First cut used a dark bezel and a fixed 720px screen; on
+review that was too dark and too tall. Now: light frame + height measured to fit the
+viewport (`useScrollRegionHeight`).
 
 ## Where it lives
 
@@ -70,10 +77,10 @@ unchanged. No schema, no server, no storefront.
 2. **Browser (dev store, DJI Mavic 4 Pro, 44 rows):**
    - Desktop preview shows the browser window (dots + address pill), storefront table
      below, filling the column. ✅
-   - Mobile preview shows the phone (bezel + speaker pill), stacked mobile layout in a
-     rounded screen. ✅
+   - Mobile preview shows the light phone frame (speaker pill), stacked mobile layout
+     in a rounded screen, fitting the available height on both Content and Style. ✅
    - The phone screen scrolls **internally** (content moved through the sections while
-     the bezel stayed fixed). ✅
+     the frame stayed fixed). ✅
 
 ## Definition of done
 

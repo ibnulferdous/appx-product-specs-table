@@ -98,8 +98,9 @@ plan: `~/.claude/plans/style-tab-phase-b-implementation-plan.md` (1–12 = B1, 1
 **Editor device-preview mockups (feature 72, doc `72-…`) — ✅ shipped & verified 2026-07-22**
 - The Desktop/Mobile previews now render inside a device mockup: Desktop = a browser
   window (traffic-light dots + faux address pill, auto-height, fills the column); Mobile =
-  a phone (bezel + speaker pill, fixed 720px screen that scrolls internally). Chrome wraps
-  the iframe in a new `DevicePreview.module.css` (all colours as centralized custom props);
+  a light, thin phone frame (subtle border + speaker pill) whose screen fits the available
+  viewport height (`useScrollRegionHeight`) and scrolls internally. Chrome wraps the iframe
+  in a new `DevicePreview.module.css` (all colours as centralized custom props);
   the iframe pipeline (renderer, height shim, sandbox, live styling) and the tripwired
   `SpecTableEditor.module.css` are untouched. Live-verified on the dev store.
 

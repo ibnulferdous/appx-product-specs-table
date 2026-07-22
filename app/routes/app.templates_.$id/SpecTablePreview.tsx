@@ -8,6 +8,7 @@ import {
   PREVIEW_HEIGHT_MESSAGE_TYPE,
 } from "./previewBridge";
 import { renderSpecTablePreviewDocument } from "./specTablePreviewHtml";
+import { useScrollRegionHeight } from "./useScrollRegionHeight";
 import styles from "./SpecTableEditor.module.css";
 import device from "./DevicePreview.module.css";
 
@@ -53,21 +54,23 @@ import device from "./DevicePreview.module.css";
 // is decorative (`aria-hidden`), so AT still sees only the titled iframe.
 //
 // Desktop keeps the Step 6 content-driven auto-height (the browser window grows with
-// the table). Mobile instead pins the screen to a fixed device height and lets the
-// iframe scroll INTERNALLY like a real phone — the height shim still reports, but the
-// Mobile branch ignores it. This is a deliberate, view-scoped exception to Step 6,
-// not a reversal: Desktop is unchanged.
+// the table). Mobile instead sizes the phone to the AVAILABLE viewport height (like
+// the Shopify theme editor's mobile preview) and lets the iframe scroll INTERNALLY
+// like a real phone — the height shim still reports, but the Mobile branch ignores it
+// and uses the measured fit instead. This is a deliberate, view-scoped exception to
+// Step 6, not a reversal: Desktop is unchanged.
 
 const DEVICE_LABELS: Record<DeviceView, string> = {
   desktop: "Desktop",
   mobile: "Mobile",
 };
 
-// The Mobile phone's fixed screen height in CSS px. Paired with the 375px device
-// width (`previewDeviceWidth`) it gives a realistic phone viewport that scrolls
-// internally. Px (not rem) for the same reason the width is px — a phone is a fixed
-// device size, independent of the admin's root font size (see `deviceView.ts`).
-const MOBILE_SCREEN_HEIGHT_PX = 720;
+// Vertical chrome the phone frame adds around its screen (bezel padding + speaker
+// pill + gap + top/bottom border). Subtracted from the measured available height to
+// get the screen's own height so the whole phone fits the viewport. Keep in sync
+// with `.phone` padding/gap + `.phoneSpeaker` height + border in
+// `DevicePreview.module.css`.
+const PHONE_CHROME_PX = 28;
 
 export function SpecTablePreview({
   rows,
@@ -98,6 +101,17 @@ export function SpecTablePreview({
 
   const isMobile = view === "mobile";
 
+  // Size the phone to the remaining iframe viewport (reusing feature 71's A3
+  // measurer) so it matches the available height instead of a fixed device size.
+  // The `isMobile` re-measure key makes it clamp the moment the phone mounts (a
+  // Desktop→Mobile switch). Desktop passes a stable 0 and never reads the value.
+  const phoneRef = useRef<HTMLDivElement>(null);
+  const phoneAvail = useScrollRegionHeight(phoneRef, isMobile ? 1 : 0);
+  const phoneScreenHeight =
+    isMobile && phoneAvail != null
+      ? Math.max(PHONE_CHROME_PX, phoneAvail - PHONE_CHROME_PX)
+      : undefined;
+
   const frame = (
     <iframe
       ref={frameRef}
@@ -111,14 +125,16 @@ export function SpecTablePreview({
       // barred by the document's CSP.
       sandbox="allow-scripts"
       srcDoc={renderSpecTablePreviewDocument(rows, styling)}
-      // Width is the per-device size (Step 5). Height: Mobile pins a fixed device
-      // height so the phone screen scrolls internally (feature 72); Desktop keeps
-      // the shim-measured content height (Step 6), falling back to the
+      // Width is the per-device size (Step 5). Height: Mobile fits the measured
+      // available height so the phone screen scrolls internally (feature 72);
+      // Desktop keeps the shim-measured content height (Step 6), falling back to the
       // `.previewFrame` min-height until the first measurement arrives.
       style={{
         width: previewDeviceWidth(view),
         height: isMobile
-          ? `${MOBILE_SCREEN_HEIGHT_PX}px`
+          ? phoneScreenHeight != null
+            ? `${phoneScreenHeight}px`
+            : undefined
           : height !== null
             ? `${height}px`
             : undefined,
@@ -131,7 +147,7 @@ export function SpecTablePreview({
   return (
     <div className={device.stage}>
       {isMobile ? (
-        <div className={device.phone}>
+        <div ref={phoneRef} className={device.phone}>
           <span className={device.phoneSpeaker} aria-hidden="true"></span>
           <div className={device.phoneScreen}>{frame}</div>
         </div>
