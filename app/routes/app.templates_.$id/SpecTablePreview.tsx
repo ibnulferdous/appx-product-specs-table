@@ -9,6 +9,7 @@ import {
 } from "./previewBridge";
 import { renderSpecTablePreviewDocument } from "./specTablePreviewHtml";
 import styles from "./SpecTableEditor.module.css";
+import device from "./DevicePreview.module.css";
 
 // Feature 49 · Step 3 — the read-only device preview. Replaces the Step 1
 // placeholder: feeds the live rows through the pure storefront-markup renderer
@@ -46,10 +47,27 @@ import styles from "./SpecTableEditor.module.css";
 // the frame reloads and the height shim re-reports — accepted, and the same class
 // of event as a row edit.
 
+// Feature 72 makes the preview render inside a device MOCKUP: a phone bezel for
+// Mobile, a browser window for Desktop (chrome styled by `DevicePreview.module.css`,
+// which wraps the iframe without touching the tripwired `.previewFrame`). The chrome
+// is decorative (`aria-hidden`), so AT still sees only the titled iframe.
+//
+// Desktop keeps the Step 6 content-driven auto-height (the browser window grows with
+// the table). Mobile instead pins the screen to a fixed device height and lets the
+// iframe scroll INTERNALLY like a real phone — the height shim still reports, but the
+// Mobile branch ignores it. This is a deliberate, view-scoped exception to Step 6,
+// not a reversal: Desktop is unchanged.
+
 const DEVICE_LABELS: Record<DeviceView, string> = {
   desktop: "Desktop",
   mobile: "Mobile",
 };
+
+// The Mobile phone's fixed screen height in CSS px. Paired with the 375px device
+// width (`previewDeviceWidth`) it gives a realistic phone viewport that scrolls
+// internally. Px (not rem) for the same reason the width is px — a phone is a fixed
+// device size, independent of the admin's root font size (see `deviceView.ts`).
+const MOBILE_SCREEN_HEIGHT_PX = 720;
 
 export function SpecTablePreview({
   rows,
@@ -78,28 +96,62 @@ export function SpecTablePreview({
     return () => window.removeEventListener("message", onMessage);
   }, []);
 
+  const isMobile = view === "mobile";
+
+  const frame = (
+    <iframe
+      ref={frameRef}
+      className={styles.previewFrame}
+      // Accessible name conveys preview + which device + read-only (Step 7), so
+      // AT users know this is a non-editable rendering, not the live table.
+      title={`Spec table preview — ${DEVICE_LABELS[view]}, read-only`}
+      // `allow-scripts` ONLY (Step 6) — runs the trusted height shim while the
+      // frame stays a unique opaque origin. Never add `allow-same-origin`: with
+      // scripts, the pair lets a frame remove its own sandbox. Egress is further
+      // barred by the document's CSP.
+      sandbox="allow-scripts"
+      srcDoc={renderSpecTablePreviewDocument(rows, styling)}
+      // Width is the per-device size (Step 5). Height: Mobile pins a fixed device
+      // height so the phone screen scrolls internally (feature 72); Desktop keeps
+      // the shim-measured content height (Step 6), falling back to the
+      // `.previewFrame` min-height until the first measurement arrives.
+      style={{
+        width: previewDeviceWidth(view),
+        height: isMobile
+          ? `${MOBILE_SCREEN_HEIGHT_PX}px`
+          : height !== null
+            ? `${height}px`
+            : undefined,
+      }}
+    ></iframe>
+  );
+
+  // Feature 72 — the device mockup around the frame. Chrome is decorative and
+  // `aria-hidden` so screen readers reach only the titled iframe.
   return (
-    <s-box padding="base">
-      <iframe
-        ref={frameRef}
-        className={styles.previewFrame}
-        // Accessible name conveys preview + which device + read-only (Step 7), so
-        // AT users know this is a non-editable rendering, not the live table.
-        title={`Spec table preview — ${DEVICE_LABELS[view]}, read-only`}
-        // `allow-scripts` ONLY (Step 6) — runs the trusted height shim while the
-        // frame stays a unique opaque origin. Never add `allow-same-origin`: with
-        // scripts, the pair lets a frame remove its own sandbox. Egress is further
-        // barred by the document's CSP.
-        sandbox="allow-scripts"
-        srcDoc={renderSpecTablePreviewDocument(rows, styling)}
-        // Width is the per-device size (Step 5); height is the shim-measured
-        // content height (Step 6), falling back to the `.previewFrame` min-height
-        // until the first measurement arrives.
-        style={{
-          width: previewDeviceWidth(view),
-          height: height !== null ? `${height}px` : undefined,
-        }}
-      ></iframe>
-    </s-box>
+    <div className={device.stage}>
+      {isMobile ? (
+        <div className={device.phone}>
+          <span className={device.phoneSpeaker} aria-hidden="true"></span>
+          <div className={device.phoneScreen}>{frame}</div>
+        </div>
+      ) : (
+        <div className={device.browser}>
+          <div className={device.browserBar} aria-hidden="true">
+            <span className={device.browserDots}>
+              <span className={`${device.browserDot} ${device.dotRed}`}></span>
+              <span
+                className={`${device.browserDot} ${device.dotYellow}`}
+              ></span>
+              <span
+                className={`${device.browserDot} ${device.dotGreen}`}
+              ></span>
+            </span>
+            <span className={device.browserUrl}>Storefront preview</span>
+          </div>
+          <div className={device.browserScreen}>{frame}</div>
+        </div>
+      )}
+    </div>
   );
 }

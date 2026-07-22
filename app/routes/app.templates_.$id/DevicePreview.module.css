@@ -1,0 +1,148 @@
+/* Device-preview mockups (feature 72).
+ *
+ * Wraps the read-only preview <iframe> (`.previewFrame`, which lives in the
+ * byte-clean-tripwired `SpecTableEditor.module.css` — left untouched) in device
+ * chrome: a phone bezel for the Mobile view, a browser window for Desktop. Only
+ * the chrome lives here; the iframe keeps `.previewFrame` and the two element
+ * selectors below just neutralize its own border/radius so the device frame owns
+ * the edge.
+ *
+ * Colour: Polaris colour tokens are sealed in shadow DOM and not exposed to
+ * light-DOM CSS ([[polaris-web-component-gotchas]]), the same reason `.previewFrame`
+ * already hardcodes `#ffffff`. To honour code-standards' "single source of truth,
+ * not abstinence" rule, every literal is declared ONCE as a custom property on
+ * `.stage` and referenced by `var()` below — retune the device look from this one
+ * block. Neutral surfaces are fixed literals (they read against a light admin, like
+ * the existing `#f6f7f9` band and will not adapt to a dark admin theme); hairlines,
+ * shadows and muted text derive from `currentColor` so they follow the theme ink.
+ * The three traffic-light dots keep their identity colours. Everything semantic in
+ * the table itself still inherits the theme via the iframed storefront CSS. */
+
+.stage {
+  /* The one place to retune the device chrome. */
+  --appx-device-body: #1f1f21;
+  --appx-device-speaker: color-mix(in srgb, #ffffff 22%, transparent);
+  --appx-device-screen: #ffffff;
+  --appx-device-chrome: color-mix(in srgb, currentColor 5%, transparent);
+  --appx-device-hairline: color-mix(in srgb, currentColor 12%, transparent);
+  --appx-device-shadow: color-mix(in srgb, currentColor 16%, transparent);
+  --appx-device-url-text: color-mix(in srgb, currentColor 55%, transparent);
+  --appx-dot-red: #ff5f57;
+  --appx-dot-yellow: #febc2e;
+  --appx-dot-green: #28c840;
+
+  display: flex;
+  justify-content: center;
+  padding: 1.5rem;
+  background: color-mix(in srgb, currentColor 3%, transparent);
+  border-radius: 0.75rem;
+  /* A device wider than a very narrow editor column scrolls sideways here rather
+     than clipping or forcing the whole page to scroll horizontally. */
+  overflow-x: auto;
+}
+
+/* --- Mobile: phone mockup ------------------------------------------------- */
+
+/* The phone body: a dark bezel with a soft drop shadow, sized to its screen. */
+.phone {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.9rem 0.75rem;
+  background: var(--appx-device-body);
+  border-radius: 2.25rem;
+  box-shadow: 0 1.25rem 2.5rem var(--appx-device-shadow);
+}
+
+/* Speaker / notch pill sitting in the top bezel (NOT over the screen, so it never
+   overlaps the storefront content). Decorative — `aria-hidden` in the markup. */
+.phoneSpeaker {
+  width: 3.5rem;
+  height: 0.3125rem;
+  border-radius: 0.3125rem;
+  background: var(--appx-device-speaker);
+}
+
+/* The screen: clips the iframe to rounded corners. */
+.phoneScreen {
+  overflow: hidden;
+  border-radius: 1.5rem;
+  background: var(--appx-device-screen);
+}
+
+/* The iframe fills the screen edge-to-edge — the phone body owns the frame, so
+   drop `.previewFrame`'s own border/radius. Element selector beats the single-class
+   `.previewFrame` regardless of stylesheet order. */
+.phoneScreen iframe {
+  display: block;
+  border: none;
+  border-radius: 0;
+}
+
+/* --- Desktop: browser window --------------------------------------------- */
+
+.browser {
+  width: 100%;
+  overflow: hidden;
+  border-radius: 0.6rem;
+  border: 0.0625rem solid var(--appx-device-hairline);
+  box-shadow: 0 1rem 2rem var(--appx-device-shadow);
+  background: var(--appx-device-screen);
+}
+
+/* The chrome bar: traffic-light dots + a faux address pill. Decorative —
+   `aria-hidden` in the markup so AT reads only the iframe and its title. */
+.browserBar {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.55rem 0.75rem;
+  background: var(--appx-device-chrome);
+  border-bottom: 0.0625rem solid var(--appx-device-hairline);
+}
+
+.browserDots {
+  display: flex;
+  gap: 0.375rem;
+}
+
+.browserDot {
+  width: 0.7rem;
+  height: 0.7rem;
+  border-radius: 50%;
+}
+
+.dotRed {
+  background: var(--appx-dot-red);
+}
+
+.dotYellow {
+  background: var(--appx-dot-yellow);
+}
+
+.dotGreen {
+  background: var(--appx-dot-green);
+}
+
+.browserUrl {
+  flex: 1 1 auto;
+  min-width: 0;
+  margin-inline-start: 0.5rem;
+  padding: 0.25rem 0.6rem;
+  border-radius: 0.4rem;
+  background: var(--appx-device-screen);
+  border: 0.0625rem solid var(--appx-device-hairline);
+  font-size: 0.75rem;
+  color: var(--appx-device-url-text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.browserScreen iframe {
+  display: block;
+  border: none;
+  border-radius: 0;
+}
