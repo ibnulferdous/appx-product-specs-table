@@ -28,7 +28,7 @@ export function buildEditorTips(isMac: boolean): EditorTip[] {
     },
     {
       id: "device-views",
-      text: "Switch Edit → Desktop / Tablet / Mobile with the toggle — Edit is editable; the device views are view-only previews.",
+      text: "Switch Edit → Desktop / Mobile with the toggle — Edit is editable; the device views are view-only previews.",
     },
     {
       id: "gutter",

@@ -455,7 +455,7 @@
  * come from the shared spec-table.css injected in Step 4; deeper theming is a
  * Style-tab concern). The WIDTH is device-driven (Step 5): the per-view size
  * arrives as an inline style from previewDeviceWidth(view) — desktop fills,
- * tablet is 768px, mobile is 375px — while this rule supplies the clamp and
+ * mobile is 375px — while this rule supplies the clamp and
  * centering: `max-width: 100%` shrinks a fixed frame wider than the column
  * (rather than overflowing it), and `margin-inline: auto` centers a narrow fixed
  * frame in the stage. The HEIGHT is now content-driven (Step 6): the exact pixel

@@ -282,8 +282,8 @@ export const SPEC_TABLE_CSS = `/* Appx — Product Specs Table storefront styles
 /* --- Mobile default --------------------------------------------------------
    749px matches Dawn's mobile breakpoint, so the table flips where the
    surrounding theme does — and it puts the editor preview widths on the
-   intended sides (mobile 375px stacked; tablet 768px and desktop
-   two-column). Scoped entirely inside the mobile-stacked modifier and LAST
+   intended sides (mobile 375px stacked; desktop two-column). Scoped entirely
+   inside the mobile-stacked modifier and LAST
    in the file so it beats the desktop layout rules at equal specificity.
 
    appx-spec-table--mobile-same-as-desktop is DELIBERATELY rule-less: "same

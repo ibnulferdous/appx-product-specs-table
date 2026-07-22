@@ -7,12 +7,12 @@ import type {
 import { useId, useRef, useState } from "react";
 import { isPreviewView, type DeviceView, type ViewId } from "./deviceView";
 import {
-  DEFAULT_TAB_VIEWS,
+  DEFAULT_VIEW_MEMORY,
   rememberView,
   viewAnnouncement,
   viewForTab,
   type TabId,
-  type TabViewMemory,
+  type ViewMemory,
 } from "./tabViewMemory";
 import styles from "./SpecTableEditor.module.css";
 
@@ -66,7 +66,6 @@ const VISUALLY_HIDDEN: CSSProperties = {
 const VIEWS: ReadonlyArray<SegOption<ViewId>> = [
   { value: "edit", label: "Edit", icon: "edit" },
   { value: "desktop", label: "Desktop", icon: "desktop", hideLabel: true },
-  { value: "tablet", label: "Tablet", icon: "tablet", hideLabel: true },
   { value: "mobile", label: "Mobile", icon: "mobile", hideLabel: true },
 ];
 
@@ -220,13 +219,15 @@ export function EditorShell({
   settingsPanel,
 }: EditorShellProps) {
   const [activeTab, setActiveTab] = useState<TabId>("content");
-  // Feature 57 · Step 11: the active view is DERIVED from the active tab, because
-  // each tab remembers its own (`tabViewMemory.ts`). Opening Style therefore lands
-  // on a preview — the only surface that shows styling — without disabling or
-  // hiding the view control, and without re-overriding a merchant who chose Edit
-  // there last time. In-memory only: a reload returns to Content/`edit`.
-  const [tabViews, setTabViews] = useState<TabViewMemory>(DEFAULT_TAB_VIEWS);
-  const activeView = viewForTab(tabViews, activeTab);
+  // Feature 57 · Step 11: the active view is DERIVED from the active tab
+  // (`tabViewMemory.ts`) — its edit-or-preview mode, resolved against the shared
+  // preview device. Opening Style therefore lands on a preview — the only surface
+  // that shows styling — without disabling or hiding the view control, and without
+  // re-overriding a merchant who chose Edit there last time. The device is shared,
+  // so picking Mobile on one tab moves every previewing tab to Mobile. In-memory
+  // only: a reload returns to Content/`edit`/`desktop`.
+  const [viewMemory, setViewMemory] = useState<ViewMemory>(DEFAULT_VIEW_MEMORY);
+  const activeView = viewForTab(viewMemory, activeTab);
 
   // Announced only when a TAB switch moved the view under the merchant. A view
   // the merchant clicked themselves announces via the radio's own state change.
@@ -234,12 +235,12 @@ export function EditorShell({
 
   const handleTabChange = (next: TabId) => {
     setActiveTab(next);
-    const nextView = viewForTab(tabViews, next);
+    const nextView = viewForTab(viewMemory, next);
     setAnnouncement(nextView === activeView ? "" : viewAnnouncement(nextView));
   };
 
   const handleViewChange = (next: ViewId) => {
-    setTabViews((memory) => rememberView(memory, activeTab, next));
+    setViewMemory((memory) => rememberView(memory, activeTab, next));
     setAnnouncement("");
   };
 

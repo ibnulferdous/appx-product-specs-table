@@ -16,13 +16,12 @@ describe("isPreviewView", () => {
 
   it("is true for each device preview view", () => {
     expect(isPreviewView("desktop")).toBe(true);
-    expect(isPreviewView("tablet")).toBe(true);
     expect(isPreviewView("mobile")).toBe(true);
   });
 
-  it("covers every ViewId exactly once (edit off, the three devices on)", () => {
-    const all: ViewId[] = ["edit", "desktop", "tablet", "mobile"];
-    expect(all.filter(isPreviewView)).toEqual(["desktop", "tablet", "mobile"]);
+  it("covers every ViewId exactly once (edit off, the two devices on)", () => {
+    const all: ViewId[] = ["edit", "desktop", "mobile"];
+    expect(all.filter(isPreviewView)).toEqual(["desktop", "mobile"]);
   });
 });
 
@@ -32,20 +31,18 @@ describe("isPreviewView", () => {
 describe("previewDeviceWidth", () => {
   it("returns the exact width for each device", () => {
     expect(previewDeviceWidth("desktop")).toBe("100%");
-    expect(previewDeviceWidth("tablet")).toBe("768px");
     expect(previewDeviceWidth("mobile")).toBe("375px");
   });
 
   it("is total — every device view yields a non-empty width", () => {
-    const devices: DeviceView[] = ["desktop", "tablet", "mobile"];
+    const devices: DeviceView[] = ["desktop", "mobile"];
     for (const view of devices) {
       expect(previewDeviceWidth(view).length).toBeGreaterThan(0);
     }
   });
 
-  it("fills only on desktop; tablet and mobile are fixed px", () => {
+  it("fills only on desktop; mobile is a fixed px width", () => {
     expect(previewDeviceWidth("desktop")).toBe("100%");
-    expect(previewDeviceWidth("tablet")).toMatch(/^\d+px$/);
     expect(previewDeviceWidth("mobile")).toMatch(/^\d+px$/);
   });
 });

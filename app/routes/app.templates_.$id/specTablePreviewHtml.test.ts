@@ -363,7 +363,6 @@ describe("renderSpecTablePreviewDocument", () => {
       .replace(PREVIEW_DOCUMENT_STYLES, "")
       .replace(wrapperOpenTag(), "");
     expect(outsideStyles).not.toContain("desktop");
-    expect(outsideStyles).not.toContain("tablet");
     expect(outsideStyles).not.toContain("mobile");
     // Same input → identical output (no hidden per-call variation).
     expect(renderSpecTablePreviewDocument(rows)).toBe(doc);

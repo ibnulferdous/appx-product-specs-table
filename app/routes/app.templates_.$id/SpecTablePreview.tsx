@@ -13,7 +13,7 @@ import styles from "./SpecTableEditor.module.css";
 // Feature 49 · Step 3 — the read-only device preview. Replaces the Step 1
 // placeholder: feeds the live rows through the pure storefront-markup renderer
 // (`renderSpecTablePreviewDocument` → `renderSpecTableHtml`) into a SANDBOXED
-// <iframe srcDoc>, so the Desktop / Tablet / Mobile toggle shows the real
+// <iframe srcDoc>, so the Desktop / Mobile toggle shows the real
 // storefront markup + styling of the working table. The iframe is the isolation
 // boundary: the storefront box model renders with no admin/Polaris CSS bleeding
 // in, and nothing inside can reach back out.
@@ -23,7 +23,7 @@ import styles from "./SpecTableEditor.module.css";
 // preview always reflects the live editor state.
 //
 // Step 5 sizes the frame per device: `previewDeviceWidth(view)` supplies the
-// iframe's width (desktop fills, tablet 768px, mobile 375px), applied inline
+// iframe's width (desktop fills, mobile 375px), applied inline
 // because it is dynamic per render; `.previewFrame` clamps + centers a fixed frame.
 //
 // Step 6 makes the frame auto-height to its content. Because the frame is an
@@ -48,7 +48,6 @@ import styles from "./SpecTableEditor.module.css";
 
 const DEVICE_LABELS: Record<DeviceView, string> = {
   desktop: "Desktop",
-  tablet: "Tablet",
   mobile: "Mobile",
 };
 
