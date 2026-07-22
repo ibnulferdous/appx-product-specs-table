@@ -35,7 +35,7 @@ Everything upstream is done and live-verified on the dev store:
   persists to `TableStyling`, serializes to the metaobject, and renders on the storefront;
   rail a11y pass done; Reset-to-theme-defaults ships; docs reconciled.
 
-Test suite ~834 tests / 36 files; full gate (typecheck · lint · format · test · build) green.
+Test suite ~837 tests / 36 files; full gate (typecheck · lint · format · test · build) green.
 
 **Next:** B2 = steps 13–14 (built-in preset gallery: `stylePresets.ts` constants, rail
 preset cards, skippable creation-gallery popup — **copy** semantics into real `TableStyling`
@@ -94,6 +94,14 @@ plan: `~/.claude/plans/style-tab-phase-b-implementation-plan.md` (1–12 = B1, 1
   headings, named landmark) + docs reconciliation. **Phase B1 complete.**
 - Resolved en route: the section-header BANDED band is the intended default becoming
   reachable, not a regression (accept; Step 7 signed off).
+
+**Editor sidebar inner-scroll (feature 71, doc `71-…`) — ✅ shipped & verified 2026-07-22**
+- Style/Settings rail now scrolls internally (bounded to the iframe viewport via the
+  reused `useScrollRegionHeight` + a new `EditorShell.module.css` `.railScroller`) so the
+  long Style rail no longer scrolls the preview off-screen. **Only the rail scrolls**
+  (merchant choice); preview keeps natural height. Tripwired `SpecTableEditor.module.css`
+  / `RowGrid.tsx` untouched. Full gate green; live-verified on the dev store (Style rail
+  scrolls to "Reset to theme defaults" with preview anchored; Settings same; Content unchanged).
 
 **Device previews — Reshell Phase D (feature 49, steps 1–8; docs `49-…`–`56-…`)**
 - Read-only Desktop / Mobile storefront previews in the editor: toggle swaps the stage (1),
@@ -189,7 +197,7 @@ Multi-value applies to PRODUCT + COLLECTION only. No migrations needed for the 4
 
 ## Next Up
 
-1. **Reshell Phase B2** — built-in preset gallery (Style tab steps 13–14; new feature-doc number, 71+, since 70 is the stacked-semantics feature). Then C (Settings display rules) → E (assignment into the reshell) → F (top-bar status/save + cleanup).
+1. **Reshell Phase B2** — built-in preset gallery (Style tab steps 13–14; new feature-doc number, 72+, since 70 = stacked-semantics and 71 = sidebar inner-scroll). Then C (Settings display rules) → E (assignment into the reshell) → F (top-bar status/save + cleanup).
 2. **Storefront table semantics in stacked layouts (feature 70)** — code shipped; screen-reader pass still owed (see Open Questions).
 3. **Templates-list Phase 2** — search / sort / pagination (server-side, with pagination) when the list can grow large; multi-select bulk actions later.
 4. **Pre-submission** — mandatory privacy webhooks (`customers/data_request`, `customers/redact`, `shop/redact`) + Billing (`prd.md`, `context/app-store-review-checklist.md`).

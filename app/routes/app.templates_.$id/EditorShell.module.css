@@ -1,0 +1,24 @@
+/* EditorShell chrome that must live OUTSIDE `SpecTableEditor.module.css`.
+ *
+ * `SpecTableEditor.module.css` is held byte-clean against the Step 10 sign-off
+ * (`a7b304c`) as the tripwire for the Edit-grid-never-styled binding rule, so any
+ * new shell rule lands here instead. Layout/sizing only — no color — matching that
+ * module's conventions (rem units, hex-free).
+ */
+
+/* --- Style / Settings sidebar inner-scroll --------------------------------
+ * The Style rail is long enough that, unbounded, the whole admin iframe scrolls
+ * and the preview leaves the viewport. This caps the rail to the remaining iframe
+ * height and scrolls it internally, so the preview column stays in view. Mirrors
+ * the Content tab's `.rowsScroller` (reshell A3): the `max-height` px is measured
+ * by `useScrollRegionHeight` and applied inline; this class supplies the scroll,
+ * the `min-height` floor (matches MIN_SCROLLER_HEIGHT_REM in the hook), and
+ * `overscroll-behavior: contain` so a scroll past the rail's ends does not chain
+ * to the admin behind the iframe. The sidebar `s-box` keeps its `padding` and the
+ * region landmark; only the scroll lives here.
+ */
+.railScroller {
+  overflow-y: auto;
+  min-height: 12rem;
+  overscroll-behavior: contain;
+}

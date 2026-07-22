@@ -6,6 +6,7 @@ import type {
 } from "react";
 import { useId, useRef, useState } from "react";
 import { isPreviewView, type DeviceView, type ViewId } from "./deviceView";
+import { useScrollRegionHeight } from "./useScrollRegionHeight";
 import {
   DEFAULT_VIEW_MEMORY,
   rememberView,
@@ -15,6 +16,7 @@ import {
   type ViewMemory,
 } from "./tabViewMemory";
 import styles from "./SpecTableEditor.module.css";
+import shellStyles from "./EditorShell.module.css";
 
 // The mockup's editor card (design/spec-editor-mockup.html → `.editor`): a
 // full-bleed Polaris card with a control row (segmented tabs + device toggle)
@@ -255,6 +257,17 @@ export function EditorShell({
     ? (preview?.(activeView) ?? stage)
     : stage;
 
+  // Bound the Style/Settings rail to the remaining iframe viewport so ONLY the
+  // rail scrolls — the preview beside it stays in view instead of the whole admin
+  // iframe scrolling the preview off-screen. Reuses the Content tab's A3 measurer
+  // (`useScrollRegionHeight`): it clamps `railRef`'s top → viewport bottom and
+  // returns the px applied inline below, while `.railScroller` supplies the scroll
+  // + floor. Called unconditionally (rules of hooks); it no-ops until `railRef` is
+  // mounted, i.e. only on the Style/Settings tabs. The `showSidebar` re-measure key
+  // makes it clamp the moment the rail appears.
+  const railRef = useRef<HTMLDivElement>(null);
+  const railMaxHeight = useScrollRegionHeight(railRef, showSidebar ? 1 : 0);
+
   return (
     <s-box
       background="base"
@@ -309,11 +322,20 @@ export function EditorShell({
             accessibilityRole="region"
             accessibilityLabel={activeTab === "style" ? "Style" : "Settings"}
           >
-            {sidebarContent ?? (
-              <SidebarPlaceholder
-                label={activeTab === "style" ? "Style" : "Settings"}
-              />
-            )}
+            {/* The rail scrolls internally (see `railMaxHeight` above) so the long
+                Style controls never push the preview out of view. The landmark +
+                padding stay on the `s-box`; only the scroll lives on this div. */}
+            <div
+              ref={railRef}
+              className={shellStyles.railScroller}
+              style={{ maxHeight: railMaxHeight }}
+            >
+              {sidebarContent ?? (
+                <SidebarPlaceholder
+                  label={activeTab === "style" ? "Style" : "Settings"}
+                />
+              )}
+            </div>
           </s-box>
           <s-box>{stageContent}</s-box>
         </s-grid>
