@@ -31,11 +31,13 @@
   --appx-dot-yellow: #febc2e;
   --appx-dot-green: #28c840;
 
+  /* A transparent centering container — NO background/radius of its own. An earlier
+     faint tinted backdrop with a border-radius revealed white triangles of the stage
+     column at its rounded corners; the device already pops via its own border +
+     shadow, so the backdrop is dropped rather than fixed. */
   display: flex;
   justify-content: center;
   padding: 1.5rem;
-  background: color-mix(in srgb, currentColor 3%, transparent);
-  border-radius: 0.75rem;
   /* A device wider than a very narrow editor column scrolls sideways here rather
      than clipping or forcing the whole page to scroll horizontally. */
   overflow-x: auto;
