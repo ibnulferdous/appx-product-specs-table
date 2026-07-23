@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
+  browserScreenHeight,
   isPreviewView,
   phoneScreenHeight,
   previewDeviceWidth,
+  BROWSER_SCREEN_MIN_PX,
   PHONE_CHROME_PX,
   PHONE_SCREEN_MAX_PX,
   type DeviceView,
@@ -91,5 +93,67 @@ describe("phoneScreenHeight", () => {
       expect(height!).toBeLessThanOrEqual(PHONE_SCREEN_MAX_PX);
       previous = height!;
     }
+  });
+});
+
+// Feature 73. The pure sizing rule behind the Desktop mockup's screen: CLAMP the
+// shim-measured content height to the viewport — hug a short table exactly as
+// before, bound a long one so the iframe scrolls inside the browser window.
+describe("browserScreenHeight", () => {
+  it("is null before the first height message (so CSS decides)", () => {
+    expect(browserScreenHeight(null, 900)).toBeNull();
+    expect(browserScreenHeight(undefined, 900)).toBeNull();
+  });
+
+  it("ignores a non-finite content height", () => {
+    expect(browserScreenHeight(Number.NaN, 900)).toBeNull();
+    expect(browserScreenHeight(Number.POSITIVE_INFINITY, 900)).toBeNull();
+  });
+
+  it("falls back to the unclamped content height before the first measurement", () => {
+    // Degrades to the pre-feature-73 unbounded window, never to a wrong size.
+    expect(browserScreenHeight(1400, undefined)).toBe(1400);
+    expect(browserScreenHeight(1400, null)).toBe(1400);
+    expect(browserScreenHeight(1400, Number.NaN)).toBe(1400);
+  });
+
+  it("hugs the content when the table fits the viewport (no scrollbar)", () => {
+    expect(browserScreenHeight(400, 900)).toBe(400);
+    // The boundary case: exactly filling the viewport is still a fit.
+    expect(browserScreenHeight(900, 900)).toBe(900);
+  });
+
+  it("bounds the window when the table outgrows the viewport", () => {
+    expect(browserScreenHeight(2400, 900)).toBe(900);
+  });
+
+  it("never inflates a genuinely short table to the sanity floor", () => {
+    // The floor guards the BUDGET, not the result — a one-row table stays tiny.
+    const tiny = 40;
+    expect(tiny).toBeLessThan(BROWSER_SCREEN_MIN_PX);
+    expect(browserScreenHeight(tiny, 900)).toBe(tiny);
+  });
+
+  it("never collapses the window from a raced tiny measurement", () => {
+    expect(browserScreenHeight(2400, 0)).toBe(BROWSER_SCREEN_MIN_PX);
+    expect(browserScreenHeight(2400, 50)).toBe(BROWSER_SCREEN_MIN_PX);
+  });
+
+  it("never exceeds the content height (the clamp is one-sided)", () => {
+    for (const content of [24, 200, 900, 5000]) {
+      for (const available of [0, 300, 900, 4000]) {
+        expect(browserScreenHeight(content, available)!).toBeLessThanOrEqual(
+          content,
+        );
+      }
+    }
+  });
+
+  it("is a fixed point: re-clamping an applied height changes nothing", () => {
+    // The applied height can never feed back as a smaller content measurement
+    // (the framed document's height is width-driven), but if it did, the rule
+    // would already be settled.
+    const applied = browserScreenHeight(2400, 900)!;
+    expect(browserScreenHeight(applied, 900)).toBe(applied);
   });
 });

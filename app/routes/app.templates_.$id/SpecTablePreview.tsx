@@ -2,7 +2,11 @@ import { useEffect, useRef, useState } from "react";
 import type { EditorRow } from "../../utils/rows";
 import type { StylingValues } from "../../utils/tableStyling";
 import type { DeviceView } from "./deviceView";
-import { phoneScreenHeight, previewDeviceWidth } from "./deviceView";
+import {
+  browserScreenHeight,
+  phoneScreenHeight,
+  previewDeviceWidth,
+} from "./deviceView";
 import {
   clampPreviewHeight,
   PREVIEW_HEIGHT_MESSAGE_TYPE,
@@ -53,14 +57,21 @@ import device from "./DevicePreview.module.css";
 // which wraps the iframe without touching the tripwired `.previewFrame`). The chrome
 // is decorative (`aria-hidden`), so AT still sees only the titled iframe.
 //
-// Desktop keeps the Step 6 content-driven auto-height (the browser window grows with
-// the table). Mobile instead sizes the phone to the AVAILABLE viewport height (like
+// Mobile sizes the phone to the AVAILABLE viewport height (like
 // the Shopify theme editor's mobile preview), CAPPED at a plausible device height
 // (`phoneScreenHeight` → `PHONE_SCREEN_MAX_PX`, so a tall monitor doesn't stretch the
 // phone into an unrealistic slab), and lets the iframe scroll INTERNALLY like a real
 // phone — the height shim still reports, but the Mobile branch ignores it and uses the
 // fitted height instead. This is a deliberate, view-scoped exception to Step 6, not a
-// reversal: Desktop is unchanged.
+// reversal.
+//
+// Feature 73 gives Desktop an inner scrollbar too, but by a WEAKER rule than Mobile's:
+// the browser window still takes the Step 6 shim-measured content height, now CLAMPED
+// to the available viewport (`browserScreenHeight`). A short table is byte-identical to
+// feature 72 (window hugs content, no scrollbar, no dead space); only a table too tall
+// for the viewport is bounded, and it scrolls inside the window like a real browser.
+// Step 6's measurement stays load-bearing on Desktop — it is the clamp's INPUT, not
+// something the branch ignores.
 
 const DEVICE_LABELS: Record<DeviceView, string> = {
   desktop: "Desktop",
@@ -96,14 +107,31 @@ export function SpecTablePreview({
 
   const isMobile = view === "mobile";
 
-  // Size the phone to the remaining iframe viewport (reusing feature 71's A3
-  // measurer) so it matches the available height instead of a fixed device size,
-  // then cap it to a phone-shaped maximum. The `isMobile` re-measure key makes it
-  // clamp the moment the phone mounts (a Desktop→Mobile switch). Desktop passes a
-  // stable 0 and never reads the value.
-  const phoneRef = useRef<HTMLDivElement>(null);
-  const phoneAvail = useScrollRegionHeight(phoneRef, isMobile ? 1 : 0);
-  const screenHeight = isMobile ? phoneScreenHeight(phoneAvail) : null;
+  // Both mockups bound their screen to the remaining iframe viewport, measured by
+  // feature 71's A3 measurer. ONE ref, moved to whichever device is mounted, so
+  // the hook stays unconditional; the re-measure key flips on a device switch so
+  // the new mockup clamps the moment it mounts.
+  //
+  // The ref sits on a different element per device, and each branch's pure sizing
+  // function interprets the measurement accordingly:
+  //
+  // - Mobile → `.phone` (the whole body). `phoneScreenHeight` subtracts the
+  //   bezel chrome, since the measurement covers padding + speaker + borders that
+  //   sit around the screen, then caps to a phone-shaped maximum.
+  // - Desktop → `.phoneScreen`'s counterpart `.browserScreen`, i.e. BELOW the
+  //   chrome bar, so the measurement already IS the screen's budget — no
+  //   chrome constant to keep in sync with the CSS bar height. Sizing the screen
+  //   never moves its own top (the bar above it is fixed), so the hook's
+  //   measure→resize→measure cycle converges on the first repeat, exactly as its
+  //   `.rowsScroller` contract describes.
+  const deviceRef = useRef<HTMLDivElement>(null);
+  const available = useScrollRegionHeight(deviceRef, isMobile ? 1 : 2);
+  const screenHeight = isMobile
+    ? phoneScreenHeight(available)
+    : // Feature 73 — clamp, don't fit: a short table keeps hugging its content
+      // (unchanged from feature 72); a long one stops at the viewport and scrolls
+      // inside the window.
+      browserScreenHeight(height, available);
 
   const frame = (
     <iframe
@@ -118,20 +146,15 @@ export function SpecTablePreview({
       // barred by the document's CSP.
       sandbox="allow-scripts"
       srcDoc={renderSpecTablePreviewDocument(rows, styling)}
-      // Width is the per-device size (Step 5). Height: Mobile fits the measured
-      // available height, capped to a phone-shaped maximum, so the phone screen
-      // scrolls internally (feature 72); Desktop keeps the shim-measured content
-      // height (Step 6), falling back to the `.previewFrame` min-height until the
-      // first measurement arrives.
+      // Width is the per-device size (Step 5). Height comes from the per-device
+      // pure sizing rule above — Mobile fits the viewport up to a phone-shaped
+      // maximum (feature 72), Desktop takes the shim-measured content height
+      // clamped to the viewport (feature 73). Either way an over-tall document
+      // scrolls INSIDE the iframe. `undefined` (before the first measurement)
+      // falls back to `.previewFrame`'s min-height.
       style={{
         width: previewDeviceWidth(view),
-        height: isMobile
-          ? screenHeight !== null
-            ? `${screenHeight}px`
-            : undefined
-          : height !== null
-            ? `${height}px`
-            : undefined,
+        height: screenHeight !== null ? `${screenHeight}px` : undefined,
       }}
     ></iframe>
   );
@@ -141,7 +164,7 @@ export function SpecTablePreview({
   return (
     <div className={device.stage}>
       {isMobile ? (
-        <div ref={phoneRef} className={device.phone}>
+        <div ref={deviceRef} className={device.phone}>
           <span className={device.phoneSpeaker} aria-hidden="true"></span>
           <div className={device.phoneScreen}>{frame}</div>
         </div>
@@ -159,7 +182,9 @@ export function SpecTablePreview({
             </span>
             <span className={device.browserUrl}>Storefront preview</span>
           </div>
-          <div className={device.browserScreen}>{frame}</div>
+          <div ref={deviceRef} className={device.browserScreen}>
+            {frame}
+          </div>
         </div>
       )}
     </div>

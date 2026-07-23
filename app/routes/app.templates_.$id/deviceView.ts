@@ -91,3 +91,45 @@ export function phoneScreenHeight(
     Math.max(PHONE_CHROME_PX, available - PHONE_CHROME_PX),
   );
 }
+
+/**
+ * A sanity floor for the desktop browser window's screen, in CSS px. Only guards
+ * a raced/pathological `available` measurement (one taken before layout settles)
+ * from collapsing the window to a sliver; the next settled measure corrects it.
+ * It never inflates a genuinely short table — see `browserScreenHeight`, which
+ * applies this to the BUDGET, not to the result.
+ */
+export const BROWSER_SCREEN_MIN_PX = 240;
+
+/**
+ * The height to render the desktop browser mockup's screen at (feature 73), given
+ * the shim-measured `content` height and the measured `available` viewport room
+ * below the screen's top edge.
+ *
+ * **Clamp, not fit.** Unlike the phone — a fixed-size device that always fills its
+ * measured height — a browser window hugs a short page and only bounds a long one:
+ *
+ * - `content <= available` → `content`, i.e. exactly the pre-feature-73 behavior.
+ *   A short table shows no scrollbar and no dead white space beneath it.
+ * - `content > available` → `available`, so the window stops at the bottom of the
+ *   editor viewport and the iframe scrolls INTERNALLY, like a real browser.
+ *
+ * `content` null (no height message yet) → `null`, i.e. let `.previewFrame`'s
+ * `min-height` floor stand until the first measurement, as before. `available`
+ * missing/non-finite (pre-measurement) → the unclamped `content`, which degrades
+ * to the old unbounded window rather than to a wrong size.
+ *
+ * No resize loop: shrinking the iframe cannot shrink `content` (the framed
+ * document's height is width-driven), and an inner scrollbar appearing can only
+ * push `content` further above the cap, where the result is pinned to `available`.
+ *
+ * Pure so the sizing rule is unit-testable; the visual result is browser-verified.
+ */
+export function browserScreenHeight(
+  content: number | null | undefined,
+  available: number | null | undefined,
+): number | null {
+  if (content == null || !Number.isFinite(content)) return null;
+  if (available == null || !Number.isFinite(available)) return content;
+  return Math.min(content, Math.max(BROWSER_SCREEN_MIN_PX, available));
+}

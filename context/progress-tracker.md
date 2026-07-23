@@ -35,7 +35,7 @@ Everything upstream is done and live-verified on the dev store:
   persists to `TableStyling`, serializes to the metaobject, and renders on the storefront;
   rail a11y pass done; Reset-to-theme-defaults ships; docs reconciled.
 
-Test suite ~837 tests / 36 files; full gate (typecheck · lint · format · test · build) green.
+Test suite ~852 tests / 36 files; full gate (typecheck · lint · format · test · build) green.
 
 **Next:** B2 = steps 13–14 (built-in preset gallery: `stylePresets.ts` constants, rail
 preset cards, skippable creation-gallery popup — **copy** semantics into real `TableStyling`
@@ -95,9 +95,22 @@ plan: `~/.claude/plans/style-tab-phase-b-implementation-plan.md` (1–12 = B1, 1
 - Resolved en route: the section-header BANDED band is the intended default becoming
   reachable, not a regression (accept; Step 7 signed off).
 
+**Desktop preview inner scroll (feature 73, doc `73-…`) — ✅ shipped & verified 2026-07-23**
+- The Desktop browser mockup no longer grows without bound: the shim-measured content
+  height is **clamped** to the available viewport (pure `browserScreenHeight` in
+  `deviceView.ts`), so a long table scrolls INSIDE the window like a real browser while a
+  short one still hugs its content exactly as in feature 72 (clamp, not fit — merchant's
+  call; always-filling would put dead space under a short table). Both mockups now share
+  one `useScrollRegionHeight` ref; Desktop measures `.browserScreen` (below the chrome
+  bar) so no `BROWSER_CHROME_PX` constant can drift against the CSS. Preview documents get
+  `html { scrollbar-width: thin }` (preview-only ambient, outside the drift-guarded
+  `SPEC_TABLE_CSS`). Iframe pipeline, `DevicePreview.module.css`, and the tripwired files
+  untouched.
+
 **Editor device-preview mockups (feature 72, doc `72-…`) — ✅ shipped & verified 2026-07-22**
 - The Desktop/Mobile previews now render inside a device mockup: Desktop = a browser
-  window (traffic-light dots + faux address pill, auto-height, fills the column); Mobile =
+  window (traffic-light dots + faux address pill, fills the column; auto-height until
+  feature 73 clamped it to the viewport); Mobile =
   a light, thin phone frame (subtle border + speaker pill) whose screen fits the available
   viewport height (`useScrollRegionHeight`), capped at a phone-shaped max (2026-07-23
   follow-up: pure `phoneScreenHeight` + `PHONE_SCREEN_MAX_PX` 812 in `deviceView.ts`, so a
@@ -210,7 +223,7 @@ Multi-value applies to PRODUCT + COLLECTION only. No migrations needed for the 4
 
 ## Next Up
 
-1. **Reshell Phase B2** — built-in preset gallery (Style tab steps 13–14; new feature-doc number, 73+, since 70 = stacked-semantics, 71 = sidebar inner-scroll, 72 = device-preview mockups). Then C (Settings display rules) → E (assignment into the reshell) → F (top-bar status/save + cleanup).
+1. **Reshell Phase B2** — built-in preset gallery (Style tab steps 13–14; new feature-doc number, 74+, since 70 = stacked-semantics, 71 = sidebar inner-scroll, 72 = device-preview mockups, 73 = desktop preview inner scroll). Then C (Settings display rules) → E (assignment into the reshell) → F (top-bar status/save + cleanup).
 2. **Storefront table semantics in stacked layouts (feature 70)** — code shipped; screen-reader pass still owed (see Open Questions).
 3. **Templates-list Phase 2** — search / sort / pagination (server-side, with pagination) when the list can grow large; multi-select bulk actions later.
 4. **Pre-submission** — mandatory privacy webhooks (`customers/data_request`, `customers/redact`, `shop/redact`) + Billing (`prd.md`, `context/app-store-review-checklist.md`).

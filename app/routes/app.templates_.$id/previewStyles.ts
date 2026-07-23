@@ -319,8 +319,22 @@ export const SPEC_TABLE_CSS = `/* Appx — Product Specs Table storefront styles
 // "does it match the storefront" check. This is deliberately NOT the table's own
 // CSS (fidelity, above) and NOT merchant-theme replication (out of feature 49) —
 // just the neutral page the table sits on. Kept tiny: a body reset + a system
-// sans-serif stack + a neutral ink, no table styling, no accent colors.
-const PREVIEW_AMBIENT = `body {
+// sans-serif stack + a neutral ink + the page scrollbar, no table styling, no
+// accent colors.
+//
+// The `html` rule is page CHROME, not content (feature 73): once a device mockup
+// bounds its screen (Mobile always, Desktop when the table outgrows the viewport),
+// the framed document scrolls itself, and a full-width platform scrollbar inside a
+// small mockup reads as a UI artifact rather than as part of the previewed page.
+// `scrollbar-width` is the standard property (no `::-webkit-scrollbar` fork), it
+// degrades to the platform default where unsupported, and it is inert whenever the
+// document fits — a short desktop table shows no scrollbar at all. Preview-only,
+// like everything in this module: never shipped to the storefront.
+const PREVIEW_AMBIENT = `html {
+  scrollbar-width: thin;
+}
+
+body {
   margin: 0.5rem;
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
   color: #1a1a1a;
