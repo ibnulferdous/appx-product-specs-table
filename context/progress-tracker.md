@@ -133,7 +133,10 @@ plan: `~/.claude/plans/style-tab-phase-b-implementation-plan.md` (1–12 = B1, 1
   all four sides the rail's scrollbar floated ~1rem inside the grey panel with a dead strip to
   its right. The box now sets `paddingInlineEnd="none"` and `.railScroller` owns that one
   gutter itself (`padding-inline-end: var(--s-space-base, 1rem)`), so the scrollbar hugs the
-  panel edge while the controls stay inset exactly as before. Landmark, `useScrollRegionHeight`,
+  panel edge while the controls stay inset exactly as before. The rail also takes
+  `scrollbar-width: thin` — a full-width platform scrollbar reads as a window edge against a
+  18.75rem rail; same standard property, same no-`::-webkit-scrollbar`-fork call as the device
+  previews' `PREVIEW_AMBIENT` (feature 73). Landmark, `useScrollRegionHeight`,
   and the tripwired files unchanged. Full gate green; live-verified on the dev store.
   *(The editor's OTHER visible gutter — the empty ~16px right of the app's own document
   scrollbar — is Shopify's, not ours: admin's `.Polaris-Scroll` sets `scrollbar-gutter: stable`

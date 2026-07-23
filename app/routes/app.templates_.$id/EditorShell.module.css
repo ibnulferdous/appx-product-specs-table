@@ -30,4 +30,10 @@
      Polaris `base` space token with a 1rem fallback, so this stays in lockstep
      with the box's other three sides. */
   padding-inline-end: var(--s-space-base, 1rem);
+  /* A full-width platform scrollbar is heavy against a 18.75rem rail — it reads
+     as a window edge rather than as part of the panel. Same call, same standard
+     property as the device previews' `PREVIEW_AMBIENT` (feature 73): no
+     `::-webkit-scrollbar` fork, degrades to the platform default where
+     unsupported, and inert whenever the rail fits. */
+  scrollbar-width: thin;
 }
