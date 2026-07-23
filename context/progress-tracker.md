@@ -99,7 +99,11 @@ plan: `~/.claude/plans/style-tab-phase-b-implementation-plan.md` (1–12 = B1, 1
 - The Desktop/Mobile previews now render inside a device mockup: Desktop = a browser
   window (traffic-light dots + faux address pill, auto-height, fills the column); Mobile =
   a light, thin phone frame (subtle border + speaker pill) whose screen fits the available
-  viewport height (`useScrollRegionHeight`) and scrolls internally. Chrome wraps the iframe
+  viewport height (`useScrollRegionHeight`), capped at a phone-shaped max (2026-07-23
+  follow-up: pure `phoneScreenHeight` + `PHONE_SCREEN_MAX_PX` 812 in `deviceView.ts`, so a
+  tall monitor no longer stretches the phone), and scrolls internally. Device shadows are
+  sized to fade out INSIDE `.stage`'s padding (it clips: `overflow-x: auto` ⇒ both axes),
+  geometry centralized as `--appx-device-shadow-offset/-blur`. Chrome wraps the iframe
   in a new `DevicePreview.module.css` (all colours as centralized custom props);
   the iframe pipeline (renderer, height shim, sandbox, live styling) and the tripwired
   `SpecTableEditor.module.css` are untouched. Live-verified on the dev store.

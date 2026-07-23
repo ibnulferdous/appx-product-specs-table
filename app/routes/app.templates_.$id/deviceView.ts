@@ -50,3 +50,44 @@ export function previewDeviceWidth(view: DeviceView): string {
     }
   }
 }
+
+/**
+ * Vertical chrome the phone mockup adds around its screen (feature 72): bezel
+ * padding + speaker pill + gap + top/bottom border. Subtracted from the measured
+ * available height so the WHOLE phone — not just its screen — fits the viewport.
+ * Keep in sync with `.phone` padding/gap + `.phoneSpeaker` height + border in
+ * `DevicePreview.module.css`.
+ */
+export const PHONE_CHROME_PX = 28;
+
+/**
+ * The tallest the emulated phone screen is ever sized to, in CSS px. 812 is the
+ * iPhone X-class layout viewport, which pairs with the 375px `previewDeviceWidth`
+ * for a real phone aspect ratio (~1 : 2.17).
+ *
+ * Feature 72 originally sized the phone to ALL the available height, matching the
+ * theme editor. On a tall monitor that produced a phone several real devices long
+ * — an unrealistic preview, since no shopper's viewport is that tall. Capping here
+ * keeps the mockup phone-shaped; the screen still scrolls internally, so a long
+ * table is fully reachable either way.
+ */
+export const PHONE_SCREEN_MAX_PX = 812;
+
+/**
+ * The height to render the phone mockup's screen at, given the measured available
+ * viewport height (`undefined`/`null` before the first measurement → `null`, i.e.
+ * let CSS decide). Fits the phone to the viewport, then clamps to a plausible
+ * device height. The floor reuses `PHONE_CHROME_PX` purely as a sanity minimum so
+ * a pathologically short measurement can't yield a zero/negative screen.
+ *
+ * Pure so the sizing rule is unit-testable; the visual result is browser-verified.
+ */
+export function phoneScreenHeight(
+  available: number | null | undefined,
+): number | null {
+  if (available == null || !Number.isFinite(available)) return null;
+  return Math.min(
+    PHONE_SCREEN_MAX_PX,
+    Math.max(PHONE_CHROME_PX, available - PHONE_CHROME_PX),
+  );
+}

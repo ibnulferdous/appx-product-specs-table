@@ -27,6 +27,11 @@
   --appx-device-hairline: color-mix(in srgb, currentColor 12%, transparent);
   --appx-device-shadow: color-mix(in srgb, currentColor 16%, transparent);
   --appx-device-url-text: color-mix(in srgb, currentColor 55%, transparent);
+  /* Device drop-shadow GEOMETRY, shared by both mockups. `offset + blur` must stay
+     within `.stage`'s bottom padding below (see the note there) or the shadow is
+     sliced off mid-gradient instead of fading out. */
+  --appx-device-shadow-offset: 0.375rem;
+  --appx-device-shadow-blur: 1rem;
   --appx-dot-red: #ff5f57;
   --appx-dot-yellow: #febc2e;
   --appx-dot-green: #28c840;
@@ -37,6 +42,14 @@
      shadow, so the backdrop is dropped rather than fixed. */
   display: flex;
   justify-content: center;
+  /* This padding is also the device shadows' ONLY room to fade out. `overflow-x`
+     below makes the stage a scroll container, and CSS computes the other axis to
+     `auto` too, so the stage clips at its padding box — a shadow reaching past it
+     is cut mid-gradient, which reads as a hard line under the device (reported
+     2026-07-23). The stage can't simply be padded more: the phone is sized to the
+     measured viewport, so extra padding here pushes the card past the bottom of the
+     admin frame. The shadow is contained instead — keep
+     `--appx-device-shadow-offset + --appx-device-shadow-blur` ≤ this value. */
   padding: 1.5rem;
   /* A device wider than a very narrow editor column scrolls sideways here rather
      than clipping or forcing the whole page to scroll horizontally. */
@@ -48,7 +61,8 @@
 /* The phone body: a light, thin outline (not a heavy dark slab) so the specs table
    inside is the focus. A hairline border + soft shadow read it as a phone frame.
    Its vertical chrome (padding + speaker + gap + border) must equal PHONE_CHROME_PX
-   in `SpecTablePreview.tsx`, which subtracts it from the measured height. */
+   in `deviceView.ts`, which subtracts it from the measured height before capping
+   the screen at PHONE_SCREEN_MAX_PX. */
 .phone {
   flex: 0 0 auto;
   display: flex;
@@ -59,7 +73,8 @@
   background: var(--appx-device-body);
   border: 0.0625rem solid var(--appx-device-hairline);
   border-radius: 1.5rem;
-  box-shadow: 0 0.75rem 1.75rem var(--appx-device-shadow);
+  box-shadow: 0 var(--appx-device-shadow-offset) var(--appx-device-shadow-blur)
+    var(--appx-device-shadow);
 }
 
 /* Speaker / notch pill sitting in the top bezel (NOT over the screen, so it never
@@ -95,7 +110,8 @@
   overflow: hidden;
   border-radius: 0.6rem;
   border: 0.0625rem solid var(--appx-device-hairline);
-  box-shadow: 0 1rem 2rem var(--appx-device-shadow);
+  box-shadow: 0 var(--appx-device-shadow-offset) var(--appx-device-shadow-blur)
+    var(--appx-device-shadow);
   background: var(--appx-device-screen);
 }
 

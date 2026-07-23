@@ -1,7 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
   isPreviewView,
+  phoneScreenHeight,
   previewDeviceWidth,
+  PHONE_CHROME_PX,
+  PHONE_SCREEN_MAX_PX,
   type DeviceView,
   type ViewId,
 } from "./deviceView";
@@ -44,5 +47,49 @@ describe("previewDeviceWidth", () => {
   it("fills only on desktop; mobile is a fixed px width", () => {
     expect(previewDeviceWidth("desktop")).toBe("100%");
     expect(previewDeviceWidth("mobile")).toMatch(/^\d+px$/);
+  });
+});
+
+// Feature 72 (max-height follow-up). The pure sizing rule behind the Mobile
+// mockup's screen: fit the phone to the available viewport, then cap it so a tall
+// monitor can't stretch it past a plausible device height.
+describe("phoneScreenHeight", () => {
+  it("is null before the first measurement (so CSS decides)", () => {
+    expect(phoneScreenHeight(null)).toBeNull();
+    expect(phoneScreenHeight(undefined)).toBeNull();
+  });
+
+  it("ignores a non-finite measurement", () => {
+    expect(phoneScreenHeight(Number.NaN)).toBeNull();
+    expect(phoneScreenHeight(Number.POSITIVE_INFINITY)).toBeNull();
+  });
+
+  it("fits the whole phone in the viewport when there is room to spare", () => {
+    // Screen + chrome must not exceed what was measured.
+    const available = 600;
+    expect(phoneScreenHeight(available)).toBe(available - PHONE_CHROME_PX);
+  });
+
+  it("caps at a plausible device height on a tall monitor", () => {
+    expect(phoneScreenHeight(2000)).toBe(PHONE_SCREEN_MAX_PX);
+    expect(phoneScreenHeight(PHONE_SCREEN_MAX_PX + PHONE_CHROME_PX)).toBe(
+      PHONE_SCREEN_MAX_PX,
+    );
+  });
+
+  it("never returns a zero or negative screen from a tiny measurement", () => {
+    expect(phoneScreenHeight(0)).toBe(PHONE_CHROME_PX);
+    expect(phoneScreenHeight(10)).toBe(PHONE_CHROME_PX);
+  });
+
+  it("is monotonic and always within the cap", () => {
+    let previous = 0;
+    for (const available of [0, 100, 400, 840, 1200, 3000]) {
+      const height = phoneScreenHeight(available);
+      expect(height).not.toBeNull();
+      expect(height!).toBeGreaterThanOrEqual(previous);
+      expect(height!).toBeLessThanOrEqual(PHONE_SCREEN_MAX_PX);
+      previous = height!;
+    }
   });
 });
