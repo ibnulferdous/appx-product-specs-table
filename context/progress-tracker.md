@@ -128,6 +128,19 @@ plan: `~/.claude/plans/style-tab-phase-b-implementation-plan.md` (1–12 = B1, 1
   (merchant choice); preview keeps natural height. Tripwired `SpecTableEditor.module.css`
   / `RowGrid.tsx` untouched. Full gate green; live-verified on the dev store (Style rail
   scrolls to "Reset to theme defaults" with preview anchored; Settings same; Content unchanged).
+- **Follow-up 2026-07-23 — rail scrollbar rides the panel edge.** A scrollbar paints on its
+  scrolling element's *border* edge, so while the wrapping `s-box` owned `padding="base"` on
+  all four sides the rail's scrollbar floated ~1rem inside the grey panel with a dead strip to
+  its right. The box now sets `paddingInlineEnd="none"` and `.railScroller` owns that one
+  gutter itself (`padding-inline-end: var(--s-space-base, 1rem)`), so the scrollbar hugs the
+  panel edge while the controls stay inset exactly as before. Landmark, `useScrollRegionHeight`,
+  and the tripwired files unchanged. Full gate green; live-verified on the dev store.
+  *(The editor's OTHER visible gutter — the empty ~16px right of the app's own document
+  scrollbar — is Shopify's, not ours: admin's `.Polaris-Scroll` sets `scrollbar-gutter: stable`
+  and lays the app iframe inside `_ScrollbarSafeArea_`, 16px narrower. Not removable from
+  inside the iframe; it only stops being visible if the app document itself stops scrolling —
+  today it overflows by roughly the `.tipsFooter` height, which `useScrollRegionHeight`'s flat
+  `BOTTOM_PAD_REM = 3` does not budget for. Unfixed; see Next Up.)*
 
 **Device previews — Reshell Phase D (feature 49, steps 1–8; docs `49-…`–`56-…`)**
 - Read-only Desktop / Mobile storefront previews in the editor: toggle swaps the stage (1),
@@ -225,8 +238,14 @@ Multi-value applies to PRODUCT + COLLECTION only. No migrations needed for the 4
 
 1. **Reshell Phase B2** — built-in preset gallery (Style tab steps 13–14; new feature-doc number, 74+, since 70 = stacked-semantics, 71 = sidebar inner-scroll, 72 = device-preview mockups, 73 = desktop preview inner scroll). Then C (Settings display rules) → E (assignment into the reshell) → F (top-bar status/save + cleanup).
 2. **Storefront table semantics in stacked layouts (feature 70)** — code shipped; screen-reader pass still owed (see Open Questions).
-3. **Templates-list Phase 2** — search / sort / pagination (server-side, with pagination) when the list can grow large; multi-select bulk actions later.
-4. **Pre-submission** — mandatory privacy webhooks (`customers/data_request`, `customers/redact`, `shop/redact`) + Billing (`prd.md`, `context/app-store-review-checklist.md`).
+3. **Editor page should not scroll at the document level** — the app document overflows the
+   iframe by roughly the `.tipsFooter` height (it renders BELOW the card, outside
+   `useScrollRegionHeight`'s flat `BOTTOM_PAD_REM = 3` budget), producing a stray outer
+   scrollbar stranded beside admin's reserved 16px scrollbar gutter. Fix = measure the actual
+   footer/card bottom instead of the hardcoded 3rem. Touches the measurer both scrollers share,
+   so it is its own unit.
+4. **Templates-list Phase 2** — search / sort / pagination (server-side, with pagination) when the list can grow large; multi-select bulk actions later.
+5. **Pre-submission** — mandatory privacy webhooks (`customers/data_request`, `customers/redact`, `shop/redact`) + Billing (`prd.md`, `context/app-store-review-checklist.md`).
 
 **Deferred:** editor bulk-delete range-select (Shift+click) + Delete/Backspace shortcut; per-product overflow materialization + a bulk apply-to-all styling route.
 

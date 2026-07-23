@@ -319,12 +319,19 @@ export function EditorShell({
           <s-box
             background="subdued"
             padding="base"
+            // The ONE side the box does not own: the scroller below owns its
+            // inline-end gutter instead, so its scrollbar rides the panel's real
+            // right edge rather than floating 1rem inside it. See the
+            // `.railScroller` comment for why the padding has to move rather
+            // than the scrollbar.
+            paddingInlineEnd="none"
             accessibilityRole="region"
             accessibilityLabel={activeTab === "style" ? "Style" : "Settings"}
           >
             {/* The rail scrolls internally (see `railMaxHeight` above) so the long
-                Style controls never push the preview out of view. The landmark +
-                padding stay on the `s-box`; only the scroll lives on this div. */}
+                Style controls never push the preview out of view. The landmark
+                stays on the `s-box`; the scroll and the inline-end gutter live
+                on this div. */}
             <div
               ref={railRef}
               className={shellStyles.railScroller}
