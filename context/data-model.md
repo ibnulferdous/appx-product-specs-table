@@ -624,8 +624,8 @@ Example — a two-line value:
 | `id`            | string           | Yes      | Technical stable ID.                                   |
 | `key`           | string           | Yes      | Stable key such as `display` or `battery`.             |
 | `rowType`       | `SECTION_HEADER` | Yes      | Identifies this as a section header.                   |
-| `label`         | string           | Yes      | Section title shown to shoppers.                       |
-| `hideWhenEmpty` | boolean          | Yes      | Future-compatible. Can help hide empty sections later. |
+| `label`         | string           | Yes      | Section title shown to shoppers. **Blank ⇒ the row does not render** (feature 74 · R1) — a section header carries nothing but its title, so an empty one would paint a bare band. Tested trimmed, emitted untrimmed. Still stored, so the editor grid keeps showing it. |
+| `hideWhenEmpty` | boolean          | Yes      | Future-compatible. Can help hide empty sections later. Note this flag is **not** what hides a blank section — R1 above is unconditional. |
 
 ### Row ID and key rules
 
@@ -661,6 +661,10 @@ Merchant edits template in the custom spec-table editor
 | `ARCHIVED` | Yes           | No                      | Hidden from normal list |
 
 > **Rendering also requires an assignment.** `ACTIVE` is necessary but not sufficient: a template renders on a product only when an assignment routes that product to it (see §9). An `ACTIVE` template with no matching assignment renders nowhere. Status gates visibility; assignment gates reach.
+
+> **Rendering also requires CONTENT** (feature 74 · R2). A third gate, applied last and evaluated per product because dynamic value parts resolve against the live product: if no row survives its own gate — every `hideWhenEmpty` row resolving empty, every section header blank (§7 · R1) — the block emits **nothing at all**: no wrapper `<div class="appx-spec-table">`, no empty `<table>`. This is what makes an untouched starter scaffold (one blank section header + five empty rows) render as silence rather than a bare grey band. The rows JSON is untouched — suppression is purely at render time, so the merchant's blank rows survive a save/reload round-trip in the editor. A section header with a REAL label whose rows are all hidden still renders (authored content; see feature 74 "R3", open).
+>
+> Implemented identically in the two hand-mirrored renderers: `blocks/spec_table.liquid` captures the body and emits the wrapper only if a `has_content` flag was set, and `app/routes/app.templates_.$id/specTablePreviewHtml.ts` returns `""`. The admin preview's empty state is the same condition, so preview and storefront agree by construction.
 
 ### Important product decision
 

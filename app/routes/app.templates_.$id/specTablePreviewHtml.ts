@@ -32,6 +32,17 @@
 // class list emitted below and the one Liquid emits must be the same mapping
 // output, or preview and storefront drift.
 //
+// Feature 74 — content-free tables render NOTHING, here and on the storefront.
+// Two render-time gates, mirrored verbatim in `spec_table.liquid`:
+//   R1  a SECTION_HEADER whose label is blank after trimming is skipped (it
+//       carries nothing but its title, and an empty one paints a bare grey band).
+//   R2  if no row survives its gate, `renderSpecTableHtml` returns "" — no
+//       wrapper, no empty table.
+// Structurally this mirrors the Liquid (build the body, flag as you go, decide
+// the wrapper after) rather than taking the shortcut TS could afford: in the
+// admin a dynamic pill always counts as content, so emptiness IS statically
+// decidable here — but two renderers that disagree in SHAPE drift.
+//
 // Feature 57 · Step 9a — the renderer now has TWO markup shapes. Every step
 // before this one moved a value through a pipeline that never altered the
 // document's structure; `sectionsCollapsible` does. The OFF path (the default)
@@ -63,9 +74,10 @@ const PREVIEW_CSP_META = `<meta http-equiv="Content-Security-Policy" content="de
 
 // Preview-ONLY empty state (Step 7). The storefront renders nothing for an empty
 // template (`renderSpecTableHtml` → ""), which in the editor preview reads as a
-// blank/broken frame. This friendly placeholder is substituted for the body when
-// the rendered fragment has NO rows — covering BOTH zero rows and "rows exist but
-// all are hidden by hideWhenEmpty" (both produce no `<tr>`). It lives at the
+// blank/broken frame. This friendly placeholder is substituted for the body
+// whenever that fragment is "" — which since feature 74 covers every content-free
+// case the storefront is silent for: zero rows, all rows hidden by
+// `hideWhenEmpty`, and the starter scaffold's blank section header. It lives at the
 // document level, never in `renderSpecTableHtml`, so storefront fidelity is
 // unchanged. Static, escaped, non-interactive; styled by `.appx-spec-table-preview-
 // empty` (preview-only, in previewStyles.ts). Copy is general enough for both cases.
@@ -149,19 +161,38 @@ function renderDataRow(row: DataRow): string {
   return `<tr class="appx-spec-table__row" role="row"><th class="appx-spec-table__label" scope="row" role="rowheader">${escapeHtml(row.label)}</th><td class="appx-spec-table__value" role="cell">${cell}</td></tr>`;
 }
 
+// What a body builder reports back: the markup, plus whether ANYTHING rendered
+// (feature 74 · R2). The flag is not derivable from `html` by sniffing — the flat
+// shape always carries its eagerly-opened `<table><tbody>`, and a named-but-empty
+// collapsible section legitimately produces a `<details>` with no `<tr>` in it.
+// Mirrors Liquid's `has_content`, which is assigned on the same two paths.
+type RenderedBody = { html: string; hasContent: boolean };
+
 // The OFF shape (the default): one table, one tbody, section headers as
 // full-width `<tr>`s. This is the markup that shipped before Step 9a and it must
 // stay byte-identical — every existing template renders through here.
-function renderSingleTableBody(rows: EditorRow[]): string {
+function renderSingleTableBody(rows: EditorRow[]): RenderedBody {
   let body = "";
+  let hasContent = false;
   for (const row of rows) {
     if (row.rowType === "SECTION_HEADER") {
+      // R1 — tested trimmed, emitted untrimmed (the same test-input/output split
+      // `hideWhenEmpty` uses). A skipped header just vanishes; the rows that
+      // followed it continue in the same open table, which is exactly what "no
+      // section header" means.
+      if (row.label.trim() === "") continue;
       body += `<tr class="appx-spec-table__section-row" role="row"><th class="appx-spec-table__section" colspan="2" scope="colgroup" role="columnheader" aria-colspan="2">${escapeHtml(row.label)}</th></tr>`;
+      hasContent = true;
       continue;
     }
-    body += renderDataRow(row);
+    const tr = renderDataRow(row);
+    if (tr !== "") hasContent = true;
+    body += tr;
   }
-  return `<table class="appx-spec-table__table" role="table"><tbody role="rowgroup">${body}</tbody></table>`;
+  return {
+    html: `<table class="appx-spec-table__table" role="table"><tbody role="rowgroup">${body}</tbody></table>`,
+    hasContent,
+  };
 }
 
 // The ON shape: one `<details>` per section header, each wrapping its own
@@ -185,8 +216,9 @@ function renderSingleTableBody(rows: EditorRow[]): string {
 function renderCollapsibleBody(
   rows: EditorRow[],
   initialState: StylingValues["sectionsInitialState"],
-): string {
+): RenderedBody {
   let html = "";
+  let hasContent = false;
   let tableOpen = false;
   let detailsOpen = false;
   let sectionIndex = 0;
@@ -206,8 +238,16 @@ function renderCollapsibleBody(
 
   for (const row of rows) {
     if (row.rowType === "SECTION_HEADER") {
+      // R1 (feature 74). A blank header still CLOSES the open group before
+      // vanishing — without the close, the rows that followed it would be filed
+      // under the PREVIOUS section's heading, a worse bug than the band it
+      // removes. They instead fall through to the lazy-open branch below and land
+      // in a fresh bare unnamed table, exactly like rows before the first section
+      // header. `sectionIndex` is deliberately NOT incremented: a skipped section
+      // is not a section, so FIRST_OPEN still opens the first REAL one.
       closeTable();
       closeDetails();
+      if (row.label.trim() === "") continue;
       const open =
         initialState === "ALL_OPEN" ||
         (initialState === "FIRST_OPEN" && sectionIndex === 0);
@@ -216,6 +256,7 @@ function renderCollapsibleBody(
       detailsOpen = true;
       tableOpen = true;
       sectionIndex += 1;
+      hasContent = true;
       continue;
     }
     const tr = renderDataRow(row);
@@ -226,21 +267,28 @@ function renderCollapsibleBody(
       tableOpen = true;
     }
     html += tr;
+    hasContent = true;
   }
 
   closeTable();
   closeDetails();
-  return html;
+  return { html, hasContent };
 }
 
 /**
  * Render `rows` to the storefront's spec-table HTML string, styled by `styling`.
  *
- * Empty array → `""` (the storefront renders nothing without rows). Otherwise the
+ * No RENDERABLE CONTENT → `""` (feature 74 · R2) — an empty array, and equally a
+ * rows array none of whose rows survives its gate (the editor's starter scaffold:
+ * one blank section header + five empty `hideWhenEmpty` rows). Never an empty
+ * wrapper and never an empty table; the storefront is silent in exactly the same
+ * cases. Otherwise the
  * rows are wrapped in `<div class="appx-spec-table <modifiers>"><table
  * class="appx-spec-table__table"><tbody>…` in array order:
  *   - SECTION_HEADER → a full-width `<th colspan="2" scope="colgroup">` row,
- *     always rendered (no hideWhenEmpty gate on sections, mirroring the block).
+ *     rendered unless its label is blank after trimming (feature 74 · R1). There
+ *     is still no `hideWhenEmpty` gate on sections: a header with a REAL label
+ *     renders even when every row under it is hidden.
  *   - DATA → a label `<th scope="row">` + value `<td>`, subject to the whole-cell
  *     hideWhenEmpty gate: the row is skipped when `hideWhenEmpty` is set AND the
  *     cell's visible text (TEXT + pill labels; `<br>` ignored) is all-whitespace.
@@ -272,18 +320,29 @@ export function renderSpecTableHtml(
   // DEGRADES to the single-table shape — identical to the OFF path. The
   // `--collapsible` class may still sit on the wrapper: it is a presence flag,
   // and the CSS tolerates it with nothing to act on.
+  //
+  // Counted BEFORE R1, mirroring Liquid's `rows | where: "rowType",
+  // "SECTION_HEADER"` (which also counts blank ones). A template whose only
+  // section is blank therefore stays on the collapsible path and emits no
+  // `<details>` at all — every row lands in the leading bare table, which is the
+  // flat shape's output modulo that inert wrapper class.
   const hasSections = rows.some((row) => row.rowType === "SECTION_HEADER");
   const body =
     styling.sectionsCollapsible && hasSections
       ? renderCollapsibleBody(rows, styling.sectionsInitialState)
       : renderSingleTableBody(rows);
 
+  // R2 — nothing survived its gate, so emit nothing at all.
+  if (!body.hasContent) {
+    return "";
+  }
+
   // Modifier classes come straight from the Step 2 mapping — no class-name
   // literals here, so adding a knob never touches this file.
   const wrapperClass = ["appx-spec-table", ...stylingToModifierClasses(styling)]
     .join(" ")
     .trim();
-  return `<div class="${wrapperClass}">${body}</div>`;
+  return `<div class="${wrapperClass}">${body.html}</div>`;
 }
 
 // The styling custom properties as their own `<style>` block (feature 57 ·
@@ -335,9 +394,18 @@ export function renderSpecTablePreviewDocument(
   rows: EditorRow[],
   styling: StylingValues,
 ): string {
-  // No rows to preview (zero rows, or all rows hidden by hideWhenEmpty → no `<tr>`)
-  // → show the preview-only empty state instead of a blank body (Step 7).
+  // Nothing to preview → the preview-only empty state instead of a blank body
+  // (Step 7). The emptiness DECISION lives upstream in `renderSpecTableHtml`
+  // (feature 74 · R2), where both renderers agree; this is now a plain identity
+  // test on its documented "" contract.
+  //
+  // Do NOT "simplify" this back to sniffing for `"<tr"`, which is what it did
+  // before feature 74. That test was not merely loose, it was WRONG in one case:
+  // a collapsible template with a named-but-empty section renders
+  // `<details><summary>Dimensions</summary><table><tbody></tbody></table></details>`
+  // — legitimate output under the Step 9a decision, carrying no `<tr>` — so the
+  // preview showed the empty state while the storefront showed the disclosure.
   const fragment = renderSpecTableHtml(rows, styling);
-  const body = fragment.includes("<tr") ? fragment : PREVIEW_EMPTY_STATE_HTML;
+  const body = fragment === "" ? PREVIEW_EMPTY_STATE_HTML : fragment;
   return `<!doctype html><html lang="en"><head><meta charset="utf-8">${PREVIEW_CSP_META}<meta name="viewport" content="width=device-width, initial-scale=1"><title>Spec table preview</title><style>${PREVIEW_DOCUMENT_STYLES}</style>${stylingVarStyleBlock(styling)}</head><body>${body}${PREVIEW_HEIGHT_BRIDGE_SCRIPT}</body></html>`;
 }

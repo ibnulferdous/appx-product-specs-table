@@ -29,6 +29,22 @@
     is already escaped and may legitimately contain `<br>`.
   - Silent by design: a non-ACTIVE status, no assigned template, or no rows
     renders NOTHING on the storefront (no diagnostic text, no empty box).
+  - CONTENT-FREE TABLES render nothing either (feature 74). Two render-time
+    gates, mirrored exactly in the admin preview renderer:
+      R1 a SECTION_HEADER whose label is blank after `strip` is skipped — the
+         element exists only to carry a title, and an empty one paints a bare
+         grey band (the BANDED default) with nothing in it.
+      R2 if NO row survives its gate, no wrapper is emitted at all — not an
+         empty <div class="appx-spec-table">, not an empty <table>. This is
+         what makes the "silent by design" line above true for a rows array
+         that is non-empty but resolves to nothing (e.g. the editor's starter
+         scaffold: one blank section header + five empty hideWhenEmpty rows).
+    R2 is why the body is built into `table_body` via `capture` FIRST and the
+    wrapper decided after: the <div> used to open before the loop, and a data
+    cell's emptiness is undecidable without rendering it against the live
+    product. One pass, no double-render. NOT gated: a section header with a
+    real label whose rows are all hidden still renders (authored content —
+    see feature 74 "R3", deliberately out of scope).
 
   CSS lives in assets/spec-table.css and is loaded via the schema "stylesheet"
   attribute — theme app extension blocks cannot use the {% stylesheet %} tag.
@@ -107,7 +123,20 @@
   and the output contains no quotes or angle brackets, so it is a no-op here.
 {%- endcomment -%}
 {%- if spec != blank and spec.status.value == "ACTIVE" and rows != blank and rows.size > 0 -%}
-  <div class="appx-spec-table {{ styling_css.classes | escape }}" style="{{ styling_css.vars | escape }}" {{ block.shopify_attributes }}>
+  {%- comment -%}
+    Feature 74 — R2. The body is CAPTURED, then the wrapper is emitted only if
+    something actually rendered. `has_content` is assigned inside the capture and
+    read after it: `capture` redirects OUTPUT, not assignments, so the flag (like
+    `table_open` / `details_open` / `section_index` below) is template-scoped and
+    survives the block.
+
+    The capture is the whole reason this works in one pass. A DATA row's
+    emptiness depends on the live product (`spec-table-value` resolves
+    SHOPIFY_FIELD / METAFIELD parts), so a pre-pass "will anything render?" would
+    have to render every value cell twice.
+  {%- endcomment -%}
+  {%- assign has_content = false -%}
+  {%- capture table_body -%}
     {%- comment -%}
       TWO markup shapes, switched by `collapsible`, sharing ONE row loop so the
       hideWhenEmpty gate can never differ between them:
@@ -162,29 +191,52 @@
       {%- assign row_offset = chunk | minus: 1 | times: 50 -%}
       {%- for row in rows offset: row_offset limit: 50 -%}
         {%- if row.rowType == "SECTION_HEADER" -%}
+          {%- comment -%}
+            R1 (feature 74). A section header carries nothing but its title, so a
+            blank one is skipped in BOTH shapes. Tested trimmed, emitted untrimmed
+            — the same test-input/output split `hideWhenEmpty` already uses. The
+            filter has to land in an `assign`: Liquid `if` conditions do not
+            accept filters.
+          {%- endcomment -%}
+          {%- assign section_label = row.label | strip -%}
           {%- if collapsible -%}
+            {%- comment -%}
+              A blank header still CLOSES the open group before vanishing. Without
+              the close, the rows that followed it would be filed under the
+              PREVIOUS section's heading — a worse bug than the band it removes.
+              They instead hit the lazy-open branch below and land in a fresh bare
+              unnamed table, exactly as rows before the first section header do.
+              `section_index` is deliberately NOT incremented: a skipped section is
+              not a section, so FIRST_OPEN still opens the first REAL one.
+            {%- endcomment -%}
             {%- if table_open -%}</tbody></table>{%- assign table_open = false -%}{%- endif -%}
             {%- if details_open -%}</details>{%- assign details_open = false -%}{%- endif -%}
-            {%- liquid
-              assign is_open = false
-              if initial_state == "ALL_OPEN"
-                assign is_open = true
-              elsif initial_state == "FIRST_OPEN" and section_index == 0
-                assign is_open = true
-              endif
-            -%}
-            <details class="appx-spec-table__section-group"{% if is_open %} open{% endif %}>
-              <summary class="appx-spec-table__section-summary">{{ row.label | escape }}</summary>
-              <table class="appx-spec-table__table" role="table" aria-label="{{ row.label | escape }}"><tbody role="rowgroup">
-            {%- liquid
-              assign details_open = true
-              assign table_open = true
-              assign section_index = section_index | plus: 1
-            -%}
+            {%- if section_label != blank -%}
+              {%- liquid
+                assign is_open = false
+                if initial_state == "ALL_OPEN"
+                  assign is_open = true
+                elsif initial_state == "FIRST_OPEN" and section_index == 0
+                  assign is_open = true
+                endif
+              -%}
+              <details class="appx-spec-table__section-group"{% if is_open %} open{% endif %}>
+                <summary class="appx-spec-table__section-summary">{{ row.label | escape }}</summary>
+                <table class="appx-spec-table__table" role="table" aria-label="{{ row.label | escape }}"><tbody role="rowgroup">
+              {%- liquid
+                assign details_open = true
+                assign table_open = true
+                assign section_index = section_index | plus: 1
+                assign has_content = true
+              -%}
+            {%- endif -%}
           {%- else -%}
-            <tr class="appx-spec-table__section-row" role="row">
-              <th class="appx-spec-table__section" colspan="2" scope="colgroup" role="columnheader" aria-colspan="2">{{ row.label | escape }}</th>
-            </tr>
+            {%- if section_label != blank -%}
+              <tr class="appx-spec-table__section-row" role="row">
+                <th class="appx-spec-table__section" colspan="2" scope="colgroup" role="columnheader" aria-colspan="2">{{ row.label | escape }}</th>
+              </tr>
+              {%- assign has_content = true -%}
+            {%- endif -%}
           {%- endif -%}
         {%- else -%}
           {%- capture cell -%}{% render "spec-table-value", row: row, product: product %}{%- endcapture -%}
@@ -198,13 +250,24 @@
               <th class="appx-spec-table__label" scope="row" role="rowheader">{{ row.label | escape }}</th>
               <td class="appx-spec-table__value" role="cell">{{ cell }}</td>
             </tr>
+            {%- assign has_content = true -%}
           {%- endunless -%}
         {%- endif -%}
       {%- endfor -%}
     {%- endfor -%}
     {%- if table_open -%}</tbody></table>{%- endif -%}
     {%- if details_open -%}</details>{%- endif -%}
-  </div>
+  {%- endcapture -%}
+  {%- comment -%}
+    `table_body` is printed RAW: Liquid does not auto-escape, and every
+    author-entered string inside it was escaped at emission time (same posture as
+    `{{ cell }}` above). When nothing rendered, the captured body — which may
+    still hold an empty <table><tbody></tbody></table> from the flat shape's
+    eager open — is simply discarded.
+  {%- endcomment -%}
+  {%- if has_content -%}
+    <div class="appx-spec-table {{ styling_css.classes | escape }}" style="{{ styling_css.vars | escape }}" {{ block.shopify_attributes }}>{{ table_body }}</div>
+  {%- endif -%}
 {%- endif -%}
 
 {% schema %}

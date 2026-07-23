@@ -172,10 +172,9 @@ describe("renderSpecTableHtml", () => {
         dataRow([text("")], { label: "Empty", hideWhenEmpty: true }),
       ]);
       expect(html).not.toContain("Empty");
-      // No rows survive → wrapper still renders (rows.length > 0), tbody empty.
-      expect(html).toBe(
-        `${wrapperOpenTag()}<table class="appx-spec-table__table" role="table"><tbody role="rowgroup"></tbody></table></div>`,
-      );
+      // No row survives → nothing at all (feature 74 · R2). Before 74 this
+      // returned the wrapper around an empty tbody.
+      expect(html).toBe("");
     });
 
     it("keeps the same empty cell when the flag is off", () => {
@@ -390,15 +389,14 @@ describe("renderSpecTablePreviewDocument", () => {
     expect(doc).not.toContain('<div class="appx-spec-table-preview-empty">');
   });
 
-  it("keeps the empty state preview-only — renderSpecTableHtml is unchanged", () => {
-    // The storefront-fidelity renderer still returns "" for [] and the empty-tbody
-    // wrapper for all-hidden; the empty state is a document-level addition only.
+  it("keeps the empty state PREVIEW-ONLY — it never leaks into the fragment", () => {
+    // The storefront-fidelity renderer returns "" for both content-free cases
+    // (feature 74 · R2 widened this from "[] only"); the friendly placeholder is
+    // a document-level addition and must never appear in the fragment itself.
     expect(renderSpecTableHtml([])).toBe("");
     expect(
       renderSpecTableHtml([dataRow([text("")], { hideWhenEmpty: true })]),
-    ).toBe(
-      `${wrapperOpenTag()}<table class="appx-spec-table__table" role="table"><tbody role="rowgroup"></tbody></table></div>`,
-    );
+    ).toBe("");
     expect(renderSpecTableHtml([])).not.toContain(
       "appx-spec-table-preview-empty",
     );
@@ -847,5 +845,167 @@ describe("collapsible sections (feature 57 · Step 9a)", () => {
 
   it('returns "" for zero rows regardless of the flag', () => {
     expect(renderSpecTableHtmlStyled([], collapsible())).toBe("");
+  });
+});
+
+// Feature 74 — content-free tables render NOTHING. Two gates:
+//   R1  a SECTION_HEADER with a blank label is skipped;
+//   R2  if no row survives its gate, the fragment is "" (no wrapper at all).
+// The reported bug: a brand-new template's starter scaffold (one blank section
+// header + five empty hideWhenEmpty rows) painted a bare grey band — the BANDED
+// default styling a content-free `<th class="appx-spec-table__section">`.
+//
+// `spec_table.liquid` carries the same two gates and is verified live; these
+// cases pin the TS half of that hand-mirror.
+describe("content-free tables (feature 74)", () => {
+  const collapsible = (
+    overrides: Partial<StylingValues> = {},
+  ): StylingValues => ({
+    ...DEFAULT_STYLING_VALUES,
+    sectionsCollapsible: true,
+    ...overrides,
+  });
+
+  // The editor's real starter scaffold, rebuilt here rather than imported from
+  // `createInitialRows` so this file stays a pure renderer test (no uuid, no
+  // reducer). Shape asserted against rows.ts's documented contract:
+  // INITIAL_DATA_ROW_COUNT data rows, all blank, all hideWhenEmpty.
+  const scaffold = (): EditorRow[] => [
+    sectionRow({ id: "s1", label: "" }),
+    ...Array.from({ length: 5 }, (_unused, i) =>
+      dataRow([text("")], { id: `d${i}`, label: "", hideWhenEmpty: true }),
+    ),
+  ];
+
+  it('1 · the starter scaffold renders "" (the reported bug)', () => {
+    expect(renderSpecTableHtml(scaffold())).toBe("");
+    // Specifically: no grey band survives.
+    expect(renderSpecTableHtml(scaffold())).not.toContain(
+      "appx-spec-table__section",
+    );
+  });
+
+  it("2 · ...so the preview document shows the empty state instead", () => {
+    const doc = renderSpecTablePreviewDocument(scaffold());
+    expect(doc).toContain('<body><div class="appx-spec-table-preview-empty">');
+    expect(doc).not.toContain("<tr");
+  });
+
+  it('3 · a blank section header alone renders "" — whitespace counts as blank', () => {
+    expect(renderSpecTableHtml([sectionRow({ label: "" })])).toBe("");
+    expect(renderSpecTableHtml([sectionRow({ label: "   " })])).toBe("");
+    expect(renderSpecTableHtml([sectionRow({ label: "\n\t " })])).toBe("");
+  });
+
+  it("4 · a blank section header vanishes but its rows still render", () => {
+    const html = renderSpecTableHtml([
+      sectionRow({ id: "s1", label: "" }),
+      dataRow([text("249 g")], { id: "d1", label: "Weight" }),
+    ]);
+    expect(html).toContain(">Weight</th>");
+    expect(html).toContain(">249 g</td>");
+    // No section element of any kind — the row simply has no header above it.
+    expect(html).not.toContain("appx-spec-table__section");
+  });
+
+  it("5 · a NAMED section with zero surviving rows still renders (R3 is out of scope)", () => {
+    // The tripwire that stops R3 leaking in. A merchant typed that word; it is
+    // authored content, and suppressing it is a separate decision (Phase C).
+    const html = renderSpecTableHtml([
+      sectionRow({ id: "s1", label: "Dimensions" }),
+      dataRow([text("")], { id: "d1", label: "", hideWhenEmpty: true }),
+    ]);
+    expect(html).toContain(">Dimensions</th>");
+    expect(html).not.toBe("");
+  });
+
+  it("6 · collapsible: a named-but-empty section renders, and the preview agrees", () => {
+    // The latent divergence R2 closes. This fragment carries NO `<tr>`, so the
+    // pre-74 `includes("<tr")` gate showed the empty state here while the
+    // storefront showed the disclosure.
+    const rows = [sectionRow({ id: "s1", label: "Dimensions" })];
+    const html = renderSpecTableHtmlStyled(rows, collapsible());
+    expect(html).toContain('<details class="appx-spec-table__section-group"');
+    expect(html).not.toContain("<tr");
+
+    const doc = renderSpecTablePreviewDocumentStyled(rows, collapsible());
+    expect(doc).toContain('<details class="appx-spec-table__section-group"');
+    // Match the OPENING TAG, not the bare class: the inlined stylesheet carries
+    // the empty state's own rule in every document.
+    expect(doc).not.toContain('<div class="appx-spec-table-preview-empty">');
+  });
+
+  it("7 · collapsible: a blank section CLOSES the previous group, never adopts its rows", () => {
+    const html = renderSpecTableHtmlStyled(
+      [
+        sectionRow({ id: "s1", label: "Dimensions" }),
+        dataRow([text("249 g")], { id: "d1", label: "Weight" }),
+        sectionRow({ id: "s2", label: "" }),
+        dataRow([text("Acme")], { id: "d2", label: "Brand" }),
+      ],
+      collapsible(),
+    );
+    // Exactly one disclosure — the blank one emitted none.
+    expect(html.match(/<details[^>]*>/g)).toHaveLength(1);
+    expect(html.match(/<\/details>/g)).toHaveLength(1);
+    // ...and "Brand" is OUTSIDE it, in a fresh bare unnamed table. Filing it
+    // under "Dimensions" would be a worse bug than the band this removes.
+    const afterDetails = html.slice(html.indexOf("</details>"));
+    expect(afterDetails).toContain("Brand");
+    expect(html.slice(0, html.indexOf("</details>"))).not.toContain("Brand");
+    expect(afterDetails).toContain(
+      '<table class="appx-spec-table__table" role="table"><tbody role="rowgroup">',
+    );
+  });
+
+  it("8 · collapsible + FIRST_OPEN: a skipped section does not consume the first slot", () => {
+    const html = renderSpecTableHtmlStyled(
+      [
+        sectionRow({ id: "s0", label: "  " }),
+        sectionRow({ id: "s1", label: "Dimensions" }),
+        dataRow([text("249 g")], { id: "d1", label: "Weight" }),
+        sectionRow({ id: "s2", label: "Camera" }),
+        dataRow([text("48 MP")], { id: "d2", label: "Photo" }),
+      ],
+      collapsible({ sectionsInitialState: "FIRST_OPEN" }),
+    );
+    const opens = (html.match(/<details[^>]*>/g) ?? []).map((tag) =>
+      tag.includes(" open"),
+    );
+    // The first REAL section is open — not "nothing is, the blank one took it".
+    expect(opens).toEqual([true, false]);
+  });
+
+  it("leaves every non-empty template byte-identical (the invisibility guarantee)", () => {
+    // The whole change must be a no-op for anything with content, in both
+    // shapes and across the knobs that alter markup.
+    const rows: EditorRow[] = [
+      sectionRow({ id: "s1", label: "Aircraft" }),
+      dataRow([text("249 g")], { id: "d1", label: "Weight" }),
+      dataRow([vendorField], { id: "d2", label: "Brand" }),
+      sectionRow({ id: "s2", label: "Camera" }),
+      dataRow([text("48 MP")], { id: "d3", label: "Photo" }),
+    ];
+    for (const styling of [
+      DEFAULT_STYLING_VALUES,
+      collapsible(),
+      collapsible({ sectionsInitialState: "FIRST_OPEN" }),
+    ]) {
+      const html = renderSpecTableHtmlStyled(rows, styling);
+      for (const needle of ["Aircraft", "Weight", "Brand", "Camera", "Photo"]) {
+        expect(html).toContain(needle);
+      }
+      expect(html.startsWith('<div class="appx-spec-table')).toBe(true);
+      expect(html.endsWith("</div>")).toBe(true);
+    }
+  });
+
+  it("a label-only row is content — R1 gates sections, never data rows", () => {
+    // hideWhenEmpty=false + an empty cell still renders: the label is the
+    // content. R2 must not overreach into the data-row gate.
+    const html = renderSpecTableHtml([
+      dataRow([text("")], { id: "d1", label: "Weight", hideWhenEmpty: false }),
+    ]);
+    expect(html).toContain(">Weight</th>");
   });
 });

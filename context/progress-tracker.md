@@ -35,7 +35,7 @@ Everything upstream is done and live-verified on the dev store:
   persists to `TableStyling`, serializes to the metaobject, and renders on the storefront;
   rail a11y pass done; Reset-to-theme-defaults ships; docs reconciled.
 
-Test suite ~852 tests / 36 files; full gate (typecheck · lint · format · test · build) green.
+Test suite ~862 tests / 36 files; full gate (typecheck · lint · format · test · build) green.
 
 **Next:** B2 = steps 13–14 (built-in preset gallery: `stylePresets.ts` constants, rail
 preset cards, skippable creation-gallery popup — **copy** semantics into real `TableStyling`
@@ -94,6 +94,30 @@ plan: `~/.claude/plans/style-tab-phase-b-implementation-plan.md` (1–12 = B1, 1
   headings, named landmark) + docs reconciliation. **Phase B1 complete.**
 - Resolved en route: the section-header BANDED band is the intended default becoming
   reachable, not a regression (accept; Step 7 signed off).
+
+**Content-free tables render nothing (feature 74, doc `74-…`) — ✅ shipped & verified 2026-07-23**
+- Merchant report: a brand-new template's Style/Settings preview showed a bare grey box.
+  Root cause was **not** the preview — the starter scaffold's blank SECTION_HEADER had no
+  emptiness gate at all, so it rendered as a content-free `__section` band (BANDED default =
+  `rgba(0,0,0,.06)`), and a merchant who saved + activated + assigned it would ship that band
+  to a live product page. Two render-time gates, hand-mirrored in `spec_table.liquid` and
+  `specTablePreviewHtml.ts`: **R1** a section header whose label is blank after trimming is
+  skipped (tested trimmed, emitted untrimmed); **R2** if no row survives its gate, emit
+  nothing — no wrapper, no empty `<table>`. The Liquid **captures the body first** and emits
+  the wrapper only if a `has_content` flag was set, because the `<div>` used to open before
+  the loop and a data cell's emptiness is undecidable without rendering it against the live
+  product; one pass, no double-render. Rows JSON is untouched — suppression is render-time
+  only, so blank rows still round-trip into the editor grid.
+- Also closed a **latent preview/storefront divergence**: the empty-state gate was
+  `fragment.includes("<tr")`, which wrongly replaced a legitimate named-but-empty collapsible
+  section (a `<details>` with no `<tr>`) with the empty state. Emptiness now decides once,
+  upstream in `renderSpecTableHtml`, where both renderers agree.
+- **Out of scope (R3):** a section with a REAL label whose rows are all hidden still renders —
+  authored content, and suppressing it would contradict the locked Step 9a empty-collapsible
+  decision. Logged under Open Questions; a test pins it so it can't leak in.
+- Live-verified end to end on the dev store, storefront included (a temporary probe proved
+  `assign`-inside-`capture` survives on the real Liquid runtime, and that all 9 authored
+  sections of the 44-row DJI template are kept). Details + two plan corrections in `74-…`.
 
 **Desktop preview inner scroll (feature 73, doc `73-…`) — ✅ shipped & verified 2026-07-23**
 - The Desktop browser mockup no longer grows without bound: the shim-measured content
@@ -239,7 +263,7 @@ Multi-value applies to PRODUCT + COLLECTION only. No migrations needed for the 4
 
 ## Next Up
 
-1. **Reshell Phase B2** — built-in preset gallery (Style tab steps 13–14; new feature-doc number, 74+, since 70 = stacked-semantics, 71 = sidebar inner-scroll, 72 = device-preview mockups, 73 = desktop preview inner scroll). Then C (Settings display rules) → E (assignment into the reshell) → F (top-bar status/save + cleanup).
+1. **Reshell Phase B2** — built-in preset gallery (Style tab steps 13–14; new feature-doc number, 75+, since 70 = stacked-semantics, 71 = sidebar inner-scroll, 72 = device-preview mockups, 73 = desktop preview inner scroll, 74 = content-free tables). Then C (Settings display rules) → E (assignment into the reshell) → F (top-bar status/save + cleanup).
 2. **Storefront table semantics in stacked layouts (feature 70)** — code shipped; screen-reader pass still owed (see Open Questions).
 3. **Editor page should not scroll at the document level** — the app document overflows the
    iframe by roughly the `.tipsFooter` height (it renders BELOW the card, outside
@@ -272,6 +296,16 @@ Multi-value applies to PRODUCT + COLLECTION only. No migrations needed for the 4
   **falsifier** is unchecked — explicit ARIA can *suppress* native table affordances, so the
   two-column control case must be compared before/after. Needs NVDA or VoiceOver at desktop **and**
   ≤749px. **If it regresses, revert (`<dl>` back on the table) — do not patch.**
+- **R3 — orphan titled sections (feature 74, deferred).** A section header with a REAL label
+  whose rows are all hidden still renders as a lone titled band. Authored content, so it was
+  deliberately left alone: suppressing it would contradict the locked Step 9a decision
+  (`spec_table.liquid`: "a section whose rows are all hidden renders as an empty
+  collapsible — no new emptiness logic"). Belongs with the Phase C display rules below.
+  A test in `specTablePreviewHtml.test.ts` currently pins the render-it behavior.
+- **Should activation warn on a content-free template?** Since feature 74 a merchant can set
+  an empty template ACTIVE and assign it, and it renders nothing, silently. A DRAFT→ACTIVE
+  advisory would be friendlier, but today's activation gate is a hard *block* mechanism for
+  conflicts; adding a soft warning lane is its own unit.
 - **Settings-tab "Display rules"** (mockup's `hide rows with empty values` / `show section dividers` / `show on mobile`) are dummy — each needs a real definition + reconciliation with the per-row `hideWhenEmpty` flag before building (Phase C).
 - **Style tab B2/B3 build-time details to lock:** the knob-value bundles for the five built-in presets (Classic / Striped / Banded / Stacked / Accordion); the `density` padding-scale values; save-as-preset overwrite UX + copy; whether the creation gallery gets a "don't show again" escape.
 - **Top-bar name-edit affordance:** inline title edit vs a Rename ⋯ item — settle when the top bar (Phase F) is built.
