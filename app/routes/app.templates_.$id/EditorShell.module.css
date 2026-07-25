@@ -36,4 +36,45 @@
      `::-webkit-scrollbar` fork, degrades to the platform default where
      unsupported, and inert whenever the rail fits. */
   scrollbar-width: thin;
+  /* Feature 76 collapses this rail with `display: none` and expects it to come
+     back at the offset the merchant left it at. Chrome's scroll anchoring fights
+     that: re-laying-out a whole hidden subtree resizes content above its chosen
+     anchor, and the compensation does not net to zero, so each collapse/expand
+     cycle walked the offset ~36px further down. Nothing in the rail grows above
+     the merchant's reading position on its own — the knobs are a fixed list — so
+     there is no anchoring benefit here to trade away. */
+  overflow-anchor: none;
+}
+
+/* --- Collapsed Style / Settings rail (feature 76) --------------------------
+ * The rail collapses to ZERO width, not to an icon stub: in the tight measured
+ * case the stage clears the storefront's 749px mobile breakpoint by only 18px,
+ * so a ~48px surviving strip would put the desktop preview back UNDER it. Which
+ * is also why the expand button lives in the control row instead of in the rail.
+ *
+ * Hidden, never unmounted — the rail's React state (StyleTab's collapsible
+ * sections, its scroll offset) survives the round trip, and `aria-controls` on
+ * the toggle keeps pointing at a node that exists. `display: none` specifically,
+ * not a visually-hidden recipe: the collapsed rail must also leave the tab order
+ * and the accessibility tree, or a merchant who collapsed it would Tab through
+ * invisible Style controls.
+ *
+ * Targeted by ATTRIBUTE, not by a CSS-module class, because Polaris's JSX types
+ * accept only a component's own props plus `key`/`ref`/`slot` — `className` on an
+ * `<s-box>` is a type error (Step 0.1). The documented alternative was a plain
+ * `<div>` grid child, but that would make the rail a nested item instead of the
+ * grid item itself, re-entering the unpainted-inline-end-sliver bug recorded in
+ * [[polaris-web-component-gotchas]] and changing how the grey panel stretches to
+ * the row height. A hyphenated attribute typechecks on `s-*` hosts and leaves the
+ * expanded markup byte-for-byte as it was, so this stays the smaller change. The
+ * `appx-` prefix keeps the necessarily-global selector unambiguous.
+ *
+ * ⚠️ This rule ONLY works paired with the grid template switching to `1fr`
+ * (`EditorShell.tsx`). `display: none` removes the rail as a grid ITEM, so with
+ * the template left at `18.75rem 1fr` the STAGE becomes the first child and
+ * renders inside the 300px column — a silent breakage that reads as a CSS bug
+ * rather than a missing ternary. Change the two together, always.
+ */
+:global(s-box[data-appx-rail-collapsed]) {
+  display: none;
 }

@@ -35,7 +35,9 @@ Everything upstream is done and live-verified on the dev store:
   persists to `TableStyling`, serializes to the metaobject, and renders on the storefront;
   rail a11y pass done; Reset-to-theme-defaults ships; docs reconciled.
 
-Test suite ~875 tests / 36 files; full gate (typecheck · lint · format · test · build) green.
+Test suite ~883 tests / 37 files; full gate (typecheck · lint · format · test · build) green.
+
+Since B1: the editor's two width surfaces for the Style tab (features 75 + 76) — see Completed.
 
 **Next:** B2 = steps 13–14 (built-in preset gallery: `stylePresets.ts` constants, rail
 preset cards, skippable creation-gallery popup — **copy** semantics into real `TableStyling`
@@ -94,6 +96,46 @@ plan: `~/.claude/plans/style-tab-phase-b-implementation-plan.md` (1–12 = B1, 1
   headings, named landmark) + docs reconciliation. **Phase B1 complete.**
 - Resolved en route: the section-header BANDED band is the intended default becoming
   reachable, not a regression (accept; Step 7 signed off).
+
+**Collapsible Style / Settings rail (feature 76, doc `76-…`) — ✅ shipped & verified 2026-07-25**
+- The **other** option the same merchant offered for the same report that produced feature
+  75, built at their request as a complementary surface. One toggle in the control row
+  collapses the 18.75rem Style/Settings rail to **zero width**, handing the stage the full
+  editor card. Feature 75's doc had rejected this idea on width grounds; that half is
+  **wrong and is retracted** — it modelled the preview off the raw admin viewport instead of
+  the `<s-page inlineSize="large">` card, and the measured chain (`iframe − 64 − 48 − 2`,
+  −300 more with the rail open) clears the 749px breakpoint by ~300px on the reporter's own
+  window. Live-verified at the exact reporting size (`innerWidth` 1397 → iframe 1141):
+  Style + Desktop rendered stacked, one click rendered it two-column.
+- **Collapse to zero, not to an icon stub** — which is what forces the button into the
+  control row beside the tabs rather than into the rail: the tight measured case clears the
+  breakpoint by only 18px, so a ~48px surviving strip would put the preview back under it.
+  One stable icon in a fixed position, `aria-expanded` carrying the state. Hidden, not
+  unmounted, so the rail's scroll position and StyleTab's UI memory survive.
+- **Both Step 0 platform checks came back negative** and both fallbacks were taken.
+  (a) `className` on an `<s-box>` is a **`tsc` error** — Polaris's JSX types accept only a
+  component's own props plus `key`/`ref`/`slot`/`children` — so the hide rule hangs off a
+  hyphenated `data-` attribute (hyphenated JSX attribute names skip excess-property
+  checking, which is also why the ARIA typechecks) rather than the planned wrapper `<div>`,
+  which would have demoted the rail from grid item to nested child and re-entered the
+  unpainted-sliver bug. (b) `<s-button>` **drops `aria-expanded`/`aria-controls`** — measured
+  against the live CDN build: only `accessibilityLabel` reaches the shadow `<button>`, and
+  the host carries no role at all — so the toggle is a plain
+  `<button className={styles.segBtn}>`, the same imported chrome the tab segments use.
+  Shipping a sighted-users-only toggle state into the one rail that spent feature 57 Step 12
+  closing that gap was not acceptable.
+- **One defect the plan did not predict:** collapse/expand drifted the rail's scroll offset
+  ~36px *per cycle*. Not the zero-rect `getBoundingClientRect()` hazard the plan named (that
+  is real, is now guarded in `useScrollRegionHeight`, and did **not** move the drift) — it is
+  Chrome **scroll anchoring** re-compensating a re-laid-out hidden subtree. `overflow-anchor:
+  none` on `.railScroller` fixes it; pixel-identical across six cycles.
+- **Does not replace feature 75's modal, and the honest limit stands:** under ~1420px the
+  Style tab still cannot show a truthful desktop table *and* the knobs at once. Collapse
+  trades the knobs for width, the modal trades the editor for width; both are
+  look-then-adjust, not adjust-and-watch. If the friction is reported again the answer is a
+  fixed-1100px `transform: scale()` preview, **not** a third panel — recorded in `76-…` so it
+  is not re-derived. Tripwired files untouched; no rows/styling/assignment changed (the
+  SaveBar never appeared). Details + three corrections in `76-…`.
 
 **Full-size preview modal (feature 75, doc `75-…`) — ✅ shipped & verified 2026-07-25**
 - Merchant report: the **Desktop** preview renders the **stacked (mobile)** layout on a
@@ -292,7 +334,7 @@ Multi-value applies to PRODUCT + COLLECTION only. No migrations needed for the 4
 
 ## Next Up
 
-1. **Reshell Phase B2** — built-in preset gallery (Style tab steps 13–14; new feature-doc number, 76+, since 70 = stacked-semantics, 71 = sidebar inner-scroll, 72 = device-preview mockups, 73 = desktop preview inner scroll, 74 = content-free tables, 75 = full-size preview modal). Then C (Settings display rules) → E (assignment into the reshell) → F (top-bar status/save + cleanup).
+1. **Reshell Phase B2** — built-in preset gallery (Style tab steps 13–14; new feature-doc number, 77+, since 70 = stacked-semantics, 71 = sidebar inner-scroll, 72 = device-preview mockups, 73 = desktop preview inner scroll, 74 = content-free tables, 75 = full-size preview modal, 76 = collapsible Style rail). Then C (Settings display rules) → E (assignment into the reshell) → F (top-bar status/save + cleanup).
 2. **Storefront table semantics in stacked layouts (feature 70)** — code shipped; screen-reader pass still owed (see Open Questions).
 3. **Editor page should not scroll at the document level** — the app document overflows the
    iframe by roughly the `.tipsFooter` height (it renders BELOW the card, outside
@@ -357,7 +399,7 @@ Multi-value applies to PRODUCT + COLLECTION only. No migrations needed for the 4
 
 - **Custom React editor — no AG Grid** (2-column, ≤200 rows, `valueParts` token editor). DnD via `@dnd-kit`. Pill model is **pick-then-insert** (modal outside the contenteditable; never an empty placeholder pill). Row cap is the single shared `MAX_TEMPLATE_ROWS` (UI + server).
 - **Value model:** `LINE_BREAK` value part for hard breaks (no inline rich formatting/links in MVP). `hideWhenEmpty` is whole-row, never per-line.
-- **View toggle:** Edit is the only editable segment; Desktop/Mobile are **read-only storefront previews** (Phase D), no separate WYSIWYG panel. **Tablet removed 2026-07-22.** **Shared preview device (2026-07-22):** the chosen device (Desktop/Mobile) is one value shared across all three tabs; edit-vs-preview is per-tab (`tabViewMemory.ts` `ViewMemory = { device, modes }`) — Content opens on the grid, Style/Settings auto-open a preview, picking a device on any tab moves every *previewing* tab to it; dropping a tab to Edit affects only that tab and retains the shared device. **Full-size preview modal (2026-07-25, feature 75):** because the inline Desktop preview is narrower than the storefront's 749px breakpoint on a laptop, a trigger beside the device toggle opens the same preview in an `<s-modal>` at a width the admin column cannot constrain. Its device toggle drives the SAME shared device (`setPreviewDevice` — device only, never a tab's mode). It is a verification surface: the Style knobs stay in the rail behind it.
+- **View toggle:** Edit is the only editable segment; Desktop/Mobile are **read-only storefront previews** (Phase D), no separate WYSIWYG panel. **Tablet removed 2026-07-22.** **Shared preview device (2026-07-22):** the chosen device (Desktop/Mobile) is one value shared across all three tabs; edit-vs-preview is per-tab (`tabViewMemory.ts` `ViewMemory = { device, modes }`) — Content opens on the grid, Style/Settings auto-open a preview, picking a device on any tab moves every *previewing* tab to it; dropping a tab to Edit affects only that tab and retains the shared device. **Full-size preview modal (2026-07-25, feature 75):** because the inline Desktop preview is narrower than the storefront's 749px breakpoint on a laptop, a trigger beside the device toggle opens the same preview in an `<s-modal>` at a width the admin column cannot constrain. Its device toggle drives the SAME shared device (`setPreviewDevice` — device only, never a tab's mode). It is a verification surface: the Style knobs stay in the rail behind it. **Collapsible rail (2026-07-25, feature 76):** the second answer to the same width problem — a toggle beside the tab group collapses the Style/Settings rail to zero width (never an icon stub: the tight case clears 749 by only 18px). ONE boolean shared by Style and Settings, in-memory, resets on reload; hidden not unmounted so the rail's scroll position survives; absent on Content. **Both surfaces ship and neither replaces the other** — collapse trades the knobs for width, the modal trades the editor for width. Under ~1420px the Style tab still cannot show a truthful desktop table and the knobs simultaneously; the only fix for that is a fixed-1100px `transform: scale()` preview, which is deliberately NOT built and NOT a third panel (see `76-…`).
 - **Color policy:** the app *uses* color via CSS variables as one source of truth (admin mirrors Polaris; storefront inherits theme but is merchant-overridable). The "no hardcoded hex literal" rule is CSS hygiene — use Polaris tokens / `currentColor` / custom properties (e.g. runtime-captured `--appx-token-color` for the pill blue). This rule does **not** encode the Edit-grid-never-styled binding rule (see Binding rules above).
 - **Save/status model (mockup):** App Bridge contextual SaveBar (Save/Discard) + header status dropdown + ⋯ menu; no separate "Save as draft". Save freezes the editor (`inert`) in-flight; baseline reset uses the **submitted** snapshot (data-safety race fix).
 - **Persistence/keys:** key finalization is **server-authoritative** ("is this row id already persisted?"), never re-derived. Metaobject is **app-reserved** (`$app:appx_spec_table`); deleted *before* Postgres on delete so a storefront-readable entry can't outlive its template.

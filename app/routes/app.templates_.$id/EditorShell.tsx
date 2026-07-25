@@ -4,7 +4,12 @@ import { isPreviewView, type DeviceView, type ViewId } from "./deviceView";
 import { useScrollRegionHeight } from "./useScrollRegionHeight";
 import { SegmentedControl, type SegOption } from "./SegmentedControl";
 import { PreviewModal } from "./PreviewModal";
-import { PREVIEW_MODAL_ID } from "./editorShared";
+import {
+  PREVIEW_MODAL_ID,
+  RAIL_REGION_ID,
+  railToggleLabel,
+  type RailTab,
+} from "./editorShared";
 import {
   DEFAULT_VIEW_MEMORY,
   rememberView,
@@ -101,6 +106,14 @@ export function EditorShell({
   // the merchant clicked themselves announces via the radio's own state change.
   const [announcement, setAnnouncement] = useState("");
 
+  // Feature 76: is the Style / Settings rail collapsed to zero width? ONE
+  // boolean shared by both tabs, not one per tab — the rail is a single surface,
+  // and per-tab collapse memory is state the merchant never asked for and would
+  // have to keep track of. In-memory only, like `viewMemory` above: a reload
+  // returns to an expanded rail, so a merchant who collapses it and forgets
+  // cannot get permanently stuck wondering where the Style controls went.
+  const [railCollapsed, setRailCollapsed] = useState(false);
+
   const handleTabChange = (next: TabId) => {
     setActiveTab(next);
     const nextView = viewForTab(viewMemory, next);
@@ -125,7 +138,11 @@ export function EditorShell({
   // view the stage renders the read-only `preview` slot instead of the editable
   // `stage`; `edit` keeps the editor. Previews replace the STAGE only — the
   // sidebar's show/hide stays governed by `activeTab`, unchanged.
-  const showSidebar = activeTab !== "content";
+  // `railTab` is `activeTab` narrowed to the tabs that actually have a rail, so
+  // the toggle's label helper can be total over its domain (feature 76). It also
+  // remains the single source for `showSidebar`, unchanged in meaning.
+  const railTab: RailTab | null = activeTab === "content" ? null : activeTab;
+  const showSidebar = railTab !== null;
   const sidebarContent = activeTab === "style" ? stylePanel : settingsPanel;
   const stageContent = isPreviewView(activeView)
     ? (preview?.(activeView) ?? stage)
@@ -139,8 +156,19 @@ export function EditorShell({
   // + floor. Called unconditionally (rules of hooks); it no-ops until `railRef` is
   // mounted, i.e. only on the Style/Settings tabs. The `showSidebar` re-measure key
   // makes it clamp the moment the rail appears.
+  //
+  // The key includes `railCollapsed` (feature 76) because the rail is HIDDEN, not
+  // unmounted: `railRef` stays live, and `getBoundingClientRect()` on a
+  // `display: none` element returns all zeros — so a measurement taken while
+  // collapsed reads `top: 0` and yields an over-large `maxHeight` that is
+  // stale-wrong the moment the rail comes back. The effect re-runs after commit,
+  // i.e. after the grid template and the hide class are applied, so the first
+  // measurement on expand is taken against settled layout.
   const railRef = useRef<HTMLDivElement>(null);
-  const railMaxHeight = useScrollRegionHeight(railRef, showSidebar ? 1 : 0);
+  const railMaxHeight = useScrollRegionHeight(
+    railRef,
+    showSidebar && !railCollapsed ? 1 : 0,
+  );
 
   return (
     <s-box
@@ -152,12 +180,67 @@ export function EditorShell({
       {/* Control row: tabs pinned left, device toggle pinned right. */}
       <s-box background="subdued" padding="small-300">
         <div className={styles.controlrow}>
-          <SegmentedControl
-            ariaLabel="Editor tab"
-            options={TABS}
-            value={activeTab}
-            onChange={handleTabChange}
-          />
+          {/* The tab group and the rail toggle are wrapped as ONE flex child, for
+              the same reason as the right-hand group below: `.controlrow` is
+              `justify-content: space-between` with exactly two children. */}
+          <s-stack direction="inline" gap="small-300" alignItems="center">
+            <SegmentedControl
+              ariaLabel="Editor tab"
+              options={TABS}
+              value={activeTab}
+              onChange={handleTabChange}
+            />
+            {/* Collapses the Style / Settings rail to zero width (feature 76),
+                handing the stage the full editor card so the Desktop preview can
+                clear the storefront's 749px breakpoint. Beside the tabs on
+                purpose: the tabs choose WHICH rail shows, this chooses WHETHER it
+                shows — and the rail collapses to nothing, so there is no surviving
+                strip for the button to live in (an icon-rail stub would spend more
+                width than the tight case has to give). One STABLE icon in a FIXED
+                position, visible in both states: a control that moves when you
+                press it is a control you have to re-find, and a toggle icon that
+                swaps is ambiguous about whether it shows the state or the action.
+                Rendered only where a rail exists — on Content it would be a
+                permanently dead control.
+
+                A plain <button> rather than an <s-button variant="tertiary">,
+                which is what this started as. Measured against the live Polaris
+                CDN build: the host `<s-button>` carries NO role, and of the ARIA
+                written on it only `accessibilityLabel` is forwarded to the
+                internal shadow `<button>` — `aria-expanded` and `aria-controls`
+                are dropped on the floor. So an s-button here would have been a
+                toggle whose state existed for sighted users only, in the one rail
+                that spent a whole step (feature 57 Step 12) closing exactly that
+                class of gap. The `.segBtn` chrome is the same chrome-reset +
+                `:focus-visible` ring the tab segments beside it use, imported —
+                never edited — from the tripwired module, and the nested `<s-box>`
+                supplies the hit area, so it renders as the same bare icon the
+                s-button did. See the Step 0.2 log in
+                `context/features/76-…`. */}
+            {railTab ? (
+              <button
+                type="button"
+                className={styles.segBtn}
+                aria-label={railToggleLabel(railTab, railCollapsed)}
+                aria-expanded={!railCollapsed}
+                aria-controls={RAIL_REGION_ID}
+                onClick={() => setRailCollapsed((collapsed) => !collapsed)}
+              >
+                <s-box
+                  borderRadius="base"
+                  paddingBlock="small-300"
+                  paddingInline="small-200"
+                >
+                  {/* Presentational: the button is already named by its
+                      `aria-label`, so announcing the icon too would double it. */}
+                  <s-icon
+                    type="layout-sidebar-left"
+                    aria-hidden="true"
+                  ></s-icon>
+                </s-box>
+              </button>
+            ) : null}
+          </s-stack>
           {/* The device toggle and the full-size trigger are wrapped as ONE
               flex child. `.controlrow` is `justify-content: space-between` with
               exactly two children, so adding a third would strand the toggle in
@@ -200,9 +283,15 @@ export function EditorShell({
 
       {/* Stage-wrap: the 300px sidebar shows only on Style/Settings; the stage is
           always present. The `subdued` sidebar reads as a distinct panel against
-          the `base` stage with no border needed. */}
+          the `base` stage with no border needed.
+
+          ⚠️ The grid template and the rail's hide class MUST move together
+          (feature 76). `display: none` drops the rail as a grid ITEM, so leaving
+          the template at `18.75rem 1fr` while hiding the rail would make the STAGE
+          the first child and render it inside the 300px column — a silent breakage
+          that looks like a CSS bug rather than a missing ternary. */}
       {showSidebar ? (
-        <s-grid gridTemplateColumns="18.75rem 1fr">
+        <s-grid gridTemplateColumns={railCollapsed ? "1fr" : "18.75rem 1fr"}>
           {/* A named LANDMARK, not just a grey box (feature 57 Step 12). Sighted
               users read "controls left, table right" instantly from the
               background and position; without a region role there is nothing for
@@ -212,6 +301,15 @@ export function EditorShell({
               that is deliberate and recorded in the tracker so Phase C neither
               redoes it nor reads it as "Settings a11y is handled." */}
           <s-box
+            // Hidden, NOT unmounted (feature 76), so the rail's React state
+            // survives the round trip: StyleTab's collapsible sections keep their
+            // open/closed state and the scroller keeps its offset, and expanding
+            // returns the merchant to exactly what they left. The `display: none`
+            // hangs off this attribute rather than a class because Polaris's JSX
+            // types reject `className` on an `<s-box>`; see the rule in
+            // `EditorShell.module.css` for why that beat a wrapper <div>. Absent,
+            // never `"false"` — an HTML attribute selector matches on presence.
+            data-appx-rail-collapsed={railCollapsed ? "" : undefined}
             background="subdued"
             padding="base"
             // The ONE side the box does not own: the scroller below owns its
@@ -228,6 +326,7 @@ export function EditorShell({
                 stays on the `s-box`; the scroll and the inline-end gutter live
                 on this div. */}
             <div
+              id={RAIL_REGION_ID}
               ref={railRef}
               className={shellStyles.railScroller}
               style={{ maxHeight: railMaxHeight }}

@@ -53,8 +53,18 @@ export function useScrollRegionHeight(
     let frame = 0;
 
     const measure = () => {
-      const top = scroller.getBoundingClientRect().top;
-      const available = window.innerHeight - top - remToPx(BOTTOM_PAD_REM);
+      const rect = scroller.getBoundingClientRect();
+      // A scroller that is not RENDERED reports an all-zero rect, so `top` reads
+      // 0 and the budget below comes out as the whole viewport — a value that is
+      // wrong for the element now and stale-wrong the moment it comes back.
+      // Feature 76's collapsible Style rail hides the rail (`display: none`)
+      // rather than unmounting it, so this is reachable: without the bail, the
+      // rail would be re-shown carrying a viewport-tall `maxHeight` for the frame
+      // before the re-measure lands, unbounded for exactly as long. Holding the
+      // last good value instead keeps the height stable across a whole hide/show
+      // cycle. The caller's re-measure key picks it up again on the way back.
+      if (rect.width === 0 && rect.height === 0) return;
+      const available = window.innerHeight - rect.top - remToPx(BOTTOM_PAD_REM);
       const next = Math.round(
         Math.max(remToPx(MIN_SCROLLER_HEIGHT_REM), available),
       );

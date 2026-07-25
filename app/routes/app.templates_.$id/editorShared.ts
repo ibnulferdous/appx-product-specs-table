@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect } from "react";
 import { findNativeField } from "../../utils/shopifyFields";
 import type { ValuePart } from "../../utils/rows";
+import type { TabId } from "./tabViewMemory";
 
 // Shared types + constants + tiny pure helpers for the spec-table editor, lifted
 // out of the former monolithic `SpecTableEditor.tsx` (reshell A1). This is a
@@ -147,6 +148,43 @@ export const RESET_STYLING_MODAL_ID = "reset-styling-modal";
 // before it appears — its open/close state rides the modal's own onShow /
 // onAfterHide callbacks.
 export const PREVIEW_MODAL_ID = "preview-modal";
+
+// --- Collapsible Style / Settings rail (feature 76) -------------------------
+// The other half of the same merchant report that produced the modal above:
+// collapsing the 18.75rem rail hands the stage the full editor card, which on
+// the reporter's own window clears the 749px breakpoint with ~300px to spare
+// (measured — see `context/features/76-…`). Collapse trades the knobs for width;
+// the modal trades the editor for width. Both surfaces ship, deliberately.
+
+// The tabs that HAVE a rail. `content` is excluded at the type level rather than
+// handled with a fallback string: the toggle is not rendered there (no rail to
+// talk about, and a permanently dead control is worse than an absent one), so a
+// label for it would be unreachable code that only invites a wrong answer.
+export type RailTab = Exclude<TabId, "content">;
+
+// The rail's inner scroller, referenced by the toggle's `aria-controls`. The id
+// goes on the plain `.railScroller` div rather than the wrapping `<s-box>`
+// because a custom-element host is the wrong place to bet on attribute handling
+// ([[polaris-web-component-gotchas]]) — a plain div takes an `id` reliably.
+export const RAIL_REGION_ID = "editor-rail";
+
+/**
+ * The rail toggle's accessible name: the ACTION it performs plus the panel it
+ * performs it on ("Hide Style panel" / "Show Settings panel").
+ *
+ * Out of JSX and into a pure function for the same reason as `viewAnnouncement`
+ * (`tabViewMemory.ts`): the editor is a cross-origin iframe, so accessible-name
+ * copy cannot be read back from the top frame and has to be pinned by unit test
+ * instead. The verb tracks `collapsed`, the noun tracks the tab.
+ *
+ * The button's ICON deliberately does not change with state — a toggle icon that
+ * swaps is permanently ambiguous about whether it depicts the current state or
+ * the action. `aria-expanded` plus this label carry the state.
+ */
+export function railToggleLabel(tab: RailTab, collapsed: boolean): string {
+  const panel = tab === "style" ? "Style" : "Settings";
+  return collapsed ? `Show ${panel} panel` : `Hide ${panel} panel`;
+}
 
 export const MORE_ACTIONS_MENU_ID = "template-more-actions";
 export const RENAME_MODAL_ID = "rename-template-modal";
