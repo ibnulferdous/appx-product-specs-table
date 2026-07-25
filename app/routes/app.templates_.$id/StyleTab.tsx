@@ -36,6 +36,8 @@ import {
   toColorControlValue,
   toControlValue,
   toLabelWidthControlValue,
+  toZeroMeansOffControlValue,
+  ZERO_MEANS_OFF_CONTROL_MIN,
   type StylingOption,
 } from "./stylingControls";
 import {
@@ -46,9 +48,7 @@ import {
   LABEL_WIDTH_PCT_MIN,
   LINE_HEIGHTS,
   OUTER_BORDER_RADIUS_PX_MAX,
-  OUTER_BORDER_RADIUS_PX_MIN,
   OUTER_BORDER_WIDTH_PX_MAX,
-  OUTER_BORDER_WIDTH_PX_MIN,
   STYLING_FONT_STYLES,
   STYLING_FONT_WEIGHTS,
   TABLE_MAX_WIDTH_PX_MAX,
@@ -315,13 +315,13 @@ export function StyleTab({ engine }: { engine: RowEngine }) {
             suffix="px"
             details={
               styling.outerBorderWidthPx === null
-                ? "No outline. Enter a number to frame the table."
+                ? "No outline. Set 1 or more to frame the table."
                 : "Colored by Table outline, or Border if that is unset."
             }
-            min={OUTER_BORDER_WIDTH_PX_MIN}
+            min={ZERO_MEANS_OFF_CONTROL_MIN}
             max={OUTER_BORDER_WIDTH_PX_MAX}
             step={1}
-            value={toBoundedIntControlValue(styling.outerBorderWidthPx)}
+            value={toZeroMeansOffControlValue(styling.outerBorderWidthPx)}
             onChange={(event: Event) => {
               setStylingField(
                 "outerBorderWidthPx",
@@ -337,13 +337,13 @@ export function StyleTab({ engine }: { engine: RowEngine }) {
             suffix="px"
             details={
               styling.outerBorderRadiusPx === null
-                ? "Square corners."
+                ? "Square corners. Set 1 or more to round them."
                 : "Rounds the table's corners, outline or not."
             }
-            min={OUTER_BORDER_RADIUS_PX_MIN}
+            min={ZERO_MEANS_OFF_CONTROL_MIN}
             max={OUTER_BORDER_RADIUS_PX_MAX}
             step={1}
-            value={toBoundedIntControlValue(styling.outerBorderRadiusPx)}
+            value={toZeroMeansOffControlValue(styling.outerBorderRadiusPx)}
             onChange={(event: Event) => {
               setStylingField(
                 "outerBorderRadiusPx",

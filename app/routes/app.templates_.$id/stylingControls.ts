@@ -757,32 +757,68 @@ export function fromTableMaxWidthControlValue(raw: string): number | null {
   );
 }
 
+// --- The two "0 is what off LOOKS like" boxes --------------------------------
+//
+// Outline width and Corner radius break the blank-box convention above, and
+// deliberately. Their off state is `null` like every other knob, but a blank box
+// is a poor way to say "none" on a control whose entire vocabulary is a px
+// number — a merchant who wants no frame reaches for 0, and one reading the rail
+// back wants to see what the value IS, not an absence. So here the display and
+// the storage are allowed to disagree: the box always holds a number, and `0` is
+// the number that means off. (Maximum width keeps the blank box — 0 is not a
+// spelling of "full width", so the same trick would be a lie there.)
+//
+// The disagreement is one-directional and total, which is what keeps feature
+// 78's minimum-of-1 lock intact: 0 is NEVER stored. It is written for `null` on
+// the way out and read back as `null` on the way in, so there is still exactly
+// one stored spelling of off and `serializeStylingOverrides` still has nothing
+// to write. That is load-bearing rather than tidy, because BOTH knobs carry a
+// presence flag keyed on non-null (`tableStylingCss.ts`), and a stored 0 would
+// trip it while painting nothing:
+//
+// - `--outer-border` drops the last row's own bottom rule, so a 0 px outline
+//   would draw no frame AND silently lose a divider.
+// - `--outer-radius` turns on `overflow: hidden`, so a 0 px radius would round
+//   nothing AND start clipping an over-wide table — the exact trade that flag
+//   exists to avoid taking unasked.
+//
+// Keeping 0 out of the model makes both unreachable by construction rather than
+// by a second guard downstream.
+
 /**
- * The outline-width box's string to a stored width — with ZERO AS AN ALIAS FOR
- * EMPTY, the one converter here that does not simply clamp.
- *
- * `null` (the cleared box) is the only stored spelling of "no outline", and
- * feature 78's minimum-of-1 lock is what keeps it the only one: a stored 0 would
- * be a bogus override that still emits the `--outer-border` presence flag, and
- * that flag drops the last row's own bottom rule (`tableStylingCss.ts`). A 0 px
- * outline would therefore paint no frame AND delete that divider — a table
- * missing its bottom rule for no visible reason.
- *
- * So 0 is not admitted as a second state; it is a merchant saying "off" in the
- * other obvious way, and it resolves to the one state that means off. Rounding
- * before the test keeps the rule total over everything the box can hold:
- * anything that rounds to zero or below is off, and every other entry clamps
- * into 1..MAX exactly as the sibling boxes do. (An empty box lands here too —
- * `Number("")` is 0 — reaching the same null by the shorter route.)
- *
- * Deliberately NOT advertised in the field's help text: the canonical gesture is
- * still clearing the box, and documenting two ways to reach one state is how the
- * second one starts to look like a different one.
+ * The floor these two boxes carry, BELOW their domain's stored floor on purpose:
+ * the stepper has to be able to walk down to the 0 that means off. The domain
+ * minimums (1) remain the smallest values ever stored.
  */
-export function fromOuterBorderWidthControlValue(raw: string): number | null {
+export const ZERO_MEANS_OFF_CONTROL_MIN = 0;
+
+/** A stored value as the string a zero-means-off box holds; null shows as `0`. */
+export function toZeroMeansOffControlValue(value: number | null): string {
+  return value === null ? "0" : String(value);
+}
+
+/**
+ * A zero-means-off box's string back to a stored value, reading anything at or
+ * below zero as off.
+ *
+ * Rounding before the test keeps the rule total over everything the box can
+ * hold: `0`, `0.4` and `-5` are all off, `0.6` clamps up to the minimum, and an
+ * emptied box lands here too — `Number("")` is 0 — reaching the same null by the
+ * shorter route. That last case is why clearing still works even though the
+ * merchant can no longer see it happen: the box refills with `0`.
+ */
+function fromZeroMeansOffControlValue(
+  raw: string,
+  min: number,
+  max: number,
+): number | null {
   const value = Number(raw.trim());
   if (Number.isFinite(value) && Math.round(value) <= 0) return null;
-  return fromBoundedIntControlValue(
+  return fromBoundedIntControlValue(raw, min, max);
+}
+
+export function fromOuterBorderWidthControlValue(raw: string): number | null {
+  return fromZeroMeansOffControlValue(
     raw,
     OUTER_BORDER_WIDTH_PX_MIN,
     OUTER_BORDER_WIDTH_PX_MAX,
@@ -790,7 +826,7 @@ export function fromOuterBorderWidthControlValue(raw: string): number | null {
 }
 
 export function fromOuterBorderRadiusControlValue(raw: string): number | null {
-  return fromBoundedIntControlValue(
+  return fromZeroMeansOffControlValue(
     raw,
     OUTER_BORDER_RADIUS_PX_MIN,
     OUTER_BORDER_RADIUS_PX_MAX,

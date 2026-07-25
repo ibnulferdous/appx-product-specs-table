@@ -20,7 +20,9 @@ import {
   fromColorControlValue,
   fromControlValue,
   fromLabelWidthControlValue,
+  fromOuterBorderRadiusControlValue,
   fromOuterBorderWidthControlValue,
+  ZERO_MEANS_OFF_CONTROL_MIN,
   nextFontSizeForControl,
   parseCustomFontSizePx,
   rememberedCustomFontSizePx,
@@ -31,7 +33,9 @@ import {
   showsTableAlignControl,
   toColorControlValue,
   toControlValue,
+  toBoundedIntControlValue,
   toLabelWidthControlValue,
+  toZeroMeansOffControlValue,
   type StylingOption,
 } from "./stylingControls";
 import {
@@ -43,6 +47,8 @@ import {
   LABEL_WIDTH_PCT_MAX,
   LABEL_WIDTH_PCT_MIN,
   LINE_HEIGHTS,
+  OUTER_BORDER_RADIUS_PX_MAX,
+  OUTER_BORDER_RADIUS_PX_MIN,
   OUTER_BORDER_WIDTH_PX_MAX,
   OUTER_BORDER_WIDTH_PX_MIN,
   COLUMN_DIVIDER_STYLES,
@@ -581,30 +587,75 @@ describe("the bounded numeric inputs (feature 57 Step 10b)", () => {
     expect(toLabelWidthControlValue(35)).toBe("35");
   });
 
-  it("clamps an outline width into the domain's bounds", () => {
-    expect(
-      fromOuterBorderWidthControlValue(String(OUTER_BORDER_WIDTH_PX_MAX + 1)),
-    ).toBe(OUTER_BORDER_WIDTH_PX_MAX);
-    expect(fromOuterBorderWidthControlValue("3")).toBe(3);
-    // Rounds UP into the range rather than falling through the zero alias
-    // below: only a value that rounds to zero means off.
-    expect(fromOuterBorderWidthControlValue("0.6")).toBe(
-      OUTER_BORDER_WIDTH_PX_MIN,
-    );
-  });
+  // Outline width and Corner radius share one contract, so they are tested as
+  // one table rather than twice: both show `0` for off, both read anything at
+  // or below zero back as null, and NEITHER may ever hand a 0 to the model.
+  const ZERO_MEANS_OFF_BOXES = [
+    {
+      label: "outline width",
+      from: fromOuterBorderWidthControlValue,
+      min: OUTER_BORDER_WIDTH_PX_MIN,
+      max: OUTER_BORDER_WIDTH_PX_MAX,
+    },
+    {
+      label: "corner radius",
+      from: fromOuterBorderRadiusControlValue,
+      min: OUTER_BORDER_RADIUS_PX_MIN,
+      max: OUTER_BORDER_RADIUS_PX_MAX,
+    },
+  ];
 
-  it("reads 0 as the merchant clearing the outline, not as a 0 px frame", () => {
-    // The one converter that does not clamp its floor. A stored 0 would still
-    // emit the `--outer-border` presence flag, which drops the last row's own
-    // bottom rule — so it would paint no frame AND lose a divider. Off has
-    // exactly one stored spelling, and 0 resolves to it.
-    expect(fromOuterBorderWidthControlValue("0")).toBeNull();
-    expect(fromOuterBorderWidthControlValue("0.4")).toBeNull();
-    expect(fromOuterBorderWidthControlValue("-5")).toBeNull();
-    // Clearing the box is still the canonical gesture, and unusable text is
-    // still ignored — the alias must not have changed either.
-    expect(fromOuterBorderWidthControlValue("")).toBeNull();
-    expect(fromOuterBorderWidthControlValue("abc")).toBeNull();
+  it.each(ZERO_MEANS_OFF_BOXES)(
+    "clamps a $label into the domain's bounds",
+    ({ from, min, max }) => {
+      expect(from(String(max + 1))).toBe(max);
+      expect(from(String(min + 2))).toBe(min + 2);
+      // Rounds UP into the range rather than falling through to off below:
+      // only a value that rounds to zero means off.
+      expect(from("0.6")).toBe(min);
+    },
+  );
+
+  it.each(ZERO_MEANS_OFF_BOXES)(
+    "reads 0 in the $label box as off, never as a 0 px value",
+    ({ from, min }) => {
+      // These two converters do not clamp their floor. A stored 0 would be
+      // non-null, so it would trip the knob's presence flag while painting
+      // nothing: `--outer-border` drops the last row's bottom rule, and
+      // `--outer-radius` turns on `overflow: hidden`. Off has exactly one
+      // stored spelling and everything at or below zero reaches it.
+      expect(from("0")).toBeNull();
+      expect(from("0.4")).toBeNull();
+      expect(from("-5")).toBeNull();
+      // An emptied box lands on the same null by the shorter route, and
+      // unusable text is still ignored.
+      expect(from("")).toBeNull();
+      expect(from("abc")).toBeNull();
+      // The 0 the box shows must be one the stepper can walk down to, which is
+      // why the control floor sits BELOW the domain's stored floor.
+      expect(ZERO_MEANS_OFF_CONTROL_MIN).toBeLessThan(min);
+      expect(from(String(ZERO_MEANS_OFF_CONTROL_MIN))).toBeNull();
+      // The invariant the presence flags depend on: no input reaches the model
+      // as a 0.
+      for (const raw of ["0", "-0", "-5", "", "0.4", "abc"]) {
+        expect(from(raw)).not.toBe(0);
+      }
+    },
+  );
+
+  it("shows an off value as a literal 0 rather than an empty box", () => {
+    // Display and model disagree ON PURPOSE, in one direction only: off is
+    // stored as null but shown as 0, because a blank box is a poor way to state
+    // a px value. The round trip has to close at both ends, or the merchant
+    // loses the ability to type their way back to off.
+    expect(toZeroMeansOffControlValue(null)).toBe("0");
+    expect(toZeroMeansOffControlValue(3)).toBe("3");
+    for (const { from } of ZERO_MEANS_OFF_BOXES) {
+      expect(from(toZeroMeansOffControlValue(null))).toBeNull();
+    }
+    // Maximum width deliberately does NOT join them — 0 is not a spelling of
+    // "full width", so its box still goes blank.
+    expect(toBoundedIntControlValue(null)).toBe(INHERIT_CONTROL_VALUE);
   });
 
   it("keeps every clamped value acceptable to the domain parser", () => {
@@ -628,14 +679,25 @@ describe("the bounded numeric inputs (feature 57 Step 10b)", () => {
         pct,
       );
     }
-    // The zero alias has to survive the trust boundary too: it hands the parser
-    // a null, which is the default the parser already round-trips. If it ever
-    // handed over a 0, the parser would clamp it back up to 1 and the merchant's
-    // "off" would return as a hairline frame.
+    // The zero-means-off boxes have to survive the trust boundary too: they
+    // hand the parser a null, which is the default it already round-trips. If
+    // either ever handed over a 0, the parser would clamp it back up to 1 and
+    // the merchant's "off" would return as a hairline frame / a 1px round.
     for (const raw of ["0", "-5", String(OUTER_BORDER_WIDTH_PX_MAX + 1), "3"]) {
       const px = fromOuterBorderWidthControlValue(raw);
       expect(
         parseStylingValues({ outerBorderWidthPx: px }).outerBorderWidthPx,
+      ).toBe(px);
+    }
+    for (const raw of [
+      "0",
+      "-5",
+      String(OUTER_BORDER_RADIUS_PX_MAX + 1),
+      "12",
+    ]) {
+      const px = fromOuterBorderRadiusControlValue(raw);
+      expect(
+        parseStylingValues({ outerBorderRadiusPx: px }).outerBorderRadiusPx,
       ).toBe(px);
     }
   });

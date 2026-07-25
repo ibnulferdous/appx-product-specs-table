@@ -37,17 +37,29 @@ thing as "the theme's table outline". This is also why **every integer minimum i
 default that renders identically. One representation per state; clearing the
 control is the only way to turn a container knob off.
 
-> **Amended 2026-07-26 — Outline width accepts a typed `0`, as an alias.** The
-> lock above is unchanged: 0 is still not a *stored* state. What changed is the
-> failure mode when a merchant types it. Clamping 0 up to 1 gave them a frame
-> they had just asked to remove, so `fromOuterBorderWidthControlValue` now maps
-> anything rounding to ≤ 0 to `null` — the cleared box — before the clamp runs.
-> For this knob specifically a 0 would be worse than merely redundant: it is
-> non-null, so `--outer-border` is emitted, and that flag drops the last row's
-> own bottom rule. A 0 px outline would paint no frame *and* lose a divider.
-> Not surfaced in the help text (clearing stays the one documented gesture) and
-> `min` stays 1 on the field, so the stepper still cannot reach it. Radius and
-> Maximum width still clamp; extend only on a report.
+> **Amended 2026-07-26 — Outline width and Corner radius SHOW `0`, but still
+> store `null`.** The lock above is unchanged, and is what makes the amendment
+> safe: 0 is still never a stored state. What changed is the *display*. Merchant
+> report — turning the outline off meant deleting the text, which is a poor
+> gesture on a knob whose vocabulary is a px number. So neither box is blank any
+> more: `null` renders as `0`, and anything rounding to ≤ 0 (including an emptied
+> box) reads back as `null`. A shared `ZERO_MEANS_OFF_CONTROL_MIN = 0` lets the
+> stepper walk down to off; the domain minimums stay 1 as the smallest stored
+> values.
+>
+> The one-directional disagreement is the whole design, because a stored 0 on
+> either knob would be worse than merely redundant — it is non-null, so the
+> knob's presence flag fires while nothing is painted:
+>
+> - `--outer-border` drops the last row's own bottom rule, so a 0 px outline
+>   would draw no frame *and* silently lose a divider.
+> - `--outer-radius` turns on `overflow: hidden`, so a 0 px radius would round
+>   nothing *and* start clipping an over-wide table — the exact trade that flag
+>   is gated (rather than always-on) to avoid taking unasked.
+>
+> Keeping 0 out of the model makes both unreachable by construction rather than
+> by a second guard downstream. **Maximum width keeps its blank box**: 0 is not a
+> spelling of "full width", so the same trick would be a lie there.
 
 **2. `max-width`, not `width`.** A `width: 900px` overflows a 360px phone. A
 `max-width: 900px` caps a wide screen and shrinks below it, so the knob cannot
