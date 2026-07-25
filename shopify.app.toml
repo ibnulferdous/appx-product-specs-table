@@ -5,9 +5,26 @@ name = "appx-product-specs-table"
 application_url = "https://example.com"
 embedded = true
 
+[build]
+automatically_update_urls_on_dev = true
+
+[webhooks]
+api_version = "2026-07"
+
+  [[webhooks.subscriptions]]
+  uri = "/webhooks/app/uninstalled"
+  topics = [ "app/uninstalled" ]
+
+  [[webhooks.subscriptions]]
+  uri = "/webhooks/app/scopes_update"
+  topics = [ "app/scopes_update" ]
+
 [access_scopes]
 # Learn more at https://shopify.dev/docs/apps/tools/cli/configuration#access_scopes
-scopes = "write_products,write_metaobjects,write_metaobject_definitions"
+scopes = "write_metaobject_definitions,write_metaobjects,write_products"
+
+[auth]
+redirect_urls = [ "https://example.com/api/auth" ]
 
 [product.metafields.app.demo_info]
 type = "single_line_text_field"
@@ -16,6 +33,19 @@ description = "Tracks products created by the Shopify app template for developme
 
   [product.metafields.app.demo_info.access]
   admin = "merchant_read_write"
+
+# Product -> template pointer. A `metaobject_reference` (NOT a handle string) is
+# required for Liquid/Storefront to resolve the relationship (data-model.md §9).
+# Access path in Liquid: `product.metafields["$app"].spec_table.value`.
+# Points at the `$app:appx_spec_table` metaobject declared further down.
+[product.metafields.app.spec_table]
+type = "metaobject_reference<$app:appx_spec_table>"
+name = "Appx Spec Table"
+description = "The Appx spec table rendered on this product's storefront page."
+
+  [product.metafields.app.spec_table.access]
+  admin = "merchant_read_write"
+  storefront = "public_read"
 
 [metaobjects.app.example]
 name = "Example"
@@ -36,7 +66,7 @@ type = "multi_line_text_field"
 # --- Appx spec table (storefront delivery) ---------------------------------
 # App-owned metaobject holding a template's storefront-ready payload. Declared
 # here (declarative/TOML) so it deploys to every install and can be referenced
-# by the `spec_table` product metafield below. Supersedes the runtime
+# by the `spec_table` product metafield above. Supersedes the runtime
 # `metaobjectDefinitionCreate` path (data-model.md §10). `storefront = public_read`
 # keeps `rows`/`status` readable by the Theme App Extension in Liquid; fields
 # mirror what `upsertSpecTableMetaobject` writes.
@@ -77,18 +107,6 @@ type = "json"
 name = "Updated At"
 type = "single_line_text_field"
 
-# Product -> template pointer. A `metaobject_reference` (NOT a handle string) is
-# required for Liquid/Storefront to resolve the relationship (data-model.md §9).
-# Access path in Liquid: `product.metafields["$app"].spec_table.value`.
-[product.metafields.app.spec_table]
-type = "metaobject_reference<$app:appx_spec_table>"
-name = "Appx Spec Table"
-description = "The Appx spec table rendered on this product's storefront page."
-
-  [product.metafields.app.spec_table.access]
-  admin = "merchant_read_write"
-  storefront = "public_read"
-
 # Shop-level routing map (attribute -> template handle). One json metafield per
 # shop, rebuilt from the ACTIVE disjoint ProductAssignment rows (data-model.md §9)
 # by `app/shopify/routing.server.ts`. `storefront = public_read` makes it
@@ -103,20 +121,3 @@ description = "Maps product attributes to the assigned Appx spec-table handle."
   [shop.metafields.app.routing.access]
   admin = "merchant_read_write"
   storefront = "public_read"
-
-[webhooks]
-api_version = "2026-07"
-
-  [[webhooks.subscriptions]]
-  uri = "/webhooks/app/uninstalled"
-  topics = [ "app/uninstalled" ]
-
-  [[webhooks.subscriptions]]
-  uri = "/webhooks/app/scopes_update"
-  topics = [ "app/scopes_update" ]
-
-[auth]
-redirect_urls = [ "https://example.com/api/auth" ]
-
-[build]
-automatically_update_urls_on_dev = true
