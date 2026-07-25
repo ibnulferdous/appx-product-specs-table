@@ -7,6 +7,10 @@ import {
   LABEL_WIDTH_PCT_MIN,
   LINE_HEIGHTS,
   MOBILE_LAYOUTS,
+  OUTER_BORDER_RADIUS_PX_MAX,
+  OUTER_BORDER_RADIUS_PX_MIN,
+  OUTER_BORDER_WIDTH_PX_MAX,
+  OUTER_BORDER_WIDTH_PX_MIN,
   ROW_DIVIDER_STYLES,
   ROW_LAYOUTS,
   SECTIONS_INITIAL_STATES,
@@ -14,6 +18,9 @@ import {
   STYLING_FONT_SIZES,
   STYLING_FONT_STYLES,
   STYLING_FONT_WEIGHTS,
+  TABLE_ALIGNMENTS,
+  TABLE_MAX_WIDTH_PX_MAX,
+  TABLE_MAX_WIDTH_PX_MIN,
   parseStylingValues,
   type StylingFontSize,
   type StylingValues,
@@ -158,6 +165,44 @@ export const DENSITY_OPTIONS: ReadonlyArray<
   helpText: DENSITY_LABELS[value].helpText,
 }));
 
+// --- Container knobs: table width + outer border -----------------------------
+//
+// Table alignment — the only non-nullable keyword knob in the container group,
+// so it follows the plain option-list shape above rather than the `Inherit`
+// vocabulary further down. Help text names the SPACE the table sits in, because
+// alignment is invisible until a max width leaves some space to sit in.
+const TABLE_ALIGN_LABELS: Record<
+  (typeof TABLE_ALIGNMENTS)[number],
+  { label: string; helpText: string }
+> = {
+  LEFT: { label: "Left", helpText: "Table hugs the left of the section." },
+  CENTER: { label: "Center", helpText: "Equal space on both sides." },
+  RIGHT: { label: "Right", helpText: "Table hugs the right of the section." },
+};
+
+export const TABLE_ALIGN_OPTIONS: ReadonlyArray<
+  StylingOption<(typeof TABLE_ALIGNMENTS)[number]>
+> = TABLE_ALIGNMENTS.map((value) => ({
+  value,
+  label: TABLE_ALIGN_LABELS[value].label,
+  helpText: TABLE_ALIGN_LABELS[value].helpText,
+}));
+
+/**
+ * Whether the rail shows the alignment control.
+ *
+ * A full-width table fills its section, so all three alignments render
+ * identically — the control would ask the merchant to decide something that
+ * cannot be seen. The FIFTH instance of hide-when-irrelevant, and a pure READ
+ * like the other four: clearing the max width keeps the merchant's alignment,
+ * so putting a cap back returns their choice rather than Left. The shared law
+ * test in `stylingControls.test.ts` covers this automatically once the
+ * predicate is registered there.
+ */
+export function showsTableAlignControl(styling: StylingValues): boolean {
+  return styling.tableMaxWidthPx !== null;
+}
+
 // --- Step 9b knobs ----------------------------------------------------------
 //
 // `sectionsCollapsible` is the one BOOLEAN in `StylingValues`, so it gets a
@@ -290,6 +335,7 @@ export type StylingColorFieldName =
   | "valueBgColor"
   | "stripeBgColor"
   | "borderColor"
+  | "outerBorderColor"
   | "labelTextColor"
   | "valueTextColor";
 
@@ -335,7 +381,18 @@ export const COLOR_KNOBS: ReadonlyArray<ColorKnob> = [
   {
     field: "borderColor",
     label: "Border",
-    helpText: "Row rules and the table outline.",
+    // Was "Row rules and the table outline" until the outer border became its
+    // own knob. It still dresses BOTH by default — the outline only stops
+    // following it once the swatch below is set — and the text has to say so,
+    // or a merchant who sets Border and then wonders why the frame moved with
+    // it reads the coupling as a bug.
+    helpText: "Row rules, and the outline unless set below.",
+    alpha: true,
+  },
+  {
+    field: "outerBorderColor",
+    label: "Table outline",
+    helpText: "The outer frame — needs an Outline width.",
     alpha: true,
   },
   {
@@ -627,12 +684,61 @@ export function toLabelWidthControlValue(pct: number | null): string {
  * back to the stylesheet's default ratio. Same clamp reasoning as the px box.
  */
 export function fromLabelWidthControlValue(raw: string): number | null {
+  return fromBoundedIntControlValue(
+    raw,
+    LABEL_WIDTH_PCT_MIN,
+    LABEL_WIDTH_PCT_MAX,
+  );
+}
+
+// --- The four bounded-integer boxes ------------------------------------------
+//
+// Label width and the three container integers all present the same control:
+// a number field where CLEARING IT is the way back to the default. They differ
+// only in their bounds, so the conversion lives once here and each knob keeps
+// its own named wrapper for the call sites and the help text.
+//
+// Clamping (not rejecting) repeats the Step 10b reasoning: Polaris's `min`/`max`
+// are display affordances only — its own docs note a keyboard user can type past
+// them — so the boundary has to hold the range itself.
+
+/** A stored bounded integer as the string a number field holds; null = empty. */
+export function toBoundedIntControlValue(value: number | null): string {
+  return value === null ? INHERIT_CONTROL_VALUE : String(value);
+}
+
+/** A number field's string back to a clamped integer, or null when empty. */
+export function fromBoundedIntControlValue(
+  raw: string,
+  min: number,
+  max: number,
+): number | null {
   const trimmed = raw.trim();
   const value = Number(trimmed);
   if (trimmed === "" || !Number.isFinite(value)) return null;
-  return clampToRange(
-    Math.round(value),
-    LABEL_WIDTH_PCT_MIN,
-    LABEL_WIDTH_PCT_MAX,
+  return clampToRange(Math.round(value), min, max);
+}
+
+export function fromTableMaxWidthControlValue(raw: string): number | null {
+  return fromBoundedIntControlValue(
+    raw,
+    TABLE_MAX_WIDTH_PX_MIN,
+    TABLE_MAX_WIDTH_PX_MAX,
+  );
+}
+
+export function fromOuterBorderWidthControlValue(raw: string): number | null {
+  return fromBoundedIntControlValue(
+    raw,
+    OUTER_BORDER_WIDTH_PX_MIN,
+    OUTER_BORDER_WIDTH_PX_MAX,
+  );
+}
+
+export function fromOuterBorderRadiusControlValue(raw: string): number | null {
+  return fromBoundedIntControlValue(
+    raw,
+    OUTER_BORDER_RADIUS_PX_MIN,
+    OUTER_BORDER_RADIUS_PX_MAX,
   );
 }

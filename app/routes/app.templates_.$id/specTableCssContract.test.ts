@@ -17,6 +17,7 @@ import {
   ROW_DIVIDER_STYLES,
   ROW_LAYOUTS,
   SECTION_HEADER_STYLES,
+  TABLE_ALIGNMENTS,
 } from "../../utils/tableStyling";
 import type { StylingValues } from "../../utils/tableStyling";
 import {
@@ -49,7 +50,12 @@ for (const values of [
   ),
   ...ROW_DIVIDER_STYLES.map((rowDividerStyle) => variant({ rowDividerStyle })),
   ...DENSITIES.map((density) => variant({ density })),
+  ...TABLE_ALIGNMENTS.map((tableAlign) => variant({ tableAlign })),
   variant({ sectionsCollapsible: true }),
+  // The two container presence flags. Any non-null value produces the flag, so
+  // the specific numbers are irrelevant here — only that the flag is emitted.
+  variant({ outerBorderWidthPx: 1 }),
+  variant({ outerBorderRadiusPx: 1 }),
 ]) {
   for (const cls of stylingToModifierClasses(values)) {
     producibleClasses.add(cls);
@@ -74,9 +80,10 @@ describe("spec-table.css ↔ styling vocabulary contract (feature 57 Step 3)", (
 
   it("covers the full producible class list (sanity: the loop above found every knob)", () => {
     // 2 layouts + 2 mobile + 2 section styles + 3 dividers + 3 densities +
-    // the collapsible flag. If a knob gains a member, this count and the
-    // selector assertions below both move together.
-    expect(producibleClasses.size).toBe(13);
+    // 3 alignments + the collapsible flag + the two container presence flags
+    // (--outer-border, --outer-radius). If a knob gains a member, this count
+    // and the selector assertions below both move together.
+    expect(producibleClasses.size).toBe(18);
   });
 
   it("has a selector for every producible modifier class except the documented exemptions", () => {

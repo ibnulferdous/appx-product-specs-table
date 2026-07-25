@@ -24,6 +24,9 @@ export const SECTIONS_INITIAL_STATES = [
 ] as const;
 export const ROW_DIVIDER_STYLES = ["LINES", "STRIPES", "NONE"] as const;
 export const DENSITIES = ["DEFAULT", "COMPACT", "SPACIOUS"] as const;
+// How a width-capped table sits in the space the theme gives it. Meaningless at
+// full width, which is why the rail hides the control then.
+export const TABLE_ALIGNMENTS = ["LEFT", "CENTER", "RIGHT"] as const;
 
 // Theme-relative presets. A bounded px NUMBER is also a valid fontSize; null =
 // inherit from the merchant's theme.
@@ -55,12 +58,41 @@ export const FONT_SIZE_PX_MAX = 184;
 export const LABEL_WIDTH_PCT_MIN = 20;
 export const LABEL_WIDTH_PCT_MAX = 80;
 
+// --- Container bounds (table width + outer border) ---------------------------
+//
+// The three integer container knobs are all `number | null`, and for each of
+// them **null is the DEFAULT, not "inherit"** — unlike the colors and typography
+// above, there is no theme value to fall back to. null means, respectively: full
+// width, no outer border, square corners. That is also why every minimum is 1
+// rather than 0: a 0 would be a SECOND spelling of the same "off" state, which
+// `serializeStylingOverrides` would then write to the wire as an override of a
+// default that renders identically. One representation per state, so clearing
+// the control is the only way to turn a container knob off.
+//
+// The max-width floor is a usability guard (below ~240px a two-column table has
+// no room for a label and a value side by side); the ceiling is generous enough
+// for a full-bleed section on a large monitor.
+export const TABLE_MAX_WIDTH_PX_MIN = 240;
+export const TABLE_MAX_WIDTH_PX_MAX = 1600;
+
+// A hairline up to a heavy frame. Past ~12px an "outline" reads as a filled
+// block, and the storefront is a shopper-facing surface, not a canvas.
+export const OUTER_BORDER_WIDTH_PX_MIN = 1;
+export const OUTER_BORDER_WIDTH_PX_MAX = 12;
+
+// Ceiling chosen so the radius can never eat a whole row: at 48px a corner is
+// already softer than any theme card, and beyond that the first and last rows
+// start losing their content to the curve.
+export const OUTER_BORDER_RADIUS_PX_MIN = 1;
+export const OUTER_BORDER_RADIUS_PX_MAX = 48;
+
 export type RowLayout = (typeof ROW_LAYOUTS)[number];
 export type MobileLayout = (typeof MOBILE_LAYOUTS)[number];
 export type SectionHeaderStyle = (typeof SECTION_HEADER_STYLES)[number];
 export type SectionsInitialState = (typeof SECTIONS_INITIAL_STATES)[number];
 export type RowDividerStyle = (typeof ROW_DIVIDER_STYLES)[number];
 export type Density = (typeof DENSITIES)[number];
+export type TableAlign = (typeof TABLE_ALIGNMENTS)[number];
 export type StylingFontSizeKeyword = (typeof STYLING_FONT_SIZES)[number];
 export type StylingFontWeight = (typeof STYLING_FONT_WEIGHTS)[number];
 export type StylingFontStyle = (typeof STYLING_FONT_STYLES)[number];
@@ -92,11 +124,23 @@ export interface StylingValues {
   rowDividerStyle: RowDividerStyle;
   density: Density;
 
+  // Container knobs. `tableAlign` is non-null like every other keyword knob;
+  // the three integers are nullable with null = the default (full width, no
+  // outer border, square corners) rather than null = inherit.
+  tableMaxWidthPx: number | null;
+  tableAlign: TableAlign;
+  outerBorderWidthPx: number | null;
+  outerBorderRadiusPx: number | null;
+
   headerBgColor: string | null;
   labelBgColor: string | null;
   valueBgColor: string | null;
   stripeBgColor: string | null;
   borderColor: string | null;
+  // The outer frame's own color. Null does NOT mean "inherit the theme" here —
+  // it falls back to `borderColor` in the stylesheet, so one swatch dresses both
+  // the row rules and the frame until a merchant deliberately splits them.
+  outerBorderColor: string | null;
   labelTextColor: string | null;
   valueTextColor: string | null;
 
@@ -121,11 +165,19 @@ export const STYLING_FIELD_NAMES = [
   "sectionsInitialState",
   "rowDividerStyle",
   "density",
+  "tableMaxWidthPx",
+  "tableAlign",
+  "outerBorderWidthPx",
+  "outerBorderRadiusPx",
   "headerBgColor",
   "labelBgColor",
   "valueBgColor",
   "stripeBgColor",
   "borderColor",
+  // Grouped with the colors, NOT with the container knobs above: the Step 10a
+  // swatch list is derived from this array's order, so a color placed outside
+  // the color block would surface as a stray swatch at the top of the rail.
+  "outerBorderColor",
   "labelTextColor",
   "valueTextColor",
   "fontSize",
@@ -148,11 +200,17 @@ export const DEFAULT_STYLING_VALUES: StylingValues = Object.freeze({
   rowDividerStyle: ROW_DIVIDER_STYLES[0],
   density: DENSITIES[0],
 
+  tableMaxWidthPx: null,
+  tableAlign: TABLE_ALIGNMENTS[0],
+  outerBorderWidthPx: null,
+  outerBorderRadiusPx: null,
+
   headerBgColor: null,
   labelBgColor: null,
   valueBgColor: null,
   stripeBgColor: null,
   borderColor: null,
+  outerBorderColor: null,
   labelTextColor: null,
   valueTextColor: null,
 
@@ -217,13 +275,24 @@ function clamp(value: number, min: number, max: number): number {
 }
 
 /**
- * Integer percent clamped into [20, 80]. Numbers only — a non-integer, a
- * numeric string, NaN or Infinity all degrade to null (the stylesheet's default
- * ratio) rather than to a guessed number.
+ * A clamped integer, or null when there is nothing usable to store.
+ *
+ * Numbers only — a non-integer, a numeric string, NaN or Infinity all degrade to
+ * null (that field's stylesheet default) rather than to a guessed number. These
+ * back the four `Int?` columns, which Prisma hands back as numbers, so unlike
+ * `parseFontSize` there is no digit-string shape to accept.
+ *
+ * Shared by all four rather than repeated: they differ only in their bounds, and
+ * a copied clamp is a clamp that can drift out of agreement with its own
+ * control.
  */
-function parseLabelWidthPct(value: unknown): number | null {
+function parseBoundedInt(
+  value: unknown,
+  min: number,
+  max: number,
+): number | null {
   if (typeof value !== "number" || !Number.isInteger(value)) return null;
-  return clamp(value, LABEL_WIDTH_PCT_MIN, LABEL_WIDTH_PCT_MAX);
+  return clamp(value, min, max);
 }
 
 /**
@@ -290,11 +359,29 @@ export function parseStylingValues(input: unknown): StylingValues {
     ),
     density: parseKeyword(raw.density, DENSITIES, d.density),
 
+    tableMaxWidthPx: parseBoundedInt(
+      raw.tableMaxWidthPx,
+      TABLE_MAX_WIDTH_PX_MIN,
+      TABLE_MAX_WIDTH_PX_MAX,
+    ),
+    tableAlign: parseKeyword(raw.tableAlign, TABLE_ALIGNMENTS, d.tableAlign),
+    outerBorderWidthPx: parseBoundedInt(
+      raw.outerBorderWidthPx,
+      OUTER_BORDER_WIDTH_PX_MIN,
+      OUTER_BORDER_WIDTH_PX_MAX,
+    ),
+    outerBorderRadiusPx: parseBoundedInt(
+      raw.outerBorderRadiusPx,
+      OUTER_BORDER_RADIUS_PX_MIN,
+      OUTER_BORDER_RADIUS_PX_MAX,
+    ),
+
     headerBgColor: parseColor(raw.headerBgColor),
     labelBgColor: parseColor(raw.labelBgColor),
     valueBgColor: parseColor(raw.valueBgColor),
     stripeBgColor: parseColor(raw.stripeBgColor),
     borderColor: parseColor(raw.borderColor),
+    outerBorderColor: parseColor(raw.outerBorderColor),
     labelTextColor: parseColor(raw.labelTextColor),
     valueTextColor: parseColor(raw.valueTextColor),
 
@@ -303,7 +390,11 @@ export function parseStylingValues(input: unknown): StylingValues {
     fontStyle: parseNullableKeyword(raw.fontStyle, STYLING_FONT_STYLES),
     lineHeight: parseNullableKeyword(raw.lineHeight, LINE_HEIGHTS),
     labelCase: parseNullableKeyword(raw.labelCase, LABEL_CASES),
-    labelWidthPct: parseLabelWidthPct(raw.labelWidthPct),
+    labelWidthPct: parseBoundedInt(
+      raw.labelWidthPct,
+      LABEL_WIDTH_PCT_MIN,
+      LABEL_WIDTH_PCT_MAX,
+    ),
   };
 }
 

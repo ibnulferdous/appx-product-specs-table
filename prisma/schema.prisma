@@ -136,6 +136,17 @@ model TableStyling {
   labelTextColor String?
   valueTextColor String?
 
+  // Container: how wide the table is and what frames it. Unlike the color and
+  // typography fields above, null here is the DEFAULT rather than "inherit the
+  // theme" — there is no theme value to inherit. null means, in order: full
+  // width, left-aligned, no outer border, outline follows borderColor, square
+  // corners. Bounds live in app/utils/tableStyling.ts and are clamped on parse.
+  tableMaxWidthPx     Int? // 240–1600
+  tableAlign          String? // "LEFT" (null default) | "CENTER" | "RIGHT" — only meaningful when tableMaxWidthPx is set
+  outerBorderWidthPx  Int? // 1–12; null = no outer border
+  outerBorderColor    String? // null = fall back to borderColor, then the stylesheet literal
+  outerBorderRadiusPx Int? // 1–48; null = square corners
+
   // Typography (2026-07-18 addendum — adopts the Horizon theme-editor pattern:
   // bounded segments, preset-first with a Custom px escape hatch; null = inherit).
   fontSize      String? // "SMALL" | "MEDIUM" | "LARGE" (theme-relative presets, em-scale) OR an all-digit px string ("18"), app-clamped to 10–184

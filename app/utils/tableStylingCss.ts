@@ -43,6 +43,7 @@ import type {
   StylingFontStyle,
   StylingFontWeight,
   StylingValues,
+  TableAlign,
 } from "./tableStyling";
 
 // --- Custom property names ---------------------------------------------------
@@ -65,6 +66,10 @@ export const SPEC_TABLE_CSS_VARS = Object.freeze({
   lineHeight: "--appx-spec-line-height",
   labelCase: "--appx-spec-label-transform",
   labelWidthPct: "--appx-spec-label-width",
+  tableMaxWidthPx: "--appx-spec-table-max-width",
+  outerBorderWidthPx: "--appx-spec-outer-border-width",
+  outerBorderColor: "--appx-spec-outer-border-color",
+  outerBorderRadiusPx: "--appx-spec-outer-radius",
 } as const);
 
 // --- Shared numeric/keyword scales -------------------------------------------
@@ -128,12 +133,29 @@ export function stylingToCssVars(
 ): Record<string, string> {
   const vars: Record<string, string> = {};
 
+  // Container knobs first, matching `STYLING_FIELD_NAMES` order. All three are
+  // integer-clamped by Step 1, so the `px` suffix is appended to a validated
+  // number — the same posture as `fontSize`'s absolute override.
+  //
+  // `tableAlign` is absent here on purpose: it is a non-null keyword knob, so it
+  // travels as a modifier class (see `stylingToModifierClasses`).
+  const pxFields = [
+    "tableMaxWidthPx",
+    "outerBorderWidthPx",
+    "outerBorderRadiusPx",
+  ] as const;
+  for (const field of pxFields) {
+    const px = values[field];
+    if (px !== null) vars[SPEC_TABLE_CSS_VARS[field]] = `${px}px`;
+  }
+
   const colorFields = [
     "headerBgColor",
     "labelBgColor",
     "valueBgColor",
     "stripeBgColor",
     "borderColor",
+    "outerBorderColor",
     "labelTextColor",
     "valueTextColor",
   ] as const;
@@ -235,6 +257,19 @@ function densityClass(density: Density): string {
   }
 }
 
+function tableAlignClass(align: TableAlign): string {
+  switch (align) {
+    case "LEFT":
+      return `${BLOCK}--align-left`;
+    case "CENTER":
+      return `${BLOCK}--align-center`;
+    case "RIGHT":
+      return `${BLOCK}--align-right`;
+    default:
+      return assertNever(align);
+  }
+}
+
 /**
  * The non-null layout knobs as BEM modifier classes on the `appx-spec-table`
  * block. EVERY knob emits its class, defaults included — omitting defaults
@@ -259,7 +294,28 @@ export function stylingToModifierClasses(values: StylingValues): string[] {
   classes.push(
     rowDividerStyleClass(values.rowDividerStyle),
     densityClass(values.density),
+    tableAlignClass(values.tableAlign),
   );
+  // Two PRESENCE FLAGS for knobs whose value already travels as a custom
+  // property. They exist because each one needs a rule that a value
+  // substitution cannot express, and CSS cannot branch on whether a var is set:
+  //
+  // - `--outer-border` drops the LAST row's own bottom rule, which would
+  //   otherwise sit directly on the wrapper's border and read as one thick
+  //   line. Unconditionally dropping it would change every existing table.
+  // - `--outer-radius` turns on `overflow: hidden`, without which a rounded
+  //   corner does not clip the section band or the stripe fills behind it.
+  //   Gated rather than always-on because clipping an over-wide table is worse
+  //   than letting it overflow visibly, and only a radius needs it.
+  //
+  // Same idiom as `--collapsible`: emitted only when the knob is set, so the
+  // "null = default" rendering stays byte-identical to the pre-knob look.
+  if (values.outerBorderWidthPx !== null) {
+    classes.push(`${BLOCK}--outer-border`);
+  }
+  if (values.outerBorderRadiusPx !== null) {
+    classes.push(`${BLOCK}--outer-radius`);
+  }
   return classes;
 }
 

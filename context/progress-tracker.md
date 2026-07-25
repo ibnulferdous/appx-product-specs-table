@@ -98,6 +98,51 @@ plan: `~/.claude/plans/style-tab-phase-b-implementation-plan.md` (1–12 = B1, 1
 - Resolved en route: the section-header BANDED band is the intended default becoming
   reachable, not a regression (accept; Step 7 signed off).
 
+**Table width + outer border (features 77–78, docs `77-…` / `78-…`) — ✅ shipped 2026-07-25**
+- **77 — the block now fills its container (CSS-only bug fix, live-verified).** Merchant
+  report: the storefront table's width followed its CONTENT, so opening a collapsible
+  section resized the whole table. Measured on the dev store: **206px closed ↔ 1264px open**
+  inside 1438px of space. Cause is one level ABOVE our markup — a theme section that centres
+  its children (`align-items: center` on a column flex container) makes **Shopify's**
+  `.shopify-app-block` wrapper a shrink-to-fit flex item. 🚫 **`width: 100%` on
+  `.appx-spec-table` is a no-op** — measured — because a percentage resolves against the
+  already-shrunk parent and does not feed back into its intrinsic sizing. Fix is
+  `.shopify-app-block:has(> .appx-spec-table) { align-self: stretch; justify-self: stretch }`.
+  **`align-self`, NOT `width: 100%`:** both fill a column-flex parent, but align-self targets
+  the CROSS axis, so in a row-flex theme it touches the height and leaves the width alone
+  (verified — no overflow). Base rule, not a knob: a table that resizes when a shopper opens
+  a section is wrong in every theme. Live-verified on the storefront — **jitter 0px**.
+  *Note the previews never showed this and never could:* the preview document has no
+  `.shopify-app-block` ancestor, so "storefront-faithful" has a hole exactly where the
+  surrounding theme wraps the block.
+- **78 — five Style-tab knobs**, new **Size & frame** rail group: `tableMaxWidthPx`
+  (240–1600, null = full width), `tableAlign` (LEFT/CENTER/RIGHT), `outerBorderWidthPx`
+  (1–12), `outerBorderRadiusPx` (1–48), `outerBorderColor` (swatch, in **Colors**).
+  Migration `20260725143916_add_table_container_styling`. **No Liquid change** — the
+  "server precomputes, Liquid only prints" pipe paid off exactly as designed.
+  Three locks: **null = the default, not inherit** (no theme value exists for an outline),
+  so **every integer minimum is 1, never 0** — a 0 would be a second spelling of "off" that
+  serializes as a bogus override; **max-width, not width**, so the cap shrinks on a phone
+  and cannot collide with the 749px breakpoint; the outline colour falls back **through**
+  `--appx-spec-border-color`, so one swatch dresses rules + frame until a merchant splits
+  them. Two presence flags (`--outer-border`, `--outer-radius`) exist because CSS cannot
+  branch on whether a var is set: one drops the last row's rule where it would double against
+  the frame (**three** selector cases — flat, last section open, last section CLOSED, where
+  the summary is the last thing painted), the other turns on `overflow: hidden` so a radius
+  actually clips the band and stripes. `showsTableAlignControl` is the **5th** hide rule and
+  inherited the preserve-on-hide law by adding one row to `VISIBILITY_PREDICATES`.
+  **Round-trip live-verified end to end** on the ACTIVE DJI template: rail → Save → all five
+  Postgres columns → metaobject `styling_css` (classes `--align-center --outer-border
+  --outer-radius`, vars with px units + hex) → rendered storefront (900px, centred 203/203,
+  `2px solid rgb(192,38,211)`, 12px radius, last-row rule dropped, jitter still 0). The cap
+  shrinks rather than overflows — measured 900/700/360 in 1438/700/360px containers.
+  ⚠️ **A migration mid-`shopify app dev` needs the dev server restarted:** the first save
+  failed silently because Vite HMR reloads app code but NOT `@prisma/client` (require cache),
+  so the server called a client without the new columns — the same reason `prisma generate`
+  reported `EPERM ... query_engine-windows.dll.node`. Tell it apart from a real bug by running
+  the upsert from a fresh `node -e`: if that writes, the server is just stale.
+  B2 note: these five must land in the built-in preset bundles.
+
 **Collapsible Style / Settings rail (feature 76, doc `76-…`) — ✅ shipped & verified 2026-07-25**
 **— and, since the modal below was removed, the ONLY answer to the Style tab's width problem.**
 - The **other** option the same merchant offered for the same report that produced feature
@@ -333,8 +378,13 @@ Multi-value applies to PRODUCT + COLLECTION only. No migrations needed for the 4
 
 ## Next Up
 
-1. **Reshell Phase B2** — built-in preset gallery (Style tab steps 13–14; new feature-doc number, 77+, since 70 = stacked-semantics, 71 = sidebar inner-scroll, 72 = device-preview mockups, 73 = desktop preview inner scroll, 74 = content-free tables, 75 = full-size preview modal (removed), 76 = collapsible Style rail —
-a retired number is still spent, so B2 starts at 77). Then C (Settings display rules) → E (assignment into the reshell) → F (top-bar status/save + cleanup).
+1. **Reshell Phase B2** — built-in preset gallery (Style tab steps 13–14; **starts at feature
+   doc 79**, since 70 = stacked-semantics, 71 = sidebar inner-scroll, 72 = device-preview
+   mockups, 73 = desktop preview inner scroll, 74 = content-free tables, 75 = full-size preview
+   modal (removed), 76 = collapsible Style rail, 77 = container stretch, 78 = width + outer
+   border — a retired number is still spent). **The five feature-78 fields must be in the
+   preset bundles.** Then C (Settings display rules) → E (assignment into the reshell) → F
+   (top-bar status/save + cleanup).
 2. **Storefront table semantics in stacked layouts (feature 70)** — code shipped; screen-reader pass still owed (see Open Questions).
 3. **Editor page should not scroll at the document level** — the app document overflows the
    iframe by roughly the `.tipsFooter` height (it renders BELOW the card, outside

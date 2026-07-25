@@ -389,11 +389,22 @@ model TableStyling {
   rowDividerStyle      String?  // "LINES" (null default) | "STRIPES" | "NONE"
   density              String?  // "DEFAULT" (null default) | "COMPACT" | "SPACIOUS"
 
+  // Container knobs (feature 78). null = the DEFAULT, not "inherit the theme" —
+  // there is no theme value for "the table's outline". That is also why every
+  // integer minimum is 1, never 0: a 0 would be a second spelling of the same
+  // off state, which serializeStylingOverrides would write to the wire as an
+  // override of a default that renders identically.
+  tableMaxWidthPx     Int?     // 240–1600; null = full width. A CAP: shrinks below it, so it cannot collide with the 749px mobile breakpoint
+  tableAlign          String?  // "LEFT" (null default) | "CENTER" | "RIGHT" — only meaningful when tableMaxWidthPx is set
+  outerBorderWidthPx  Int?     // 1–12; null = no outer border
+  outerBorderRadiusPx Int?     // 1–48; null = square corners
+
   headerBgColor    String?
   labelBgColor     String?
   valueBgColor     String?
   stripeBgColor    String?  // zebra-stripe surface — used when rowDividerStyle = "STRIPES"
   borderColor      String?
+  outerBorderColor String?  // the outer frame; null falls back to borderColor, THEN the stylesheet literal. Grouped with the colors, not the container knobs above — the Step 10a swatch list is derived from STYLING_FIELD_NAMES order
   labelTextColor   String?
   valueTextColor   String?
   // Typography (2026-07-18 addendum — adopts the Horizon theme-editor pattern:

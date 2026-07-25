@@ -53,8 +53,82 @@
   justify-self: stretch;
 }
 
+/* Every container fallback is an OFF state, so an untouched table renders
+   exactly as it did before these knobs existed: no width cap, no outer border,
+   square corners.
+
+   max-width, not width. A width of 900px overflows a 360px phone; a max-width
+   of 900px caps a wide screen and shrinks below it, so the knob cannot collide
+   with the 749px mobile breakpoint or with the stacked layouts.
+
+   The outer border's color falls back THROUGH the row-rule color before
+   reaching a literal: a merchant who sets only the shared Border swatch gets an
+   outline that matches their row rules for free, and the dedicated swatch is
+   there for the case where the frame should differ from the rules. */
 .appx-spec-table {
+  box-sizing: border-box;
   margin-block: 1rem;
+  max-width: var(--appx-spec-table-max-width, 100%);
+  border: var(--appx-spec-outer-border-width, 0) solid
+    var(
+      --appx-spec-outer-border-color,
+      var(--appx-spec-border-color, rgba(0, 0, 0, 0.1))
+    );
+  border-radius: var(--appx-spec-outer-radius, 0);
+}
+
+/* --- Table alignment -------------------------------------------------------
+   Only observable once a max-width is set, which is why the rail hides the
+   control at full width. Auto inline margins, so the alignment is done by the
+   box itself and needs nothing from the theme's container. All three members
+   get a rule (defaults included) at equal specificity, per the file's design
+   rules — LEFT is not left to the base rule's absence. */
+
+.appx-spec-table--align-left {
+  margin-inline: 0 auto;
+}
+
+.appx-spec-table--align-center {
+  margin-inline: auto;
+}
+
+.appx-spec-table--align-right {
+  margin-inline: auto 0;
+}
+
+/* --- Outer border refinements ---------------------------------------------
+   Presence flags, emitted only when the matching knob is set (see
+   tableStylingCss.ts) — so neither rule can touch a table that has not opted
+   in. */
+
+/* The last visible row's own bottom rule sits directly on the wrapper border
+   and reads as one thick line. Three cases, because the block has two markup
+   shapes: the flat table, the last section of a collapsible table, and a
+   collapsible table whose final section is CLOSED (its summary is then the last
+   thing painted, and in the text-only style it carries the same heavy rule). */
+.appx-spec-table--outer-border
+  > .appx-spec-table__table:last-child
+  tbody
+  tr:last-child
+  > *,
+.appx-spec-table--outer-border
+  > details:last-child
+  > .appx-spec-table__table
+  tbody
+  tr:last-child
+  > *,
+.appx-spec-table--outer-border
+  > details:last-child:not([open])
+  > .appx-spec-table__section-summary {
+  border-block-end: none;
+}
+
+/* A rounded corner does not clip a descendant's background on its own, so the
+   section band and the stripe fills would square off the curve without this.
+   Scoped to the flag: an over-wide table is better overflowing visibly than
+   clipped where a shopper cannot reach it. */
+.appx-spec-table--outer-radius {
+  overflow: hidden;
 }
 
 /* --- Base (each fallback = the pre-Step-3 literal) ------------------------ */

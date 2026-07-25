@@ -15,10 +15,14 @@ import {
   ROW_LAYOUT_OPTIONS,
   SECTIONS_INITIAL_STATE_OPTIONS,
   SECTION_HEADER_OPTIONS,
+  TABLE_ALIGN_OPTIONS,
   fontSizeControlValue,
   fromColorControlValue,
   fromControlValue,
   fromLabelWidthControlValue,
+  fromOuterBorderRadiusControlValue,
+  fromOuterBorderWidthControlValue,
+  fromTableMaxWidthControlValue,
   nextFontSizeForControl,
   parseCustomFontSizePx,
   rememberedCustomFontSizePx,
@@ -26,6 +30,8 @@ import {
   showsLabelWidthControl,
   showsMobileLayoutControl,
   showsSectionsInitialStateControl,
+  showsTableAlignControl,
+  toBoundedIntControlValue,
   toColorControlValue,
   toControlValue,
   toLabelWidthControlValue,
@@ -38,8 +44,14 @@ import {
   LABEL_WIDTH_PCT_MAX,
   LABEL_WIDTH_PCT_MIN,
   LINE_HEIGHTS,
+  OUTER_BORDER_RADIUS_PX_MAX,
+  OUTER_BORDER_RADIUS_PX_MIN,
+  OUTER_BORDER_WIDTH_PX_MAX,
+  OUTER_BORDER_WIDTH_PX_MIN,
   STYLING_FONT_STYLES,
   STYLING_FONT_WEIGHTS,
+  TABLE_MAX_WIDTH_PX_MAX,
+  TABLE_MAX_WIDTH_PX_MIN,
 } from "../../utils/tableStyling";
 import type { RowEngine } from "./useRowEngine";
 
@@ -234,6 +246,110 @@ export function StyleTab({ engine }: { engine: RowEngine }) {
               }}
             />
           )}
+        </s-stack>
+      </div>
+
+      {/* Size & frame — the container knobs. Every one of these defaults to an
+          OFF state (no cap, no outline, square corners), so an untouched table
+          renders exactly as it did before the group existed.
+
+          The outline's COLOR is deliberately not here: it is a color, so it
+          lives with the other swatches below, the same way row-divider style
+          sits in Layout while its color sits in Colors. */}
+      <div role="group" aria-labelledby={headingId("frame")}>
+        <s-stack direction="block" gap="base">
+          <s-heading id={headingId("frame")}>Size &amp; frame</s-heading>
+
+          {/* Empty = full width, which is the default. A CAP rather than a
+              fixed width: it shrinks below the cap on a narrow screen, so it
+              cannot fight the mobile breakpoint or overflow a phone. */}
+          <s-number-field
+            label="Maximum width"
+            suffix="px"
+            details={
+              styling.tableMaxWidthPx === null
+                ? "Full width. Enter a number to cap it."
+                : "Wider screens cap here; narrower ones shrink to fit."
+            }
+            min={TABLE_MAX_WIDTH_PX_MIN}
+            max={TABLE_MAX_WIDTH_PX_MAX}
+            step={10}
+            value={toBoundedIntControlValue(styling.tableMaxWidthPx)}
+            onChange={(event: Event) => {
+              setStylingField(
+                "tableMaxWidthPx",
+                fromTableMaxWidthControlValue(readValue(event)),
+              );
+            }}
+          />
+
+          {/* Hidden at full width, where all three options look the same. The
+              fifth hide rule, and a pure read like the other four — the
+              merchant's alignment survives clearing the width above. */}
+          {showsTableAlignControl(styling) && (
+            <s-select
+              label="Alignment"
+              details={selectedHelpText(
+                TABLE_ALIGN_OPTIONS,
+                styling.tableAlign,
+              )}
+              value={styling.tableAlign}
+              onChange={(event: Event) => {
+                setStylingField(
+                  "tableAlign",
+                  readValue(event) as typeof styling.tableAlign,
+                );
+              }}
+            >
+              {TABLE_ALIGN_OPTIONS.map((option) => (
+                <s-option key={option.value} value={option.value}>
+                  {option.label}
+                </s-option>
+              ))}
+            </s-select>
+          )}
+
+          <s-number-field
+            label="Outline width"
+            suffix="px"
+            details={
+              styling.outerBorderWidthPx === null
+                ? "No outline. Enter a number to frame the table."
+                : "Colored by Table outline, or Border if that is unset."
+            }
+            min={OUTER_BORDER_WIDTH_PX_MIN}
+            max={OUTER_BORDER_WIDTH_PX_MAX}
+            step={1}
+            value={toBoundedIntControlValue(styling.outerBorderWidthPx)}
+            onChange={(event: Event) => {
+              setStylingField(
+                "outerBorderWidthPx",
+                fromOuterBorderWidthControlValue(readValue(event)),
+              );
+            }}
+          />
+
+          {/* Independent of the outline: a radius rounds the section band and
+              the stripe fills whether or not a frame is drawn. */}
+          <s-number-field
+            label="Corner radius"
+            suffix="px"
+            details={
+              styling.outerBorderRadiusPx === null
+                ? "Square corners."
+                : "Rounds the table's corners, outline or not."
+            }
+            min={OUTER_BORDER_RADIUS_PX_MIN}
+            max={OUTER_BORDER_RADIUS_PX_MAX}
+            step={1}
+            value={toBoundedIntControlValue(styling.outerBorderRadiusPx)}
+            onChange={(event: Event) => {
+              setStylingField(
+                "outerBorderRadiusPx",
+                fromOuterBorderRadiusControlValue(readValue(event)),
+              );
+            }}
+          />
         </s-stack>
       </div>
 

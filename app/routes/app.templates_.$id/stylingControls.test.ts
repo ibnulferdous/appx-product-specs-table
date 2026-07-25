@@ -26,6 +26,7 @@ import {
   showsLabelWidthControl,
   showsMobileLayoutControl,
   showsSectionsInitialStateControl,
+  showsTableAlignControl,
   toColorControlValue,
   toControlValue,
   toLabelWidthControlValue,
@@ -283,7 +284,7 @@ describe("COLOR_KNOBS (feature 57 Step 10a)", () => {
     expect(COLOR_KNOBS.map((knob) => knob.field)).toEqual(hexAccepting);
   });
 
-  it("enables alpha on the five surface colors and disables it on the two text colors", () => {
+  it("enables alpha on the six surface colors and disables it on the two text colors", () => {
     // The 2026-07-19 lock: the stylesheet's own defaults are translucent, so an
     // opaque-only surface picker could not reproduce the default look, while
     // translucent body text is a contrast bug rather than a design choice.
@@ -296,6 +297,9 @@ describe("COLOR_KNOBS (feature 57 Step 10a)", () => {
       "valueBgColor",
       "stripeBgColor",
       "borderColor",
+      // The outer frame is a surface line like the row rules, and its own
+      // fallback chain ends in a translucent literal, so alpha stays on.
+      "outerBorderColor",
     ]);
     expect(
       COLOR_KNOBS.filter((knob) => !knob.alpha).map((k) => k.field),
@@ -655,6 +659,21 @@ const VISIBILITY_PREDICATES: ReadonlyArray<{
     visible: { ...DEFAULT_STYLING_VALUES, fontSize: 31 },
     hide: (styling) => ({ ...styling, fontSize: "SMALL" }),
     preservedField: null,
+  },
+  {
+    // The fifth, inheriting the law by adding this row — which is the whole
+    // point of generalising it. Clearing the max width sends the table back to
+    // full width, where all three alignments look identical; the merchant's
+    // choice has to survive so that re-capping the width restores it.
+    name: "showsTableAlignControl",
+    predicate: showsTableAlignControl,
+    visible: {
+      ...DEFAULT_STYLING_VALUES,
+      tableMaxWidthPx: 960,
+      tableAlign: "CENTER",
+    },
+    hide: (styling) => ({ ...styling, tableMaxWidthPx: null }),
+    preservedField: "tableAlign",
   },
 ];
 

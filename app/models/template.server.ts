@@ -56,11 +56,16 @@ type TableStylingColumns = {
   sectionsInitialState: string | null;
   rowDividerStyle: string | null;
   density: string | null;
+  tableMaxWidthPx: number | null;
+  tableAlign: string | null;
+  outerBorderWidthPx: number | null;
+  outerBorderRadiusPx: number | null;
   headerBgColor: string | null;
   labelBgColor: string | null;
   valueBgColor: string | null;
   stripeBgColor: string | null;
   borderColor: string | null;
+  outerBorderColor: string | null;
   labelTextColor: string | null;
   valueTextColor: string | null;
   fontSize: string | null;
@@ -102,11 +107,18 @@ export function stylingToDbColumns(values: StylingValues): TableStylingColumns {
     ),
     rowDividerStyle: knob(values.rowDividerStyle, d.rowDividerStyle),
     density: knob(values.density, d.density),
+    // Container knobs. The three integers are already "null = default", so they
+    // pass straight through; only `tableAlign` needs the keyword treatment.
+    tableMaxWidthPx: values.tableMaxWidthPx,
+    tableAlign: knob(values.tableAlign, d.tableAlign),
+    outerBorderWidthPx: values.outerBorderWidthPx,
+    outerBorderRadiusPx: values.outerBorderRadiusPx,
     headerBgColor: values.headerBgColor,
     labelBgColor: values.labelBgColor,
     valueBgColor: values.valueBgColor,
     stripeBgColor: values.stripeBgColor,
     borderColor: values.borderColor,
+    outerBorderColor: values.outerBorderColor,
     labelTextColor: values.labelTextColor,
     valueTextColor: values.valueTextColor,
     // String("SMALL") is a no-op for keywords; String(18) -> "18" for the px

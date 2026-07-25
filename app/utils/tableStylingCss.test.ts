@@ -12,6 +12,7 @@ import {
   STYLING_FONT_SIZES,
   STYLING_FONT_STYLES,
   STYLING_FONT_WEIGHTS,
+  TABLE_ALIGNMENTS,
   parseStylingValues,
   type StylingValues,
 } from "./tableStyling";
@@ -46,11 +47,16 @@ const FULLY_OVERRIDDEN: StylingValues = {
   sectionsInitialState: "ALL_CLOSED",
   rowDividerStyle: "STRIPES",
   density: "COMPACT",
+  tableMaxWidthPx: 960,
+  tableAlign: "CENTER",
+  outerBorderWidthPx: 2,
+  outerBorderRadiusPx: 12,
   headerBgColor: "#111111",
   labelBgColor: "#222222",
   valueBgColor: "#333333",
   stripeBgColor: "#444444",
   borderColor: "#555555",
+  outerBorderColor: "#5a5a5a",
   labelTextColor: "#666666",
   valueTextColor: "#777777",
   fontSize: "LARGE",
@@ -69,6 +75,10 @@ const DEFAULT_CLASSES = [
   "appx-spec-table--section-banded",
   "appx-spec-table--dividers-lines",
   "appx-spec-table--density-default",
+  // Alignment emits its default like every other keyword knob. The two
+  // container PRESENCE flags (--outer-border / --outer-radius) are absent here
+  // by design: null is their default, so an untouched table carries neither.
+  "appx-spec-table--align-left",
 ];
 
 describe("stylingToCssVars — all defaults", () => {
@@ -272,6 +282,15 @@ describe("stylingToModifierClasses — class matrix", () => {
         SPACIOUS: "appx-spec-table--density-spacious",
       },
     },
+    {
+      field: "tableAlign",
+      allowed: TABLE_ALIGNMENTS,
+      classes: {
+        LEFT: "appx-spec-table--align-left",
+        CENTER: "appx-spec-table--align-center",
+        RIGHT: "appx-spec-table--align-right",
+      },
+    },
   ] as const;
 
   for (const { field, allowed, classes } of KNOBS) {
@@ -302,6 +321,7 @@ describe("stylingToModifierClasses — sectionsCollapsible", () => {
       "appx-spec-table--collapsible",
       "appx-spec-table--dividers-lines",
       "appx-spec-table--density-default",
+      "appx-spec-table--align-left",
     ]);
     expect(
       stylingToModifierClasses({
@@ -353,7 +373,7 @@ describe("totality — fully overridden", () => {
     );
   });
 
-  it("emits the full class list (all five knobs + collapsible)", () => {
+  it("emits the full class list (all six knobs + collapsible + both container flags)", () => {
     expect(stylingToModifierClasses(FULLY_OVERRIDDEN)).toEqual([
       "appx-spec-table--layout-stacked",
       "appx-spec-table--mobile-same-as-desktop",
@@ -361,7 +381,28 @@ describe("totality — fully overridden", () => {
       "appx-spec-table--collapsible",
       "appx-spec-table--dividers-stripes",
       "appx-spec-table--density-compact",
+      "appx-spec-table--align-center",
+      "appx-spec-table--outer-border",
+      "appx-spec-table--outer-radius",
     ]);
+  });
+
+  it("emits neither container flag when its knob is null, independently", () => {
+    // The two flags are separate opt-ins: a radius with no border is a legal
+    // (if unusual) combination, and each must gate only its own rule.
+    const borderOnly = stylingToModifierClasses({
+      ...DEFAULT_STYLING_VALUES,
+      outerBorderWidthPx: 1,
+    });
+    expect(borderOnly).toContain("appx-spec-table--outer-border");
+    expect(borderOnly).not.toContain("appx-spec-table--outer-radius");
+
+    const radiusOnly = stylingToModifierClasses({
+      ...DEFAULT_STYLING_VALUES,
+      outerBorderRadiusPx: 8,
+    });
+    expect(radiusOnly).toContain("appx-spec-table--outer-radius");
+    expect(radiusOnly).not.toContain("appx-spec-table--outer-border");
   });
 });
 
