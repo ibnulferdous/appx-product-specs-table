@@ -1,15 +1,14 @@
-import type {
-  ComponentProps,
-  CSSProperties,
-  KeyboardEvent as ReactKeyboardEvent,
-  ReactNode,
-} from "react";
-import { useId, useRef, useState } from "react";
+import type { CSSProperties, ReactNode } from "react";
+import { useRef, useState } from "react";
 import { isPreviewView, type DeviceView, type ViewId } from "./deviceView";
 import { useScrollRegionHeight } from "./useScrollRegionHeight";
+import { SegmentedControl, type SegOption } from "./SegmentedControl";
+import { PreviewModal } from "./PreviewModal";
+import { PREVIEW_MODAL_ID } from "./editorShared";
 import {
   DEFAULT_VIEW_MEMORY,
   rememberView,
+  setPreviewDevice,
   viewAnnouncement,
   viewForTab,
   type TabId,
@@ -27,20 +26,6 @@ import shellStyles from "./EditorShell.module.css";
 // itself never touches the engine. See
 // `context/features/16-reshell-a2-editor-shell.md` and
 // `context/features/18-reshell-a1-extract-row-engine.md`.
-
-// The icon-name union accepted by <s-icon type>, derived from the element's own
-// props so the segmented options stay in lockstep with Polaris (no separate
-// import, no drift).
-type SIconType = NonNullable<ComponentProps<"s-icon">["type"]>;
-
-interface SegOption<T extends string> {
-  value: T;
-  label: string;
-  icon: SIconType;
-  // Icon-only segments (the device previews) hide the visible label but keep it
-  // as the button's accessible name.
-  hideLabel?: boolean;
-}
 
 const TABS: ReadonlyArray<SegOption<TabId>> = [
   { value: "content", label: "Content", icon: "compose" },
@@ -71,134 +56,6 @@ const VIEWS: ReadonlyArray<SegOption<ViewId>> = [
   { value: "mobile", label: "Mobile", icon: "mobile", hideLabel: true },
 ];
 
-// A single-select segmented control. <s-button-group> renders no slot
-// ([[polaris-web-component-gotchas]]), so the segments are plain <button>s; the
-// gray track + white active pill come from Polaris <s-box> background tokens
-// (`subdued` track, `base` active pill) — no hardcoded color. Semantics are a
-// real WAI-ARIA radiogroup: roving tabindex, with arrows / Home / End moving and
-// checking the focused segment.
-function SegmentedControl<T extends string>({
-  ariaLabel,
-  options,
-  value,
-  onChange,
-}: {
-  ariaLabel: string;
-  options: ReadonlyArray<SegOption<T>>;
-  value: T;
-  onChange: (next: T) => void;
-}) {
-  const buttonsRef = useRef<Array<HTMLButtonElement | null>>([]);
-  const activeIndex = options.findIndex((option) => option.value === value);
-
-  // Stable, instance-unique prefix so two SegmentedControls on the page don't
-  // collide on tooltip ids. Only `hideLabel` (icon-only) segments get a tooltip —
-  // labelled segments already show their text, so a tooltip would be redundant.
-  const tooltipBase = useId();
-  // `interestFor` is not in React's typings for a native <button>, so attach it via
-  // a spread (JSX spread skips excess-property checks). Empty object for labelled
-  // segments leaves the button untouched.
-  const interestProps = (option: SegOption<T>): Record<string, string> =>
-    option.hideLabel ? { interestFor: `${tooltipBase}-${option.value}` } : {};
-
-  const moveTo = (rawIndex: number) => {
-    const count = options.length;
-    const index = ((rawIndex % count) + count) % count;
-    onChange(options[index].value);
-    buttonsRef.current[index]?.focus();
-  };
-
-  const handleKeyDown = (event: ReactKeyboardEvent<HTMLButtonElement>) => {
-    switch (event.key) {
-      case "ArrowRight":
-      case "ArrowDown":
-        event.preventDefault();
-        moveTo(activeIndex + 1);
-        break;
-      case "ArrowLeft":
-      case "ArrowUp":
-        event.preventDefault();
-        moveTo(activeIndex - 1);
-        break;
-      case "Home":
-        event.preventDefault();
-        moveTo(0);
-        break;
-      case "End":
-        event.preventDefault();
-        moveTo(options.length - 1);
-        break;
-      default:
-        break;
-    }
-  };
-
-  return (
-    <s-box background="subdued" borderRadius="base" padding="small-400">
-      {/* A radiogroup container is intentionally NOT focusable — focus is managed
-          by roving tabindex on the radios (WAI-ARIA APG), so the key handler lives
-          on the buttons, not here. */}
-      {/* eslint-disable-next-line jsx-a11y/interactive-supports-focus */}
-      <div role="radiogroup" aria-label={ariaLabel} className={styles.segGroup}>
-        {options.map((option, index) => {
-          const isActive = option.value === value;
-          return (
-            <button
-              key={option.value}
-              ref={(element) => {
-                buttonsRef.current[index] = element;
-              }}
-              type="button"
-              role="radio"
-              aria-checked={isActive}
-              aria-label={option.hideLabel ? option.label : undefined}
-              // Icon-only segments point at a sibling <s-tooltip> so sighted mouse
-              // users get the label on hover/focus (the aria-label already covers
-              // assistive tech). `interestFor` is the same invoker family as the
-              // `commandFor` this build already ships.
-              {...interestProps(option)}
-              tabIndex={isActive ? 0 : -1}
-              className={styles.segBtn}
-              onClick={() => onChange(option.value)}
-              onKeyDown={handleKeyDown}
-            >
-              <s-box
-                background={isActive ? "base" : "transparent"}
-                borderRadius="base"
-                paddingBlock="small-300"
-                paddingInline="small-200"
-              >
-                <s-stack direction="inline" gap="small-300" alignItems="center">
-                  <s-icon
-                    type={option.icon}
-                    color={isActive ? undefined : "subdued"}
-                    aria-hidden="true"
-                  ></s-icon>
-                  {option.hideLabel ? null : (
-                    <s-text color={isActive ? undefined : "subdued"}>
-                      {option.label}
-                    </s-text>
-                  )}
-                </s-stack>
-              </s-box>
-            </button>
-          );
-        })}
-      </div>
-      {/* Tooltips for the icon-only segments. Kept OUTSIDE the radiogroup so they
-          don't sit among the role="radio" children; `interestFor` on each button
-          references these by id, so their DOM position is free. */}
-      {options
-        .filter((option) => option.hideLabel)
-        .map((option) => (
-          <s-tooltip key={option.value} id={`${tooltipBase}-${option.value}`}>
-            {option.label}
-          </s-tooltip>
-        ))}
-    </s-box>
-  );
-}
-
 interface EditorShellProps {
   // The Content stage (the grid). In the sandbox this is a dummy static grid; at
   // A1 it becomes the engine-driven <ContentTab>. A presentational slot — never
@@ -208,7 +65,16 @@ interface EditorShellProps {
   // whenever a device view is active; receives the active device view so the
   // preview can size itself. Optional + a `stage` fallback, so the toggle stays
   // harmless when no preview is wired.
-  preview?: (view: DeviceView) => ReactNode;
+  //
+  // Feature 75 adds the optional second argument: the full-size preview modal
+  // renders this SAME slot, but its height budget cannot come from
+  // `useScrollRegionHeight` (an element-top → iframe-bottom measurement is
+  // meaningless inside a centred dialog), so it passes one in. Omitted by the
+  // card, which keeps measuring itself.
+  preview?: (
+    view: DeviceView,
+    options?: { availableHeight?: number },
+  ) => ReactNode;
   // Reserved for Phase B / C. Undefined in A2 → an empty placeholder renders.
   stylePanel?: ReactNode;
   settingsPanel?: ReactNode;
@@ -244,6 +110,14 @@ export function EditorShell({
   const handleViewChange = (next: ViewId) => {
     setViewMemory((memory) => rememberView(memory, activeTab, next));
     setAnnouncement("");
+  };
+
+  // The full-size modal's device toggle (feature 75). It belongs to no tab, so it
+  // moves ONLY the shared device — `rememberView` would additionally flip the
+  // active tab into `preview`, stranding Content on a read-only preview once the
+  // modal closed.
+  const handleModalDeviceChange = (next: DeviceView) => {
+    setViewMemory((memory) => setPreviewDevice(memory, next));
   };
 
   // Tabs reveal/hide the sidebar; they never replace the stage (mirrors the
@@ -284,12 +158,33 @@ export function EditorShell({
             value={activeTab}
             onChange={handleTabChange}
           />
-          <SegmentedControl
-            ariaLabel="Preview device"
-            options={VIEWS}
-            value={activeView}
-            onChange={handleViewChange}
-          />
+          {/* The device toggle and the full-size trigger are wrapped as ONE
+              flex child. `.controlrow` is `justify-content: space-between` with
+              exactly two children, so adding a third would strand the toggle in
+              the middle of the row — and that rule lives in the tripwired
+              `SpecTableEditor.module.css`, which this feature must not edit. */}
+          <s-stack direction="inline" gap="small-300" alignItems="center">
+            <SegmentedControl
+              ariaLabel="Preview device"
+              options={VIEWS}
+              value={activeView}
+              onChange={handleViewChange}
+            />
+            {/* Opens the full-size preview (feature 75). NOT a fourth segment of
+                the radiogroup above — it is an action, not a view, and putting it
+                inside `role="radiogroup"` would corrupt the radio semantics.
+                Declarative `commandFor` / `command`, so the shell needs no
+                App Bridge import: nothing has to be prepared before it opens.
+                Shown on every tab and view — "show me how this looks" is
+                reasonable while editing rows too. */}
+            <s-button
+              variant="tertiary"
+              icon="maximize"
+              accessibilityLabel="Open full-size preview"
+              commandFor={PREVIEW_MODAL_ID}
+              command="--show"
+            ></s-button>
+          </s-stack>
         </div>
       </s-box>
 
@@ -349,6 +244,19 @@ export function EditorShell({
       ) : (
         <s-box>{stageContent}</s-box>
       )}
+
+      {/* The full-size preview (feature 75). Mounted here rather than in
+          `SpecTableEditor` because the shared device it toggles lives in this
+          component's state; `EditorShell` never unmounts while the editor is
+          open, and an <s-modal> portals outside the editor's inert save-freeze
+          anyway (see ResetStylingModal). Still PRESENTATIONAL — it reaches the
+          live rows/styling only through the same `preview` render prop the stage
+          uses, so the shell keeps its hands off the engine. */}
+      <PreviewModal
+        device={viewMemory.device}
+        onDeviceChange={handleModalDeviceChange}
+        preview={preview}
+      />
     </s-box>
   );
 }

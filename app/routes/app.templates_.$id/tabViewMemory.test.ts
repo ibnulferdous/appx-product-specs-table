@@ -3,6 +3,7 @@ import {
   DEFAULT_VIEW_MEMORY,
   TAB_IDS,
   rememberView,
+  setPreviewDevice,
   viewAnnouncement,
   viewForTab,
   type TabId,
@@ -147,6 +148,54 @@ describe("immutability / referential stability", () => {
     expect(next.device).toBe("mobile");
     // Same value in → same object out, so React can bail out of the re-render.
     expect(rememberView(next, "style", "mobile")).toBe(next);
+  });
+});
+
+// Feature 75. The full-size preview modal's device toggle belongs to no tab, so
+// it moves the shared device and nothing else.
+describe("setPreviewDevice", () => {
+  it("moves every previewing tab to the chosen device", () => {
+    const memory = setPreviewDevice(DEFAULT_VIEW_MEMORY, "mobile");
+    expect(viewForTab(memory, "style")).toBe("mobile");
+    expect(viewForTab(memory, "settings")).toBe("mobile");
+  });
+
+  it("leaves every tab's edit/preview mode untouched", () => {
+    // The reason `rememberView` cannot be reused: it would flip the active tab
+    // into `preview`, so a device toggled from a modal opened over Content would
+    // strand Content on a read-only preview after the modal closed.
+    const memory = setPreviewDevice(DEFAULT_VIEW_MEMORY, "mobile");
+    expect(memory.modes).toEqual(DEFAULT_VIEW_MEMORY.modes);
+    expect(viewForTab(memory, "content")).toBe("edit");
+  });
+
+  it("preserves a tab that the merchant dropped to Edit", () => {
+    const edited = rememberView(DEFAULT_VIEW_MEMORY, "style", "edit");
+    const memory = setPreviewDevice(edited, "mobile");
+    expect(viewForTab(memory, "style")).toBe("edit");
+    expect(viewForTab(memory, "settings")).toBe("mobile");
+  });
+
+  it("returns the same object when the device is unchanged", () => {
+    expect(setPreviewDevice(DEFAULT_VIEW_MEMORY, "desktop")).toBe(
+      DEFAULT_VIEW_MEMORY,
+    );
+  });
+
+  it("does not mutate the memory in place", () => {
+    const next = setPreviewDevice(DEFAULT_VIEW_MEMORY, "mobile");
+    expect(DEFAULT_VIEW_MEMORY.device).toBe("desktop");
+    expect(next.device).toBe("mobile");
+    expect(setPreviewDevice(next, "mobile")).toBe(next);
+  });
+
+  it("round-trips with the card's own toggle", () => {
+    // Pick Mobile in the modal, then Desktop from the card's control: the shared
+    // device is one value, not two competing ones.
+    const viaModal = setPreviewDevice(DEFAULT_VIEW_MEMORY, "mobile");
+    const viaCard = rememberView(viaModal, "style", "desktop");
+    expect(viaCard.device).toBe("desktop");
+    expect(setPreviewDevice(viaCard, "mobile").device).toBe("mobile");
   });
 });
 

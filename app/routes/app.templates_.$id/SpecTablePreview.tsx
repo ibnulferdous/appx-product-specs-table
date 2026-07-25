@@ -78,14 +78,24 @@ const DEVICE_LABELS: Record<DeviceView, string> = {
   mobile: "Mobile",
 };
 
+// Feature 75 lets a CALLER supply the height budget instead of measuring it. The
+// full-size preview modal must: `useScrollRegionHeight` measures its element's
+// top down to the app iframe's viewport bottom, which is not the room a centred
+// dialog's body actually has (it ignores the modal footer and margins, and the
+// dialog is laid out against the taller admin viewport). Everything downstream is
+// unchanged — the override is only a different SOURCE for `available`, and both
+// per-device rules interpret it exactly as before.
+
 export function SpecTablePreview({
   rows,
   styling,
   view,
+  availableHeight,
 }: {
   rows: EditorRow[];
   styling: StylingValues;
   view: DeviceView;
+  availableHeight?: number;
 }) {
   const frameRef = useRef<HTMLIFrameElement>(null);
   const [height, setHeight] = useState<number | null>(null);
@@ -125,7 +135,10 @@ export function SpecTablePreview({
   //   measure→resize→measure cycle converges on the first repeat, exactly as its
   //   `.rowsScroller` contract describes.
   const deviceRef = useRef<HTMLDivElement>(null);
-  const available = useScrollRegionHeight(deviceRef, isMobile ? 1 : 2);
+  const measured = useScrollRegionHeight(deviceRef, isMobile ? 1 : 2);
+  // Called unconditionally (rules of hooks); its measurement is simply ignored
+  // when a caller supplied the budget — see the feature-75 note above.
+  const available = availableHeight ?? measured;
   const screenHeight = isMobile
     ? phoneScreenHeight(available)
     : // Feature 73 — clamp, don't fit: a short table keeps hugging its content

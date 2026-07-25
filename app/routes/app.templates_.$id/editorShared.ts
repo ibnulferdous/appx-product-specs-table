@@ -138,6 +138,16 @@ export const SAVE_BAR_ID = "template-save-bar";
 // moment the merchant switches to Content, which would strand an open dialog.
 export const RESET_STYLING_MODAL_ID = "reset-styling-modal";
 
+// The full-size preview modal (feature 75). The editor column is narrower than
+// the storefront's 749px mobile breakpoint on a laptop once the Style rail is
+// open, so the inline "Desktop" preview honestly renders the STACKED layout;
+// this modal gives the preview a width the admin column cannot constrain. Opened
+// declaratively from the control-row trigger (`commandFor` + `command="--show"`)
+// rather than through `shopify.modal.show`, because nothing has to be prepared
+// before it appears — its open/close state rides the modal's own onShow /
+// onAfterHide callbacks.
+export const PREVIEW_MODAL_ID = "preview-modal";
+
 export const MORE_ACTIONS_MENU_ID = "template-more-actions";
 export const RENAME_MODAL_ID = "rename-template-modal";
 export const DELETE_MODAL_ID = "delete-template-modal";

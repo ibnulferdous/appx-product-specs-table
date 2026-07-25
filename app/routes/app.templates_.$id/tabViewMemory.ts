@@ -112,6 +112,29 @@ export function rememberView(
 }
 
 /**
+ * Set the shared preview device WITHOUT touching any tab's edit-vs-preview mode
+ * (feature 75). Used by the full-size preview modal's own device toggle, which
+ * belongs to no tab.
+ *
+ * `rememberView` is deliberately NOT reusable here: it also flips the calling
+ * tab into `preview`, so toggling the device from a modal opened over the
+ * Content tab would leave Content showing a read-only preview instead of the
+ * editable grid once the modal closed.
+ *
+ * The device stays SHARED (the locked Step 11 decision — the preview device is a
+ * property of the editor, not of a tab), so a device picked in the modal is the
+ * device every previewing tab shows behind it. An unchanged choice returns the
+ * same object so React can bail out of the re-render.
+ */
+export function setPreviewDevice(
+  memory: ViewMemory,
+  device: DeviceView,
+): ViewMemory {
+  if (memory.device === device) return memory;
+  return { ...memory, device };
+}
+
+/**
  * The screen-reader announcement for a view the merchant did NOT click.
  *
  * When a tab switch moves the checked segment of the view radiogroup,

@@ -35,7 +35,7 @@ Everything upstream is done and live-verified on the dev store:
   persists to `TableStyling`, serializes to the metaobject, and renders on the storefront;
   rail a11y pass done; Reset-to-theme-defaults ships; docs reconciled.
 
-Test suite ~862 tests / 36 files; full gate (typecheck · lint · format · test · build) green.
+Test suite ~875 tests / 36 files; full gate (typecheck · lint · format · test · build) green.
 
 **Next:** B2 = steps 13–14 (built-in preset gallery: `stylePresets.ts` constants, rail
 preset cards, skippable creation-gallery popup — **copy** semantics into real `TableStyling`
@@ -94,6 +94,35 @@ plan: `~/.claude/plans/style-tab-phase-b-implementation-plan.md` (1–12 = B1, 1
   headings, named landmark) + docs reconciliation. **Phase B1 complete.**
 - Resolved en route: the section-header BANDED band is the intended default becoming
   reachable, not a regression (accept; Step 7 signed off).
+
+**Full-size preview modal (feature 75, doc `75-…`) — ✅ shipped & verified 2026-07-25**
+- Merchant report: the **Desktop** preview renders the **stacked (mobile)** layout on a
+  laptop. Not a preview bug — `previewDeviceWidth("desktop")` is `"100%"`, so "Desktop" is
+  only as wide as the leftover editor column (viewport − admin chrome − the 18.75rem Style
+  rail − `.stage` padding ≈ 640px at 1277 CSS px), which is genuinely under `spec-table.css`'s
+  749px mobile breakpoint. The preview was telling the truth about a 640px desktop.
+  **🚫 Never fix this by lowering 749** — Dawn's breakpoint, drift-guarded, and it would change
+  what real shoppers see on phones.
+- Fix = a **full-size preview modal** (merchant's choice of two options; the rejected
+  alternative — a collapsible rail — does not clear 749 on a 1024–1100px laptop and would break
+  the Style tab's turn-a-knob-watch-it-change loop). An icon trigger beside the device toggle
+  opens an `<s-modal size="large-100" padding="none">` carrying the same `SpecTablePreview` via
+  the same render prop, plus its own Desktop/Mobile toggle. A **verification** surface, not an
+  authoring one.
+- Its height budget is **viewport-derived** (pure `modalPreviewHeight` + calibrated
+  `MODAL_CHROME_PX` in `deviceView.ts`), never `useScrollRegionHeight` (an element-top →
+  iframe-bottom measurement is meaningless in a centred dialog) and never a ResizeObserver on
+  the modal body (circular — an `<s-modal>` sizes to its content). From there the card's two
+  per-device rules apply unchanged, so no third sizing behaviour exists.
+- New shared `SegmentedControl.tsx` (verbatim extraction from `EditorShell`) and a new pure
+  `setPreviewDevice` — `rememberView` is not reusable, as it would also flip the active tab into
+  `preview` and strand Content on a read-only grid after closing. The device stays **shared**,
+  per the locked Step 11 decision.
+- Live-verified at 1397×599 (the size that reproduces the bug): two-column in the modal on two
+  templates, Mobile fits + scrolls, live unsaved styling repaints it, Esc/backdrop close cleanly,
+  arrow keys drive the modal radiogroup. Two Step-0 corrections en route (chrome constant
+  148→252; the footer Close dropped for costing 11% of the height budget) and one non-issue
+  resolved as unreachable rather than guarded. Tripwired files untouched. Details in `75-…`.
 
 **Content-free tables render nothing (feature 74, doc `74-…`) — ✅ shipped & verified 2026-07-23**
 - Merchant report: a brand-new template's Style/Settings preview showed a bare grey box.
@@ -263,7 +292,7 @@ Multi-value applies to PRODUCT + COLLECTION only. No migrations needed for the 4
 
 ## Next Up
 
-1. **Reshell Phase B2** — built-in preset gallery (Style tab steps 13–14; new feature-doc number, 75+, since 70 = stacked-semantics, 71 = sidebar inner-scroll, 72 = device-preview mockups, 73 = desktop preview inner scroll, 74 = content-free tables). Then C (Settings display rules) → E (assignment into the reshell) → F (top-bar status/save + cleanup).
+1. **Reshell Phase B2** — built-in preset gallery (Style tab steps 13–14; new feature-doc number, 76+, since 70 = stacked-semantics, 71 = sidebar inner-scroll, 72 = device-preview mockups, 73 = desktop preview inner scroll, 74 = content-free tables, 75 = full-size preview modal). Then C (Settings display rules) → E (assignment into the reshell) → F (top-bar status/save + cleanup).
 2. **Storefront table semantics in stacked layouts (feature 70)** — code shipped; screen-reader pass still owed (see Open Questions).
 3. **Editor page should not scroll at the document level** — the app document overflows the
    iframe by roughly the `.tipsFooter` height (it renders BELOW the card, outside
@@ -296,6 +325,14 @@ Multi-value applies to PRODUCT + COLLECTION only. No migrations needed for the 4
   **falsifier** is unchecked — explicit ARIA can *suppress* native table affordances, so the
   two-column control case must be compared before/after. Needs NVDA or VoiceOver at desktop **and**
   ≤749px. **If it regresses, revert (`<dl>` back on the table) — do not patch.**
+- **Feature 75 — two items not closed on a short window.** (a) The modal's
+  "short table hugs its content" branch was never seen: at the 599px-tall verification
+  window the height budget is ~240px, so every dev-store template clamps and scrolls.
+  `browserScreenHeight` is unit-tested for it and unchanged by feature 75, but confirm on
+  a taller monitor. (b) `MODAL_CHROME_PX = 252` is calibrated against that one window;
+  it is subtractive while the dialog's own max-height is proportional (~90% of the app
+  frame), so the fit may drift on very tall or very short viewports. Both failure modes
+  are soft (a gap, or the modal body scrolling), and both retune from that one constant.
 - **R3 — orphan titled sections (feature 74, deferred).** A section header with a REAL label
   whose rows are all hidden still renders as a lone titled band. Authored content, so it was
   deliberately left alone: suppressing it would contradict the locked Step 9a decision
@@ -320,7 +357,7 @@ Multi-value applies to PRODUCT + COLLECTION only. No migrations needed for the 4
 
 - **Custom React editor — no AG Grid** (2-column, ≤200 rows, `valueParts` token editor). DnD via `@dnd-kit`. Pill model is **pick-then-insert** (modal outside the contenteditable; never an empty placeholder pill). Row cap is the single shared `MAX_TEMPLATE_ROWS` (UI + server).
 - **Value model:** `LINE_BREAK` value part for hard breaks (no inline rich formatting/links in MVP). `hideWhenEmpty` is whole-row, never per-line.
-- **View toggle:** Edit is the only editable segment; Desktop/Mobile are **read-only storefront previews** (Phase D), no separate WYSIWYG panel. **Tablet removed 2026-07-22.** **Shared preview device (2026-07-22):** the chosen device (Desktop/Mobile) is one value shared across all three tabs; edit-vs-preview is per-tab (`tabViewMemory.ts` `ViewMemory = { device, modes }`) — Content opens on the grid, Style/Settings auto-open a preview, picking a device on any tab moves every *previewing* tab to it; dropping a tab to Edit affects only that tab and retains the shared device.
+- **View toggle:** Edit is the only editable segment; Desktop/Mobile are **read-only storefront previews** (Phase D), no separate WYSIWYG panel. **Tablet removed 2026-07-22.** **Shared preview device (2026-07-22):** the chosen device (Desktop/Mobile) is one value shared across all three tabs; edit-vs-preview is per-tab (`tabViewMemory.ts` `ViewMemory = { device, modes }`) — Content opens on the grid, Style/Settings auto-open a preview, picking a device on any tab moves every *previewing* tab to it; dropping a tab to Edit affects only that tab and retains the shared device. **Full-size preview modal (2026-07-25, feature 75):** because the inline Desktop preview is narrower than the storefront's 749px breakpoint on a laptop, a trigger beside the device toggle opens the same preview in an `<s-modal>` at a width the admin column cannot constrain. Its device toggle drives the SAME shared device (`setPreviewDevice` — device only, never a tab's mode). It is a verification surface: the Style knobs stay in the rail behind it.
 - **Color policy:** the app *uses* color via CSS variables as one source of truth (admin mirrors Polaris; storefront inherits theme but is merchant-overridable). The "no hardcoded hex literal" rule is CSS hygiene — use Polaris tokens / `currentColor` / custom properties (e.g. runtime-captured `--appx-token-color` for the pill blue). This rule does **not** encode the Edit-grid-never-styled binding rule (see Binding rules above).
 - **Save/status model (mockup):** App Bridge contextual SaveBar (Save/Discard) + header status dropdown + ⋯ menu; no separate "Save as draft". Save freezes the editor (`inert`) in-flight; baseline reset uses the **submitted** snapshot (data-safety race fix).
 - **Persistence/keys:** key finalization is **server-authoritative** ("is this row id already persisted?"), never re-derived. Metaobject is **app-reserved** (`$app:appx_spec_table`); deleted *before* Postgres on delete so a storefront-readable entry can't outlive its template.
