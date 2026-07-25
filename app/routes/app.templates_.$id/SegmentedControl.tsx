@@ -5,10 +5,12 @@ import type {
 import { useId, useRef } from "react";
 import styles from "./SpecTableEditor.module.css";
 
-// The editor's segmented control (reshell A2), extracted verbatim from
-// `EditorShell.tsx` in feature 75 so the full-size preview modal's device toggle
-// reuses this exact control instead of growing a second, divergent one. Pure
-// move — no prop, markup, or behaviour change.
+// The editor's segmented control (reshell A2). Lives in its own module rather
+// than inside `EditorShell.tsx` so every segmented group in the editor is one
+// control — the tab group and the device toggle are the same radiogroup with
+// different options, and a second, divergent copy is exactly what this prevents.
+// Extracted verbatim (no prop, markup, or behaviour change) for feature 75's
+// preview modal, and kept when that modal was removed.
 //
 // It IMPORTS the tripwired `SpecTableEditor.module.css` (`.segGroup` / `.segBtn`)
 // and does not edit it; importing that module is fine, changing it is not.

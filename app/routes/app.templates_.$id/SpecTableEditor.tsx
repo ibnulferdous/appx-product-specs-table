@@ -50,14 +50,11 @@ export function SpecTableEditor({ engine }: { engine: RowEngine }) {
       >
         <EditorShell
           stage={<ContentTab engine={engine} />}
-          preview={(view, options) => (
+          preview={(view) => (
             <SpecTablePreview
               rows={engine.rows}
               styling={engine.styling}
               view={view}
-              // Undefined from the card's stage (it measures itself); supplied by
-              // the full-size modal, which cannot (feature 75).
-              availableHeight={options?.availableHeight}
             />
           )}
           stylePanel={<StyleTab engine={engine} />}

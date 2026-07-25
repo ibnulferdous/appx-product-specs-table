@@ -1,9 +1,30 @@
 # Feature 75 — Full-size preview modal
 
-> **Status: ✅ SHIPPED & VERIFIED 2026-07-25.** Full gate (typecheck · lint · format ·
-> test 875/36 · build) green, and confirmed live on the dev store via Claude-in-Chrome
-> ([[browser-verify-embedded-app]]) at a 1397×599 admin window — the size that
-> reproduces the reported bug. Step 0 passed on width and forced two build-time
+> **Status: 🗑️ REMOVED 2026-07-25 — this surface is no longer in the product.** It
+> shipped and was live-verified (log below, unedited), but feature 76's collapsible
+> rail — the *other* option the same merchant offered for the same report — answered
+> the width problem well enough on its own, and the merchant chose to keep only that
+> one. Two surfaces solving one problem is two surfaces to explain, keep truthful, and
+> re-verify. Everything the modal added was deleted: `PreviewModal.tsx`, the control-row
+> trigger + `PREVIEW_MODAL_ID`, `deviceView.ts`'s `modalPreviewHeight` /
+> `MODAL_CHROME_PX` / `MODAL_PREVIEW_*`, `tabViewMemory.ts`'s `setPreviewDevice`, the
+> `SpecTablePreview` `availableHeight` override + its render-prop `options` argument,
+> and all 13 of their unit tests. **What survives:** `SegmentedControl.tsx`, the verbatim
+> extraction this feature made — `EditorShell` uses it for both its tab group and its
+> device toggle, so it is now just a shared component with no modal in it.
+>
+> **This doc is kept as the record, not as a spec.** Its root-cause analysis is still
+> correct and still load-bearing — the 749px breakpoint reasoning below is why feature 76
+> exists, and the 🚫 "never lower 749" rule stands regardless of which surface ships.
+> Everything from "The design" onward describes code that no longer exists. If a
+> full-size preview is ever wanted again, read [[76]]'s "The honest limit" first: the
+> recorded answer to renewed friction is a fixed-1100px `transform: scale()` preview,
+> **not** a re-added modal.
+
+> _Original status line (2026-07-25):_ ✅ shipped & verified. Full gate (typecheck · lint ·
+> format · test 875/36 · build) green, and confirmed live on the dev store via
+> Claude-in-Chrome ([[browser-verify-embedded-app]]) at a 1397×599 admin window — the size
+> that reproduces the reported bug. Step 0 passed on width and forced two build-time
 > corrections; both are logged below.
 
 > **Doc numbering:** this takes 75, so Reshell Phase B2 (the built-in preset gallery)

@@ -2,13 +2,9 @@ import { describe, expect, it } from "vitest";
 import {
   browserScreenHeight,
   isPreviewView,
-  modalPreviewHeight,
   phoneScreenHeight,
   previewDeviceWidth,
   BROWSER_SCREEN_MIN_PX,
-  MODAL_CHROME_PX,
-  MODAL_PREVIEW_MAX_PX,
-  MODAL_PREVIEW_MIN_PX,
   PHONE_CHROME_PX,
   PHONE_SCREEN_MAX_PX,
   type DeviceView,
@@ -159,58 +155,5 @@ describe("browserScreenHeight", () => {
     // would already be settled.
     const applied = browserScreenHeight(2400, 900)!;
     expect(browserScreenHeight(applied, 900)).toBe(applied);
-  });
-});
-
-// Feature 75. The height budget handed to the preview inside the full-size
-// modal — derived from the VIEWPORT, because measuring the modal's own body
-// would be circular (an <s-modal> sizes to its content).
-describe("modalPreviewHeight", () => {
-  it("is null before the first measurement (so CSS decides)", () => {
-    expect(modalPreviewHeight(null)).toBeNull();
-    expect(modalPreviewHeight(undefined)).toBeNull();
-  });
-
-  it("ignores a non-finite viewport height", () => {
-    expect(modalPreviewHeight(Number.NaN)).toBeNull();
-    expect(modalPreviewHeight(Number.POSITIVE_INFINITY)).toBeNull();
-  });
-
-  it("subtracts the modal's own chrome from the viewport", () => {
-    const viewport = 800;
-    expect(modalPreviewHeight(viewport)).toBe(viewport - MODAL_CHROME_PX);
-  });
-
-  it("never returns less than the sanity floor on a tiny viewport", () => {
-    expect(modalPreviewHeight(0)).toBe(MODAL_PREVIEW_MIN_PX);
-    expect(modalPreviewHeight(MODAL_CHROME_PX)).toBe(MODAL_PREVIEW_MIN_PX);
-  });
-
-  it("caps on a very tall monitor, where the dialog's own max-height governs", () => {
-    expect(modalPreviewHeight(4000)).toBe(MODAL_PREVIEW_MAX_PX);
-  });
-
-  it("always lands within its bounds, and is monotonic in the viewport", () => {
-    let previous = 0;
-    for (const viewport of [0, 200, 600, 900, 1400, 3000]) {
-      const height = modalPreviewHeight(viewport);
-      expect(height).not.toBeNull();
-      expect(height!).toBeGreaterThanOrEqual(MODAL_PREVIEW_MIN_PX);
-      expect(height!).toBeLessThanOrEqual(MODAL_PREVIEW_MAX_PX);
-      expect(height!).toBeGreaterThanOrEqual(previous);
-      previous = height!;
-    }
-  });
-
-  it("feeds the card's per-device rules unchanged", () => {
-    // The modal introduces no third sizing behaviour: its budget is just another
-    // `available`, interpreted by the same two functions.
-    const budget = modalPreviewHeight(900)!;
-    expect(phoneScreenHeight(budget)).toBe(
-      Math.min(PHONE_SCREEN_MAX_PX, budget - PHONE_CHROME_PX),
-    );
-    // A table taller than the budget is bounded; a short one still hugs.
-    expect(browserScreenHeight(5000, budget)).toBe(budget);
-    expect(browserScreenHeight(120, budget)).toBe(120);
   });
 });

@@ -3,17 +3,10 @@ import { useRef, useState } from "react";
 import { isPreviewView, type DeviceView, type ViewId } from "./deviceView";
 import { useScrollRegionHeight } from "./useScrollRegionHeight";
 import { SegmentedControl, type SegOption } from "./SegmentedControl";
-import { PreviewModal } from "./PreviewModal";
-import {
-  PREVIEW_MODAL_ID,
-  RAIL_REGION_ID,
-  railToggleLabel,
-  type RailTab,
-} from "./editorShared";
+import { RAIL_REGION_ID, railToggleLabel, type RailTab } from "./editorShared";
 import {
   DEFAULT_VIEW_MEMORY,
   rememberView,
-  setPreviewDevice,
   viewAnnouncement,
   viewForTab,
   type TabId,
@@ -70,16 +63,7 @@ interface EditorShellProps {
   // whenever a device view is active; receives the active device view so the
   // preview can size itself. Optional + a `stage` fallback, so the toggle stays
   // harmless when no preview is wired.
-  //
-  // Feature 75 adds the optional second argument: the full-size preview modal
-  // renders this SAME slot, but its height budget cannot come from
-  // `useScrollRegionHeight` (an element-top → iframe-bottom measurement is
-  // meaningless inside a centred dialog), so it passes one in. Omitted by the
-  // card, which keeps measuring itself.
-  preview?: (
-    view: DeviceView,
-    options?: { availableHeight?: number },
-  ) => ReactNode;
+  preview?: (view: DeviceView) => ReactNode;
   // Reserved for Phase B / C. Undefined in A2 → an empty placeholder renders.
   stylePanel?: ReactNode;
   settingsPanel?: ReactNode;
@@ -123,14 +107,6 @@ export function EditorShell({
   const handleViewChange = (next: ViewId) => {
     setViewMemory((memory) => rememberView(memory, activeTab, next));
     setAnnouncement("");
-  };
-
-  // The full-size modal's device toggle (feature 75). It belongs to no tab, so it
-  // moves ONLY the shared device — `rememberView` would additionally flip the
-  // active tab into `preview`, stranding Content on a read-only preview once the
-  // modal closed.
-  const handleModalDeviceChange = (next: DeviceView) => {
-    setViewMemory((memory) => setPreviewDevice(memory, next));
   };
 
   // Tabs reveal/hide the sidebar; they never replace the stage (mirrors the
@@ -180,9 +156,12 @@ export function EditorShell({
       {/* Control row: tabs pinned left, device toggle pinned right. */}
       <s-box background="subdued" padding="small-300">
         <div className={styles.controlrow}>
-          {/* The tab group and the rail toggle are wrapped as ONE flex child, for
-              the same reason as the right-hand group below: `.controlrow` is
-              `justify-content: space-between` with exactly two children. */}
+          {/* The tab group and the rail toggle are wrapped as ONE flex child:
+              `.controlrow` is `justify-content: space-between` with exactly two
+              children (this group, and the device toggle), so a third would
+              strand the device toggle in the middle of the row — and that rule
+              lives in the tripwired `SpecTableEditor.module.css`, which this
+              feature must not edit. */}
           <s-stack direction="inline" gap="small-300" alignItems="center">
             <SegmentedControl
               ariaLabel="Editor tab"
@@ -241,33 +220,12 @@ export function EditorShell({
               </button>
             ) : null}
           </s-stack>
-          {/* The device toggle and the full-size trigger are wrapped as ONE
-              flex child. `.controlrow` is `justify-content: space-between` with
-              exactly two children, so adding a third would strand the toggle in
-              the middle of the row — and that rule lives in the tripwired
-              `SpecTableEditor.module.css`, which this feature must not edit. */}
-          <s-stack direction="inline" gap="small-300" alignItems="center">
-            <SegmentedControl
-              ariaLabel="Preview device"
-              options={VIEWS}
-              value={activeView}
-              onChange={handleViewChange}
-            />
-            {/* Opens the full-size preview (feature 75). NOT a fourth segment of
-                the radiogroup above — it is an action, not a view, and putting it
-                inside `role="radiogroup"` would corrupt the radio semantics.
-                Declarative `commandFor` / `command`, so the shell needs no
-                App Bridge import: nothing has to be prepared before it opens.
-                Shown on every tab and view — "show me how this looks" is
-                reasonable while editing rows too. */}
-            <s-button
-              variant="tertiary"
-              icon="maximize"
-              accessibilityLabel="Open full-size preview"
-              commandFor={PREVIEW_MODAL_ID}
-              command="--show"
-            ></s-button>
-          </s-stack>
+          <SegmentedControl
+            ariaLabel="Preview device"
+            options={VIEWS}
+            value={activeView}
+            onChange={handleViewChange}
+          />
         </div>
       </s-box>
 
@@ -343,19 +301,6 @@ export function EditorShell({
       ) : (
         <s-box>{stageContent}</s-box>
       )}
-
-      {/* The full-size preview (feature 75). Mounted here rather than in
-          `SpecTableEditor` because the shared device it toggles lives in this
-          component's state; `EditorShell` never unmounts while the editor is
-          open, and an <s-modal> portals outside the editor's inert save-freeze
-          anyway (see ResetStylingModal). Still PRESENTATIONAL — it reaches the
-          live rows/styling only through the same `preview` render prop the stage
-          uses, so the shell keeps its hands off the engine. */}
-      <PreviewModal
-        device={viewMemory.device}
-        onDeviceChange={handleModalDeviceChange}
-        preview={preview}
-      />
     </s-box>
   );
 }

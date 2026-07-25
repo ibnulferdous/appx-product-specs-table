@@ -139,22 +139,14 @@ export const SAVE_BAR_ID = "template-save-bar";
 // moment the merchant switches to Content, which would strand an open dialog.
 export const RESET_STYLING_MODAL_ID = "reset-styling-modal";
 
-// The full-size preview modal (feature 75). The editor column is narrower than
-// the storefront's 749px mobile breakpoint on a laptop once the Style rail is
-// open, so the inline "Desktop" preview honestly renders the STACKED layout;
-// this modal gives the preview a width the admin column cannot constrain. Opened
-// declaratively from the control-row trigger (`commandFor` + `command="--show"`)
-// rather than through `shopify.modal.show`, because nothing has to be prepared
-// before it appears — its open/close state rides the modal's own onShow /
-// onAfterHide callbacks.
-export const PREVIEW_MODAL_ID = "preview-modal";
-
 // --- Collapsible Style / Settings rail (feature 76) -------------------------
-// The other half of the same merchant report that produced the modal above:
-// collapsing the 18.75rem rail hands the stage the full editor card, which on
-// the reporter's own window clears the 749px breakpoint with ~300px to spare
-// (measured — see `context/features/76-…`). Collapse trades the knobs for width;
-// the modal trades the editor for width. Both surfaces ship, deliberately.
+// The editor column is narrower than the storefront's 749px mobile breakpoint on
+// a laptop once the Style rail is open, so the inline "Desktop" preview honestly
+// renders the STACKED layout. Collapsing the 18.75rem rail hands the stage the
+// full editor card, which on the reporter's own window clears the breakpoint with
+// ~300px to spare (measured — see `context/features/76-…`). This is the ONE
+// answer to that width problem: feature 75's full-size preview modal was the
+// other, and it was removed 2026-07-25 (see `context/features/75-…`).
 
 // The tabs that HAVE a rail. `content` is excluded at the type level rather than
 // handled with a fallback string: the toggle is not rendered there (no rail to

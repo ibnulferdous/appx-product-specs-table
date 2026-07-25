@@ -6,6 +6,17 @@
 > across the collapse, fixed with `overflow-anchor: none`. Everything else landed as
 > designed. Full gate green; 883 tests / 37 files.
 
+> **Update 2026-07-25 — this is now the ONLY answer to the width problem.** Feature
+> 75's full-size preview modal was **removed** the same day (see `75-…`): the merchant
+> tried both surfaces, found this one sufficient, and chose not to carry two. Nothing in
+> this feature changed — the rail, its toggle, and the `overflow-anchor` fix are
+> untouched, and the suite is 883 → 870 only because the modal's 13 tests went with it.
+> Read every "does not replace feature 75's modal" line below as historical: there is no
+> modal now. **"The honest limit" still stands and is now the whole story** — under
+> ~1420px the Style tab shows a truthful desktop table *or* the knobs, never both, and
+> collapse is the only lever. The recorded fix if that friction is reported again is
+> still a fixed-1100px `transform: scale()` preview, **not** a re-added modal.
+
 > **Doc numbering:** this takes 76, so Reshell Phase B2 (the built-in preset gallery)
 > moves to **77+**. Update the pointer in `progress-tracker.md` → Next Up when this
 > ships. (75 = full-size preview modal, 74 = content-free tables, 73 = desktop preview
@@ -399,14 +410,16 @@ Liquid, no metaobject — admin-UI-only, so it does not cross the split-work bou
 - **The button is hidden on Content**, rather than shown-but-disabled. There is no rail
   to talk about there; a permanently dead control is worse than an absent one.
 
-- **This does not replace feature 75's modal.** See below.
+- **This does not replace feature 75's modal.** See below. _(Superseded — the modal was
+  removed 2026-07-25; see the Update banner at the top.)_
 
 ## The honest limit
 
 After this ships, on a viewport under ~1420px the Style tab **still cannot show a
 truthful desktop table and the knobs at the same time**. Collapse trades the knobs for
 width; the modal trades the editor for width. Both are look-then-adjust loops, not
-adjust-and-watch loops.
+adjust-and-watch loops. _(2026-07-25: with the modal removed, collapse is the only
+lever — the limit is unchanged, but there is no second surface to fall back to.)_
 
 The only option that resolves it is the third one originally proposed and not built:
 render the desktop preview at a fixed 1100px and `transform: scale()` it down to fit,
@@ -463,7 +476,8 @@ above, reproduced to the pixel.
     **absent on Content** and the collapsed state is still there on return.
 11. ✅ The full-size preview modal opens from a collapsed rail, renders two-column,
     toggles to Mobile, and closes on Esc — with the shared device propagating back to the
-    card exactly as feature 75 specifies.
+    card exactly as feature 75 specifies. _(Void since 2026-07-25: that modal was removed.
+    Nothing in items 1–10 or 12 depended on it.)_
 12. ✅ `progress-tracker.md` updated.
 
 **Dev-store data safety:** verification was view-state only. No knob was turned, no row
