@@ -20,6 +20,7 @@ import {
   fromColorControlValue,
   fromControlValue,
   fromLabelWidthControlValue,
+  fromOuterBorderWidthControlValue,
   nextFontSizeForControl,
   parseCustomFontSizePx,
   rememberedCustomFontSizePx,
@@ -42,6 +43,8 @@ import {
   LABEL_WIDTH_PCT_MAX,
   LABEL_WIDTH_PCT_MIN,
   LINE_HEIGHTS,
+  OUTER_BORDER_WIDTH_PX_MAX,
+  OUTER_BORDER_WIDTH_PX_MIN,
   COLUMN_DIVIDER_STYLES,
   MOBILE_LAYOUTS,
   ROW_DIVIDER_STYLES,
@@ -578,6 +581,32 @@ describe("the bounded numeric inputs (feature 57 Step 10b)", () => {
     expect(toLabelWidthControlValue(35)).toBe("35");
   });
 
+  it("clamps an outline width into the domain's bounds", () => {
+    expect(
+      fromOuterBorderWidthControlValue(String(OUTER_BORDER_WIDTH_PX_MAX + 1)),
+    ).toBe(OUTER_BORDER_WIDTH_PX_MAX);
+    expect(fromOuterBorderWidthControlValue("3")).toBe(3);
+    // Rounds UP into the range rather than falling through the zero alias
+    // below: only a value that rounds to zero means off.
+    expect(fromOuterBorderWidthControlValue("0.6")).toBe(
+      OUTER_BORDER_WIDTH_PX_MIN,
+    );
+  });
+
+  it("reads 0 as the merchant clearing the outline, not as a 0 px frame", () => {
+    // The one converter that does not clamp its floor. A stored 0 would still
+    // emit the `--outer-border` presence flag, which drops the last row's own
+    // bottom rule — so it would paint no frame AND lose a divider. Off has
+    // exactly one stored spelling, and 0 resolves to it.
+    expect(fromOuterBorderWidthControlValue("0")).toBeNull();
+    expect(fromOuterBorderWidthControlValue("0.4")).toBeNull();
+    expect(fromOuterBorderWidthControlValue("-5")).toBeNull();
+    // Clearing the box is still the canonical gesture, and unusable text is
+    // still ignored — the alias must not have changed either.
+    expect(fromOuterBorderWidthControlValue("")).toBeNull();
+    expect(fromOuterBorderWidthControlValue("abc")).toBeNull();
+  });
+
   it("keeps every clamped value acceptable to the domain parser", () => {
     // The clamp at the control boundary and the clamp at the trust boundary
     // must agree, or a value would round-trip differently once saved.
@@ -598,6 +627,16 @@ describe("the bounded numeric inputs (feature 57 Step 10b)", () => {
       expect(parseStylingValues({ labelWidthPct: pct }).labelWidthPct).toBe(
         pct,
       );
+    }
+    // The zero alias has to survive the trust boundary too: it hands the parser
+    // a null, which is the default the parser already round-trips. If it ever
+    // handed over a 0, the parser would clamp it back up to 1 and the merchant's
+    // "off" would return as a hairline frame.
+    for (const raw of ["0", "-5", String(OUTER_BORDER_WIDTH_PX_MAX + 1), "3"]) {
+      const px = fromOuterBorderWidthControlValue(raw);
+      expect(
+        parseStylingValues({ outerBorderWidthPx: px }).outerBorderWidthPx,
+      ).toBe(px);
     }
   });
 });

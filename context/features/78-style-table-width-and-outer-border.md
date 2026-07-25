@@ -37,6 +37,18 @@ thing as "the theme's table outline". This is also why **every integer minimum i
 default that renders identically. One representation per state; clearing the
 control is the only way to turn a container knob off.
 
+> **Amended 2026-07-26 — Outline width accepts a typed `0`, as an alias.** The
+> lock above is unchanged: 0 is still not a *stored* state. What changed is the
+> failure mode when a merchant types it. Clamping 0 up to 1 gave them a frame
+> they had just asked to remove, so `fromOuterBorderWidthControlValue` now maps
+> anything rounding to ≤ 0 to `null` — the cleared box — before the clamp runs.
+> For this knob specifically a 0 would be worse than merely redundant: it is
+> non-null, so `--outer-border` is emitted, and that flag drops the last row's
+> own bottom rule. A 0 px outline would paint no frame *and* lose a divider.
+> Not surfaced in the help text (clearing stays the one documented gesture) and
+> `min` stays 1 on the field, so the stepper still cannot reach it. Radius and
+> Maximum width still clamp; extend only on a report.
+
 **2. `max-width`, not `width`.** A `width: 900px` overflows a 360px phone. A
 `max-width: 900px` caps a wide screen and shrinks below it, so the knob cannot
 collide with the 749px mobile breakpoint or with either stacked layout. It also

@@ -757,7 +757,31 @@ export function fromTableMaxWidthControlValue(raw: string): number | null {
   );
 }
 
+/**
+ * The outline-width box's string to a stored width — with ZERO AS AN ALIAS FOR
+ * EMPTY, the one converter here that does not simply clamp.
+ *
+ * `null` (the cleared box) is the only stored spelling of "no outline", and
+ * feature 78's minimum-of-1 lock is what keeps it the only one: a stored 0 would
+ * be a bogus override that still emits the `--outer-border` presence flag, and
+ * that flag drops the last row's own bottom rule (`tableStylingCss.ts`). A 0 px
+ * outline would therefore paint no frame AND delete that divider — a table
+ * missing its bottom rule for no visible reason.
+ *
+ * So 0 is not admitted as a second state; it is a merchant saying "off" in the
+ * other obvious way, and it resolves to the one state that means off. Rounding
+ * before the test keeps the rule total over everything the box can hold:
+ * anything that rounds to zero or below is off, and every other entry clamps
+ * into 1..MAX exactly as the sibling boxes do. (An empty box lands here too —
+ * `Number("")` is 0 — reaching the same null by the shorter route.)
+ *
+ * Deliberately NOT advertised in the field's help text: the canonical gesture is
+ * still clearing the box, and documenting two ways to reach one state is how the
+ * second one starts to look like a different one.
+ */
 export function fromOuterBorderWidthControlValue(raw: string): number | null {
+  const value = Number(raw.trim());
+  if (Number.isFinite(value) && Math.round(value) <= 0) return null;
   return fromBoundedIntControlValue(
     raw,
     OUTER_BORDER_WIDTH_PX_MIN,

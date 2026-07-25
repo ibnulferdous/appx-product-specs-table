@@ -191,6 +191,21 @@ plan: `~/.claude/plans/style-tab-phase-b-implementation-plan.md` (1–12 = B1, 1
   reported `EPERM ... query_engine-windows.dll.node`. Tell it apart from a real bug by running
   the upsert from a fresh `node -e`: if that writes, the server is just stale.
   B2 note: these five must land in the built-in preset bundles.
+- **Follow-up 2026-07-26 — Outline width reads `0` as "clear", not as a 0 px frame.**
+  The minimum-of-1 lock above is unchanged and is exactly *why*: a stored 0 would emit the
+  `--outer-border` presence flag, so it would paint no frame **and** drop the last row's own
+  bottom rule — a table missing its bottom divider for no visible reason. Rather than clamp a
+  typed 0 up to 1 (a frame the merchant did not ask for), `fromOuterBorderWidthControlValue`
+  now maps it to `null` at the control boundary, so 0 is an **alias for the cleared box, not a
+  second state**. Rule is total over the box: round first, then anything ≤ 0 is off (so `0`,
+  `0.4`, `-5`, and empty all clear; `0.6` still clamps up to 1). Deliberately NOT in the help
+  text — clearing stays the canonical gesture, and documenting a second way to reach one state
+  is how it starts to look like a different one. The field keeps `min={1}`: 1 is still the
+  smallest *stored* width, so the stepper cannot reach 0 and only typing can. Server-side
+  `parseStylingValues` is untouched and still clamps a 0 to 1 — unreachable from the UI now,
+  and pinned by a round-trip test asserting the converter hands the parser a `null`. Tests
+  887 → 889. **Radius and Maximum width were deliberately left clamping** (0 → 1 / 0 → 240);
+  extend the alias there only on a merchant report.
 
 **Collapsible Style / Settings rail (feature 76, doc `76-…`) — ✅ shipped & verified 2026-07-25**
 **— and, since the modal below was removed, the ONLY answer to the Style tab's width problem.**
