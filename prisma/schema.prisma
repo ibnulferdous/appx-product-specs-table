@@ -126,6 +126,7 @@ model TableStyling {
   sectionsCollapsible  Boolean @default(false)
   sectionsInitialState String? // "ALL_OPEN" (null default) | "FIRST_OPEN" | "ALL_CLOSED" — only meaningful when sectionsCollapsible
   rowDividerStyle      String? // "LINES" (null default) | "STRIPES" | "NONE"
+  columnDividerStyle   String? // "NONE" (null default) | "LINE" — the vertical rule at the label/value seam; fixed 1px, colored by borderColor. Suppressed in stacked layouts (no seam).
   density              String? // "DEFAULT" (null default) | "COMPACT" | "SPACIOUS"
 
   headerBgColor  String?

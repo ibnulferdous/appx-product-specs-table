@@ -98,6 +98,55 @@ plan: `~/.claude/plans/style-tab-phase-b-implementation-plan.md` (1–12 = B1, 1
 - Resolved en route: the section-header BANDED band is the intended default becoming
   reachable, not a regression (accept; Step 7 signed off).
 
+**Column divider (feature 79, doc `79-…`) — ✅ shipped & fully live-verified 2026-07-26**
+- Merchant sent two competitor spec tables (techlandbd, AppleGadgets) rendering a full
+  **grid** and asked for a column border. Only ONE edge was actually missing: rows already
+  had `LINES` (57 Step 5) and the frame shipped in 78, so the vertical rule between label
+  and value — **the only interior column edge a 2-column table has** — is one knob, and it
+  completes the grid. One column `columnDividerStyle String?` (`NONE` default / `LINE`),
+  migration `20260725161912_add_column_divider_styling`. **No Liquid change** — second
+  feature running that the "server precomputes, Liquid only prints" pipe paid for itself.
+- **Three merchant decisions (2026-07-26), all narrowing the knob deliberately:**
+  a **style keyword, NOT a px width** (row-divider width is not configurable, so a width box
+  would let a 4px column rule sit on 1px row rules — the knob that cannot express the ugly
+  case is the right knob); **no dedicated color swatch** (reads `--appx-spec-border-color`,
+  so it matches the row rules by construction — `columnDividerColor` stays addable later);
+  and **not hidden on stacked layouts**, deliberately declining a 6th hide predicate. That
+  last one has a cost: `Line` on a stacked table does nothing, so the caveat lives in the
+  option's help text and is a **shipped requirement pinned by a test**, not prose.
+- Non-null keyword ⇒ **modifier class**, per the locked Step 2 rule; `NONE` emits a real
+  `border-inline-end: none` rule rather than being the absence of one. The rule hangs off
+  the **label's `border-inline-end`**, which is the whole design: a section header is a
+  `th[colspan=2]` so the rule stops at every band (the look both references have); each
+  collapsible section owns its own `<table>` so it is per-section for free; and it is
+  INTERIOR, so `border-collapse` has nothing to resolve and it can never double against the
+  outer frame — no analogue of feature 78's three last-row selector cases. Logical property,
+  so RTL is correct for free.
+- ⚠️ **The one hazard is SOURCE ORDER, not specificity.** Both stacked shapes must drop the
+  rule (a block label has no seam; a survivor paints as a stray vertical stub), and all three
+  selectors are two classes — a **tie**, so order alone decides. The ON rule sits with the
+  dividers block *before* the layout block, making the file's existing documented ordering
+  rule load-bearing for one more knob. Breaking it is invisible: previews and storefront
+  regain the stub together and it reads as a design choice. Three tests pin it (the 1px
+  literal, both `none` rules, and the ordering). No `!important` anywhere. Tests 879 → 887.
+- **Round-trip live-verified end to end** on the ACTIVE DJI template: rail → Save → Postgres
+  `columnDividerStyle="LINE"` → metaobject (`styling` overrides-only; `styling_css.classes`
+  carries `--column-divider-line` in field order, **`vars` empty** — the knob rightly emits no
+  custom property) → rendered Horizon storefront, rule stopping at every section band. The
+  "matches the row rules by construction" claim is **measured, not argued**: the label's
+  computed `border-inline-end` and `border-block-end` are both `0.727273px solid
+  rgba(0,0,0,0.1)`. The source-order hazard was verified **observably** — swapping the layout
+  class on the live page dropped the border `0.727273px → 0px` with the divider class still
+  present, and restored it. Mobile ≤749px checked in the editor's Mobile preview (a real
+  ~375px iframe): stacked, no rule, **no stray right-edge stub**. Migration confirmed
+  non-repainting (every pre-existing row read `null`).
+  ⚠️ **`resize_window` is not a usable responsive check here** — it reports success but the
+  viewport never reflows (`innerWidth` stayed 1397); the Mobile device preview is what gives a
+  genuine narrow render. The DJI template is **left saved with `Line`**.
+- Numbering: this takes **79**, so B2 starts at **80**. `columnDividerStyle` must land in the
+  B2 preset bundles alongside feature 78's five — it is what makes a "Bordered / Grid"
+  built-in preset possible.
+
 **Table width + outer border (features 77–78, docs `77-…` / `78-…`) — ✅ shipped 2026-07-25**
 - **77 — the block now fills its container (CSS-only bug fix, live-verified).** Merchant
   report: the storefront table's width followed its CONTENT, so opening a collapsible
@@ -379,12 +428,13 @@ Multi-value applies to PRODUCT + COLLECTION only. No migrations needed for the 4
 ## Next Up
 
 1. **Reshell Phase B2** — built-in preset gallery (Style tab steps 13–14; **starts at feature
-   doc 79**, since 70 = stacked-semantics, 71 = sidebar inner-scroll, 72 = device-preview
+   doc 80**, since 70 = stacked-semantics, 71 = sidebar inner-scroll, 72 = device-preview
    mockups, 73 = desktop preview inner scroll, 74 = content-free tables, 75 = full-size preview
    modal (removed), 76 = collapsible Style rail, 77 = container stretch, 78 = width + outer
-   border — a retired number is still spent). **The five feature-78 fields must be in the
-   preset bundles.** Then C (Settings display rules) → E (assignment into the reshell) → F
-   (top-bar status/save + cleanup).
+   border, 79 = column divider — a retired number is still spent). **The five feature-78 fields
+   plus `columnDividerStyle` must be in the preset bundles** — those six are what make a
+   "Bordered / Grid" built-in preset possible. Then C (Settings display rules) → E (assignment
+   into the reshell) → F (top-bar status/save + cleanup).
 2. **Storefront table semantics in stacked layouts (feature 70)** — code shipped; screen-reader pass still owed (see Open Questions).
 3. **Editor page should not scroll at the document level** — the app document overflows the
    iframe by roughly the `.tipsFooter` height (it renders BELOW the card, outside

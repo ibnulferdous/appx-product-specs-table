@@ -3,6 +3,7 @@ import { useAppBridge } from "@shopify/app-bridge-react";
 import { RESET_STYLING_MODAL_ID } from "./editorShared";
 import {
   COLOR_KNOBS,
+  COLUMN_DIVIDER_OPTIONS,
   CUSTOM_FONT_SIZE_SEED_PX,
   DENSITY_OPTIONS,
   FONT_SIZE_OPTIONS,
@@ -441,6 +442,32 @@ export function StyleTab({ engine }: { engine: RowEngine }) {
             }}
           >
             {ROW_DIVIDER_OPTIONS.map((option) => (
+              <s-option key={option.value} value={option.value}>
+                {option.label}
+              </s-option>
+            ))}
+          </s-select>
+
+          {/* Directly under Row dividers — its vertical partner, and together
+              with an Outline width the three make a full grid. Always shown,
+              including on stacked layouts where it has no seam to sit on: the
+              merchant's choice has to survive a trip through Stacked, and the
+              option's own help text carries the caveat. */}
+          <s-select
+            label="Column divider"
+            details={selectedHelpText(
+              COLUMN_DIVIDER_OPTIONS,
+              styling.columnDividerStyle,
+            )}
+            value={styling.columnDividerStyle}
+            onChange={(event: Event) => {
+              setStylingField(
+                "columnDividerStyle",
+                readValue(event) as typeof styling.columnDividerStyle,
+              );
+            }}
+          >
+            {COLUMN_DIVIDER_OPTIONS.map((option) => (
               <s-option key={option.value} value={option.value}>
                 {option.label}
               </s-option>

@@ -23,6 +23,17 @@ export const SECTIONS_INITIAL_STATES = [
   "ALL_CLOSED",
 ] as const;
 export const ROW_DIVIDER_STYLES = ["LINES", "STRIPES", "NONE"] as const;
+// The one interior VERTICAL edge a two-column table has: the rule between the
+// label and the value. Singular "LINE" rather than the row knob's plural
+// "LINES" because there is exactly one of them, however many rows there are.
+//
+// A style keyword, not a px width (merchant decision 2026-07-26). The line is a
+// fixed 1px hairline dressed by the shared border color, so it always matches
+// the row rules — a width box would let a 4px column rule sit on 1px row rules,
+// and row-divider width is deliberately NOT configurable. NONE leads because it
+// is the default: every table that exists today has no column rule, and adding
+// this knob must not repaint any of them.
+export const COLUMN_DIVIDER_STYLES = ["NONE", "LINE"] as const;
 export const DENSITIES = ["DEFAULT", "COMPACT", "SPACIOUS"] as const;
 // How a width-capped table sits in the space the theme gives it. Meaningless at
 // full width, which is why the rail hides the control then.
@@ -91,6 +102,7 @@ export type MobileLayout = (typeof MOBILE_LAYOUTS)[number];
 export type SectionHeaderStyle = (typeof SECTION_HEADER_STYLES)[number];
 export type SectionsInitialState = (typeof SECTIONS_INITIAL_STATES)[number];
 export type RowDividerStyle = (typeof ROW_DIVIDER_STYLES)[number];
+export type ColumnDividerStyle = (typeof COLUMN_DIVIDER_STYLES)[number];
 export type Density = (typeof DENSITIES)[number];
 export type TableAlign = (typeof TABLE_ALIGNMENTS)[number];
 export type StylingFontSizeKeyword = (typeof STYLING_FONT_SIZES)[number];
@@ -122,6 +134,7 @@ export interface StylingValues {
   sectionsCollapsible: boolean;
   sectionsInitialState: SectionsInitialState;
   rowDividerStyle: RowDividerStyle;
+  columnDividerStyle: ColumnDividerStyle;
   density: Density;
 
   // Container knobs. `tableAlign` is non-null like every other keyword knob;
@@ -164,6 +177,7 @@ export const STYLING_FIELD_NAMES = [
   "sectionsCollapsible",
   "sectionsInitialState",
   "rowDividerStyle",
+  "columnDividerStyle",
   "density",
   "tableMaxWidthPx",
   "tableAlign",
@@ -198,6 +212,7 @@ export const DEFAULT_STYLING_VALUES: StylingValues = Object.freeze({
   sectionsCollapsible: false,
   sectionsInitialState: SECTIONS_INITIAL_STATES[0],
   rowDividerStyle: ROW_DIVIDER_STYLES[0],
+  columnDividerStyle: COLUMN_DIVIDER_STYLES[0],
   density: DENSITIES[0],
 
   tableMaxWidthPx: null,
@@ -356,6 +371,11 @@ export function parseStylingValues(input: unknown): StylingValues {
       raw.rowDividerStyle,
       ROW_DIVIDER_STYLES,
       d.rowDividerStyle,
+    ),
+    columnDividerStyle: parseKeyword(
+      raw.columnDividerStyle,
+      COLUMN_DIVIDER_STYLES,
+      d.columnDividerStyle,
     ),
     density: parseKeyword(raw.density, DENSITIES, d.density),
 

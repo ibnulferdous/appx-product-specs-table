@@ -315,6 +315,43 @@ export const SPEC_TABLE_CSS = `/* Appx — Product Specs Table storefront styles
   border-block-end: none;
 }
 
+/* --- Column divider --------------------------------------------------------
+   The row knob's vertical partner, and the piece that completes a full grid:
+   rows already have LINES, the container already has an outline, and this is
+   the one INTERIOR vertical edge a two-column table has.
+
+   It hangs off the LABEL's inline-end rather than the value's inline-start, so
+   the rule sits at the label/value seam and nowhere else. That placement is
+   what makes the two shapes work without a single special case:
+
+   - a section header is a th[colspan=2], so it is not a label and the rule
+     stops at every section band (the look both reference storefronts have);
+   - in the collapsible shape each section owns its own table, so the rule is
+     per-section and needs no knowledge of disclosures;
+   - it is interior, so border-collapse has nothing to resolve it against and
+     it can never double against the wrapper's outer border.
+
+   border-INLINE-end, not border-right: the seam follows the writing direction,
+   so an RTL storefront gets the rule on the correct side for free. Same logical
+   convention as border-block-end everywhere above.
+
+   1px and --appx-spec-border-color are hardcoded on purpose (merchant decision
+   2026-07-26): the column rule must always match the row rules, so it takes no
+   width knob and no color swatch of its own. If it ever needs to differ, that
+   is a new knob and a new decision — do not quietly parameterise this.
+
+   Both members get a rule at equal specificity per the file's design rules;
+   NONE is not left to the base rule's absence. Placed BEFORE the layout block
+   below so the stacked refinements can drop the rule by source order. */
+
+.appx-spec-table--column-divider-none .appx-spec-table__label {
+  border-inline-end: none;
+}
+
+.appx-spec-table--column-divider-line .appx-spec-table__label {
+  border-inline-end: 1px solid var(--appx-spec-border-color, rgba(0, 0, 0, 0.1));
+}
+
 /* --- Density (owns row-cell padding and nothing else) --------------------- */
 
 .appx-spec-table--density-default .appx-spec-table__label,
@@ -378,9 +415,16 @@ export const SPEC_TABLE_CSS = `/* Appx — Product Specs Table storefront styles
    as one unit, so the active divider style lands after the VALUE only. The
    value is pulled toward its label with a longhand padding-block-start,
    which layers over density's earlier shorthand. */
+/* border-inline-end joins width/border-block-end here for the same reason they
+   are here: a stacked label is a full-width block with its value underneath, so
+   there is no label/value SEAM for a column rule to sit on — left in, it would
+   paint as a stray vertical stub against the right edge. Equal specificity to
+   the column-divider rule above and later in the file, so source order drops
+   it; no importance override, per this file's design rules. */
 .appx-spec-table--layout-stacked .appx-spec-table__label {
   width: auto;
   border-block-end: none;
+  border-inline-end: none;
 }
 
 .appx-spec-table--layout-stacked .appx-spec-table__value {
@@ -409,9 +453,13 @@ export const SPEC_TABLE_CSS = `/* Appx — Product Specs Table storefront styles
     display: block;
   }
 
+  /* Same reasoning as the desktop stacked rule: no seam below the breakpoint,
+     so no column rule. This block is LAST in the file, so it drops the rule for
+     a table that is two-column on desktop and stacked on a phone. */
   .appx-spec-table--mobile-stacked .appx-spec-table__label {
     width: auto;
     border-block-end: none;
+    border-inline-end: none;
   }
 
   .appx-spec-table--mobile-stacked .appx-spec-table__value {

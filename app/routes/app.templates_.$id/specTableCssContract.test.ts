@@ -11,6 +11,7 @@ import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import {
+  COLUMN_DIVIDER_STYLES,
   DEFAULT_STYLING_VALUES,
   DENSITIES,
   MOBILE_LAYOUTS,
@@ -49,6 +50,9 @@ for (const values of [
     variant({ sectionHeaderStyle }),
   ),
   ...ROW_DIVIDER_STYLES.map((rowDividerStyle) => variant({ rowDividerStyle })),
+  ...COLUMN_DIVIDER_STYLES.map((columnDividerStyle) =>
+    variant({ columnDividerStyle }),
+  ),
   ...DENSITIES.map((density) => variant({ density })),
   ...TABLE_ALIGNMENTS.map((tableAlign) => variant({ tableAlign })),
   variant({ sectionsCollapsible: true }),
@@ -79,11 +83,66 @@ describe("spec-table.css ↔ styling vocabulary contract (feature 57 Step 3)", (
   });
 
   it("covers the full producible class list (sanity: the loop above found every knob)", () => {
-    // 2 layouts + 2 mobile + 2 section styles + 3 dividers + 3 densities +
-    // 3 alignments + the collapsible flag + the two container presence flags
-    // (--outer-border, --outer-radius). If a knob gains a member, this count
-    // and the selector assertions below both move together.
-    expect(producibleClasses.size).toBe(18);
+    // 2 layouts + 2 mobile + 2 section styles + 3 row dividers + 2 column
+    // dividers + 3 densities + 3 alignments + the collapsible flag + the two
+    // container presence flags (--outer-border, --outer-radius). If a knob
+    // gains a member, this count and the selector assertions below both move
+    // together.
+    expect(producibleClasses.size).toBe(20);
+  });
+
+  // --- Column divider (feature 79) -------------------------------------------
+  //
+  // The class-presence assertions above prove both members have a selector.
+  // These three pin the parts a selector check cannot see, and each guards a
+  // failure that would be INVISIBLE in the editor: the previews and the
+  // storefront share this file, so a break here ships to both at once and looks
+  // like a design choice rather than a bug.
+  describe("column divider", () => {
+    it("draws a 1px rule from the shared border color, with no knob of its own", () => {
+      // The merchant decision (2026-07-26) was a fixed hairline that always
+      // matches the row rules — no width knob, no dedicated swatch. Pinning the
+      // literal is what stops that being quietly parameterised later.
+      expect(css).toContain(
+        ".appx-spec-table--column-divider-line .appx-spec-table__label {\n" +
+          "  border-inline-end: 1px solid var(--appx-spec-border-color, rgba(0, 0, 0, 0.1));\n" +
+          "}",
+      );
+    });
+
+    // Each stacked label selector appears TWICE: once inside the grouped
+    // `display: block` selector list (followed by a comma) and once as its own
+    // rule (followed by ` {`). Anchoring on the brace is what picks the second
+    // — matching the bare selector would silently measure the wrong block.
+    const STACKED_LABEL_RULES = [
+      ".appx-spec-table--layout-stacked .appx-spec-table__label {",
+      ".appx-spec-table--mobile-stacked .appx-spec-table__label {",
+    ];
+
+    it("is dropped in BOTH stacked shapes — a block label has no label/value seam", () => {
+      // Desktop stacked, and two-column-on-desktop/stacked-on-mobile. Miss
+      // either and the rule paints as a stray vertical stub down the right edge.
+      for (const rule of STACKED_LABEL_RULES) {
+        const start = css.indexOf(rule);
+        expect(start, `missing rule for ${rule}`).toBeGreaterThan(-1);
+        const block = css.slice(start, css.indexOf("}", start));
+        expect(block, `${rule} must drop the column rule`).toContain(
+          "border-inline-end: none",
+        );
+      }
+    });
+
+    it("declares the ON rule BEFORE both stacked rules that undo it", () => {
+      // Every one of these selectors is two classes, so specificity is a TIE
+      // and source order is the only thing deciding the winner. Reorder the
+      // file and the stacked layouts silently regain the stub — with no
+      // importance override anywhere to make the dependency obvious.
+      const on = css.indexOf(".appx-spec-table--column-divider-line");
+      expect(on).toBeGreaterThan(-1);
+      for (const rule of STACKED_LABEL_RULES) {
+        expect(css.indexOf(rule), `${rule} must follow`).toBeGreaterThan(on);
+      }
+    });
   });
 
   it("has a selector for every producible modifier class except the documented exemptions", () => {

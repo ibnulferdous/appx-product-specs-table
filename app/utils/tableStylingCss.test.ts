@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import {
+  COLUMN_DIVIDER_STYLES,
   DEFAULT_STYLING_VALUES,
   DENSITIES,
   LABEL_CASES,
@@ -46,6 +47,7 @@ const FULLY_OVERRIDDEN: StylingValues = {
   sectionsCollapsible: true,
   sectionsInitialState: "ALL_CLOSED",
   rowDividerStyle: "STRIPES",
+  columnDividerStyle: "LINE",
   density: "COMPACT",
   tableMaxWidthPx: 960,
   tableAlign: "CENTER",
@@ -74,6 +76,10 @@ const DEFAULT_CLASSES = [
   "appx-spec-table--mobile-stacked",
   "appx-spec-table--section-banded",
   "appx-spec-table--dividers-lines",
+  // NONE is the column divider's default, and it emits its class like every
+  // other keyword knob — the rule set it selects is an explicit `none`, so a
+  // table that has never touched the knob is unchanged.
+  "appx-spec-table--column-divider-none",
   "appx-spec-table--density-default",
   // Alignment emits its default like every other keyword knob. The two
   // container PRESENCE flags (--outer-border / --outer-radius) are absent here
@@ -274,6 +280,14 @@ describe("stylingToModifierClasses — class matrix", () => {
       },
     },
     {
+      field: "columnDividerStyle",
+      allowed: COLUMN_DIVIDER_STYLES,
+      classes: {
+        NONE: "appx-spec-table--column-divider-none",
+        LINE: "appx-spec-table--column-divider-line",
+      },
+    },
+    {
       field: "density",
       allowed: DENSITIES,
       classes: {
@@ -320,6 +334,7 @@ describe("stylingToModifierClasses — sectionsCollapsible", () => {
       "appx-spec-table--section-banded",
       "appx-spec-table--collapsible",
       "appx-spec-table--dividers-lines",
+      "appx-spec-table--column-divider-none",
       "appx-spec-table--density-default",
       "appx-spec-table--align-left",
     ]);
@@ -373,13 +388,14 @@ describe("totality — fully overridden", () => {
     );
   });
 
-  it("emits the full class list (all six knobs + collapsible + both container flags)", () => {
+  it("emits the full class list (all seven knobs + collapsible + both container flags)", () => {
     expect(stylingToModifierClasses(FULLY_OVERRIDDEN)).toEqual([
       "appx-spec-table--layout-stacked",
       "appx-spec-table--mobile-same-as-desktop",
       "appx-spec-table--section-text-only",
       "appx-spec-table--collapsible",
       "appx-spec-table--dividers-stripes",
+      "appx-spec-table--column-divider-line",
       "appx-spec-table--density-compact",
       "appx-spec-table--align-center",
       "appx-spec-table--outer-border",

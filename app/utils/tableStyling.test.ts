@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import {
+  COLUMN_DIVIDER_STYLES,
   DEFAULT_STYLING_VALUES,
   DENSITIES,
   FONT_SIZE_PX_MAX,
@@ -43,6 +44,7 @@ const FULLY_OVERRIDDEN: StylingValues = {
   sectionsCollapsible: true,
   sectionsInitialState: "ALL_CLOSED",
   rowDividerStyle: "STRIPES",
+  columnDividerStyle: "LINE",
   density: "COMPACT",
   tableMaxWidthPx: 960,
   tableAlign: "CENTER",
@@ -123,6 +125,7 @@ describe("parseStylingValues — per-knob matrix", () => {
     { field: "sectionHeaderStyle", allowed: SECTION_HEADER_STYLES },
     { field: "sectionsInitialState", allowed: SECTIONS_INITIAL_STATES },
     { field: "rowDividerStyle", allowed: ROW_DIVIDER_STYLES },
+    { field: "columnDividerStyle", allowed: COLUMN_DIVIDER_STYLES },
     { field: "density", allowed: DENSITIES },
   ] as const;
 

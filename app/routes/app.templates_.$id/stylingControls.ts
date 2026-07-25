@@ -1,4 +1,5 @@
 import {
+  COLUMN_DIVIDER_STYLES,
   DENSITIES,
   FONT_SIZE_PX_MAX,
   FONT_SIZE_PX_MIN,
@@ -69,6 +70,35 @@ export const ROW_DIVIDER_OPTIONS: ReadonlyArray<
   value,
   label: ROW_DIVIDER_LABELS[value].label,
   helpText: ROW_DIVIDER_LABELS[value].helpText,
+}));
+
+// Column divider — the row knob's vertical partner (feature 79). Two members
+// only: the rule is a fixed hairline dressed by the shared Border swatch, so
+// there is nothing to size or color and the control is a plain either/or.
+//
+// The help text names the SEAM ("between the two columns") rather than the
+// implementation, and the NONE gloss says what a merchant sees rather than
+// what is absent. Deliberately NOT hidden on stacked layouts (merchant call
+// 2026-07-26): the value stays meaningful for the two-column case they may
+// switch back to, and the stylesheet already suppresses the rule there — so
+// the LINE help text has to say so, or the no-op reads as a broken control.
+const COLUMN_DIVIDER_LABELS: Record<
+  (typeof COLUMN_DIVIDER_STYLES)[number],
+  { label: string; helpText: string }
+> = {
+  NONE: { label: "None", helpText: "No rule between label and value." },
+  LINE: {
+    label: "Line",
+    helpText: "A hairline between the two columns — two-column layouts only.",
+  },
+};
+
+export const COLUMN_DIVIDER_OPTIONS: ReadonlyArray<
+  StylingOption<(typeof COLUMN_DIVIDER_STYLES)[number]>
+> = COLUMN_DIVIDER_STYLES.map((value) => ({
+  value,
+  label: COLUMN_DIVIDER_LABELS[value].label,
+  helpText: COLUMN_DIVIDER_LABELS[value].helpText,
 }));
 
 // --- Step 8 knobs -----------------------------------------------------------

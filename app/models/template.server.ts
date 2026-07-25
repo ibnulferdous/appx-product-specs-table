@@ -55,6 +55,7 @@ type TableStylingColumns = {
   sectionsCollapsible: boolean;
   sectionsInitialState: string | null;
   rowDividerStyle: string | null;
+  columnDividerStyle: string | null;
   density: string | null;
   tableMaxWidthPx: number | null;
   tableAlign: string | null;
@@ -106,6 +107,7 @@ export function stylingToDbColumns(values: StylingValues): TableStylingColumns {
       d.sectionsInitialState,
     ),
     rowDividerStyle: knob(values.rowDividerStyle, d.rowDividerStyle),
+    columnDividerStyle: knob(values.columnDividerStyle, d.columnDividerStyle),
     density: knob(values.density, d.density),
     // Container knobs. The three integers are already "null = default", so they
     // pass straight through; only `tableAlign` needs the keyword treatment.

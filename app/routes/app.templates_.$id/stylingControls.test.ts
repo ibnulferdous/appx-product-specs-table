@@ -11,6 +11,7 @@ import {
   LABEL_CASE_OPTIONS,
   LINE_HEIGHT_OPTIONS,
   MOBILE_LAYOUT_OPTIONS,
+  COLUMN_DIVIDER_OPTIONS,
   ROW_DIVIDER_OPTIONS,
   ROW_LAYOUT_OPTIONS,
   SECTIONS_INITIAL_STATE_OPTIONS,
@@ -41,6 +42,7 @@ import {
   LABEL_WIDTH_PCT_MAX,
   LABEL_WIDTH_PCT_MIN,
   LINE_HEIGHTS,
+  COLUMN_DIVIDER_STYLES,
   MOBILE_LAYOUTS,
   ROW_DIVIDER_STYLES,
   ROW_LAYOUTS,
@@ -84,6 +86,44 @@ describe("ROW_DIVIDER_OPTIONS (feature 57 Step 5 — the Dividers control)", () 
   it("has a distinct label per option", () => {
     const labels = ROW_DIVIDER_OPTIONS.map((option) => option.label);
     expect(new Set(labels).size).toBe(labels.length);
+  });
+});
+
+describe("COLUMN_DIVIDER_OPTIONS (feature 79 — the Column divider control)", () => {
+  it("offers exactly the domain's column-divider styles, in domain order", () => {
+    expect(COLUMN_DIVIDER_OPTIONS.map((option) => option.value)).toEqual([
+      ...COLUMN_DIVIDER_STYLES,
+    ]);
+  });
+
+  it("leads with the default, so the control opens on the current look", () => {
+    expect(COLUMN_DIVIDER_OPTIONS[0].value).toBe(
+      DEFAULT_STYLING_VALUES.columnDividerStyle,
+    );
+  });
+
+  it("gives every option merchant-facing prose", () => {
+    for (const option of COLUMN_DIVIDER_OPTIONS) {
+      expect(option.label.length).toBeGreaterThan(0);
+      expect(option.helpText.length).toBeGreaterThan(0);
+      expect(option.label).not.toBe(option.value);
+    }
+  });
+
+  it("has a distinct label per option", () => {
+    const labels = COLUMN_DIVIDER_OPTIONS.map((option) => option.label);
+    expect(new Set(labels).size).toBe(labels.length);
+  });
+
+  // The control is deliberately NOT hidden on stacked layouts (merchant call
+  // 2026-07-26), where the stylesheet suppresses the rule. That makes the help
+  // text the ONLY place a merchant learns why picking Line changed nothing —
+  // so the caveat is a shipped requirement, not prose, and is pinned here.
+  it("warns on the LINE option that it applies to two-column layouts only", () => {
+    const line = COLUMN_DIVIDER_OPTIONS.find(
+      (option) => option.value === "LINE",
+    );
+    expect(line?.helpText).toMatch(/two-column/i);
   });
 });
 

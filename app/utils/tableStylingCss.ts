@@ -32,6 +32,7 @@
 // error, never a silently-interpolated `undefined`.
 
 import type {
+  ColumnDividerStyle,
   Density,
   LabelCase,
   LineHeight,
@@ -244,6 +245,23 @@ function rowDividerStyleClass(style: RowDividerStyle): string {
   }
 }
 
+// The vertical rule between the label and value columns. A CLASS and not a
+// custom property, per this file's organizing rule: it is a non-null keyword
+// knob, and it selects between two rule sets (a border or none) rather than
+// substituting a value. It carries no width or color of its own — the ON rule
+// hardcodes the 1px hairline and reads `--appx-spec-border-color`, so the
+// column rule is dressed by the same swatch as the row rules by construction.
+function columnDividerStyleClass(style: ColumnDividerStyle): string {
+  switch (style) {
+    case "NONE":
+      return `${BLOCK}--column-divider-none`;
+    case "LINE":
+      return `${BLOCK}--column-divider-line`;
+    default:
+      return assertNever(style);
+  }
+}
+
 function densityClass(density: Density): string {
   switch (density) {
     case "DEFAULT":
@@ -293,6 +311,7 @@ export function stylingToModifierClasses(values: StylingValues): string[] {
   if (values.sectionsCollapsible) classes.push(`${BLOCK}--collapsible`);
   classes.push(
     rowDividerStyleClass(values.rowDividerStyle),
+    columnDividerStyleClass(values.columnDividerStyle),
     densityClass(values.density),
     tableAlignClass(values.tableAlign),
   );
