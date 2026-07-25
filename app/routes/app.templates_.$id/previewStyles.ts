@@ -272,6 +272,71 @@ export const SPEC_TABLE_CSS = `/* Appx — Product Specs Table storefront styles
   border-block-end: 2px solid var(--appx-spec-border-color, currentColor);
 }
 
+/* --- Section separation (feature 80, Part A) -------------------------------
+   The banded rule above drops the summary's bottom rule because the band edge
+   IS the separator. That is true while a band is followed by ROWS, and false
+   when it is followed by ANOTHER BAND — a state only collapsible sections can
+   reach: close every disclosure and the bands stack into one unbroken slab
+   with no edge between them (reported on the live storefront, 2026-07-26). A
+   band touching a band with no edge is wrong in every theme, so this is a base
+   rule and not a knob, the same call the container-stretch rule at the top of
+   this file makes.
+
+   border-block-START, not -end. The banded rule owns the bottom edge, so
+   claiming the opposite side means the two rules never contest a property:
+   no specificity tie, no source-order dependency, no importance override.
+
+   Scoped to a CLOSED preceding section, which is what keeps the rule from
+   repainting tables that already exist. ALL_OPEN is the default initial state,
+   so an unconditional rule would add a second hairline above every band on
+   every collapsible banded table already live. The open attribute is live, so
+   the separator also appears and disappears as a shopper toggles a section —
+   no JavaScript involved.
+
+   It stands down when a gap is set (below): whitespace already separates the
+   bands there, and the hairline would paint as a stray line across the top of
+   every band but the first.
+
+   Known and accepted: an OPEN but empty section renders a zero-height table,
+   so its band still abuts the next one. Closing that case means dropping the
+   not-open scope, which repaints every default table to fix a state that needs
+   a named section with no visible rows followed by another section. */
+.appx-spec-table--collapsible.appx-spec-table--section-banded:not(
+    .appx-spec-table--section-gap
+  )
+  .appx-spec-table__section-group:not([open])
+  + .appx-spec-table__section-group
+  > .appx-spec-table__section-summary {
+  border-block-start: 1px solid
+    var(--appx-spec-border-color, rgba(0, 0, 0, 0.1));
+}
+
+/* --- Section gap (feature 80, Part B) --------------------------------------
+   The merchant-facing half of the same report: space between the sections
+   themselves, so the bands read as separate groups rather than a stack.
+
+   Gated on the PRESENCE CLASS rather than left to the custom property's own
+   fallback. A rule declared for every collapsible table would set
+   margin-block-start on every disclosure, and an explicit 0 from a two-class
+   selector beats a theme's own element-level details margin — silently
+   restyling tables whose merchant never touched this knob. The class is
+   emitted only when the knob is set, so an untouched table keeps no margin
+   declaration at all.
+
+   not(:first-child), not the adjacent-sibling combinator: rows appearing
+   before the first section header render in a leading bare table with no
+   disclosure around it, and the sibling form would skip that one boundary.
+   This form covers it and still never adds a leading gap inside the frame.
+
+   Only the collapsible shape has section-group elements. In the flat shape a
+   section header is a table row, which takes no margin at all — which is why
+   the rail hides this control while collapsing is off rather than shipping a
+   knob that does nothing. */
+.appx-spec-table--section-gap
+  .appx-spec-table__section-group:not(:first-child) {
+  margin-block-start: var(--appx-spec-section-gap, 0);
+}
+
 /* Keyboard users must be able to SEE which summary they are on — <details>
    gives operability for free, but not a visible focus ring in every theme. */
 .appx-spec-table--collapsible .appx-spec-table__section-summary:focus-visible {

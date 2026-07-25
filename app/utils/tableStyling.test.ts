@@ -12,6 +12,8 @@ import {
   MOBILE_LAYOUTS,
   ROW_DIVIDER_STYLES,
   ROW_LAYOUTS,
+  SECTION_GAP_PX_MAX,
+  SECTION_GAP_PX_MIN,
   SECTION_HEADER_STYLES,
   SECTIONS_INITIAL_STATES,
   STYLING_FIELD_NAMES,
@@ -43,6 +45,7 @@ const FULLY_OVERRIDDEN: StylingValues = {
   sectionHeaderStyle: "TEXT_ONLY",
   sectionsCollapsible: true,
   sectionsInitialState: "ALL_CLOSED",
+  sectionGapPx: 12,
   rowDividerStyle: "STRIPES",
   columnDividerStyle: "LINE",
   density: "COMPACT",
@@ -236,6 +239,63 @@ describe("parseStylingValues — labelWidthPct", () => {
       expect(
         parseStylingValues({ labelWidthPct: bad }).labelWidthPct,
       ).toBeNull();
+    }
+  });
+});
+
+// Feature 80. The gap is nullable with null = OFF (the container knobs' law,
+// not the colors' "inherit"), so these probes are about the boundary between a
+// stored number and no gap at all — the UI-side "0 means off" translation lives
+// at the control boundary and is tested in stylingControls.test.ts.
+describe("parseStylingValues — sectionGapPx", () => {
+  it("defaults to null, so a table nobody has touched has no gap", () => {
+    expect(parseStylingValues({}).sectionGapPx).toBeNull();
+    expect(DEFAULT_STYLING_VALUES.sectionGapPx).toBeNull();
+  });
+
+  it("keeps in-range integers, including both boundaries", () => {
+    for (const value of [SECTION_GAP_PX_MIN, 12, SECTION_GAP_PX_MAX]) {
+      expect(parseStylingValues({ sectionGapPx: value }).sectionGapPx).toBe(
+        value,
+      );
+    }
+  });
+
+  it("clamps out-of-range integers, both probes derived from the bounds", () => {
+    // Derived, never hard-coded: a literal here would silently become an
+    // in-range value if the ceiling ever moves, and the test would keep its
+    // name while asserting nothing (the lesson FONT_SIZE_PX_MAX taught).
+    expect(
+      parseStylingValues({ sectionGapPx: SECTION_GAP_PX_MIN - 1 }).sectionGapPx,
+    ).toBe(SECTION_GAP_PX_MIN);
+    expect(
+      parseStylingValues({ sectionGapPx: SECTION_GAP_PX_MAX + 1 }).sectionGapPx,
+    ).toBe(SECTION_GAP_PX_MAX);
+  });
+
+  it("clamps a 0 up to the minimum rather than reading it as off", () => {
+    // Deliberate, and it is the CONTROL boundary that maps 0 to null (see
+    // `fromSectionGapControlValue`), never this one — same split the outline
+    // width takes. So 0 is unreachable from the UI, and a hand-edited 0 in the
+    // metaobject degrades to the smallest real gap instead of silently
+    // becoming a second spelling of off. What matters is only that a stored 0
+    // never exists: it would emit the --section-gap presence class, adding no
+    // space AND standing the banded separator down.
+    expect(parseStylingValues({ sectionGapPx: 0 }).sectionGapPx).toBe(
+      SECTION_GAP_PX_MIN,
+    );
+  });
+
+  it("writes no override while it is off", () => {
+    expect(serializeStylingOverrides(parseStylingValues({}))).toEqual({});
+    expect(
+      serializeStylingOverrides(parseStylingValues({ sectionGapPx: 12 })),
+    ).toEqual({ sectionGapPx: 12 });
+  });
+
+  it("rejects non-integers, strings and non-finite numbers", () => {
+    for (const bad of [12.5, "12", NaN, Infinity, -Infinity, null, true, {}]) {
+      expect(parseStylingValues({ sectionGapPx: bad }).sectionGapPx).toBeNull();
     }
   });
 });

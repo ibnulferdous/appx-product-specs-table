@@ -97,6 +97,21 @@ export const OUTER_BORDER_WIDTH_PX_MAX = 12;
 export const OUTER_BORDER_RADIUS_PX_MIN = 1;
 export const OUTER_BORDER_RADIUS_PX_MAX = 48;
 
+// Space between COLLAPSIBLE sections (feature 80). Nullable with null = no gap,
+// so it takes the container knobs' law rather than the colors' "null = inherit":
+// there is no theme value for the space between our own disclosures. Minimum 1
+// for the same reason as the three above — a stored 0 would be a second spelling
+// of off, and off is what null already means.
+//
+// A px number rather than a keyword scale (contrast the column divider, feature
+// 79, where a width box could have fought the fixed 1px row rules). Nothing
+// clashes here — a gap is whitespace between blocks — and a merchant matching
+// their theme's rhythm needs a number, not three presets. Ceiling shared with
+// the radius: past ~48px the sections stop reading as one table, and the cost of
+// a large value is visible the instant it is picked.
+export const SECTION_GAP_PX_MIN = 1;
+export const SECTION_GAP_PX_MAX = 48;
+
 export type RowLayout = (typeof ROW_LAYOUTS)[number];
 export type MobileLayout = (typeof MOBILE_LAYOUTS)[number];
 export type SectionHeaderStyle = (typeof SECTION_HEADER_STYLES)[number];
@@ -133,6 +148,12 @@ export interface StylingValues {
   sectionHeaderStyle: SectionHeaderStyle;
   sectionsCollapsible: boolean;
   sectionsInitialState: SectionsInitialState;
+  // The one NULLABLE field among the section knobs, and null means "no gap" —
+  // the container knobs' vocabulary, not the colors' "inherit". Only the
+  // collapsible shape can express it (a flat section header is a table row,
+  // which takes no margin), so the rail hides its control while collapsing is
+  // off — without clearing the value.
+  sectionGapPx: number | null;
   rowDividerStyle: RowDividerStyle;
   columnDividerStyle: ColumnDividerStyle;
   density: Density;
@@ -176,6 +197,7 @@ export const STYLING_FIELD_NAMES = [
   "sectionHeaderStyle",
   "sectionsCollapsible",
   "sectionsInitialState",
+  "sectionGapPx",
   "rowDividerStyle",
   "columnDividerStyle",
   "density",
@@ -211,6 +233,7 @@ export const DEFAULT_STYLING_VALUES: StylingValues = Object.freeze({
   sectionHeaderStyle: SECTION_HEADER_STYLES[0],
   sectionsCollapsible: false,
   sectionsInitialState: SECTIONS_INITIAL_STATES[0],
+  sectionGapPx: null,
   rowDividerStyle: ROW_DIVIDER_STYLES[0],
   columnDividerStyle: COLUMN_DIVIDER_STYLES[0],
   density: DENSITIES[0],
@@ -294,7 +317,7 @@ function clamp(value: number, min: number, max: number): number {
  *
  * Numbers only — a non-integer, a numeric string, NaN or Infinity all degrade to
  * null (that field's stylesheet default) rather than to a guessed number. These
- * back the four `Int?` columns, which Prisma hands back as numbers, so unlike
+ * back the five `Int?` columns, which Prisma hands back as numbers, so unlike
  * `parseFontSize` there is no digit-string shape to accept.
  *
  * Shared by all four rather than repeated: they differ only in their bounds, and
@@ -366,6 +389,11 @@ export function parseStylingValues(input: unknown): StylingValues {
       raw.sectionsInitialState,
       SECTIONS_INITIAL_STATES,
       d.sectionsInitialState,
+    ),
+    sectionGapPx: parseBoundedInt(
+      raw.sectionGapPx,
+      SECTION_GAP_PX_MIN,
+      SECTION_GAP_PX_MAX,
     ),
     rowDividerStyle: parseKeyword(
       raw.rowDividerStyle,

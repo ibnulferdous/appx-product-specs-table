@@ -54,6 +54,7 @@ type TableStylingColumns = {
   sectionHeaderStyle: string | null;
   sectionsCollapsible: boolean;
   sectionsInitialState: string | null;
+  sectionGapPx: number | null;
   rowDividerStyle: string | null;
   columnDividerStyle: string | null;
   density: string | null;
@@ -106,6 +107,8 @@ export function stylingToDbColumns(values: StylingValues): TableStylingColumns {
       values.sectionsInitialState,
       d.sectionsInitialState,
     ),
+    // Already "null = default" like the container integers below.
+    sectionGapPx: values.sectionGapPx,
     rowDividerStyle: knob(values.rowDividerStyle, d.rowDividerStyle),
     columnDividerStyle: knob(values.columnDividerStyle, d.columnDividerStyle),
     density: knob(values.density, d.density),

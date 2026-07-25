@@ -46,6 +46,7 @@ const FULLY_OVERRIDDEN: StylingValues = {
   sectionHeaderStyle: "TEXT_ONLY",
   sectionsCollapsible: true,
   sectionsInitialState: "ALL_CLOSED",
+  sectionGapPx: 12,
   rowDividerStyle: "STRIPES",
   columnDividerStyle: "LINE",
   density: "COMPACT",
@@ -388,7 +389,7 @@ describe("totality — fully overridden", () => {
     );
   });
 
-  it("emits the full class list (all seven knobs + collapsible + both container flags)", () => {
+  it("emits the full class list (all seven knobs + collapsible + all three presence flags)", () => {
     expect(stylingToModifierClasses(FULLY_OVERRIDDEN)).toEqual([
       "appx-spec-table--layout-stacked",
       "appx-spec-table--mobile-same-as-desktop",
@@ -398,6 +399,7 @@ describe("totality — fully overridden", () => {
       "appx-spec-table--column-divider-line",
       "appx-spec-table--density-compact",
       "appx-spec-table--align-center",
+      "appx-spec-table--section-gap",
       "appx-spec-table--outer-border",
       "appx-spec-table--outer-radius",
     ]);
@@ -419,6 +421,45 @@ describe("totality — fully overridden", () => {
     });
     expect(radiusOnly).toContain("appx-spec-table--outer-radius");
     expect(radiusOnly).not.toContain("appx-spec-table--outer-border");
+  });
+
+  // Feature 80. The third presence flag, and the one that carries a rule for
+  // ANOTHER feature: it is what tells the banded section separator to stand
+  // down, so "emitted iff non-null" is the whole contract on both sides.
+  describe("section gap", () => {
+    it("emits the flag and the px var together, and only when the knob is set", () => {
+      const gapped = { ...DEFAULT_STYLING_VALUES, sectionGapPx: 12 };
+      expect(stylingToModifierClasses(gapped)).toContain(
+        "appx-spec-table--section-gap",
+      );
+      expect(stylingToCssVars(gapped)).toMatchObject({
+        "--appx-spec-section-gap": "12px",
+      });
+    });
+
+    it("emits neither while it is off — an untouched table declares no margin at all", () => {
+      expect(stylingToModifierClasses(DEFAULT_STYLING_VALUES)).not.toContain(
+        "appx-spec-table--section-gap",
+      );
+      expect(stylingToCssVars(DEFAULT_STYLING_VALUES)).not.toHaveProperty(
+        "--appx-spec-section-gap",
+      );
+    });
+
+    it("is independent of collapsing — the CSS, not the mapping, decides where it applies", () => {
+      // The rail hides the control while collapsing is off, but the value is
+      // PRESERVED (the hide-when-irrelevant law), so the mapping must keep
+      // emitting it. The flat shape simply has no section-group element for
+      // the rule to land on.
+      const flatWithGap = {
+        ...DEFAULT_STYLING_VALUES,
+        sectionsCollapsible: false,
+        sectionGapPx: 12,
+      };
+      expect(stylingToModifierClasses(flatWithGap)).toContain(
+        "appx-spec-table--section-gap",
+      );
+    });
   });
 });
 

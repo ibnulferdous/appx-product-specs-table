@@ -35,7 +35,7 @@ Everything upstream is done and live-verified on the dev store:
   persists to `TableStyling`, serializes to the metaobject, and renders on the storefront;
   rail a11y pass done; Reset-to-theme-defaults ships; docs reconciled.
 
-Test suite ~870 tests / 37 files; full gate (typecheck · lint · format · test · build) green.
+Test suite 914 tests / 37 files; full gate (typecheck · lint · format · test · build) green.
 
 Since B1: the Style tab's width surface — the collapsible rail (feature 76). Feature 75's
 full-size preview modal shipped the same day and was **removed 2026-07-25**; see Completed.
@@ -97,6 +97,72 @@ plan: `~/.claude/plans/style-tab-phase-b-implementation-plan.md` (1–12 = B1, 1
   headings, named landmark) + docs reconciliation. **Phase B1 complete.**
 - Resolved en route: the section-header BANDED band is the intended default becoming
   reachable, not a regression (accept; Step 7 signed off).
+
+**Section separation + section gap (feature 80, doc `80-…`) — ✅ shipped & fully
+live-verified 2026-07-26**
+- Merchant collapsed every section on the ACTIVE DJI template and the banded headers
+  rendered as **one unbroken grey slab** — no edge between adjacent bands. Root cause is
+  one Step 8 rule doing exactly what it says: `--section-banded` drops the summary's
+  `border-block-end` because "the band edge IS the separator", which is true when a band
+  is followed by ROWS and false when it is followed by ANOTHER BAND — a state only
+  collapsible sections can reach. **Not a regression from 77–79.** Two halves shipped
+  together: **A** a base-rule separator (no knob), **B** a `sectionGapPx` knob.
+  Migration `20260725181733_add_section_gap_styling`. **No Liquid change** — third
+  feature running that the "server precomputes, Liquid only prints" pipe paid for itself.
+- **A — `border-block-START`, not `-end`, and that is the whole trick.** The banded rule
+  owns the bottom edge of the very same element, so claiming the opposite side means the
+  two rules never contest a property: no specificity tie, **no source-order dependency**
+  (contrast feature 79, where the tie made file order load-bearing), no `!important`.
+  Reads `--appx-spec-border-color`, so it matches the row rules by construction — the
+  feature-79 call made again, no new swatch.
+- ⚠️ **`:not([open])` on the PRECEDING section is a no-repaint device, not a nicety.**
+  `ALL_OPEN` is the default initial state, so an unconditional rule would add a second
+  hairline above every band on every collapsible banded table already live. Scoped this
+  way, only the broken state changes — **measured**: a banded ALL_OPEN table renders
+  `border-block-start: 0px` throughout, exactly as before. Free bonus: `[open]` is a live
+  attribute, so the separator appears/disappears as a shopper toggles a section, with
+  **zero JavaScript** — verified on the storefront by clicking (`0px → 0.909091px` on
+  close, and back).
+  **Accepted gap:** an OPEN but EMPTY section (Step 9a's empty collapsible / feature 74
+  R3) renders a zero-height table, so its band still abuts the next. Closing it means
+  dropping `:not([open])` and repainting every default table — the law wins.
+- **B — `sectionGapPx Int?` (1–48, null = no gap)**, in **Sections** under "When the page
+  loads", as a **zero-means-off** box (the third, joining Outline width and Corner
+  radius). px not a keyword: nothing here can clash the way a column-rule width could, and
+  matching a theme's rhythm needs a number. `showsSectionGapControl` is the **6th** hide
+  rule and the second gated on `sectionsCollapsible` — for a harder reason than the
+  initial-state control: a gap is not merely meaningless in the flat shape, it is
+  **unexpressible**, since a flat section header is a `<tr>` and a `<tr>` takes no margin.
+  (🚫 The transparent-`border-block-start` approximation is rejected in writing: under
+  `border-collapse: collapse` the wider border wins the shared edge and would delete the
+  previous row's divider.) Inherited the preserve-on-hide law by adding one row to
+  `VISIBILITY_PREDICATES`.
+- **The third presence flag `--section-gap` earns its keep twice**, and one of those was a
+  **plan correction found during the build**: the gap rule is gated on the class rather
+  than left to `var(--…, 0)`, because an always-declared `margin-block-start: 0` from a
+  two-class selector **beats a theme's own element-level `details` margin** — inert as a
+  value, not as a declaration. Its other job is telling A's hairline to stand down once
+  whitespace already separates the bands. A test pins that the file declares
+  `margin-block-start` exactly once, inside that rule.
+- **Round-trip live-verified end to end** on the ACTIVE DJI template: rail → Save →
+  Postgres `sectionGapPx=12` → metaobject (`styling` overrides-only, `styling_css.classes`
+  ending `--section-gap`, `vars` = `--appx-spec-section-gap: 12px;`) → rendered Horizon
+  storefront (first section `margin-block-start: 0px`, all 8 others `12px`, every
+  `border-block-start` `0px`). Frame interaction probed live without saving: with
+  `--outer-border`/`--outer-radius` on, gaps survive inside the frame, `overflow: hidden`
+  engages, the last summary's bottom rule was already `0px` so nothing doubles, and width
+  stays 1440px (feature 77 unaffected). Mobile ≤749px checked in the editor's Mobile
+  preview: stacked, gap intact, no artifacts. Migration confirmed non-repainting (6 rows,
+  0 non-null). An isolated 6-case CSS harness against the real stylesheet ran **first**, so
+  the storefront pass was a confirmation rather than an exploration. Tests 892 → 914.
+  ⚠️ **`s-number-field` commits on blur, not per keystroke** — typing a value leaves the
+  help text and SaveBar untouched until focus leaves. Pre-existing (all three px boxes do
+  it); knowing it saves a false "the knob is dead" diagnosis.
+  **The DJI template is left saved with `Banded` + `Gap = 12`** (it had been on `Text
+  only`, which was the workaround for this bug). Revert = two controls.
+- Numbering: this takes **80**, so B2 starts at **81**. `sectionGapPx` must land in the B2
+  preset bundles alongside feature 78's five and feature 79's divider — banded +
+  collapsible + a gap **is** the "Accordion" preset.
 
 **Column divider (feature 79, doc `79-…`) — ✅ shipped & fully live-verified 2026-07-26**
 - Merchant sent two competitor spec tables (techlandbd, AppleGadgets) rendering a full
@@ -452,12 +518,13 @@ Multi-value applies to PRODUCT + COLLECTION only. No migrations needed for the 4
 ## Next Up
 
 1. **Reshell Phase B2** — built-in preset gallery (Style tab steps 13–14; **starts at feature
-   doc 80**, since 70 = stacked-semantics, 71 = sidebar inner-scroll, 72 = device-preview
+   doc 81**, since 70 = stacked-semantics, 71 = sidebar inner-scroll, 72 = device-preview
    mockups, 73 = desktop preview inner scroll, 74 = content-free tables, 75 = full-size preview
    modal (removed), 76 = collapsible Style rail, 77 = container stretch, 78 = width + outer
-   border, 79 = column divider — a retired number is still spent). **The five feature-78 fields
-   plus `columnDividerStyle` must be in the preset bundles** — those six are what make a
-   "Bordered / Grid" built-in preset possible. Then C (Settings display rules) → E (assignment
+   border, 79 = column divider, 80 = section separation + gap — a retired number is still
+   spent). **The five feature-78 fields plus `columnDividerStyle` and `sectionGapPx` must be in
+   the preset bundles** — those seven are what make "Bordered / Grid" and "Accordion" built-in
+   presets possible. Then C (Settings display rules) → E (assignment
    into the reshell) → F (top-bar status/save + cleanup).
 2. **Storefront table semantics in stacked layouts (feature 70)** — code shipped; screen-reader pass still owed (see Open Questions).
 3. **Editor page should not scroll at the document level** — the app document overflows the

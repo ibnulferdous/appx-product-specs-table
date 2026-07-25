@@ -22,6 +22,7 @@ import {
   fromLabelWidthControlValue,
   fromOuterBorderRadiusControlValue,
   fromOuterBorderWidthControlValue,
+  fromSectionGapControlValue,
   ZERO_MEANS_OFF_CONTROL_MIN,
   nextFontSizeForControl,
   parseCustomFontSizePx,
@@ -29,6 +30,7 @@ import {
   showsCustomFontSizeInput,
   showsLabelWidthControl,
   showsMobileLayoutControl,
+  showsSectionGapControl,
   showsSectionsInitialStateControl,
   showsTableAlignControl,
   toColorControlValue,
@@ -56,6 +58,8 @@ import {
   ROW_DIVIDER_STYLES,
   ROW_LAYOUTS,
   SECTIONS_INITIAL_STATES,
+  SECTION_GAP_PX_MAX,
+  SECTION_GAP_PX_MIN,
   SECTION_HEADER_STYLES,
   STYLING_FIELD_NAMES,
   STYLING_FONT_SIZES,
@@ -587,9 +591,10 @@ describe("the bounded numeric inputs (feature 57 Step 10b)", () => {
     expect(toLabelWidthControlValue(35)).toBe("35");
   });
 
-  // Outline width and Corner radius share one contract, so they are tested as
-  // one table rather than twice: both show `0` for off, both read anything at
-  // or below zero back as null, and NEITHER may ever hand a 0 to the model.
+  // Outline width, Corner radius and Section gap share one contract, so they
+  // are tested as one table rather than three times over: each shows `0` for
+  // off, each reads anything at or below zero back as null, and NONE of them
+  // may ever hand a 0 to the model.
   const ZERO_MEANS_OFF_BOXES = [
     {
       label: "outline width",
@@ -602,6 +607,12 @@ describe("the bounded numeric inputs (feature 57 Step 10b)", () => {
       from: fromOuterBorderRadiusControlValue,
       min: OUTER_BORDER_RADIUS_PX_MIN,
       max: OUTER_BORDER_RADIUS_PX_MAX,
+    },
+    {
+      label: "section gap",
+      from: fromSectionGapControlValue,
+      min: SECTION_GAP_PX_MIN,
+      max: SECTION_GAP_PX_MAX,
     },
   ];
 
@@ -619,11 +630,12 @@ describe("the bounded numeric inputs (feature 57 Step 10b)", () => {
   it.each(ZERO_MEANS_OFF_BOXES)(
     "reads 0 in the $label box as off, never as a 0 px value",
     ({ from, min }) => {
-      // These two converters do not clamp their floor. A stored 0 would be
+      // These three converters do not clamp their floor. A stored 0 would be
       // non-null, so it would trip the knob's presence flag while painting
-      // nothing: `--outer-border` drops the last row's bottom rule, and
-      // `--outer-radius` turns on `overflow: hidden`. Off has exactly one
-      // stored spelling and everything at or below zero reaches it.
+      // nothing: `--outer-border` drops the last row's bottom rule,
+      // `--outer-radius` turns on `overflow: hidden`, and `--section-gap`
+      // stands the banded section separator down. Off has exactly one stored
+      // spelling and everything at or below zero reaches it.
       expect(from("0")).toBeNull();
       expect(from("0.4")).toBeNull();
       expect(from("-5")).toBeNull();
@@ -699,6 +711,10 @@ describe("the bounded numeric inputs (feature 57 Step 10b)", () => {
       expect(
         parseStylingValues({ outerBorderRadiusPx: px }).outerBorderRadiusPx,
       ).toBe(px);
+    }
+    for (const raw of ["0", "-5", String(SECTION_GAP_PX_MAX + 1), "12"]) {
+      const px = fromSectionGapControlValue(raw);
+      expect(parseStylingValues({ sectionGapPx: px }).sectionGapPx).toBe(px);
     }
   });
 });
@@ -815,6 +831,21 @@ const VISIBILITY_PREDICATES: ReadonlyArray<{
     },
     hide: (styling) => ({ ...styling, tableMaxWidthPx: null }),
     preservedField: "tableAlign",
+  },
+  {
+    // The sixth (feature 80), and the second gated on `sectionsCollapsible` —
+    // for a harder reason than the initial-state control above. That one is
+    // merely meaningless without disclosures; a gap is UNEXPRESSIBLE, because
+    // a flat section header is a table row and a table row takes no margin.
+    name: "showsSectionGapControl",
+    predicate: showsSectionGapControl,
+    visible: {
+      ...DEFAULT_STYLING_VALUES,
+      sectionsCollapsible: true,
+      sectionGapPx: 12,
+    },
+    hide: (styling) => ({ ...styling, sectionsCollapsible: false }),
+    preservedField: "sectionGapPx",
   },
 ];
 

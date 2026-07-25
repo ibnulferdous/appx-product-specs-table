@@ -125,6 +125,7 @@ model TableStyling {
   sectionHeaderStyle   String? // "BANDED" (null default) | "TEXT_ONLY"
   sectionsCollapsible  Boolean @default(false)
   sectionsInitialState String? // "ALL_OPEN" (null default) | "FIRST_OPEN" | "ALL_CLOSED" — only meaningful when sectionsCollapsible
+  sectionGapPx         Int? // 1–48; null = no gap. Space between collapsible sections — only meaningful when sectionsCollapsible (a flat section header is a table row, which takes no margin)
   rowDividerStyle      String? // "LINES" (null default) | "STRIPES" | "NONE"
   columnDividerStyle   String? // "NONE" (null default) | "LINE" — the vertical rule at the label/value seam; fixed 1px, colored by borderColor. Suppressed in stacked layouts (no seam).
   density              String? // "DEFAULT" (null default) | "COMPACT" | "SPACIOUS"

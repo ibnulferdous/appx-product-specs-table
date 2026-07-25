@@ -67,6 +67,7 @@ export const SPEC_TABLE_CSS_VARS = Object.freeze({
   lineHeight: "--appx-spec-line-height",
   labelCase: "--appx-spec-label-transform",
   labelWidthPct: "--appx-spec-label-width",
+  sectionGapPx: "--appx-spec-section-gap",
   tableMaxWidthPx: "--appx-spec-table-max-width",
   outerBorderWidthPx: "--appx-spec-outer-border-width",
   outerBorderColor: "--appx-spec-outer-border-color",
@@ -134,13 +135,15 @@ export function stylingToCssVars(
 ): Record<string, string> {
   const vars: Record<string, string> = {};
 
-  // Container knobs first, matching `STYLING_FIELD_NAMES` order. All three are
-  // integer-clamped by Step 1, so the `px` suffix is appended to a validated
-  // number — the same posture as `fontSize`'s absolute override.
+  // The px knobs in `STYLING_FIELD_NAMES` order — the section gap, then the
+  // three container integers. All four are integer-clamped by Step 1, so the
+  // `px` suffix is appended to a validated number — the same posture as
+  // `fontSize`'s absolute override.
   //
   // `tableAlign` is absent here on purpose: it is a non-null keyword knob, so it
   // travels as a modifier class (see `stylingToModifierClasses`).
   const pxFields = [
+    "sectionGapPx",
     "tableMaxWidthPx",
     "outerBorderWidthPx",
     "outerBorderRadiusPx",
@@ -315,10 +318,16 @@ export function stylingToModifierClasses(values: StylingValues): string[] {
     densityClass(values.density),
     tableAlignClass(values.tableAlign),
   );
-  // Two PRESENCE FLAGS for knobs whose value already travels as a custom
+  // Three PRESENCE FLAGS for knobs whose value already travels as a custom
   // property. They exist because each one needs a rule that a value
   // substitution cannot express, and CSS cannot branch on whether a var is set:
   //
+  // - `--section-gap` carries the gap rule itself, rather than letting every
+  //   collapsible table declare `margin-block-start: var(--…, 0)`. An explicit
+  //   0 from a two-class selector would beat a theme's own element-level
+  //   `details` margin, restyling tables whose merchant never touched the knob.
+  //   It ALSO tells the feature-80 separator to stand down: once whitespace
+  //   separates the bands, the hairline between them is a stray line.
   // - `--outer-border` drops the LAST row's own bottom rule, which would
   //   otherwise sit directly on the wrapper's border and read as one thick
   //   line. Unconditionally dropping it would change every existing table.
@@ -329,6 +338,9 @@ export function stylingToModifierClasses(values: StylingValues): string[] {
   //
   // Same idiom as `--collapsible`: emitted only when the knob is set, so the
   // "null = default" rendering stays byte-identical to the pre-knob look.
+  if (values.sectionGapPx !== null) {
+    classes.push(`${BLOCK}--section-gap`);
+  }
   if (values.outerBorderWidthPx !== null) {
     classes.push(`${BLOCK}--outer-border`);
   }

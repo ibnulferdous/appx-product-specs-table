@@ -56,8 +56,9 @@ for (const values of [
   ...DENSITIES.map((density) => variant({ density })),
   ...TABLE_ALIGNMENTS.map((tableAlign) => variant({ tableAlign })),
   variant({ sectionsCollapsible: true }),
-  // The two container presence flags. Any non-null value produces the flag, so
-  // the specific numbers are irrelevant here — only that the flag is emitted.
+  // The three presence flags. Any non-null value produces the flag, so the
+  // specific numbers are irrelevant here — only that the flag is emitted.
+  variant({ sectionGapPx: 1 }),
   variant({ outerBorderWidthPx: 1 }),
   variant({ outerBorderRadiusPx: 1 }),
 ]) {
@@ -84,11 +85,109 @@ describe("spec-table.css ↔ styling vocabulary contract (feature 57 Step 3)", (
 
   it("covers the full producible class list (sanity: the loop above found every knob)", () => {
     // 2 layouts + 2 mobile + 2 section styles + 3 row dividers + 2 column
-    // dividers + 3 densities + 3 alignments + the collapsible flag + the two
-    // container presence flags (--outer-border, --outer-radius). If a knob
+    // dividers + 3 densities + 3 alignments + the collapsible flag + the three
+    // presence flags (--section-gap, --outer-border, --outer-radius). If a knob
     // gains a member, this count and the selector assertions below both move
     // together.
-    expect(producibleClasses.size).toBe(20);
+    expect(producibleClasses.size).toBe(21);
+  });
+
+  // --- Section separation + gap (feature 80) ---------------------------------
+  //
+  // Both rules are INVISIBLE when broken: the previews and the storefront share
+  // this file, so a break ships to both at once and reads as a design choice.
+  // The class-presence assertion above only proves `--section-gap` appears
+  // somewhere; these pin what each rule actually says.
+  describe("section separation", () => {
+    const SEPARATOR_SELECTOR =
+      ".appx-spec-table--collapsible.appx-spec-table--section-banded:not(\n" +
+      "    .appx-spec-table--section-gap\n" +
+      "  )\n" +
+      "  .appx-spec-table__section-group:not([open])\n" +
+      "  + .appx-spec-table__section-group\n" +
+      "  > .appx-spec-table__section-summary {";
+
+    it("draws a hairline from the shared border color between two closed bands", () => {
+      // Same swatch as the row rules and the column divider, so the separator
+      // matches them by construction rather than by a second color knob.
+      const start = css.indexOf(SEPARATOR_SELECTOR);
+      expect(start, "the feature 80 separator rule is missing").toBeGreaterThan(
+        -1,
+      );
+      const block = css.slice(start, css.indexOf("}", start));
+      expect(block).toContain(
+        "border-block-start: 1px solid\n" +
+          "    var(--appx-spec-border-color, rgba(0, 0, 0, 0.1));",
+      );
+    });
+
+    it("claims border-block-START, the side the banded rule does not own", () => {
+      // The banded summary rule sets `border-block-end: none` on this very
+      // element. Opposite sides means the two never contest a property — no
+      // specificity tie, no source-order dependency, no importance override.
+      // Flip this to -end and the separator becomes a fight it loses silently.
+      const start = css.indexOf(SEPARATOR_SELECTOR);
+      const block = css.slice(start, css.indexOf("}", start));
+      expect(block).not.toContain("border-block-end");
+    });
+
+    it("only fires when the PRECEDING section is closed (the no-repaint scope)", () => {
+      // ALL_OPEN is the default initial state. Drop `:not([open])` and every
+      // collapsible banded table already on a storefront gains a second
+      // hairline above every band — a repaint nobody asked for.
+      expect(css).toContain(
+        ".appx-spec-table__section-group:not([open])\n" +
+          "  + .appx-spec-table__section-group",
+      );
+    });
+
+    it("stands down when a gap is set", () => {
+      // With whitespace between the bands the hairline is a stray line across
+      // the top of every band but the first. This is the ONLY reason the
+      // --section-gap presence flag exists.
+      expect(SEPARATOR_SELECTOR).toContain(
+        ":not(\n    .appx-spec-table--section-gap\n  )",
+      );
+    });
+  });
+
+  describe("section gap", () => {
+    const GAP_RULE =
+      ".appx-spec-table--section-gap\n" +
+      "  .appx-spec-table__section-group:not(:first-child) {";
+
+    it("spaces every section but the first, from the presence-flagged var", () => {
+      const start = css.indexOf(GAP_RULE);
+      expect(start, "the feature 80 gap rule is missing").toBeGreaterThan(-1);
+      const block = css.slice(start, css.indexOf("}", start));
+      expect(block).toContain(
+        "margin-block-start: var(--appx-spec-section-gap, 0);",
+      );
+    });
+
+    it("is gated on the presence class, never declared for every table", () => {
+      // An unconditional `margin-block-start: var(--…, 0)` would beat a theme's
+      // own element-level `details` margin from a two-class selector, silently
+      // restyling tables whose merchant never touched this knob. So the whole
+      // file may declare this property EXACTLY ONCE, inside the flagged rule.
+      // (Anchored on the declaration form — two-space indent plus colon — so
+      // the prose above the rule is not mistaken for a second one.)
+      const declarations = css.match(/\n {2}margin-block-start:/g) ?? [];
+      expect(declarations).toHaveLength(1);
+      const start = css.indexOf(GAP_RULE);
+      const declaredAt = css.indexOf("\n  margin-block-start:");
+      expect(declaredAt).toBeGreaterThan(start);
+      expect(declaredAt).toBeLessThan(css.indexOf("}", start));
+    });
+
+    it("uses :not(:first-child), not the adjacent-sibling combinator", () => {
+      // Rows before the first section header render in a leading bare table,
+      // and `details + details` would skip that one boundary while still
+      // never adding a leading gap. This form covers both.
+      expect(css).toContain(
+        ".appx-spec-table__section-group:not(:first-child)",
+      );
+    });
   });
 
   // --- Column divider (feature 79) -------------------------------------------

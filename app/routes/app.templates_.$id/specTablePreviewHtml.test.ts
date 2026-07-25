@@ -487,8 +487,9 @@ describe("styling → preview document (feature 57 · Step 6)", () => {
   // pins that the preview carries all of them, not merely the six the Step 6
   // fixture happened to set — the pipe's totality through the now-complete
   // UI-reachable range. (Thirteen at Step 10; seventeen since the container
-  // knobs — the assertion is derived from SPEC_TABLE_CSS_VARS, so the count in
-  // this comment is the only thing that has to be maintained by hand.)
+  // knobs; eighteen since the section gap — the assertion is derived from
+  // SPEC_TABLE_CSS_VARS, so the count in this comment is the only thing that
+  // has to be maintained by hand.)
   it("carries every custom property for a fully-overridden value (Step 10 totality)", () => {
     const everyKnobSet: StylingValues = {
       ...DEFAULT_STYLING_VALUES,
@@ -506,6 +507,7 @@ describe("styling → preview document (feature 57 · Step 6)", () => {
       labelCase: "UPPERCASE",
       labelWidthPct: 35,
       outerBorderColor: "#88888840",
+      sectionGapPx: 12,
       tableMaxWidthPx: 880,
       outerBorderWidthPx: 3,
       outerBorderRadiusPx: 10,

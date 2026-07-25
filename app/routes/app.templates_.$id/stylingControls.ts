@@ -15,6 +15,8 @@ import {
   ROW_DIVIDER_STYLES,
   ROW_LAYOUTS,
   SECTIONS_INITIAL_STATES,
+  SECTION_GAP_PX_MAX,
+  SECTION_GAP_PX_MIN,
   SECTION_HEADER_STYLES,
   STYLING_FONT_SIZES,
   STYLING_FONT_STYLES,
@@ -285,6 +287,28 @@ export const SECTIONS_INITIAL_STATE_OPTIONS: ReadonlyArray<
 export function showsSectionsInitialStateControl(
   styling: StylingValues,
 ): boolean {
+  return styling.sectionsCollapsible;
+}
+
+/**
+ * Whether the rail shows the "Gap between sections" control.
+ *
+ * The SIXTH instance of hide-when-irrelevant, and the second gated on
+ * `sectionsCollapsible` — for a harder reason than the initial-state control
+ * above, which is merely meaningless without disclosures. This one is
+ * *unexpressible*: only the collapsible shape gives each section its own
+ * element to push away from its neighbour. In the flat shape a section header
+ * is a table row, and a table row takes no margin at all.
+ *
+ * (🚫 The tempting flat-shape approximation — a transparent `border-block-start`
+ * on the section cell — does not work either: under `border-collapse: collapse`
+ * the wider border wins the shared edge, so anything past 1px would silently
+ * delete the previous row's own divider. Rejected before it was built.)
+ *
+ * A pure READ like the other five, so the merchant's px value survives a trip
+ * through Collapsible-off and back on.
+ */
+export function showsSectionGapControl(styling: StylingValues): boolean {
   return styling.sectionsCollapsible;
 }
 
@@ -757,23 +781,24 @@ export function fromTableMaxWidthControlValue(raw: string): number | null {
   );
 }
 
-// --- The two "0 is what off LOOKS like" boxes --------------------------------
+// --- The three "0 is what off LOOKS like" boxes ------------------------------
 //
-// Outline width and Corner radius break the blank-box convention above, and
-// deliberately. Their off state is `null` like every other knob, but a blank box
-// is a poor way to say "none" on a control whose entire vocabulary is a px
-// number — a merchant who wants no frame reaches for 0, and one reading the rail
-// back wants to see what the value IS, not an absence. So here the display and
-// the storage are allowed to disagree: the box always holds a number, and `0` is
-// the number that means off. (Maximum width keeps the blank box — 0 is not a
-// spelling of "full width", so the same trick would be a lie there.)
+// Outline width, Corner radius and Section gap break the blank-box convention
+// above, and deliberately. Their off state is `null` like every other knob, but
+// a blank box is a poor way to say "none" on a control whose entire vocabulary
+// is a px number — a merchant who wants no frame reaches for 0, and one reading
+// the rail back wants to see what the value IS, not an absence. So here the
+// display and the storage are allowed to disagree: the box always holds a
+// number, and `0` is the number that means off. (Maximum width keeps the blank
+// box — 0 is not a spelling of "full width", so the same trick would be a lie
+// there.)
 //
 // The disagreement is one-directional and total, which is what keeps feature
 // 78's minimum-of-1 lock intact: 0 is NEVER stored. It is written for `null` on
 // the way out and read back as `null` on the way in, so there is still exactly
 // one stored spelling of off and `serializeStylingOverrides` still has nothing
-// to write. That is load-bearing rather than tidy, because BOTH knobs carry a
-// presence flag keyed on non-null (`tableStylingCss.ts`), and a stored 0 would
+// to write. That is load-bearing rather than tidy, because ALL THREE knobs carry
+// a presence flag keyed on non-null (`tableStylingCss.ts`), and a stored 0 would
 // trip it while painting nothing:
 //
 // - `--outer-border` drops the last row's own bottom rule, so a 0 px outline
@@ -781,6 +806,9 @@ export function fromTableMaxWidthControlValue(raw: string): number | null {
 // - `--outer-radius` turns on `overflow: hidden`, so a 0 px radius would round
 //   nothing AND start clipping an over-wide table — the exact trade that flag
 //   exists to avoid taking unasked.
+// - `--section-gap` (feature 80) tells the banded separator to stand down, so a
+//   0 px gap would add no space AND remove the hairline between closed section
+//   bands — the exact defect that rule exists to fix.
 //
 // Keeping 0 out of the model makes both unreachable by construction rather than
 // by a second guard downstream.
@@ -830,5 +858,13 @@ export function fromOuterBorderRadiusControlValue(raw: string): number | null {
     raw,
     OUTER_BORDER_RADIUS_PX_MIN,
     OUTER_BORDER_RADIUS_PX_MAX,
+  );
+}
+
+export function fromSectionGapControlValue(raw: string): number | null {
+  return fromZeroMeansOffControlValue(
+    raw,
+    SECTION_GAP_PX_MIN,
+    SECTION_GAP_PX_MAX,
   );
 }

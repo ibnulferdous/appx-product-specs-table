@@ -23,6 +23,7 @@ import {
   fromLabelWidthControlValue,
   fromOuterBorderRadiusControlValue,
   fromOuterBorderWidthControlValue,
+  fromSectionGapControlValue,
   fromTableMaxWidthControlValue,
   nextFontSizeForControl,
   parseCustomFontSizePx,
@@ -30,6 +31,7 @@ import {
   showsCustomFontSizeInput,
   showsLabelWidthControl,
   showsMobileLayoutControl,
+  showsSectionGapControl,
   showsSectionsInitialStateControl,
   showsTableAlignControl,
   toBoundedIntControlValue,
@@ -49,6 +51,7 @@ import {
   LINE_HEIGHTS,
   OUTER_BORDER_RADIUS_PX_MAX,
   OUTER_BORDER_WIDTH_PX_MAX,
+  SECTION_GAP_PX_MAX,
   STYLING_FONT_STYLES,
   STYLING_FONT_WEIGHTS,
   TABLE_MAX_WIDTH_PX_MAX,
@@ -418,6 +421,34 @@ export function StyleTab({ engine }: { engine: RowEngine }) {
                 </s-option>
               ))}
             </s-select>
+          )}
+
+          {/* Feature 80. Hidden alongside the control above, and for a harder
+            reason: a gap is not merely meaningless without disclosures, it is
+            unexpressible — a flat section header is a table row, and a table
+            row takes no margin. Also a pure read, so the px value survives the
+            round trip. Zero-means-off box, like Outline width and Corner
+            radius: 0 is exactly what "no gap" looks like on a px control. */}
+          {showsSectionGapControl(styling) && (
+            <s-number-field
+              label="Gap between sections"
+              suffix="px"
+              details={
+                styling.sectionGapPx === null
+                  ? "No gap between sections."
+                  : "Space between each collapsible section."
+              }
+              min={ZERO_MEANS_OFF_CONTROL_MIN}
+              max={SECTION_GAP_PX_MAX}
+              step={1}
+              value={toZeroMeansOffControlValue(styling.sectionGapPx)}
+              onChange={(event: Event) => {
+                setStylingField(
+                  "sectionGapPx",
+                  fromSectionGapControlValue(readValue(event)),
+                );
+              }}
+            />
           )}
         </s-stack>
       </div>

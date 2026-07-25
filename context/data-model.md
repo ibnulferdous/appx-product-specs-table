@@ -386,7 +386,9 @@ model TableStyling {
   sectionHeaderStyle   String?  // "BANDED" (null default) | "TEXT_ONLY"
   sectionsCollapsible  Boolean  @default(false)
   sectionsInitialState String?  // "ALL_OPEN" (null default) | "FIRST_OPEN" | "ALL_CLOSED" — only meaningful when sectionsCollapsible
+  sectionGapPx         Int?     // 1–48; null = no gap (feature 80). Space between collapsible sections — only expressible when sectionsCollapsible, since a flat section header is a <tr> and a <tr> takes no margin. Takes the container knobs' law below: null = the DEFAULT, minimum 1
   rowDividerStyle      String?  // "LINES" (null default) | "STRIPES" | "NONE"
+  columnDividerStyle   String?  // "NONE" (null default) | "LINE" (feature 79) — the vertical rule at the label/value seam; fixed 1px, colored by borderColor. Suppressed in stacked layouts (no seam)
   density              String?  // "DEFAULT" (null default) | "COMPACT" | "SPACIOUS"
 
   // Container knobs (feature 78). null = the DEFAULT, not "inherit the theme" —
