@@ -19,6 +19,40 @@
      media query comes LAST so it beats the desktop layout rules below the
      breakpoint. */
 
+/* --- Container stretch -----------------------------------------------------
+   The block must be as wide as the space the theme gives it, NOT as wide as
+   its own content.
+
+   Shopify wraps every app block in a div of its own, and a theme section that
+   centres its children (Horizon sets align-items: center on a column flex
+   container) turns that div into a shrink-to-fit flex item — so the rendered
+   width becomes the table's max-content width. Measured live on the dev store:
+   one 9-section table rendered 1264px with its sections open and 206px with
+   them closed, inside 1438px of available space. Opening a disclosure resized
+   the whole table.
+
+   The fix has to land on SHOPIFY's wrapper, not ours. Setting a width on
+   .appx-spec-table is a no-op here (verified): a percentage resolves against
+   the already-shrunk parent, and a child's percentage does not feed back into
+   the parent's intrinsic sizing. :has() is the only way to reach up from a
+   stylesheet that ships no markup of its own for that element.
+
+   align-self, NOT width: 100%, and the difference matters. In the column-flex
+   case both give the full 1438px, but align-self addresses the CROSS axis — so
+   in a theme that lays app blocks out in a ROW it applies to the height and
+   leaves the width alone, where width: 100% would make the block fight its
+   siblings. Verified both ways. justify-self covers the same case for a grid
+   parent; it is inert in flex.
+
+   Deliberately NOT scoped to a modifier class: a table that resizes when a
+   shopper opens a section is wrong in every theme, so this is a base rule, not
+   a knob. The max-width / alignment knobs layer on top of it. Browsers without
+   :has() simply keep the old content-driven behaviour. */
+.shopify-app-block:has(> .appx-spec-table) {
+  align-self: stretch;
+  justify-self: stretch;
+}
+
 .appx-spec-table {
   margin-block: 1rem;
 }
