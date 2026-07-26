@@ -192,6 +192,27 @@ Rendered in the **left controls panel** beside the stage (see Layout). Design mo
 
 #### Style rail (top → bottom, disclosure groups)
 
+> ⚠️ **Group structure superseded 2026-07-26 by feature 86 (`context/features/86-…`).** The list below is the ORIGINAL grouping and is kept for the per-knob detail, which is all still accurate — domains, the alpha lock, the 10–184 ceiling, the `fontWeight` scope resolution. **The grouping itself is not.** The rail shipped with six groups cut on TWO axes at once: four by OBJECT (Layout / Size & frame / Sections / Rows) and two by CSS PROPERTY (Colors / Typography). That put `headerBgColor` ~20 controls from the select that makes the band visible and left the label column with its weight in Typography, its colors in Colors, and no group of its own.
+>
+> **The rail now carries EIGHT groups cut on the object axis alone**, each ending with its own colors ("structure knobs, then colors"):
+>
+> | # | Group | knobs |
+> | --- | --- | --- |
+> | 1 | Table layout | `rowLayout` · `gridMinColumnWidthPx` · `mobileLayout` · `labelWidthPct` |
+> | 2 | Table size & frame | `tableMaxWidthPx` · `tableAlign` · `outerBorderWidthPx` · `outerBorderRadiusPx` · `outerBorderColor` |
+> | 3 | Table text | `fontSize` (+ Custom px) · `fontStyle` · `lineHeight` |
+> | 4 | Section headers | `sectionHeaderStyle` · `headerFontSizePx` · `headerFontWeight` · `headerCase` · `headerPaddingBlockPx` · `headerBgColor` · `headerTextColor` |
+> | 5 | Collapsible sections | `sectionsCollapsible` · `sectionsInitialState` · `sectionGapPx` |
+> | 6 | Rows | `rowDividerStyle` · `columnDividerStyle` · `density` · `stripeBgColor` · `borderColor` |
+> | 7 | Labels | `fontWeight` · `labelCase` · `labelBgColor` · `labelTextColor` |
+> | 8 | Values | `valueBgColor` · `valueTextColor` |
+>
+> Placement is decided by **where the CSS var lands**, not by what the control sounds like — `font-size`/`font-style`/`line-height` sit on `.appx-spec-table__table` (Table text) while `font-weight`/`text-transform` sit on `.appx-spec-table__label` (Labels). Verify against `spec-table.css` before filing a new knob.
+>
+> Also superseded: **Colors is "seven swatches" below; there are NINE.** `headerTextColor` (feature 81) and `outerBorderColor` (the table outline) landed after this spec was written. The alpha lock still holds as stated — on for the surface colors, off for the text colors.
+>
+> **Style presets (item 1) still sits ABOVE all eight groups** when B2 lands; feature 86 deliberately preceded B2 so presets arrive onto an organised rail rather than adding a group to a disorganised one.
+
 1. **Style presets** — the same preset cards in-editor: clicking one **overwrites the knobs in editor state** (copy; undoable via SaveBar Discard). Show a "Customized" hint once knobs diverge from the picked preset (`basedOnPreset` is provenance only). **Save as preset** _(phase 2)_ promotes the current values into the shop's saved-preset library (`StylePreset`); same-name save = overwrite after confirm — presets are "edited" by save-as-again, never in a separate editor.
 2. **Layout** — Row layout: `Two-column | Stacked` (`rowLayout`). Label width % **number field** (bounded 20–80, `%` suffix), **visible for two-column only** (`labelWidthPct`; value % = 100 − label %). _(Amended 2026-07-19, before Step 10's code: this read "slider". **Polaris web components ship no slider/range element** — verified against `@shopify/polaris-types`; the bounded field primitives are `s-number-field` / `s-text-field` / `s-color-field`. A hand-rolled `<input type="range">` would look foreign in a Polaris rail and owe its own a11y pass, so the bounded number field is the locked shape. The intent — a bounded label-width control, two-column only — is unchanged.)_ On mobile: `Stacked (default) | Same as desktop` (`mobileLayout`, meaningful for two-column only — stacked desktop is already stacked everywhere).
 3. **Sections** — Header style: `Banded | Text only` (`sectionHeaderStyle`). Collapsible: off/on (`sectionsCollapsible` — storefront renders native `<details>/<summary>`: zero JS, keyboard + SR support for free). Initially: `All open | First open | All closed` (`sectionsInitialState`, visible only when collapsible).

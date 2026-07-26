@@ -32,7 +32,11 @@ import {
   parseStylingValues,
   type StylingFieldName,
 } from "../../utils/tableStyling";
-import { COLOR_KNOBS } from "./stylingControls";
+import {
+  COLOR_KNOBS,
+  STYLE_GROUP_HEADINGS,
+  type StyleGroupId,
+} from "./stylingControls";
 
 const source = readFileSync(
   fileURLToPath(new URL("./StyleTab.tsx", import.meta.url)),
@@ -169,5 +173,104 @@ describe("feature 86 — the Style rail separates its groups", () => {
     for (const stack of innerGaps) {
       expect(stack).toContain('gap="base"');
     }
+  });
+});
+
+// Feature 86 Step 4 — the move. `STYLE_GROUP_HEADINGS` became the rail's
+// vocabulary in Step 2, but until Step 4 nothing rendered from it, so it could
+// drift from the rail without any test noticing. These pin the two directions of
+// that binding, plus the one hole the move itself opened.
+describe("feature 86 — the Style rail renders all eight groups", () => {
+  const GROUP_IDS = Object.keys(STYLE_GROUP_HEADINGS) as StyleGroupId[];
+
+  it("renders a group for every id in STYLE_GROUP_HEADINGS", () => {
+    // Catches the half-done move: an id declared in the vocabulary, referenced
+    // by a `COLOR_KNOBS` entry, and never given a wrapper in the rail.
+    const missing = GROUP_IDS.filter(
+      (id) => !body.includes(`headingId("${id}")`),
+    );
+
+    expect(missing).toEqual([]);
+    expect(GROUP_IDS.length).toBe(8);
+  });
+
+  it("takes every heading FROM the vocabulary rather than retyping it", () => {
+    // The direction that keeps the two in sync. A hardcoded `<s-heading>Labels`
+    // would render correctly today and then silently disagree with
+    // `STYLE_GROUP_HEADINGS` the first time a heading is reworded — and the
+    // vocabulary is what `ColorKnob.group` is documented against.
+    for (const id of GROUP_IDS) {
+      expect(body).toContain(`STYLE_GROUP_HEADINGS.${id}`);
+    }
+  });
+
+  it("renders the swatches of every group that has any", () => {
+    // ⚠️ THE HOLE STEP 4 OPENED, and the reason this file needed a fourth
+    // assertion at all. The drop guard above proves a color is reachable via
+    // `COLOR_KNOBS`, which was airtight while ONE `.map` rendered the whole
+    // list. Step 4 renders five FILTERED grids instead, so dropping a single
+    // `{colorGrid("values")}` line would strip two swatches from the rail while
+    // `COLOR_KNOBS` still appeared five times and every existing test still
+    // passed.
+    //
+    // Derived from the data, not hand-listed: a knob refiled into a sixth group
+    // makes this fail until that group's grid is rendered.
+    const groupsWithSwatches = [...new Set(COLOR_KNOBS.map((k) => k.group))];
+    const unrendered = groupsWithSwatches.filter(
+      (group) => !body.includes(`colorGrid("${group}")`),
+    );
+
+    expect(unrendered).toEqual([]);
+    expect(groupsWithSwatches.length).toBeGreaterThan(1); // guards the guard
+  });
+
+  it("leaves no group able to collapse to a bare heading", () => {
+    // Feature 86 Step 5. Seven of the 34 controls are behind a hide rule, and
+    // the move redistributed them — `showsCustomFontSizeInput` landed in a group
+    // of four, both `sectionsCollapsible` rules landed in a group of THREE. If
+    // every control in some group were guarded, that group could render as a
+    // heading and a divider fencing nothing: a merchant would see an empty
+    // section and read it as a broken screen, and a screen-reader user would
+    // enter a `role="group"` with no members.
+    //
+    // Counted rather than parsed. Each guard in this file wraps exactly one
+    // control — pinned globally by the next assertion — so a group with more
+    // controls than guards must have at least one that always renders.
+    const blocks = body.split(/<div\s+role="group"/).slice(1);
+    expect(blocks.length).toBe(8);
+
+    const thin = blocks
+      .map((block, index) => {
+        const controls = (
+          block.match(
+            /<s-select\b|<s-number-field\b|<s-switch\b|colorGrid\(/g,
+          ) ?? []
+        ).length;
+        const guards = (block.match(/\{shows[A-Za-z]+\(/g) ?? []).length;
+        return { index, controls, guards };
+      })
+      .filter((group) => group.controls <= group.guards);
+
+    expect(thin).toEqual([]);
+  });
+
+  it("wraps exactly one control per hide rule", () => {
+    // What makes the count above sound. Seven guards for seven predicates
+    // (`stylingControls.test.ts` pins the registry at 7): if a guard ever
+    // wrapped two controls, `controls > guards` would stop implying that an
+    // unguarded control exists, and the assertion above would silently weaken
+    // from a real check to an arithmetic accident.
+    const guards = body.match(/\{shows[A-Za-z]+\(/g) ?? [];
+    expect(guards.length).toBe(7);
+  });
+
+  it("has retired the Colors group's note", () => {
+    // The note ("Leave a swatch empty to inherit that color from your theme")
+    // described a group that no longer exists, and was WRONG for four of the
+    // nine swatches — `outerBorderColor` inherits from `borderColor`, not from
+    // the theme. Per-swatch `emptyHelpText` replaced it. Left behind, it would
+    // be an `aria-describedby` pointing at a stale, inaccurate sentence.
+    expect(body).not.toContain("inherit that color from your theme");
+    expect(body).not.toContain("colors-note");
   });
 });

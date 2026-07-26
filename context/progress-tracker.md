@@ -40,9 +40,11 @@ Test suite 986 tests / 38 files; full gate (typecheck · lint · format · test 
 Since B1: the Style tab's width surface — the collapsible rail (feature 76). Feature 75's
 full-size preview modal shipped the same day and was **removed 2026-07-25**; see Completed.
 
-**Next:** 🛠️ **feature 86 (Style tab reorganization) is IN PROGRESS and lands BEFORE
-B2** (merchant decision 2026-07-26 — presets should ship onto an organized rail, not the
-reverse). Six steps; **Step 1 done**, steps 2–6 outstanding. Doc `86-…`.
+**Next:** ✅ **feature 86 (Style tab reorganization) is COMPLETE** — all six steps, shipped
+2026-07-26, and it landed BEFORE B2 by merchant decision so presets arrive onto an
+organised rail rather than adding a group to a disorganised one. The rail now carries
+**eight groups on one axis** (the object being styled), each ending with its own colors.
+Doc `86-…`. B2's preset cards slot in ABOVE all eight.
 
 Then: ⚠️ **feature 85 (multi-column row flow) is BUILT but not signed off** — the
 feature-70 screen-reader pass it was gated on was skipped at the merchant's instruction
@@ -76,7 +78,7 @@ plan: `~/.claude/plans/style-tab-phase-b-implementation-plan.md` (1–12 = B1, 1
 
 > One line per unit. Detail → the linked `context/features/` doc + git history.
 
-**Style tab reorganization (feature 86, doc `86-…`) — 🛠️ IN PROGRESS, Step 3 of 6 done
+**Style tab reorganization (feature 86, doc `86-…`) — ✅ COMPLETE, all 6 steps
 2026-07-26**
 - Merchant reported the Style rail as unorganized and sent two Shopify theme-editor
   screenshots as the target. Root cause: the rail's six groups are cut on **two axes at
@@ -210,8 +212,89 @@ plan: `~/.claude/plans/style-tab-phase-b-implementation-plan.md` (1–12 = B1, 1
   ⚠️ **Tooling correction:** mouse-wheel scroll does **not** reach the rail inside the admin
   iframe — the earlier session note claiming it did was wrong. Click a control and `Tab`;
   the scroll container follows focus. Each `s-color-field` takes **two** tab stops.
-- **Remaining:** Step 4 the move; Step 5 conditional-state + a11y pass; Step 6 lock
-  reconciliation + docs.
+- ✅ **Step 4 — the move** (1006 → 1010 tests). Six groups became **eight**, `Colors` and
+  `Typography` dissolved, all 34 controls now on one axis — the object being styled:
+  Table layout (4) · Table size & frame (5) · Table text (4) · Section headers (7) ·
+  Collapsible sections (3) · Rows (5) · Labels (4) · Values (2). Every group ends with its
+  own colors, which is the one rule a merchant learns once: **structure knobs, then
+  colors.** Headings render FROM `STYLE_GROUP_HEADINGS`, so the Step 2 vocabulary finally
+  has a consumer instead of drifting unobserved.
+- **`colorGrid(group)` is a plain function, not a component.** The nine swatches were one
+  `.map` and are now five FILTERED grids — filtering, never reordering, which is what lets
+  `COLOR_KNOBS` stay in `STYLING_FIELD_NAMES` order. Called as `{colorGrid("labels")}`
+  rather than `<ColorGrid/>` because a component declared inside `StyleTab` is a new type
+  every render and would remount its subtree, losing focus and any half-typed hex; not
+  hoisted to module scope either, since it closes over `styling` + `setStylingField`.
+  `tableFrame`'s single swatch still renders 2-up (half width, gap beside it) — a
+  full-width lone swatch would make Outline color the only differently-sized color input in
+  the rail.
+- ⚠️ **The move opened a hole the Step 1 drop guard cannot see, and it is closed.** That
+  guard proves a color is reachable via `COLOR_KNOBS`, which was airtight while ONE `.map`
+  rendered the whole list; with five filtered grids, deleting a single
+  `{colorGrid("values")}` strips two swatches while `COLOR_KNOBS` still appears five times
+  and every pre-Step-4 test passes. Four tests added, all derived from data rather than
+  hand-listed: every `STYLE_GROUP_HEADINGS` id has a group; every heading is taken FROM the
+  vocabulary rather than retyped (a hardcoded `<s-heading>Labels` renders fine today and
+  silently disagrees the first time a heading is reworded); every group with swatches
+  renders its grid; and the Colors note is gone. ✅ **Mutation-tested** — deleting
+  `{colorGrid("values")}` fails and the diff names `values`.
+- **Live-verified** top to bottom on the DRAFT `Motorola Moto G45 5G` (nothing saved,
+  SaveBar never appeared; storefront preview pixel-identical to before the move, which is
+  the zero-diff claim holding in practice). ✅ **The Step 2 transient regression is
+  resolved** — the three `Background` and two `Text color` swatches now each sit under
+  their own announced heading, and Labels' pair vs Values' pair reads cleanly across a
+  heading plus a rule, which is exactly the bet the short-label decision made. ✅ `Outline
+  color` sits under Outline width reading **"Follows Divider color."**
+  ⚠️ **`Collapsible sections` collapses to a heading + one switch** while collapsing is
+  off, and the heading nearly restates the switch label. It earns itself at three controls
+  when on. **Step 5 decides** — recorded as a live observation, not acted on.
+- ✅ **Step 5 — conditional state + a11y** (1010 → 1012 tests). The move redistributed the
+  seven hide-gated controls — `showsCustomFontSizeInput` into a group of four, BOTH
+  `sectionsCollapsible` rules into a group of three — so the new risk was a group whose
+  every control is gated rendering as **a heading and a divider fencing nothing**: an empty
+  section a merchant reads as broken, and a `role="group"` with no members. Pinned as a
+  static test over all **2⁷ combinations**, which beats live toggling (that only samples).
+  Counted rather than parsed, and the soundness condition — each guard wraps exactly one
+  control — is itself asserted at 7 against the registry count; without it the first
+  assertion decays from a real check into an arithmetic accident.
+- **All seven predicates toggled LIVE and correct**, count unchanged at 7 (feature 86 added
+  none, and the rail-side guard now cross-checks the number from the JSX as well as the
+  registry): Stacked/Grid hide On mobile + Label column width · Grid shows Minimum column
+  width · Maximum width 960 shows Alignment · Text size Custom shows Custom size seeded 16
+  · Enable collapsing shows Sections start + Gap. Thinnest state seen live is `Table
+  layout` under Stacked — heading + `Row layout` alone — and it reads as a group, not an
+  empty section. **All changes discarded; nothing saved.**
+- ✅ **`Collapsible sections` KEPT** (the Step 4 open question). At three controls it is
+  unambiguously a group; at one it is a heading plus a switch that nearly restates it. Kept
+  because the redundancy is the standard settings idiom (a section named X whose first
+  control enables X), the thin state is the one where the merchant has least to do there,
+  and merging back would rebuild the eight-control group the merchant asked to split.
+- ⚠️ **Two Polaris limits found and accepted.** `s-heading` takes **no level prop** (only
+  `accessibilityRole`), so the panel title and all eight group headings are peers rather
+  than nested — pre-existing, not an 86 regression, and `role="group"` + `aria-labelledby`
+  is what carries the structure; wrapping groups in `s-section` to get levels would add
+  card chrome the rail does not want. `s-divider` extends only `GlobalProps` (no
+  `accessibilityVisibility`), so it cannot be marked decorative — Polaris's call, and a
+  separator between groups is semantically honest anyway. Also: **`s-number-field` commits
+  on blur, not per keystroke** — worth knowing before reading a hide rule as broken.
+- ✅ **Step 6 — lock reconciliation + docs.** `StyleTab.tsx`'s header comment narrated the
+  rail as a sequence of feature-57 steps ("first three groups — Layout · Sections · Rows",
+  "Step 10a adds the Colors group") and described a rail that no longer exists. Rewritten
+  around the **organising rule** plus the four invariants a future knob must respect: one
+  axis (the object), every group ending with its colors; placement decided by **where the
+  CSS var lands**, checked against `spec-table.css`; the headings are load-bearing; and no
+  group may consist entirely of hide-gated controls. Still-true material kept (no contrast
+  checking, no generic control wrapper, the `""`-to-null rule, the a11y decisions).
+  The two `stylingControls.ts` locks needed no work — Step 2 rewrote them when the labels
+  actually shortened; re-read and correct as written.
+- **`admin-screen-plan.md` §Tab 2 amended, not rewritten.** Its "Style rail (top → bottom)"
+  list is the original grouping — now wrong about structure, still right about every knob —
+  so a superseding note was added at the head of the list (the convention the doc already
+  uses for its 2026-07-19 amendments) carrying the eight-group table and the var-placement
+  rule. It also fixes two drifts the list had accumulated independently of feature 86:
+  ⚠️ it says **"seven" colors when there are NINE** (`headerTextColor` from feature 81 and
+  `outerBorderColor` both post-date the spec), and it records that **Style presets still
+  sits ABOVE all eight groups** when B2 lands — the reason 86 deliberately preceded B2.
 
 **Style tab — Reshell Phase B1 (feature 57, steps 1–12; docs `57-…`–`69-…`)**
 - Step 1 (`57-…`): pure styling domain `app/utils/tableStyling.ts` — allowed-value arrays,
