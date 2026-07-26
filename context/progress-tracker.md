@@ -35,12 +35,16 @@ Everything upstream is done and live-verified on the dev store:
   persists to `TableStyling`, serializes to the metaobject, and renders on the storefront;
   rail a11y pass done; Reset-to-theme-defaults ships; docs reconciled.
 
-Test suite 943 tests / 37 files; full gate (typecheck · lint · format · test · build) green.
+Test suite 981 tests / 37 files; full gate (typecheck · lint · format · test · build) green.
 
 Since B1: the Style tab's width surface — the collapsible rail (feature 76). Feature 75's
 full-size preview modal shipped the same day and was **removed 2026-07-25**; see Completed.
 
-**Next:** B2 = steps 13–14 (built-in preset gallery: `stylePresets.ts` constants, rail
+**Next:** ⚠️ **feature 85 (multi-column row flow) is BUILT but not signed off** — the
+feature-70 screen-reader pass it was gated on was skipped at the merchant's instruction
+and is still owed, plus two small live checks (see Next Up item 4). It cleared B2's
+`ROW_LAYOUTS` blocker, so B2 = steps 13–14 can proceed
+(built-in preset gallery: `stylePresets.ts` constants, rail
 preset cards, skippable creation-gallery popup — **copy** semantics into real `TableStyling`
 columns, `basedOnPreset` as provenance only). `basedOnPreset` / `extraStyles` exist in the
 schema, deliberately unwritten until Step 13. Then Phase C (Settings display rules) → E
@@ -97,6 +101,97 @@ plan: `~/.claude/plans/style-tab-phase-b-implementation-plan.md` (1–12 = B1, 1
   headings, named landmark) + docs reconciliation. **Phase B1 complete.**
 - Resolved en route: the section-header BANDED band is the intended default becoming
   reachable, not a regression (accept; Step 7 signed off).
+
+**Multi-column row flow (feature 85, doc `85-…`) — 🛠️ BUILT & live-verified
+2026-07-26, ⚠️ NOT SIGNED OFF (feature-70 screen-reader pass still owed)**
+- Merchant sent five competitor spec tables laying rows out in 2–3 side-by-side tracks.
+  Ships "Type A" only (the unit laid out is one label/value pair); section-level flow is
+  out of scope with a recorded reason. `GRID` joins `ROW_LAYOUTS` (appended, never
+  inserted) + one nullable `gridMinColumnWidthPx` (160–640, null = the stylesheet's
+  240px). Migration `20260726100927_add_grid_min_column_width_styling`, confirmed
+  non-repainting (6 rows, 0 affected). **No Liquid, no TOML, no markup change** — the
+  fifth feature running that the "server precomputes `styling_css`; Liquid only prints"
+  pipe paid for. Tests 943 → 981.
+- ⚠️ **Built ahead of its own blocker at the merchant's instruction.** The doc gates this
+  on feature 70's screen-reader pass (item 3 in Next Up) because GRID is the THIRD
+  departure from `display: table` riding on an ARIA chain no assistive tech has ever
+  confirmed. The pass is still owed. One new data point in its favour: Chrome's
+  accessibility tree was read on the live storefront under `display: grid` and still
+  exposes table/rowgroup/row/rowheader/cell — the roles survive the display change.
+  That is not the same as a screen reader ANNOUNCING the pairs, which is what feature 70
+  actually owes.
+- **A minimum column width, never a column count** — `repeat(auto-fit, minmax(min(var(…,
+  240px), 100%), 1fr))`. Responsiveness with no media query, no unreadable 3-tracks-in-a-
+  600px-theme case, and it is what keeps the ~640px editor preview honest (a count knob
+  would render "3 columns" there and on a 1400px storefront while looking nothing alike).
+- 🔴 **Three plan corrections, all found by the CSS harness and all invisible when
+  broken** — the full write-up is the build log at the top of `85-…`:
+  (1) the **stripe stand-down LOST on specificity**, not source order — the plan's "they
+  tie" math missed the fill rule's `:nth-child` and `__row`, so the specced 3-part
+  selector never won and the checkerboard painted anyway; the shipped rule mirrors the
+  fill rule's shape (5 parts) and additionally stops the broad form wiping a merchant's
+  own `labelBgColor` / `valueBgColor`; (2) a bare `minmax(<min>, 1fr)` **overflows** when
+  the minimum exceeds the container — measured 25px at 400 and 265px at 640 in a 375px
+  container, both reachable from the rail's range — fixed with `min(…, 100%)`;
+  (3) the **`--outer-border` last-row exception is wrong in grid** (it assumes the last
+  DOM row is the row against the frame; measured `1px,1px,1px,0px` across the final track
+  row), so it now stands down via `:not(--layout-grid)` on all three of its selectors.
+- **The height win is real but ~half the plan's claim, and it peaks at the default.**
+  Measured on the live 44-row DJI storefront, all sections open, 1440px: TWO_COLUMN 3963px
+  → GRID@240 **2848px (−28%, ~1100px, about one screen)**. Not the "44 rows becomes ~15"
+  the plan assumed, because **a grid row is as tall as its tallest member** and this
+  catalog is ragged (value heights median 43px, max 536px). ⚠️ Going BELOW 240 makes it
+  worse (@160 = 2893px): narrower tracks wrap long values more. Empirical vindication of
+  the 240 default, and the guidance to give a merchant who assumes narrower = shorter.
+- **Rail:** third Row layout option; new **Minimum column width** box (blank = 240, the
+  blank-box idiom — 0 clamps UP to the floor rather than meaning "off", unlike Outline
+  width); hide-rule count **6 → 7** (`showsGridMinColumnWidthControl`, registered in
+  `VISIBILITY_PREDICATES` so it inherits preserve-on-hide); `showsMobileLayoutControl`
+  narrowed `!== "STACKED"` → `=== "TWO_COLUMN"`; `showsLabelWidthControl` hides for GRID
+  for free. **Stripes is hidden in Grid** (merchant call) via `rowDividerOptionsFor`, the
+  rail's first per-option hide — deliberately NOT in `VISIBILITY_PREDICATES`, which
+  governs whole controls. Its orphan case (a merchant already on Stripes who switches to
+  Grid) keeps the entry visible and labelled rather than blanking the select or coercing
+  the value.
+- **Round-trip live-verified end to end** on the ACTIVE DJI template: rail → Save →
+  Postgres → metaobject (`styling` overrides-only carrying `rowLayout`/`gridMinColumnWidthPx`;
+  `classes` carrying `--layout-grid` in field order and the **same length as before** —
+  the no-new-presence-flag claim measured on the wire; `vars` carrying
+  `--appx-spec-grid-min-column: 400px`) → rendered Horizon storefront (3 × 480px tracks
+  in 1440px, page overflow 0, 9 disclosures intact). Section header spanning every track,
+  stripe stand-down, and the dropped column divider all re-verified against the production
+  stylesheet. An all-`TWO_COLUMN` control measured **394px before and after**.
+  **Left saved with Grid + minimum 400** (revert = two controls; consider clearing the
+  400, since 240 measured materially shorter).
+- ✅ **Both deferred live checks closed on a second pass 2026-07-26.** (1) The **Stripes
+  orphan renders as specced** on the Moto G35 template (saved `TWO_COLUMN` + `STRIPES`):
+  switching to Grid leaves the select reading "Stripes" with "Stripes do not apply in Grid
+  layout. Pick Lines or None." rather than going blank, the orphan is the TRAILING entry
+  after Lines/None (walked with the keyboard), picking another member **drops it for
+  good**, and the preview's stripe fill vanished the moment Grid was picked — the CSS
+  stand-down is visible in the preview surface too. Template left untouched via Discard,
+  re-read from Postgres to confirm. (2) **Mobile measured at a genuine narrow viewport**
+  (the storefront sends `frame-ancestors 'none'`, so the probe is the real markup + the
+  real CDN-deployed stylesheet in a `srcdoc` iframe): **overflow 0 at every width**, and
+  the doc's "no media query" claim **splits in two** — above 749px `auto-fit` genuinely
+  collapses on its own (1 track at 800px), but at/below 749px the pre-existing
+  `--mobile-stacked` rule is later in the file, wins, and turns the grid OFF in favour of
+  the stacked layout. Same look, different mechanism. On the `--mobile-same-as-desktop`
+  path (rule-less, and reachable because the rail hides that control without clearing it)
+  the grid DOES stay on and `min(…, 100%)` holds it to one 356px track at 375px and one
+  301px track at 320px even with a 640px minimum — which is what makes build-log fix 2 a
+  real shipping guard rather than a theoretical one.
+- ⚠️ **The backtick trap fired for the second feature running** (81 recorded it first): a
+  comment written for the stripe rule contained a backticked snippet, which breaks the
+  `previewStyles.ts` mirror. The mirror is now regenerated by a script that REFUSES to run
+  when the CSS contains a backtick, rather than relying on remembering.
+- ⚠️ **The stale-Prisma-client trap did NOT fire this time, because the dev server was
+  restarted before the first save** — the discipline works. Restarting also let
+  `prisma generate` complete without the usual `EPERM … query_engine-windows.dll.node`,
+  since the running server was what held the lock.
+- Numbering: takes **85**; 82/83/84 stay reserved. `gridMinColumnWidthPx` + `GRID` must
+  land in the B2 preset bundles (13 fields now), and B2 must assert **no bundle ships
+  `GRID` + `STRIPES`**.
 
 **Section header typography & spacing (feature 81, doc `81-…`) — ✅ shipped & fully
 live-verified 2026-07-26**
@@ -573,12 +668,17 @@ Multi-value applies to PRODUCT + COLLECTION only. No migrations needed for the 4
 
 ## Next Up
 
-1. **Reshell Phase B2** — built-in preset gallery (Style tab steps 13–14; **starts at feature
+1. **Reshell Phase B2** — built-in preset gallery (Style tab steps 13–14). Feature 85 has
+   now landed, so the `ROW_LAYOUTS` blocker is cleared: B2's bundles gain `rowLayout:
+   "GRID"` + `gridMinColumnWidthPx` (13 fields now) and must assert **no bundle ships
+   `GRID` + `STRIPES`** — a preset writes styling values without passing through the
+   rail's option list, so it is the one writer that can produce the combination the rail
+   hides, and the CSS stand-down is what catches it. (**Starts at feature
    doc 82** now that 81 is spoken for; before that 70 = stacked-semantics, 71 = sidebar inner-scroll, 72 = device-preview
    mockups, 73 = desktop preview inner scroll, 74 = content-free tables, 75 = full-size preview
    modal (removed), 76 = collapsible Style rail, 77 = container stretch, 78 = width + outer
    border, 79 = column divider, 80 = section separation + gap, 81 = section header typography —
-   a retired number is still spent). **The five feature-78 fields plus `columnDividerStyle`,
+   a retired number is still spent.) **The five feature-78 fields plus `columnDividerStyle`,
    `sectionGapPx` and feature 81's five must be in the preset bundles** — those twelve are what
    make "Bordered / Grid" and "Accordion" built-in presets possible, and 81's five are what let
    the merchant's five reference tables be reproduced rather than approximated. Then C (Settings
@@ -596,17 +696,16 @@ Multi-value applies to PRODUCT + COLLECTION only. No migrations needed for the 4
    screen-reader pass still owed (see Open Questions). ⚠️ **Now blocking feature 85**
    (below), which would be the third `display`-departure riding on the same unverified
    ARIA chain. Run the pass before building it.
-4. **Multi-column row flow (feature 85, doc `85-…`) — specced 2026-07-26, NOT built.**
-   Merchant sent five competitor tables laying rows out in 2–3 side-by-side tracks. Spec
-   covers "Type A" only (the unit laid out is one label/value pair — screenshots 1/2/4);
-   section-level flow ("Type B", screenshots 3/5) is out of scope with a recorded reason.
-   `GRID` joins `ROW_LAYOUTS`; one new nullable `gridMinColumnWidthPx`. **A minimum
-   column width, never a column count** — `auto-fit` + `minmax` makes it responsive with
-   no media query, and a count knob would make the ~640px editor preview lie about a
-   1400px storefront. No Liquid / markup / TOML change; hide-rule count 6 → 7. **Blocked
-   on item 3**, and needs three merchant decisions (default minimum, Stripes behaviour,
-   whether it belongs in a B2 preset — if yes it must land before B2 bakes
-   `stylePresets.ts`). Numbering: takes **85**; 82/83/84 stay reserved for item 2.
+4. **Feature 85 sign-off — one blocker left.** The build is done and fully live-verified
+   (see Completed; both deferred checks closed 2026-07-26), but it is deliberately NOT
+   marked shipped: ⚠️ the **feature-70 screen-reader pass** (item 3) was its stated
+   blocker and was skipped at the merchant's instruction. Run it — and if the roles are
+   wrong, feature 70's own instruction is "revert, do not patch", which now costs three
+   consumers rather than two. One data point in its favour: Chrome's accessibility tree
+   under `display: grid` still exposes table/rowgroup/row/rowheader/cell on the live
+   storefront, but that is not the same as a screen reader ANNOUNCING the pairs.
+   Also decide whether to clear the DJI template's saved minimum of 400: **240 measured
+   511px shorter** on that table.
 5. **Editor page should not scroll at the document level** — the app document overflows the
    iframe by roughly the `.tipsFooter` height (it renders BELOW the card, outside
    `useScrollRegionHeight`'s flat `BOTTOM_PAD_REM = 3` budget), producing a stray outer

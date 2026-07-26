@@ -80,6 +80,12 @@ export const SPEC_TABLE_CSS_VARS = Object.freeze({
   outerBorderWidthPx: "--appx-spec-outer-border-width",
   outerBorderColor: "--appx-spec-outer-border-color",
   outerBorderRadiusPx: "--appx-spec-outer-radius",
+  // The GRID layout's minimum track width (feature 85). Named `grid-min-column`
+  // rather than anything shorter because "column" is already spoken for in this
+  // vocabulary — `--appx-spec-column-divider`'s sense of column is the
+  // label/value SEAM, the opposite of a grid track. The `grid` prefix is what
+  // keeps the two readable side by side.
+  gridMinColumnWidthPx: "--appx-spec-grid-min-column",
 } as const);
 
 // --- Shared numeric/keyword scales -------------------------------------------
@@ -161,6 +167,11 @@ export function stylingToCssVars(
     "tableMaxWidthPx",
     "outerBorderWidthPx",
     "outerBorderRadiusPx",
+    // Feature 85. A plain var with no companion presence flag: the grid rules
+    // are already gated by the `--layout-grid` class, and the stylesheet's
+    // `var(--…, 240px)` fallback covers the null case, so there is nothing for a
+    // flag to switch on. Contrast the three flags in `stylingToModifierClasses`.
+    "gridMinColumnWidthPx",
   ] as const;
   for (const field of pxFields) {
     const px = values[field];
@@ -234,6 +245,8 @@ function rowLayoutClass(layout: RowLayout): string {
       return `${BLOCK}--layout-two-column`;
     case "STACKED":
       return `${BLOCK}--layout-stacked`;
+    case "GRID":
+      return `${BLOCK}--layout-grid`;
     default:
       return assertNever(layout);
   }

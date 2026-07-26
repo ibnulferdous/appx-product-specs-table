@@ -123,19 +123,30 @@ export const SPEC_TABLE_CSS = `/* Appx — Product Specs Table storefront styles
    and reads as one thick line. Three cases, because the block has two markup
    shapes: the flat table, the last section of a collapsible table, and a
    collapsible table whose final section is CLOSED (its summary is then the last
-   thing painted, and in the text-only style it carries the same heavy rule). */
-.appx-spec-table--outer-border
+   thing painted, and in the text-only style it carries the same heavy rule).
+
+   :not(--layout-grid) because the whole exception rests on an assumption the
+   GRID layout breaks (feature 85): that the last row in DOM order is the row
+   sitting against the frame. Across several tracks the last DOM pair is the
+   bottom-RIGHT one, while the rest of the bottom track row is just as much
+   against the frame — so the exception would drop one pair's rule and leave its
+   neighbours', which measures and reads as a defect (verified in the harness:
+   items 0-6 kept a 1px rule, item 7 did not). CSS cannot select "every item in
+   the last grid row", so the exception stands down there and every pair keeps
+   its rule: a uniformly slightly-heavier bottom edge beats one gap in a line.
+   Non-grid tables are unaffected - the :not() only raises specificity. */
+.appx-spec-table--outer-border:not(.appx-spec-table--layout-grid)
   > .appx-spec-table__table:last-child
   tbody
   tr:last-child
   > *,
-.appx-spec-table--outer-border
+.appx-spec-table--outer-border:not(.appx-spec-table--layout-grid)
   > details:last-child
   > .appx-spec-table__table
   tbody
   tr:last-child
   > *,
-.appx-spec-table--outer-border
+.appx-spec-table--outer-border:not(.appx-spec-table--layout-grid)
   > details:last-child:not([open])
   > .appx-spec-table__section-summary {
   border-block-end: none;
@@ -523,6 +534,104 @@ export const SPEC_TABLE_CSS = `/* Appx — Product Specs Table storefront styles
 
 .appx-spec-table--layout-stacked .appx-spec-table__value {
   padding-block-start: 0.25rem;
+}
+
+/* --- Row layout: GRID (feature 85) -----------------------------------------
+   Pairs become blocks exactly as in the stacked rule above, and the tbody
+   becomes the grid that flows them. auto-fit plus minmax is the whole
+   responsive story: the track count falls out of the available width, so this
+   layout needs no media query and no mobile variant. At a 375px viewport a
+   240px minimum fits exactly one track, which is the mobile behaviour for
+   free — do NOT add a --layout-grid rule to the media query below.
+
+   min(…, 100%) inside the minmax is what makes that claim true for EVERY
+   minimum, not just small ones. A bare minmax(400px, 1fr) in a 375px container
+   lays a 400px track and overflows the page — measured at 25px of overflow for
+   a 400px minimum and 265px for a 640px one. Clamping the minimum to the
+   container width costs nothing anywhere else (min() picks the px value
+   whenever it fits) and makes horizontal overflow unreachable by construction
+   rather than by trusting the merchant's number.
+
+   Across-then-down fill order, which is what grid does natively. The
+   down-then-across look (CSS multicol) is deliberately NOT offered: this markup
+   declares itself a table via role=table / role=row / role=rowheader, a screen
+   reader announces DOM order, and multicol would make visual order and DOM
+   order diverge while the ARIA chain kept insisting they agree. */
+.appx-spec-table--layout-grid .appx-spec-table__table,
+.appx-spec-table--layout-grid .appx-spec-table__section-row,
+.appx-spec-table--layout-grid .appx-spec-table__row,
+.appx-spec-table--layout-grid .appx-spec-table__section,
+.appx-spec-table--layout-grid .appx-spec-table__label,
+.appx-spec-table--layout-grid .appx-spec-table__value {
+  display: block;
+}
+
+/* tbody is deliberately ABSENT from the list above (contrast the stacked rule,
+   which includes it) — it takes display: grid here instead. Listing it in both
+   would be a same-specificity source-order accident waiting to happen. */
+.appx-spec-table--layout-grid .appx-spec-table__table tbody {
+  display: grid;
+  grid-template-columns: repeat(
+    auto-fit,
+    minmax(min(var(--appx-spec-grid-min-column, 240px), 100%), 1fr)
+  );
+}
+
+/* A section header interrupts the flow and claims every track. 1 / -1 addresses
+   the explicit track lines auto-fit generates. */
+.appx-spec-table--layout-grid .appx-spec-table__section-row {
+  grid-column: 1 / -1;
+}
+
+/* Identical to the stacked refinements, and for identical reasons: the pair
+   must read as one unit, so the label drops its own bottom rule and the value
+   is pulled toward it. border-inline-end goes for the third time here — a grid
+   item is a full-width block with its value underneath, so there is no
+   label/value seam for a column rule to sit on and a survivor paints as a stray
+   stub. Equal specificity to the column-divider rule earlier in the file, so
+   source order drops it; no importance override, per this file's design
+   rules. */
+.appx-spec-table--layout-grid .appx-spec-table__label {
+  width: auto;
+  border-block-end: none;
+  border-inline-end: none;
+}
+
+.appx-spec-table--layout-grid .appx-spec-table__value {
+  padding-block-start: 0.25rem;
+}
+
+/* Zebra striping is DOM-order parity, and across several tracks DOM-order
+   parity paints a CHECKERBOARD rather than alternating rows — nth-child cannot
+   know how many tracks the browser chose. The fill stands down; the LINES and
+   NONE members are unaffected and both behave correctly here.
+
+   ⚠️ This selector MIRRORS the fill rule's shape on purpose, including the
+   :nth-child(even) it looks like it could drop. Two reasons, and the first was
+   a measured bug, not a precaution:
+
+   1. SPECIFICITY, not source order, is what decides here. The fill rule is four
+      classes (--dividers-stripes + __row + :nth-child + __label); the obvious
+      short form of this rule is only three, so it LOSES no matter where it sits
+      in the file and the checkerboard paints anyway. Mirroring the shape makes
+      this five, so it wins outright. Do not "simplify" it back.
+   2. Narrowing to even rows is also what keeps this from overreaching: a broad
+      transparent background on every label and value would wipe out a
+      merchant's own labelBgColor / valueBgColor in Grid mode. Only the STRIPE
+      is meant to stand down.
+
+   The rail hides the Stripes option in Grid mode, so this is NOT dead defensive
+   code: the rail is not the only writer. A template saved before the option was
+   hidden, a B2 preset, and the orphan case (a merchant who chose Stripes and
+   then switched to Grid) all deliver this combination. Here is where it is
+   actually enforced. */
+.appx-spec-table--layout-grid.appx-spec-table--dividers-stripes
+  .appx-spec-table__row:nth-child(even)
+  .appx-spec-table__label,
+.appx-spec-table--layout-grid.appx-spec-table--dividers-stripes
+  .appx-spec-table__row:nth-child(even)
+  .appx-spec-table__value {
+  background: transparent;
 }
 
 /* --- Mobile default --------------------------------------------------------

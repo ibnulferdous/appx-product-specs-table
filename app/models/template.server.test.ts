@@ -23,6 +23,7 @@ import { NAME_MAX_LENGTH } from "../utils/templateName";
 // mapping (mirrors the Step 1 test fixture of the same name).
 const FULLY_OVERRIDDEN: StylingValues = {
   rowLayout: "STACKED",
+  gridMinColumnWidthPx: 320,
   mobileLayout: "SAME_AS_DESKTOP",
   sectionHeaderStyle: "TEXT_ONLY",
   headerFontSizePx: 22,
@@ -60,6 +61,7 @@ const FULLY_OVERRIDDEN: StylingValues = {
 // every override column an explicit null, the boolean at its column default.
 const ALL_DEFAULT_COLUMNS = {
   rowLayout: null,
+  gridMinColumnWidthPx: null,
   mobileLayout: null,
   sectionHeaderStyle: null,
   headerFontSizePx: null,

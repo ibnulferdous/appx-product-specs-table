@@ -1,7 +1,47 @@
 # Feature 85 — Multi-column row flow (Style tab)
 
-**Status:** 📋 **specced, not built.** ⚠️ Gated on the feature-70 screen-reader pass —
-see "The one blocking dependency".
+**Status:** 🛠️ **built 2026-07-26, full gate green (943 → 981 tests), CSS harness
+run.** ⚠️ **Not signed off:** the feature-70 screen-reader pass below is still
+owed, and it was a blocker in the plan. Built ahead of it at the merchant's
+explicit instruction; do not treat this as shipped until that pass is green.
+
+## ⚠️ Build log — three plan corrections the harness found
+
+All three were **invisible-when-broken** and none was predicted correctly on
+paper. This is the entry to read first if you are changing these rules.
+
+1. 🔴 **The stripe stand-down LOST on specificity, not source order.** The plan
+   said the two rules "tie at equal specificity, so source order decides". They
+   do not tie. The fill rule is **four** compound parts
+   (`--dividers-stripes` + `__row` + `:nth-child(even)` + `__label`); the short
+   stand-down form the plan specified is **three**, so it loses wherever it sits
+   and the checkerboard paints anyway — measured red fills on alternating rows
+   in the harness. Fix: the stand-down MIRRORS the fill rule's shape, including
+   `:nth-child(even)`, making it five parts. It now wins on specificity, and the
+   source order is kept as belt-and-braces. Demonstrated live by swapping the
+   short form back in and watching the fills return.
+   **Second benefit:** narrowing to even rows also stops it overreaching — the
+   broad form would have wiped a merchant's own `labelBgColor` / `valueBgColor`
+   in Grid mode, since the base `__label` rule is what carries them.
+2. 🔴 **`minmax(<min>, 1fr)` overflows when the minimum exceeds the container.**
+   Measured **25px** of horizontal overflow at a 400px minimum in a 375px
+   container, and **265px** at 640 — both reachable from the rail's own 160–640
+   range. Fix: `minmax(min(var(--appx-spec-grid-min-column, 240px), 100%), 1fr)`.
+   `min()` picks the px value whenever it fits, so no wide-container track count
+   changed (measured before and after); it only removes the overflow case.
+3. 🟠 **The `--outer-border` last-row exception is wrong in grid** — the
+   checklist flagged this as "maybe" and it turned out to be real. It assumes
+   the last DOM row is the row against the frame; across tracks the last DOM
+   pair is the bottom-RIGHT one. Measured `1px,1px,1px,0px` across the final
+   track row: three pairs ruled, one not, which reads as a defect. CSS cannot
+   select "every item in the last grid row", so the exception now stands down in
+   grid via `:not(.appx-spec-table--layout-grid)` on all three of its selectors.
+   Non-grid tables are untouched (the `:not()` only raises specificity).
+
+⚠️ **The backtick trap fired again** (feature 81 build log, trap 1): a comment
+written for the stripe rule contained a backticked CSS snippet, which breaks the
+`previewStyles.ts` mirror. The regeneration script now refuses to run when the
+CSS contains one, rather than relying on remembering.
 **Reported:** 2026-07-26, merchant sent five competitor spec tables laying their
 rows out in 2–3 side-by-side tracks and asked whether this app can do the same.
 **Depends on:** feature 57 Step 8 (`rowLayout`, the stacked shape) + feature 70
@@ -222,7 +262,12 @@ equal specificity by source order.
 /* Zebra striping is DOM-order parity, and in a multi-track grid DOM-order parity
    paints a checkerboard rather than alternating rows — nth-child cannot know how
    many tracks the browser chose. The fill stands down; the LINES and NONE
-   members are unaffected and both behave correctly here. */
+   members are unaffected and both behave correctly here.
+
+   The rail hides the Stripes option in Grid mode, so this rule is NOT dead
+   defensive code: the rail is not the only writer. A saved template, a B2 preset
+   and the orphan-value case (a merchant who chose Stripes before switching to
+   Grid) all deliver this combination. This is where it is actually enforced. */
 .appx-spec-table--layout-grid.appx-spec-table--dividers-stripes
   .appx-spec-table__label,
 .appx-spec-table--layout-grid.appx-spec-table--dividers-stripes
@@ -250,7 +295,7 @@ just one that pins the rule.
 | --- | --- | --- |
 | `columnDividerStyle = LINE` | dropped — no seam in a stacked pair | yes, in the rule above (source order) |
 | `rowDividerStyle = LINES` | hairline under each pair; correct as-is | no |
-| `rowDividerStyle = STRIPES` | fill stands down; help-text caveat | yes, rule + caveat |
+| `rowDividerStyle = STRIPES` | option hidden in the rail; fill stands down in CSS for the writers the rail does not own | yes, rule + derived option list |
 | `rowDividerStyle = NONE` | correct as-is | no |
 | `labelWidthPct` | control hides — `showsLabelWidthControl` already reads `=== "TWO_COLUMN"` | **no** |
 | `mobileLayout` | control hides — grid is already responsive | yes, extend `showsMobileLayoutControl` |
@@ -310,10 +355,43 @@ directly under Row layout, visible only in Grid mode.
   would mean unbounded track count, which is the unreadable case the floor
   exists to prevent.
 
-**Row dividers** gains a caveat on its Stripes option: "Stripes are off in Grid
-layout." This is the feature-79 precedent — a knob that does nothing in one shape
-carries the caveat in its own help text and a test pins it as a shipped
-requirement, rather than growing a hide predicate for one option of one select.
+**Row dividers** hides its Stripes option in Grid mode (merchant call
+2026-07-26 — this doc originally specced the feature-79 caveat instead; the
+merchant chose hiding). This is the **first per-option hide in the rail**, so the
+mechanism is written down here rather than invented at build time.
+
+⚠️ **The orphan-value case is what makes this more than a `.filter()`.** The
+Row-dividers select stays on screen in Grid mode, and a merchant who chose
+`STRIPES` on a two-column table and then switched to Grid has a stored value that
+is no longer in the list. `StyleTab.tsx` binds `value={styling.rowDividerStyle}`
+and `selectedHelpText` falls back to `""`, so a naive filter ships a **blank
+select with a blank help line** — a visibly broken control.
+
+Resolution: `rowDividerOptionsFor(styling)`, a derived list, replacing the bare
+`ROW_DIVIDER_OPTIONS` constant at both StyleTab call sites (`details=` and the
+`.map`). `ROW_DIVIDER_OPTIONS` stays exported as the unfiltered base.
+
+- `rowLayout !== "GRID"` → all three, unchanged.
+- `rowLayout === "GRID"` and the stored value is not `STRIPES` → Lines / None.
+  Stripes is simply gone; this is every merchant who has not chosen it.
+- `rowLayout === "GRID"` and the stored value **is** `STRIPES` → Lines / None
+  plus a trailing `STRIPES` entry labelled "Stripes — not available in Grid",
+  help text "Stripes do not apply in Grid layout. Pick Lines or None." The value
+  displays honestly, the CSS has already stood it down, and picking anything else
+  drops the entry for good.
+
+🚫 **Not coercing the value on switch.** Forcing `STRIPES → LINES` when a merchant
+picks Grid is the tidier-looking option and is rejected twice over: it destroys a
+setting the preserve-on-hide law exists to protect, and it is a cross-field write
+driven by a layout change, where every visibility rule in this rail is a pure
+read.
+
+⚠️ **The CSS stand-down rule still ships, and is now the enforcement rather than a
+cosmetic caveat.** Hiding the option narrows the rail, not the data: a `GRID` +
+`STRIPES` pair still reaches the storefront from an existing saved template, from
+the orphan case above, and — per settled decision 3 — from a **B2 preset**. The
+rail is not the only writer, so the stylesheet cannot assume the combination is
+unreachable.
 
 ### Hide-rule count goes 6 → 7
 
@@ -332,6 +410,14 @@ through Two column and back.
 ⚠️ `stylingControls.test.ts:965` asserts `toHaveLength(6)`. That assertion is
 doing its job when it fails here; update it to 7 with a comment naming this
 feature, exactly as feature 81 did at 6.
+
+⚠️ **7, not 8 — the Stripes hide does NOT join `VISIBILITY_PREDICATES`.** That
+registry exists to enforce the preserve-on-hide law on whole *controls*: a hidden
+control keeps its value because it is not rendered, so it cannot lie. The Stripes
+rule filters an *option* inside a control that stays rendered, which is a
+different mechanism with a different failure mode (the orphan value above), and
+registering it would assert a law it does not obey. It gets its own tests
+instead.
 
 ---
 
@@ -381,8 +467,9 @@ Each step ends green on the full gate (typecheck · lint · format · test · bu
    app-side validation.
 5. **Rail** — `stylingControls.ts`: `ROW_LAYOUT_OPTIONS` third entry,
    `fromGridMinColumnWidthControlValue`, `showsGridMinColumnWidthControl`,
-   `showsMobileLayoutControl` extended, Stripes caveat; `StyleTab.tsx` one new
-   number field under Row layout.
+   `showsMobileLayoutControl` extended, `rowDividerOptionsFor`; `StyleTab.tsx`
+   one new number field under Row layout, plus both Row-dividers call sites
+   moved onto the derived option list.
 
 > ⚠️ **Restart `shopify app dev` after step 4.** Vite HMR reloads app code but not
 > `@prisma/client`, so the first save after a migration fails **silently** — the
@@ -403,7 +490,7 @@ Each step ends green on the full gate (typecheck · lint · format · test · bu
 | --- | --- |
 | `tableStyling.test.ts` | `GRID` parses and round-trips; `TWO_COLUMN` still the default (pinned — an accidental reorder would repaint every table); `gridMinColumnWidthPx` clamps at 160/640, non-integer/NaN/string → null, omitted from overrides when null |
 | `tableStylingCss.test.ts` | `GRID` → `--layout-grid`; the var emitted iff non-null with a `px` suffix; **no new presence flag** — modifier output for a grid table is the same length as for a two-column one |
-| `stylingControls.test.ts` | `VISIBILITY_PREDICATES` length **7** (update 965); the new predicate registered so it inherits the preserve-on-hide law; `showsMobileLayoutControl` false for `GRID`; `showsLabelWidthControl` false for `GRID` (free, but pin it); the Stripes caveat string present |
+| `stylingControls.test.ts` | `VISIBILITY_PREDICATES` length **7** (update 965) and the Stripes filter deliberately absent from it; the new predicate registered so it inherits the preserve-on-hide law; `showsMobileLayoutControl` false for `GRID`; `showsLabelWidthControl` false for `GRID` (free, but pin it); `rowDividerOptionsFor` — all 3 outside `GRID`, 2 in `GRID` when the value is not `STRIPES`, **3 in `GRID` when it is** (the orphan case, with the "not available" label), and `rowDividerStyle` never mutated by a `rowLayout` change |
 | `specTableCssContract.test.ts` | the grid rule set present with the `240px` literal fallback; `grid-column: 1 / -1` on the section row; **the stripe-standdown rule appears AFTER the `--dividers-stripes` fill rule** — the invisible-when-broken ordering; `border-inline-end: none` present in the grid label rule; **no `--layout-grid` selector inside the `@media` block**; previewStyles drift (existing, automatic) |
 | `specTableAriaContract.test.ts` | extend the `display: block` scan to `display: grid`; `--layout-grid` classes all carry a role |
 | `templateSync.test.ts` | the all-fields fixture gains `gridMinColumnWidthPx: null` |
@@ -414,7 +501,125 @@ breakage (feature 81 build log, item 2).
 
 ---
 
-## Live verification plan
+## Live verification — RESULTS (2026-07-26)
+
+Harness first, then the storefront, same shape as 78/79/80/81.
+
+**Migration non-repainting** — 6 `TableStyling` rows, **0** with a non-null
+`gridMinColumnWidthPx`, **0** with `rowLayout = 'GRID'`.
+
+**CSS harness** (26 cases against the real `spec-table.css`) — this is where the
+three plan corrections above were found. After the fixes:
+
+| case | result |
+| --- | --- |
+| `grid-column: 1 / -1` under `auto-fit` | ✅ section header measured **1000px in a 1000px tbody** across 4 tracks — the one unproven interaction works |
+| track counts (container × minimum) | ✅ 1440→6/3/2 at 240/400/640; 900→3/2/1; 640→2/1; 375→1 at every minimum |
+| null minimum | ✅ 1000px container → 4 × 250px, identical to an explicit 240 |
+| overflow at 375px | ✅ **0** at every minimum after the `min()` fix (was 25px / 265px) |
+| stripes in grid | ✅ all fills transparent; two-column control still alternates |
+| source-order/specificity dependency | ✅ demonstrated **observably** — swapping the short-form selector in live brought the checkerboard back, restoring it removed it |
+| column divider | ✅ label `border-inline-end: 0px`, no stub at any track edge |
+| collapsible + grid | ✅ grid applies within each `<details>` |
+| all-`TWO_COLUMN` control | ✅ **394px, byte-identical before and after the feature** — the no-repaint claim measured, not asserted |
+
+**Round trip on the ACTIVE DJI template** (44 rows, 9 sections) — rail → Save →
+Postgres (`rowLayout='GRID'`, `gridMinColumnWidthPx=400`) → metaobject → rendered
+Horizon storefront. On the wire:
+
+- `styling` (overrides-only) carries `"rowLayout":"GRID","gridMinColumnWidthPx":400`
+- `styling_css.classes` carries `appx-spec-table--layout-grid` **in field order**,
+  and the class list is the **same length** as before — the no-new-presence-flag
+  claim, measured on the wire
+- `styling_css.vars` carries `--appx-spec-grid-min-column: 400px`
+
+Storefront: `tbody` computed `display: grid`, tracks `480px 480px 480px` in a
+1440px wrapper, page overflow **0**, all 9 disclosures intact. Stripe stand-down
+and the dropped column divider re-verified against the production stylesheet.
+
+### 🔴 The height win is REAL but roughly HALF what the plan claimed
+
+The plan's arithmetic — "44 rows becomes ~15, everything below moves up a screen
+and a half" — assumes every pair is the same height. On the real DJI template it
+is not: value heights measured **median 43px, max 536px** (Hover Accuracy Range
+is six lines). **A grid row is as tall as its tallest member**, so ragged content
+gives back a large share of the theoretical saving.
+
+Measured on the live storefront, all 9 sections open, 1440px wrapper:
+
+| layout | height | vs two-column |
+| --- | --- | --- |
+| `STACKED` | 5425px | +37% |
+| `TWO_COLUMN` | 3963px | — |
+| `GRID` @ 640 (2 tracks) | 3892px | −2% |
+| `GRID` @ 400 (3 tracks) | 3359px | −15% |
+| `GRID` @ 320 (4 tracks) | 3208px | −19% |
+| **`GRID` @ 240 (6 tracks)** | **2848px** | **−28%** |
+| `GRID` @ 160 (9 tracks) | 2893px | −27% |
+
+**Two things to carry forward.** The honest merchant number is **~1100px saved,
+28%** — about one screen, not a screen and a half. And the win **peaks at the
+default 240 and gets WORSE below it**: narrower tracks make long values wrap
+more, so each ragged row grows taller. That is an empirical vindication of
+settled decision 1, and it is the guidance to give a merchant who assumes
+"narrower = shorter".
+
+### The two deferred checks — both closed 2026-07-26 (second pass)
+
+✅ **The Stripes orphan renders exactly as specced**, confirmed in the DOM on the
+Moto G35 template (saved `TWO_COLUMN` + `STRIPES`). Switching Row layout to Grid:
+
+- the select reads **"Stripes"** with the help line **"Stripes do not apply in
+  Grid layout. Pick Lines or None."** — the stored value is displayed and
+  explained, NOT blank, which is the whole reason this is a derived list rather
+  than a `.filter()`;
+- the editor preview's stripe fill **disappeared** the moment Grid was picked —
+  the CSS stand-down is visible in the preview surface, not just the storefront;
+- walking the list with the keyboard proves the ORDER: Up from Stripes lands on
+  **None** (help text "No rules and no shading."), so the orphan is the trailing
+  entry after Lines/None;
+- pressing Down twice from None **stays on None** — the orphan entry is gone for
+  good once another member is picked, exactly as designed.
+
+The template was left untouched (Discard; Postgres re-read confirms `rowLayout`
+still null and `rowDividerStyle` still `STRIPES`).
+
+✅ **Mobile measured at a genuine narrow viewport**, and the doc's original claim
+needs splitting in two. The live storefront sends `frame-ancestors 'none'` so it
+cannot be framed; the probe is instead the REAL markup plus the REAL deployed
+`spec-table.css` (fetched from the extension CDN — which already carried the
+`min()` fix) in a `srcdoc` iframe, where the media query evaluates against the
+iframe's own viewport.
+
+| viewport | `--mobile-stacked` (the default) | `--mobile-same-as-desktop` |
+| --- | --- | --- |
+| 1200px | grid, 2 tracks | grid, 2 tracks |
+| 800px | grid, **1 track (781px)** — auto-fit collapsed it *above* the breakpoint | same |
+| 749px and below | media query fires, `tbody` → `display: block`, **grid OFF**, renders stacked | grid **stays on**, 1 track |
+| 375px | stacked | grid, **1 track at 356px** |
+| 320px, min 640 | stacked | grid, **1 track at 301px** |
+
+**Horizontal overflow was 0 in every single case.**
+
+⚠️ **So "no media query" is true only on the `SAME_AS_DESKTOP` path.** On the
+default `STACKED` path the pre-existing `--mobile-stacked` rule is later in the
+file and wins, turning the grid off and rendering stacked below 749px. The
+outcome is visually the same (one column, label above value) but the mechanism is
+not what this doc originally described. Above the breakpoint, `auto-fit` genuinely
+does collapse on its own — measured at 800px.
+
+⚠️ **This is what retro-justifies build-log fix 2 as more than theory.** The
+`SAME_AS_DESKTOP` path IS reachable: the rail hides the On-mobile control in Grid
+without clearing it, so a merchant who chose Same-as-desktop before switching
+keeps it. Without `min(…, 100%)` that merchant's 640px minimum would have pushed
+a 320px phone sideways by 320px. With it, the track is 301px and overflow is 0.
+
+**Left saved:** the ACTIVE DJI template is on **Grid + minimum 400**. Revert =
+two controls. ⚠️ Consider clearing the 400 — 240 measured materially shorter.
+
+---
+
+## Live verification plan (original)
 
 Harness **first**, same shape as 78/79/80/81, so the storefront pass confirms
 rather than explores.
@@ -438,7 +643,11 @@ rather than explores.
    - Collapsible + grid: grid applies within each `<details>`.
    - An all-`TWO_COLUMN` control case measured byte-identical to today.
 3. Rail: third Row layout option, the new box appearing only in Grid mode,
-   label-width and On-mobile both disappearing, help text in both states.
+   label-width and On-mobile both disappearing, help text in both states. Then
+   the Stripes hide, **including the orphan path**: set Stripes on a two-column
+   table, switch to Grid, and confirm the select reads "Stripes — not available
+   in Grid" rather than going blank; pick Lines, confirm the entry is gone;
+   switch back to Two-column and confirm Stripes is offered again.
 4. Round trip on the ACTIVE DJI template (44 rows, 9 sections — the real
    height case): rail → Save → Postgres → metaobject (`styling` overrides-only
    carrying `rowLayout: "GRID"`, `styling_css.classes` carrying `--layout-grid`
@@ -455,18 +664,29 @@ rather than explores.
 
 ---
 
-## Open decisions — need merchant sign-off before step 1
+## Settled decisions — merchant sign-off 2026-07-26
 
-1. **Default minimum: 240px?** It gives 2 tracks at ~640px and 3 at ~1100px on a
-   typical theme. Lower reads denser, higher reads safer. Cheap to change now,
-   a repaint later.
-2. **Stripes in Grid: stand down, or hide the option?** This doc specs stand-down
-   plus a help-text caveat (the feature-79 precedent). The alternative is a
-   `GRID`-aware Row-dividers list, which means the first per-option hide in the
-   rail — more machinery than the case is worth, but it is the merchant's call.
-3. **Does Grid belong in a B2 preset?** Screenshots 1 and 4 *are* a preset
-   ("Compact grid" / "Two column grid"). If yes, this must land before B2 bakes
-   `stylePresets.ts`, for exactly the reason feature 81 landed before B2.
+All three answered; step 1 is unblocked on this axis (the feature-70 pass above
+is still the one blocker).
+
+1. ✅ **Default minimum stays 240px.** 2 tracks at ~640px, 3 at ~1100px on a
+   typical theme. Fixed now because it is the blank-box value: changing it later
+   repaints every table that left the box blank, while a merchant's own typed
+   160–640 never affects anyone else.
+2. ✅ **Hide the Stripes option in Grid**, not the specced caveat. Mechanism,
+   orphan-value resolution and the rejected coercion are in "The controls"
+   above. The CSS stand-down rule is unaffected and becomes the enforcement.
+3. ✅ **Grid is part of a B2 preset.** Consequences, all live now rather than at
+   B2 time:
+   - 🔴 **Feature 85 must land before B2 bakes `stylePresets.ts`**, exactly as
+     feature 81 did. B2 cannot express a Grid preset against a `ROW_LAYOUTS`
+     that has two members.
+   - A Grid preset carries `rowLayout: "GRID"` plus a `gridMinColumnWidthPx`
+     (or null for 240) and a **non-`STRIPES`** `rowDividerStyle`.
+   - ⚠️ A preset is a **second writer** of styling values that never passes
+     through the rail's option list. It is the reason the Stripes stand-down
+     rule is load-bearing rather than defensive, and the reason B2's own tests
+     must assert no bundle ships `GRID` + `STRIPES`.
 
 ---
 
@@ -501,4 +721,6 @@ rather than explores.
 - `context/progress-tracker.md` — Completed entry; Next Up.
 - `context/data-model.md` §5 (`TableStyling` — the new column and the third
   `rowLayout` member) + §10 (styling delivery).
-- **B2 preset bundles** if open decision 3 comes back yes.
+- **B2 preset bundles** — settled yes, so B2's spec gains the Grid preset and the
+  "no bundle ships `GRID` + `STRIPES`" assertion, and B2 is sequenced after this
+  feature.

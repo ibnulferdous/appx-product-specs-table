@@ -120,7 +120,8 @@ model TableStyling {
   // Layout knobs (Style-tab spec 2026-07-18). String knobs hold app-validated
   // constants (shared TS constants + server re-validation, not Prisma enums —
   // matching the fontSize/fontWeight convention); null = the flagged default.
-  rowLayout            String? // "TWO_COLUMN" (null default) | "STACKED"
+  rowLayout            String? // "TWO_COLUMN" (null default) | "STACKED" | "GRID"
+  gridMinColumnWidthPx Int? // 160–640; null = the stylesheet literal 240px. The narrowest a GRID track may get — a MINIMUM WIDTH, never a column count, so the track count falls out of the container width (auto-fit + minmax) and the layout is responsive with no media query. Only meaningful when rowLayout is GRID
   mobileLayout         String? // "STACKED" (null default) | "SAME_AS_DESKTOP" — only meaningful when rowLayout is TWO_COLUMN
   sectionHeaderStyle   String? // "BANDED" (null default) | "TEXT_ONLY"
   // Section-header typography + spacing (feature 81). null = inherit the

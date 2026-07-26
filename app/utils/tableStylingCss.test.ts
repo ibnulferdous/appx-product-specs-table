@@ -43,6 +43,7 @@ const COLOR_FIELDS = [
 // knob off-default. Mirrors the Step 1 test fixture.
 const FULLY_OVERRIDDEN: StylingValues = {
   rowLayout: "STACKED",
+  gridMinColumnWidthPx: 320,
   mobileLayout: "SAME_AS_DESKTOP",
   sectionHeaderStyle: "TEXT_ONLY",
   headerFontSizePx: 22,
@@ -123,6 +124,44 @@ describe("stylingToCssVars — color matrix", () => {
         }
       }
     }
+  });
+});
+
+describe("stylingToCssVars — gridMinColumnWidthPx (feature 85)", () => {
+  it("emits the var with a px suffix when set, and no key when null", () => {
+    expect(
+      stylingToCssVars({
+        ...DEFAULT_STYLING_VALUES,
+        gridMinColumnWidthPx: 320,
+      }),
+    ).toEqual({ [SPEC_TABLE_CSS_VARS.gridMinColumnWidthPx]: "320px" });
+    // Null must leave the property ABSENT, so the stylesheet's own 240px
+    // fallback is what a merchant who never touched the box actually gets.
+    expect(stylingToCssVars(DEFAULT_STYLING_VALUES)).not.toHaveProperty(
+      SPEC_TABLE_CSS_VARS.gridMinColumnWidthPx,
+    );
+  });
+
+  it("adds NO presence flag — the --layout-grid class is its own gate", () => {
+    // Contrast --section-gap / --outer-border / --outer-radius, each of which
+    // needs a class because its rule cannot be expressed as a value
+    // substitution. Here the grid rules are already gated by the layout class
+    // and the var has a literal fallback, so there is nothing for a flag to
+    // switch on. A grid table's modifier list must therefore be the same LENGTH
+    // as a two-column one's, whether or not the box is filled in.
+    const twoColumn = stylingToModifierClasses(DEFAULT_STYLING_VALUES);
+    const gridDefault = stylingToModifierClasses({
+      ...DEFAULT_STYLING_VALUES,
+      rowLayout: "GRID",
+    });
+    const gridWithWidth = stylingToModifierClasses({
+      ...DEFAULT_STYLING_VALUES,
+      rowLayout: "GRID",
+      gridMinColumnWidthPx: 320,
+    });
+    expect(gridDefault).toHaveLength(twoColumn.length);
+    expect(gridWithWidth).toEqual(gridDefault);
+    expect(gridDefault).toContain("appx-spec-table--layout-grid");
   });
 });
 
@@ -344,6 +383,7 @@ describe("stylingToModifierClasses — class matrix", () => {
       classes: {
         TWO_COLUMN: "appx-spec-table--layout-two-column",
         STACKED: "appx-spec-table--layout-stacked",
+        GRID: "appx-spec-table--layout-grid",
       },
     },
     {

@@ -14,7 +14,6 @@ import {
   LABEL_CASE_OPTIONS,
   LINE_HEIGHT_OPTIONS,
   MOBILE_LAYOUT_OPTIONS,
-  ROW_DIVIDER_OPTIONS,
   ROW_LAYOUT_OPTIONS,
   SECTIONS_INITIAL_STATE_OPTIONS,
   SECTION_HEADER_OPTIONS,
@@ -22,6 +21,7 @@ import {
   fontSizeControlValue,
   fromColorControlValue,
   fromControlValue,
+  fromGridMinColumnWidthControlValue,
   fromHeaderFontSizeControlValue,
   fromHeaderPaddingBlockControlValue,
   fromLabelWidthControlValue,
@@ -32,7 +32,9 @@ import {
   nextFontSizeForControl,
   parseCustomFontSizePx,
   rememberedCustomFontSizePx,
+  rowDividerOptionsFor,
   showsCustomFontSizeInput,
+  showsGridMinColumnWidthControl,
   showsLabelWidthControl,
   showsMobileLayoutControl,
   showsSectionGapControl,
@@ -41,6 +43,7 @@ import {
   toBoundedIntControlValue,
   toColorControlValue,
   toControlValue,
+  toGridMinColumnWidthControlValue,
   toHeaderFontSizeControlValue,
   toHeaderPaddingBlockControlValue,
   toLabelWidthControlValue,
@@ -51,6 +54,8 @@ import {
 import {
   FONT_SIZE_PX_MAX,
   FONT_SIZE_PX_MIN,
+  GRID_MIN_COLUMN_WIDTH_PX_MAX,
+  GRID_MIN_COLUMN_WIDTH_PX_MIN,
   HEADER_PADDING_BLOCK_PX_MAX,
   HEADER_PADDING_BLOCK_PX_MIN,
   LABEL_CASES,
@@ -202,9 +207,46 @@ export function StyleTab({ engine }: { engine: RowEngine }) {
             ))}
           </s-select>
 
-          {/* Hidden for a stacked table, where both options mean the same thing.
-            Hiding only — `styling.mobileLayout` keeps the merchant's value, so
-            it comes back intact if they switch back to two-column. */}
+          {/* Grid only — the seventh hide rule. A MINIMUM WIDTH, never a column
+            count: the browser fits as many tracks as the container allows, so
+            the layout is responsive with no media query and cannot produce
+            three unreadable tracks in a narrow theme. It is also what keeps
+            this rail's own Desktop preview honest — that preview is ~640px on
+            a laptop, so a count knob would render the same number of tracks
+            there as on a 1400px storefront while looking nothing like it.
+
+            Clearing the box is the way back to the stylesheet's 240px; 0 is
+            not a spelling of anything here (contrast Outline width), so it
+            clamps up to the floor. */}
+          {showsGridMinColumnWidthControl(styling) && (
+            <s-number-field
+              label="Minimum column width"
+              suffix="px"
+              details={
+                styling.gridMinColumnWidthPx === null
+                  ? "Columns are at least 240px wide."
+                  : "Columns are at least this wide. Fewer, wider columns on narrow screens."
+              }
+              min={GRID_MIN_COLUMN_WIDTH_PX_MIN}
+              max={GRID_MIN_COLUMN_WIDTH_PX_MAX}
+              step={10}
+              value={toGridMinColumnWidthControlValue(
+                styling.gridMinColumnWidthPx,
+              )}
+              onChange={(event: Event) => {
+                setStylingField(
+                  "gridMinColumnWidthPx",
+                  fromGridMinColumnWidthControlValue(readValue(event)),
+                );
+              }}
+            />
+          )}
+
+          {/* Two-column only. A stacked table is already stacked everywhere and
+            a grid is responsive by construction, so in both cases the two
+            options would mean the same thing. Hiding only —
+            `styling.mobileLayout` keeps the merchant's value, so it comes back
+            intact if they switch back to two-column. */}
           {showsMobileLayoutControl(styling) && (
             <s-select
               label="On mobile"
@@ -567,10 +609,17 @@ export function StyleTab({ engine }: { engine: RowEngine }) {
         <s-stack direction="block" gap="base">
           <s-heading id={headingId("rows")}>Rows</s-heading>
 
+          {/* The one control whose OPTION LIST depends on another knob (feature
+              85): Grid drops Stripes, because DOM-order parity paints a
+              checkerboard across several tracks rather than alternating rows.
+              Derived rather than filtered inline because of the orphan case —
+              a merchant already on Stripes who switches to Grid keeps a stored
+              value the list would otherwise no longer contain, and this select
+              stays on screen. See `rowDividerOptionsFor`. */}
           <s-select
             label="Row dividers"
             details={selectedHelpText(
-              ROW_DIVIDER_OPTIONS,
+              rowDividerOptionsFor(styling),
               styling.rowDividerStyle,
             )}
             value={styling.rowDividerStyle}
@@ -581,7 +630,7 @@ export function StyleTab({ engine }: { engine: RowEngine }) {
               );
             }}
           >
-            {ROW_DIVIDER_OPTIONS.map((option) => (
+            {rowDividerOptionsFor(styling).map((option) => (
               <s-option key={option.value} value={option.value}>
                 {option.label}
               </s-option>

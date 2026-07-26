@@ -84,12 +84,13 @@ describe("spec-table.css ↔ styling vocabulary contract (feature 57 Step 3)", (
   });
 
   it("covers the full producible class list (sanity: the loop above found every knob)", () => {
-    // 2 layouts + 2 mobile + 2 section styles + 3 row dividers + 2 column
+    // 3 layouts + 2 mobile + 2 section styles + 3 row dividers + 2 column
     // dividers + 3 densities + 3 alignments + the collapsible flag + the three
     // presence flags (--section-gap, --outer-border, --outer-radius). If a knob
     // gains a member, this count and the selector assertions below both move
-    // together.
-    expect(producibleClasses.size).toBe(21);
+    // together. 21 -> 22 when GRID joined the row layouts (feature 85); note it
+    // added NO fourth presence flag — the --layout-grid class is its own gate.
+    expect(producibleClasses.size).toBe(22);
   });
 
   // --- Section separation + gap (feature 80) ---------------------------------
@@ -319,6 +320,178 @@ describe("spec-table.css ↔ styling vocabulary contract (feature 57 Step 3)", (
       for (const rule of STACKED_LABEL_RULES) {
         expect(css.indexOf(rule), `${rule} must follow`).toBeGreaterThan(on);
       }
+    });
+  });
+
+  // --- Multi-column row flow (feature 85) ------------------------------------
+  //
+  // Every assertion here guards something INVISIBLE when broken. The previews
+  // and the storefront share this file, so a break ships to both at once, and a
+  // checkerboard or a missing span reads as a deliberate design rather than a
+  // bug.
+  describe("row layout: GRID", () => {
+    const GRID_TBODY_RULE =
+      ".appx-spec-table--layout-grid .appx-spec-table__table tbody {";
+    const STRIPE_STANDDOWN_SELECTOR =
+      ".appx-spec-table--layout-grid.appx-spec-table--dividers-stripes\n" +
+      "  .appx-spec-table__row:nth-child(even)\n" +
+      "  .appx-spec-table__label,";
+
+    it("flows the tbody with auto-fit + minmax off the 240px literal fallback", () => {
+      // The fallback IS the null vocabulary: a merchant who never touches the
+      // box gets 240px from here, not from any code path. Pinning the literal
+      // pins the default, so moving it becomes a deliberate repaint.
+      const start = css.indexOf(GRID_TBODY_RULE);
+      expect(
+        start,
+        "the feature 85 grid tbody rule is missing",
+      ).toBeGreaterThan(-1);
+      const block = css.slice(start, css.indexOf("}", start));
+      expect(block).toContain("display: grid;");
+      expect(block).toContain(
+        "grid-template-columns: repeat(\n" +
+          "    auto-fit,\n" +
+          "    minmax(min(var(--appx-spec-grid-min-column, 240px), 100%), 1fr)\n" +
+          "  );",
+      );
+    });
+
+    it("clamps the minimum with min(…, 100%) so a track can never overflow", () => {
+      // Found in the harness, not on paper: a bare minmax(400px, 1fr) in a
+      // 375px container lays a 400px track and pushes the page sideways —
+      // measured at 25px of overflow for a 400px minimum and 265px for a 640px
+      // one, both reachable from the rail's own range. min() costs nothing when
+      // the px value fits, and makes horizontal overflow unreachable rather
+      // than merely unlikely.
+      const start = css.indexOf(GRID_TBODY_RULE);
+      const block = css.slice(start, css.indexOf("}", start));
+      expect(block).toContain(
+        "min(var(--appx-spec-grid-min-column, 240px), 100%)",
+      );
+    });
+
+    it("keeps tbody out of the display: block list — one rule owns it", () => {
+      // Contrast the stacked rule, which DOES list tbody. Listing it in both
+      // places here would be a same-specificity source-order accident: whichever
+      // came last would decide whether the grid exists at all.
+      const start = css.indexOf(
+        ".appx-spec-table--layout-grid .appx-spec-table__table,",
+      );
+      expect(start).toBeGreaterThan(-1);
+      const selectorList = css.slice(start, css.indexOf("{", start));
+      expect(selectorList).not.toContain("tbody");
+    });
+
+    it("spans a section header across every track", () => {
+      // The one interaction the design could not prove on paper: `1 / -1` has to
+      // address the explicit track lines auto-fit generates, not an implicit
+      // grid. Verified live in the harness; pinned here.
+      const start = css.indexOf(
+        ".appx-spec-table--layout-grid .appx-spec-table__section-row {",
+      );
+      expect(start).toBeGreaterThan(-1);
+      const block = css.slice(start, css.indexOf("}", start));
+      expect(block).toContain("grid-column: 1 / -1;");
+    });
+
+    it("drops the column divider — a grid item has no label/value seam", () => {
+      // Third shape to need this, after desktop-stacked and mobile-stacked. Left
+      // in, the rule paints as a stray vertical stub at every track edge.
+      const start = css.indexOf(
+        ".appx-spec-table--layout-grid .appx-spec-table__label {",
+      );
+      expect(start).toBeGreaterThan(-1);
+      const block = css.slice(start, css.indexOf("}", start));
+      expect(block).toContain("border-inline-end: none;");
+      expect(block).toContain("border-block-end: none;");
+      expect(block).toContain("width: auto;");
+    });
+
+    it("declares the column-divider ON rule BEFORE the grid rule that undoes it", () => {
+      // Two classes each, so specificity ties and source order alone decides.
+      expect(
+        css.indexOf(".appx-spec-table--layout-grid .appx-spec-table__label {"),
+      ).toBeGreaterThan(css.indexOf(".appx-spec-table--column-divider-line"));
+    });
+
+    it("stands the zebra fill down in grid mode", () => {
+      // nth-child parity across N tracks paints a checkerboard, and CSS cannot
+      // know how many tracks the browser chose.
+      const start = css.indexOf(STRIPE_STANDDOWN_SELECTOR);
+      expect(
+        start,
+        "the feature 85 stripe stand-down rule is missing",
+      ).toBeGreaterThan(-1);
+      const block = css.slice(start, css.indexOf("}", start));
+      expect(block).toContain("background: transparent;");
+    });
+
+    it("out-specifies the fill rule rather than merely following it", () => {
+      // ⚠️ THE invisible-when-broken assertion of this feature, and the plan got
+      // it WRONG on paper: the two rules do NOT tie. The fill rule is four
+      // compound parts (--dividers-stripes, __row, :nth-child, __label) and the
+      // obvious short form of the stand-down is three, so it loses wherever it
+      // sits and the checkerboard paints anyway. Measured in the harness before
+      // this shape was adopted, and demonstrated live by swapping the short form
+      // back in and watching the fills return.
+      //
+      // Mirroring the fill rule's shape makes the stand-down five parts, so it
+      // wins on specificity. Pinning :nth-child here is what stops a later
+      // "simplification" from silently reintroducing the bug.
+      const standdown = css.indexOf(STRIPE_STANDDOWN_SELECTOR);
+      expect(standdown).toBeGreaterThan(-1);
+      const block = css.slice(standdown, css.indexOf("}", standdown));
+      expect(block).toContain(".appx-spec-table__row:nth-child(even)");
+      expect(block).toContain(".appx-spec-table__value");
+    });
+
+    it("declares the stand-down AFTER the --dividers-stripes fill rule", () => {
+      // Belt as well as braces: specificity is what decides today, but keeping
+      // the source order too means a future equal-specificity variant of either
+      // rule still resolves the right way.
+      const fill = css.indexOf(
+        ".appx-spec-table--dividers-stripes\n" +
+          "  .appx-spec-table__row:nth-child(even)",
+      );
+      expect(fill).toBeGreaterThan(-1);
+      expect(css.indexOf(STRIPE_STANDDOWN_SELECTOR)).toBeGreaterThan(fill);
+    });
+
+    it("leaves labelBgColor / valueBgColor alone — only the STRIPE stands down", () => {
+      // The broad form would have wiped a merchant's own cell backgrounds in
+      // Grid mode, because the base __label rule is what carries them.
+      const standdown = css.indexOf(STRIPE_STANDDOWN_SELECTOR);
+      const block = css.slice(standdown, css.indexOf("}", standdown));
+      expect(block).not.toMatch(
+        /--dividers-stripes\n {2}\.appx-spec-table__label/,
+      );
+    });
+
+    it("stands the --outer-border last-row exception down in grid mode", () => {
+      // That exception assumes the last DOM row is the row against the frame.
+      // Across tracks the last DOM pair is the bottom-RIGHT one, so the
+      // exception would drop its rule and leave its bottom-row neighbours'
+      // — measured in the harness as 1px,1px,1px,0px across the final track
+      // row. CSS cannot select "the last grid row", so it stands down and the
+      // bottom edge stays uniform.
+      expect(css).toContain(
+        ".appx-spec-table--outer-border:not(.appx-spec-table--layout-grid)",
+      );
+      // All three selector cases must carry it, not just the flat one.
+      const guarded =
+        css.match(
+          /\.appx-spec-table--outer-border:not\(\.appx-spec-table--layout-grid\)/g,
+        ) ?? [];
+      expect(guarded).toHaveLength(3);
+    });
+
+    it("adds nothing to the @media block — auto-fit IS the responsive story", () => {
+      // At 375px a 240px minimum fits exactly one track, so the grid collapses
+      // with no breakpoint involved. A --layout-grid rule inside the media query
+      // would mean the minimum-width design had been misunderstood.
+      const mediaAt = css.indexOf("@media (max-width: 749px) {");
+      expect(mediaAt).toBeGreaterThan(-1);
+      expect(css.slice(mediaAt)).not.toContain("--layout-grid");
     });
   });
 

@@ -7,6 +7,14 @@
 // header/cell pair. Explicit ARIA roles are immune to `display`, so they survive
 // it — but only if the WHOLE chain is present.
 //
+// `display: grid` (feature 85's multi-column layout) does exactly the same
+// thing, which is why the scan below matches both. It is the THIRD departure
+// from `display: table` and it deliberately reuses this mechanism rather than
+// inventing one — but note that the mechanism itself is still unverified
+// against real assistive tech (feature 70's owed screen-reader pass). These
+// tests prove the roles are PRESENT and COMPLETE; nothing here proves they are
+// announced.
+//
 // This file pins the INVARIANT, not today's instance: if a future step adds a
 // third stacked variant (a new breakpoint, a new layout knob), these tests fail
 // rather than letting the same bug back in unnoticed. It reads the real
@@ -44,15 +52,20 @@ const REQUIRED_ROLE: Readonly<Record<string, string>> = {
   "appx-spec-table__section": "columnheader",
 };
 
-// Every class named in a `display: block` rule in the real stylesheet. Parsed
-// rather than hardcoded — that is the whole point: a new stacked variant lands
-// in this set automatically and must then satisfy the assertions below.
+// Every class named in a rule that takes an element OUT of the CSS table model
+// in the real stylesheet — `display: block` or `display: grid`. Parsed rather
+// than hardcoded — that is the whole point: a new stacked or flowed variant
+// lands in this set automatically and must then satisfy the assertions below.
+// Feature 85 is the proof that it works: adding GRID required widening this one
+// regex, and everything else held.
+const SEMANTICS_STRIPPING_DISPLAY = /display:\s*(?:block|grid)/;
+
 function classesLosingTableSemantics(): Set<string> {
   const found = new Set<string>();
   // Each rule block: selector list up to `{`, then declarations up to `}`.
   for (const match of css.matchAll(/([^{}]+)\{([^}]*)\}/g)) {
     const [, selectors, declarations] = match;
-    if (!/display:\s*block/.test(declarations)) continue;
+    if (!SEMANTICS_STRIPPING_DISPLAY.test(declarations)) continue;
     for (const cls of selectors.matchAll(/\.([A-Za-z0-9_-]+)/g)) {
       found.add(cls[1]);
     }
@@ -68,6 +81,18 @@ describe("feature 70 — table semantics survive `display: block`", () => {
     expect(stripped.size).toBeGreaterThan(0);
     expect(stripped).toContain("appx-spec-table__label");
     expect(stripped).toContain("appx-spec-table__value");
+  });
+
+  it("catches the GRID layout too, not only the two stacked ones (feature 85)", () => {
+    // The scan is the guard, so widening it has to be observable: if a future
+    // edit narrowed it back to `display: block` alone, the grid rules would go
+    // unchecked and this fails rather than passing vacuously. The tbody rule is
+    // the specific one a `block`-only scan would miss — it is the only place in
+    // the file that says `display: grid`.
+    const stripped = classesLosingTableSemantics();
+    expect(stripped).toContain("appx-spec-table--layout-grid");
+    expect(stripped).toContain("appx-spec-table__table");
+    expect(css).toContain("display: grid;");
   });
 
   it("every class in a `display: block` rule carries an explicit role in the Liquid", () => {

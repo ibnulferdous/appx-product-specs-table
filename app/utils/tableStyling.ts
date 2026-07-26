@@ -14,7 +14,13 @@
 
 // --- Allowed values (first member is always the default) ---------------------
 
-export const ROW_LAYOUTS = ["TWO_COLUMN", "STACKED"] as const;
+// How one label/value PAIR renders. Three answers to one question, which is why
+// GRID is a third member here rather than a separate boolean (feature 85): a
+// pair cannot be two-column AND grid, so mutual exclusivity comes by
+// construction instead of by a hide predicate forbidding the combination.
+// Appended, never inserted — the first member is the default, and reordering
+// this array would repaint every table that exists.
+export const ROW_LAYOUTS = ["TWO_COLUMN", "STACKED", "GRID"] as const;
 export const MOBILE_LAYOUTS = ["STACKED", "SAME_AS_DESKTOP"] as const;
 export const SECTION_HEADER_STYLES = ["BANDED", "TEXT_ONLY"] as const;
 export const SECTIONS_INITIAL_STATES = [
@@ -129,6 +135,30 @@ export const SECTION_GAP_PX_MAX = 48;
 export const HEADER_PADDING_BLOCK_PX_MIN = 0;
 export const HEADER_PADDING_BLOCK_PX_MAX = 48;
 
+// The narrowest a GRID track may get (feature 85). A MINIMUM WIDTH, never a
+// column count, and that is the load-bearing decision of the whole feature: the
+// stylesheet feeds it to `repeat(auto-fit, minmax(…, 1fr))`, so the track count
+// falls out of the container width. Three things follow that a count knob could
+// not give — the layout is responsive with no media query (at 375px exactly one
+// track fits), a merchant cannot produce three unreadable 200px tracks in a
+// 600px theme, and the editor's ~640px Desktop preview stays TRUTHFUL, because
+// it is showing what a 640px container does with that minimum rather than a
+// count that would look completely different at 1400px.
+//
+// null = the stylesheet's own `240px` literal, i.e. the `headerPaddingBlockPx`
+// vocabulary and NOT the container knobs' "null = off": grid mode always has a
+// minimum, so there is no off state to spell. Nothing keys a presence flag on
+// this field either (the `--layout-grid` class is the gate), so feature 78's
+// minimum-of-1 law does not reach it and the floor below is a usability number
+// rather than a modelling constraint.
+//
+// Floor 160: below that a label and its value are unreadable at any theme font
+// size — the same guard as `TABLE_MAX_WIDTH_PX_MIN`. Ceiling 640: past that a
+// 1440px page yields two tracks and the knob has stopped being a multi-column
+// control.
+export const GRID_MIN_COLUMN_WIDTH_PX_MIN = 160;
+export const GRID_MIN_COLUMN_WIDTH_PX_MAX = 640;
+
 export type RowLayout = (typeof ROW_LAYOUTS)[number];
 export type MobileLayout = (typeof MOBILE_LAYOUTS)[number];
 export type SectionHeaderStyle = (typeof SECTION_HEADER_STYLES)[number];
@@ -161,6 +191,10 @@ export type StylingFontSize = StylingFontSizeKeyword | number | null;
  */
 export interface StylingValues {
   rowLayout: RowLayout;
+  // Only meaningful while `rowLayout` is GRID, which is why the rail hides its
+  // control otherwise — without clearing the value, so a merchant's 320px
+  // survives a trip through Two-column and back.
+  gridMinColumnWidthPx: number | null;
   mobileLayout: MobileLayout;
   sectionHeaderStyle: SectionHeaderStyle;
 
@@ -234,6 +268,11 @@ export interface StylingValues {
  */
 export const STYLING_FIELD_NAMES = [
   "rowLayout",
+  // Sits with its layout knob, ahead of the colour block: the rail's swatch list
+  // is derived from this array by filtering for fields the parser accepts a hex
+  // for, so a non-colour placed inside that block would be fine here but a
+  // colour placed outside it would not — keep the colour block contiguous.
+  "gridMinColumnWidthPx",
   "mobileLayout",
   "sectionHeaderStyle",
   "headerFontSizePx",
@@ -279,6 +318,7 @@ export type StylingFieldName = (typeof STYLING_FIELD_NAMES)[number];
 /** Every knob at its default; every nullable inheriting from the theme. */
 export const DEFAULT_STYLING_VALUES: StylingValues = Object.freeze({
   rowLayout: ROW_LAYOUTS[0],
+  gridMinColumnWidthPx: null,
   mobileLayout: MOBILE_LAYOUTS[0],
   sectionHeaderStyle: SECTION_HEADER_STYLES[0],
   headerFontSizePx: null,
@@ -372,12 +412,12 @@ function clamp(value: number, min: number, max: number): number {
  *
  * Numbers only — a non-integer, a numeric string, NaN or Infinity all degrade to
  * null (that field's stylesheet default) rather than to a guessed number. These
- * back the five `Int?` columns, which Prisma hands back as numbers, so unlike
+ * back the `Int?` columns, which Prisma hands back as numbers, so unlike
  * `parseFontSize` there is no digit-string shape to accept.
  *
- * Shared by all four rather than repeated: they differ only in their bounds, and
- * a copied clamp is a clamp that can drift out of agreement with its own
- * control.
+ * Shared by every bounded integer rather than repeated: they differ only in
+ * their bounds, and a copied clamp is a clamp that can drift out of agreement
+ * with its own control.
  */
 function parseBoundedInt(
   value: unknown,
@@ -428,6 +468,11 @@ export function parseStylingValues(input: unknown): StylingValues {
 
   return {
     rowLayout: parseKeyword(raw.rowLayout, ROW_LAYOUTS, d.rowLayout),
+    gridMinColumnWidthPx: parseBoundedInt(
+      raw.gridMinColumnWidthPx,
+      GRID_MIN_COLUMN_WIDTH_PX_MIN,
+      GRID_MIN_COLUMN_WIDTH_PX_MAX,
+    ),
     mobileLayout: parseKeyword(
       raw.mobileLayout,
       MOBILE_LAYOUTS,

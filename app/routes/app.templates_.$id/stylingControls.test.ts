@@ -27,11 +27,14 @@ import {
   fromOuterBorderRadiusControlValue,
   fromOuterBorderWidthControlValue,
   fromSectionGapControlValue,
+  fromGridMinColumnWidthControlValue,
   ZERO_MEANS_OFF_CONTROL_MIN,
   nextFontSizeForControl,
   parseCustomFontSizePx,
   rememberedCustomFontSizePx,
+  rowDividerOptionsFor,
   showsCustomFontSizeInput,
+  showsGridMinColumnWidthControl,
   showsLabelWidthControl,
   showsMobileLayoutControl,
   showsSectionGapControl,
@@ -40,6 +43,7 @@ import {
   toColorControlValue,
   toControlValue,
   toBoundedIntControlValue,
+  toGridMinColumnWidthControlValue,
   toHeaderFontSizeControlValue,
   toHeaderPaddingBlockControlValue,
   toLabelWidthControlValue,
@@ -51,6 +55,8 @@ import {
   DENSITIES,
   FONT_SIZE_PX_MAX,
   FONT_SIZE_PX_MIN,
+  GRID_MIN_COLUMN_WIDTH_PX_MAX,
+  GRID_MIN_COLUMN_WIDTH_PX_MIN,
   HEADER_PADDING_BLOCK_PX_MAX,
   HEADER_PADDING_BLOCK_PX_MIN,
   LABEL_CASES,
@@ -262,6 +268,114 @@ describe("showsMobileLayoutControl (feature 57 Step 8)", () => {
     styling = { ...styling, rowLayout: "TWO_COLUMN" };
     expect(showsMobileLayoutControl(styling)).toBe(true);
     expect(styling.mobileLayout).toBe("SAME_AS_DESKTOP");
+  });
+
+  it("hides for GRID too — a grid is already responsive (feature 85)", () => {
+    // The predicate went from `!== "STACKED"` to `=== "TWO_COLUMN"` here. A
+    // grid reaches the same conclusion as a stacked table by a different route:
+    // auto-fit fits exactly one track at a phone width, so there is no mobile
+    // behaviour left to choose and neither option would do anything.
+    expect(
+      showsMobileLayoutControl({
+        ...DEFAULT_STYLING_VALUES,
+        rowLayout: "GRID",
+      }),
+    ).toBe(false);
+  });
+});
+
+describe("showsGridMinColumnWidthControl (feature 85)", () => {
+  it("shows only in Grid", () => {
+    for (const layout of ROW_LAYOUTS) {
+      expect(
+        showsGridMinColumnWidthControl({
+          ...DEFAULT_STYLING_VALUES,
+          rowLayout: layout,
+        }),
+      ).toBe(layout === "GRID");
+    }
+  });
+});
+
+describe("rowDividerOptionsFor (feature 85 — the first per-option hide)", () => {
+  it("offers all three outside Grid", () => {
+    for (const layout of ["TWO_COLUMN", "STACKED"] as const) {
+      const options = rowDividerOptionsFor({
+        ...DEFAULT_STYLING_VALUES,
+        rowLayout: layout,
+      });
+      expect(options).toBe(ROW_DIVIDER_OPTIONS);
+      expect(options.map((option) => option.value)).toEqual([
+        "LINES",
+        "STRIPES",
+        "NONE",
+      ]);
+    }
+  });
+
+  it("drops Stripes in Grid for a merchant who has not chosen it", () => {
+    // Zebra striping is DOM-order parity, which across several tracks paints a
+    // checkerboard rather than alternating rows.
+    const options = rowDividerOptionsFor({
+      ...DEFAULT_STYLING_VALUES,
+      rowLayout: "GRID",
+      rowDividerStyle: "LINES",
+    });
+    expect(options.map((option) => option.value)).toEqual(["LINES", "NONE"]);
+  });
+
+  it("keeps an ORPHANED Stripes visible and labelled rather than blanking the select", () => {
+    // The case that makes this a derived list and not a `.filter()`: the select
+    // stays on screen bound to `styling.rowDividerStyle`, so a stored value
+    // missing from the option list renders blank with a blank help line.
+    const options = rowDividerOptionsFor({
+      ...DEFAULT_STYLING_VALUES,
+      rowLayout: "GRID",
+      rowDividerStyle: "STRIPES",
+    });
+    expect(options.map((option) => option.value)).toEqual([
+      "LINES",
+      "NONE",
+      "STRIPES",
+    ]);
+    const stripes = options.find((option) => option.value === "STRIPES");
+    expect(stripes?.label).toBe("Stripes — not available in Grid");
+    expect(stripes?.helpText).toBe(
+      "Stripes do not apply in Grid layout. Pick Lines or None.",
+    );
+  });
+
+  it("drops the orphan entry for good once another member is picked", () => {
+    expect(
+      rowDividerOptionsFor({
+        ...DEFAULT_STYLING_VALUES,
+        rowLayout: "GRID",
+        rowDividerStyle: "NONE",
+      }).map((option) => option.value),
+    ).toEqual(["LINES", "NONE"]);
+  });
+
+  it("never mutates the styling it reads — no coercion on a layout change", () => {
+    // 🚫 The rejected alternative was forcing STRIPES -> LINES when a merchant
+    // picks Grid. That destroys a setting the preserve-on-hide law protects,
+    // and makes a rowLayout change write a different field.
+    const frozen = Object.freeze({
+      ...DEFAULT_STYLING_VALUES,
+      rowLayout: "GRID" as const,
+      rowDividerStyle: "STRIPES" as const,
+    });
+    rowDividerOptionsFor(frozen);
+    expect(frozen.rowDividerStyle).toBe("STRIPES");
+  });
+
+  it("leaves the unfiltered base list untouched", () => {
+    // The Grid path filters a copy; ROW_DIVIDER_OPTIONS is exported and shared.
+    rowDividerOptionsFor({
+      ...DEFAULT_STYLING_VALUES,
+      rowLayout: "GRID",
+      rowDividerStyle: "STRIPES",
+    });
+    expect(ROW_DIVIDER_OPTIONS).toHaveLength(3);
   });
 });
 
@@ -730,10 +844,64 @@ describe("the bounded numeric inputs (feature 57 Step 10b)", () => {
       const px = fromSectionGapControlValue(raw);
       expect(parseStylingValues({ sectionGapPx: px }).sectionGapPx).toBe(px);
     }
+    for (const raw of [
+      String(GRID_MIN_COLUMN_WIDTH_PX_MIN - 1),
+      String(GRID_MIN_COLUMN_WIDTH_PX_MAX + 1),
+      "320",
+    ]) {
+      const px = fromGridMinColumnWidthControlValue(raw);
+      expect(
+        parseStylingValues({ gridMinColumnWidthPx: px }).gridMinColumnWidthPx,
+      ).toBe(px);
+    }
+  });
+});
+
+describe("the minimum-column-width box (feature 85)", () => {
+  it("is a BLANK box, not a zero-means-off one", () => {
+    // Clearing it is the way back to the stylesheet's own 240px. `0` is not a
+    // spelling of anything here — it would mean an unbounded track count, the
+    // unreadable case the floor exists to prevent — so it clamps UP to the
+    // floor rather than reading as "off". Contrast Outline width / Corner
+    // radius, where null already means off and 0 is its display form.
+    expect(toGridMinColumnWidthControlValue(null)).toBe(INHERIT_CONTROL_VALUE);
+    expect(toGridMinColumnWidthControlValue(320)).toBe("320");
+    expect(fromGridMinColumnWidthControlValue("")).toBeNull();
+    expect(fromGridMinColumnWidthControlValue("   ")).toBeNull();
+    expect(fromGridMinColumnWidthControlValue("0")).toBe(
+      GRID_MIN_COLUMN_WIDTH_PX_MIN,
+    );
+    expect(fromGridMinColumnWidthControlValue("-40")).toBe(
+      GRID_MIN_COLUMN_WIDTH_PX_MIN,
+    );
+  });
+
+  it("clamps to the usability bounds and rounds", () => {
+    expect(fromGridMinColumnWidthControlValue("100")).toBe(
+      GRID_MIN_COLUMN_WIDTH_PX_MIN,
+    );
+    expect(fromGridMinColumnWidthControlValue("9000")).toBe(
+      GRID_MIN_COLUMN_WIDTH_PX_MAX,
+    );
+    expect(fromGridMinColumnWidthControlValue("320.4")).toBe(320);
+    expect(fromGridMinColumnWidthControlValue("abc")).toBeNull();
   });
 });
 
 describe("showsLabelWidthControl (feature 57 Step 10b)", () => {
+  it("hides for GRID — free from `=== TWO_COLUMN`, but pinned (feature 85)", () => {
+    // A grid item is a full-width block with its value underneath, so there is
+    // no label COLUMN to size. This needed no code change when GRID joined
+    // ROW_LAYOUTS; the assertion exists so that stays true deliberately rather
+    // than by luck.
+    expect(
+      showsLabelWidthControl({
+        ...DEFAULT_STYLING_VALUES,
+        rowLayout: "GRID",
+      }),
+    ).toBe(false);
+  });
+
   it("shows for a two-column table and hides for a stacked one", () => {
     expect(
       showsLabelWidthControl({
@@ -952,17 +1120,43 @@ const VISIBILITY_PREDICATES: ReadonlyArray<{
     hide: (styling) => ({ ...styling, sectionsCollapsible: false }),
     preservedField: "sectionGapPx",
   },
+  {
+    // The seventh (feature 85), warranted where feature 79 declined one: a
+    // minimum-track-width box outside Grid is not a knob whose effect is merely
+    // invisible, it is a knob with no referent at all.
+    name: "showsGridMinColumnWidthControl",
+    predicate: showsGridMinColumnWidthControl,
+    visible: {
+      ...DEFAULT_STYLING_VALUES,
+      rowLayout: "GRID",
+      gridMinColumnWidthPx: 320,
+    },
+    hide: (styling) => ({ ...styling, rowLayout: "TWO_COLUMN" }),
+    preservedField: "gridMinColumnWidthPx",
+  },
 ];
 
-describe("the hide-rule count is unchanged by feature 81", () => {
-  it("still guards exactly six controls", () => {
+describe("the hide-rule count (feature 85 took it from six to seven)", () => {
+  it("guards exactly seven controls", () => {
     // The five section-header knobs are visible in EVERY shape — they dress the
     // flat `th` and the collapsible `<summary>` alike — so unlike the section
     // gap none of them earns a predicate. Pinning the count is what turns "we
     // decided not to add one" into something a later change has to confront:
-    // a seventh entry here means a new control gained a hide rule, and it must
+    // an eighth entry here means a new control gained a hide rule, and it must
     // inherit the preserve-on-hide law below rather than reimplement it.
-    expect(VISIBILITY_PREDICATES).toHaveLength(6);
+    //
+    // 6 -> 7 for feature 85's `showsGridMinColumnWidthControl`. Note what did
+    // NOT land here: the same feature hides the Stripes OPTION in Grid mode,
+    // and that is deliberately absent. This registry enforces preserve-on-hide
+    // over whole CONTROLS — a hidden control cannot lie because it is not
+    // rendered. The Row-dividers select stays on screen, so the option filter is
+    // a different mechanism with a different failure mode (the orphan value)
+    // and carries its own tests instead. Registering it would assert a law it
+    // does not obey.
+    expect(VISIBILITY_PREDICATES).toHaveLength(7);
+    expect(VISIBILITY_PREDICATES.map((entry) => entry.name)).not.toContain(
+      "rowDividerOptionsFor",
+    );
   });
 });
 

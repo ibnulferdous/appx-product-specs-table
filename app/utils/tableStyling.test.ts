@@ -5,6 +5,8 @@ import {
   DENSITIES,
   FONT_SIZE_PX_MAX,
   FONT_SIZE_PX_MIN,
+  GRID_MIN_COLUMN_WIDTH_PX_MAX,
+  GRID_MIN_COLUMN_WIDTH_PX_MIN,
   HEADER_PADDING_BLOCK_PX_MAX,
   HEADER_PADDING_BLOCK_PX_MIN,
   LABEL_CASES,
@@ -48,6 +50,7 @@ const COLOR_FIELDS = [
 // serialize + round-trip laws.
 const FULLY_OVERRIDDEN: StylingValues = {
   rowLayout: "STACKED",
+  gridMinColumnWidthPx: 320,
   mobileLayout: "SAME_AS_DESKTOP",
   sectionHeaderStyle: "TEXT_ONLY",
   headerFontSizePx: 22,
@@ -309,6 +312,95 @@ describe("parseStylingValues — sectionGapPx", () => {
     for (const bad of [12.5, "12", NaN, Infinity, -Infinity, null, true, {}]) {
       expect(parseStylingValues({ sectionGapPx: bad }).sectionGapPx).toBeNull();
     }
+  });
+});
+
+// --- Feature 85 · multi-column row flow --------------------------------------
+describe("ROW_LAYOUTS — GRID joins as a third member (feature 85)", () => {
+  it("keeps TWO_COLUMN first, so no table that exists today repaints", () => {
+    // THE no-repaint pin. GRID was APPENDED, never inserted: the first member
+    // is the default, so a reorder here would silently relayout every table
+    // whose merchant never touched the knob.
+    expect(ROW_LAYOUTS[0]).toBe("TWO_COLUMN");
+    expect(DEFAULT_STYLING_VALUES.rowLayout).toBe("TWO_COLUMN");
+    expect([...ROW_LAYOUTS]).toEqual(["TWO_COLUMN", "STACKED", "GRID"]);
+  });
+
+  it("parses and round-trips through the wire shape", () => {
+    expect(parseStylingValues({ rowLayout: "GRID" }).rowLayout).toBe("GRID");
+    expect(
+      serializeStylingOverrides(parseStylingValues({ rowLayout: "GRID" })),
+    ).toEqual({ rowLayout: "GRID" });
+  });
+});
+
+describe("parseStylingValues — gridMinColumnWidthPx", () => {
+  it("defaults to null, which means the stylesheet's own 240px", () => {
+    // Not "off" — a grid always has a minimum, so there is no off state to
+    // spell. This is the headerPaddingBlockPx vocabulary, not the container
+    // knobs'.
+    expect(parseStylingValues({}).gridMinColumnWidthPx).toBeNull();
+    expect(DEFAULT_STYLING_VALUES.gridMinColumnWidthPx).toBeNull();
+  });
+
+  it("keeps in-range integers, including both boundaries", () => {
+    for (const value of [
+      GRID_MIN_COLUMN_WIDTH_PX_MIN,
+      320,
+      GRID_MIN_COLUMN_WIDTH_PX_MAX,
+    ]) {
+      expect(
+        parseStylingValues({ gridMinColumnWidthPx: value })
+          .gridMinColumnWidthPx,
+      ).toBe(value);
+    }
+  });
+
+  it("clamps out-of-range integers, both probes derived from the bounds", () => {
+    expect(
+      parseStylingValues({
+        gridMinColumnWidthPx: GRID_MIN_COLUMN_WIDTH_PX_MIN - 1,
+      }).gridMinColumnWidthPx,
+    ).toBe(GRID_MIN_COLUMN_WIDTH_PX_MIN);
+    expect(
+      parseStylingValues({
+        gridMinColumnWidthPx: GRID_MIN_COLUMN_WIDTH_PX_MAX + 1,
+      }).gridMinColumnWidthPx,
+    ).toBe(GRID_MIN_COLUMN_WIDTH_PX_MAX);
+  });
+
+  it("clamps a 0 up to the floor — it is not a spelling of anything", () => {
+    // A 0 minimum would mean an unbounded track count, which is exactly the
+    // unreadable case the floor exists to prevent.
+    expect(
+      parseStylingValues({ gridMinColumnWidthPx: 0 }).gridMinColumnWidthPx,
+    ).toBe(GRID_MIN_COLUMN_WIDTH_PX_MIN);
+  });
+
+  it("rejects non-integers, strings and non-finite numbers", () => {
+    for (const bad of [
+      240.5,
+      "240",
+      NaN,
+      Infinity,
+      -Infinity,
+      null,
+      true,
+      {},
+    ]) {
+      expect(
+        parseStylingValues({ gridMinColumnWidthPx: bad }).gridMinColumnWidthPx,
+      ).toBeNull();
+    }
+  });
+
+  it("writes no override while it is null", () => {
+    expect(serializeStylingOverrides(parseStylingValues({}))).toEqual({});
+    expect(
+      serializeStylingOverrides(
+        parseStylingValues({ gridMinColumnWidthPx: 320 }),
+      ),
+    ).toEqual({ gridMinColumnWidthPx: 320 });
   });
 });
 

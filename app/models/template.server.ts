@@ -50,6 +50,7 @@ function parseRowsWithinCap(
 // completeness against the Step 1 vocabulary.
 type TableStylingColumns = {
   rowLayout: string | null;
+  gridMinColumnWidthPx: number | null;
   mobileLayout: string | null;
   sectionHeaderStyle: string | null;
   headerFontSizePx: number | null;
@@ -105,6 +106,8 @@ export function stylingToDbColumns(values: StylingValues): TableStylingColumns {
     value === defaultValue ? null : value;
   return {
     rowLayout: knob(values.rowLayout, d.rowLayout),
+    // Already "null = default" (the stylesheet's 240px), so no `knob` treatment.
+    gridMinColumnWidthPx: values.gridMinColumnWidthPx,
     mobileLayout: knob(values.mobileLayout, d.mobileLayout),
     sectionHeaderStyle: knob(values.sectionHeaderStyle, d.sectionHeaderStyle),
     // Section-header typography (feature 81). All four are already

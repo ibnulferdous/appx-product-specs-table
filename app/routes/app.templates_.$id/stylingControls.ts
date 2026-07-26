@@ -3,6 +3,8 @@ import {
   DENSITIES,
   FONT_SIZE_PX_MAX,
   FONT_SIZE_PX_MIN,
+  GRID_MIN_COLUMN_WIDTH_PX_MAX,
+  GRID_MIN_COLUMN_WIDTH_PX_MIN,
   HEADER_PADDING_BLOCK_PX_MAX,
   HEADER_PADDING_BLOCK_PX_MIN,
   LABEL_CASES,
@@ -76,6 +78,62 @@ export const ROW_DIVIDER_OPTIONS: ReadonlyArray<
   helpText: ROW_DIVIDER_LABELS[value].helpText,
 }));
 
+// The orphan entry: what Stripes reads as once it is no longer offered but is
+// still the stored value. Not in the Record above, because it is not a second
+// vocabulary for the knob — it is the one label that says "this is what you have
+// and it is not doing anything".
+const STRIPES_UNAVAILABLE_OPTION: StylingOption<
+  (typeof ROW_DIVIDER_STYLES)[number]
+> = {
+  value: "STRIPES",
+  label: "Stripes — not available in Grid",
+  helpText: "Stripes do not apply in Grid layout. Pick Lines or None.",
+};
+
+/**
+ * The Row-dividers options for the styling currently on screen (feature 85).
+ *
+ * The rail's FIRST per-option hide, and the reason it is a derived list rather
+ * than a `.filter()` at the call site is the ORPHAN VALUE. Zebra striping is
+ * DOM-order parity, which across several grid tracks paints a checkerboard
+ * rather than alternating rows, so Grid mode does not offer Stripes. But the
+ * control itself stays on screen, and a merchant who chose Stripes on a
+ * two-column table and then switched to Grid still has `STRIPES` stored — a
+ * naive filter would leave the select bound to a value with no matching option,
+ * which renders blank with a blank help line and reads as a broken control.
+ *
+ * So: Stripes is gone for everyone who has not chosen it, and stays visible —
+ * labelled as inert — for the one merchant who has, until they pick something
+ * else.
+ *
+ * 🚫 Deliberately NOT coercing `STRIPES` to `LINES` when the layout changes.
+ * That is the tidier-looking fix and it is wrong twice: it destroys a setting
+ * the preserve-on-hide law exists to protect, and it would make a `rowLayout`
+ * change write a different field, where every visibility rule in this file is a
+ * pure read.
+ *
+ * ⚠️ This does NOT belong in the `VISIBILITY_PREDICATES` registry, which exists
+ * to enforce preserve-on-hide over whole CONTROLS. A hidden control cannot lie
+ * because it is not rendered; this one is, which is a different mechanism with a
+ * different failure mode. It has its own tests instead.
+ *
+ * The stylesheet stands the stripe fill down independently — the rail is not the
+ * only writer of a `GRID` + `STRIPES` pair (a saved template, a B2 preset, or
+ * the orphan case above), so the CSS is where it is actually enforced.
+ */
+export function rowDividerOptionsFor(
+  styling: StylingValues,
+): ReadonlyArray<StylingOption<(typeof ROW_DIVIDER_STYLES)[number]>> {
+  if (styling.rowLayout !== "GRID") return ROW_DIVIDER_OPTIONS;
+
+  const offered = ROW_DIVIDER_OPTIONS.filter(
+    (option) => option.value !== "STRIPES",
+  );
+  return styling.rowDividerStyle === "STRIPES"
+    ? [...offered, STRIPES_UNAVAILABLE_OPTION]
+    : offered;
+}
+
 // Column divider — the row knob's vertical partner (feature 79). Two members
 // only: the rule is a fixed hairline dressed by the shared Border swatch, so
 // there is nothing to size or color and the control is a plain either/or.
@@ -122,6 +180,11 @@ const ROW_LAYOUT_LABELS: Record<
     helpText: "Label on the left, value on the right.",
   },
   STACKED: { label: "Stacked", helpText: "Label above the value." },
+  GRID: {
+    label: "Grid",
+    helpText:
+      "Labels sit above their values and flow into as many columns as fit.",
+  },
 };
 
 export const ROW_LAYOUT_OPTIONS: ReadonlyArray<
@@ -378,6 +441,12 @@ export function showsSectionGapControl(styling: StylingValues): boolean {
  * greyed-out control whose two choices are equivalent still asks the merchant to
  * think about it.
  *
+ * GRID reaches the same conclusion by a different route (feature 85), which is
+ * why this reads `=== "TWO_COLUMN"` rather than `!== "STACKED"`: a grid is
+ * already responsive by construction — `auto-fit` fits exactly one track at a
+ * phone width — so there is no mobile behaviour left to choose. A merchant
+ * offered the choice would reasonably expect one of the options to do something.
+ *
  * This is a RAIL concern only, and it is deliberately a read, not a write:
  *
  * - It never mutates `mobileLayout`. The merchant's choice survives a trip
@@ -390,7 +459,24 @@ export function showsSectionGapControl(styling: StylingValues): boolean {
  * Polaris web components, which jsdom cannot do.
  */
 export function showsMobileLayoutControl(styling: StylingValues): boolean {
-  return styling.rowLayout !== "STACKED";
+  return styling.rowLayout === "TWO_COLUMN";
+}
+
+/**
+ * Whether the rail shows the "Minimum column width" control (feature 85).
+ *
+ * The SEVENTH instance of hide-when-irrelevant, and warranted where feature 79
+ * declined one: a minimum-track-width box with no grid to apply to is not a knob
+ * whose effect is merely invisible, it is a knob with no referent at all.
+ *
+ * A pure READ like the other six, so a merchant's 320px survives a trip through
+ * Two-column and back — registered in `VISIBILITY_PREDICATES` so the shared
+ * preserve-on-hide law test covers it automatically.
+ */
+export function showsGridMinColumnWidthControl(
+  styling: StylingValues,
+): boolean {
+  return styling.rowLayout === "GRID";
 }
 
 // --- Step 10 · the `null` vocabulary ----------------------------------------
@@ -880,6 +966,30 @@ export function fromBoundedIntControlValue(
   const value = Number(trimmed);
   if (trimmed === "" || !Number.isFinite(value)) return null;
   return clampToRange(Math.round(value), min, max);
+}
+
+/** A stored grid minimum as the string a number field holds; null = empty. */
+export function toGridMinColumnWidthControlValue(px: number | null): string {
+  return toBoundedIntControlValue(px);
+}
+
+/**
+ * The minimum-column-width box's string back to a stored px or null.
+ *
+ * The BLANK-BOX idiom, not zero-means-off (feature 85). Clearing the field is
+ * the way back to the stylesheet's own 240px, and `0` is deliberately not a
+ * spelling of anything here: it would mean an unbounded track count, which is
+ * precisely the unreadable case the 160 floor exists to prevent. So a typed 0
+ * clamps UP to the floor rather than reading as "off" — contrast the outline
+ * width and corner radius, where null already means off and 0 is its display
+ * form.
+ */
+export function fromGridMinColumnWidthControlValue(raw: string): number | null {
+  return fromBoundedIntControlValue(
+    raw,
+    GRID_MIN_COLUMN_WIDTH_PX_MIN,
+    GRID_MIN_COLUMN_WIDTH_PX_MAX,
+  );
 }
 
 export function fromTableMaxWidthControlValue(raw: string): number | null {

@@ -55,6 +55,7 @@ const STRIPED_ROW = {
   id: "sty_1",
   templateId: "t1",
   rowLayout: null,
+  gridMinColumnWidthPx: null,
   mobileLayout: null,
   sectionHeaderStyle: null,
   sectionsCollapsible: false,
