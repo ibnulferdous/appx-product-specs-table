@@ -185,10 +185,29 @@ export const SPEC_TABLE_CSS = `/* Appx — Product Specs Table storefront styles
   color: var(--appx-spec-value-color, inherit);
 }
 
+/* The five feature-81 knobs land here and on the collapsible summary below,
+   with every fallback being the literal that shipped before them — an untouched
+   table renders byte-identically.
+
+   padding-block + padding-inline as LONGHANDS, not the two-value padding
+   shorthand they replace. A shorthand containing a var is IACVT
+   (invalid-at-computed-value-time)
+   if that var is ever malformed, and IACVT drops the WHOLE shorthand to its
+   initial value: zero padding on all four sides, not just the one axis. The var
+   can only be a validated px integer today, so this is defense in depth — but
+   longhands make the failure mode impossible rather than merely unlikely.
+
+   The inline axis stays a literal 0.75rem on purpose. It matches the row cells
+   exactly, so a section title and the labels under it share one text edge; a
+   knob over all four sides would break that alignment the moment it was used. */
 .appx-spec-table__section {
-  padding: 0.75rem;
+  padding-block: var(--appx-spec-header-padding-block, 0.75rem);
+  padding-inline: 0.75rem;
   text-align: left;
-  font-weight: 700;
+  font-size: var(--appx-spec-header-font-size, inherit);
+  font-weight: var(--appx-spec-header-font-weight, 700);
+  text-transform: var(--appx-spec-header-transform, none);
+  color: var(--appx-spec-header-color, inherit);
   background: var(--appx-spec-header-bg, transparent);
   border-block-end: 2px solid var(--appx-spec-border-color, currentColor);
 }
@@ -244,9 +263,19 @@ export const SPEC_TABLE_CSS = `/* Appx — Product Specs Table storefront styles
   list-style-position: inside;
   list-style-type: disclosure-closed;
   cursor: pointer;
-  padding: 0.75rem;
+  /* The same five feature-81 knobs as the flat rule above, same fallbacks, same
+     longhand-padding reasoning. Both shapes must carry them or the section
+     header would restyle itself when a merchant toggled Collapsible.
+
+     The disclosure marker sits in the text flow (list-style-position: inside),
+     so it inherits the font size here and scales with the title for free. */
+  padding-block: var(--appx-spec-header-padding-block, 0.75rem);
+  padding-inline: 0.75rem;
   text-align: left;
-  font-weight: 700;
+  font-size: var(--appx-spec-header-font-size, inherit);
+  font-weight: var(--appx-spec-header-font-weight, 700);
+  text-transform: var(--appx-spec-header-transform, none);
+  color: var(--appx-spec-header-color, inherit);
   background: var(--appx-spec-header-bg, transparent);
   border-block-end: 2px solid var(--appx-spec-border-color, currentColor);
 }

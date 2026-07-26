@@ -35,7 +35,7 @@ Everything upstream is done and live-verified on the dev store:
   persists to `TableStyling`, serializes to the metaobject, and renders on the storefront;
   rail a11y pass done; Reset-to-theme-defaults ships; docs reconciled.
 
-Test suite 914 tests / 37 files; full gate (typecheck · lint · format · test · build) green.
+Test suite 943 tests / 37 files; full gate (typecheck · lint · format · test · build) green.
 
 Since B1: the Style tab's width surface — the collapsible rail (feature 76). Feature 75's
 full-size preview modal shipped the same day and was **removed 2026-07-25**; see Completed.
@@ -97,6 +97,62 @@ plan: `~/.claude/plans/style-tab-phase-b-implementation-plan.md` (1–12 = B1, 1
   headings, named landmark) + docs reconciliation. **Phase B1 complete.**
 - Resolved en route: the section-header BANDED band is the intended default becoming
   reachable, not a regression (accept; Step 7 signed off).
+
+**Section header typography & spacing (feature 81, doc `81-…`) — ✅ shipped & fully
+live-verified 2026-07-26**
+- Merchant sent five competitor spec tables (Best Buy, Amazon, Trek, AppleGadgets, a fifth
+  blue-band sample) and asked which section-header treatments the app can reproduce. Five
+  were missing; all five ship here as **nullable `TableStyling` columns** — `headerTextColor`,
+  `headerFontSizePx`, `headerFontWeight`, `headerCase`, `headerPaddingBlockPx`. Migration
+  `20260726054441_add_section_header_typography_styling`. Band radius / chevron position /
+  open-close animation from the same report are **82 / 83 / 84**, each split out for a
+  recorded technical reason. Per-row ⓘ icons are content, not styling → Phase C.
+- **The cheapest unit the Style tab has had, and that is a consequence of the Step 2 rule,
+  not a coincidence.** Nullable ⇒ CSS custom property, so: **no modifier class, no presence
+  flag, no hide predicate (count stays 6), no markup, no Liquid, no TOML.** Fourth feature
+  running that "server precomputes `styling_css`; Liquid only prints" paid for. Three tests
+  now pin the no-class claim, and it was **measured on the wire**: after saving three knobs
+  to the ACTIVE DJI template the metaobject's `styling_css.classes` string is byte-identical
+  to before the feature, while `.vars` gained three declarations.
+- ⚠️ **`headerFontSizePx` is absolute px, NOT an em keyword — structural, not taste.** The
+  collapsible `<summary>` is a **sibling** of the `<table>` that carries
+  `--appx-spec-font-size`, so an em multiplier would resolve against a different base in each
+  shape and silently resize when a merchant toggled Collapsible. px resolves identically in
+  both. This also collapsed the control from a five-option tri-state to a plain number box.
+- **`headerPaddingBlockPx` is the ONE integer knob with a 0 floor** (merchant's call). Feature
+  78's minimum-of-1 law governs knobs where null already means off; here null means the
+  `0.75rem` literal, so 0 is a *first* spelling of a genuinely different render, nothing keys
+  a presence flag on it, and the mapping guard is `!== null` rather than falsiness so a stored
+  0 emits `0px` instead of falling through to the fallback. **Block axis only** — the inline
+  padding stays welded to the row cells' `0.75rem`, or a 24px title would indent past its own
+  labels. Written as `padding-block`/`padding-inline` longhands: a var inside a shorthand is
+  IACVT and would drop **all four sides** to zero.
+- **Live-verified end to end** on the ACTIVE DJI template: rail → Save → Postgres → metaobject
+  → rendered Horizon storefront, all 9 sections at `22px / 700 / uppercase / 18px block`, with
+  **`padding-inline` still `12px`** (the block-only decision in production) and `font-weight:
+  700` coming from the *literal fallback* since `headerFontWeight` is null. Features 79/80
+  undisturbed (`margin-block-start` 0/25px, every `border-block-start` 0px). Row labels stay
+  `text-transform: none` — `headerCase` never touches `labelCase`'s surface. Mobile checked at
+  a genuinely reflowed `innerWidth: 502` (`labelDisplay: block` proves the @media fired): all
+  five identical to desktop. A 16-case CSS harness against the real stylesheet ran **first**;
+  its all-null control measured `12px/16px/700/none` — the pre-feature literals, so the
+  no-repaint claim is measured, not asserted. Migration non-repainting (6 rows, 0 non-null).
+  Tests 914 → 943.
+- ⚠️ **Two traps worth carrying forward.** (1) A **backtick in a `spec-table.css` comment**
+  breaks the `previewStyles.ts` mirror — the file header says so and the first comment written
+  here violated it; use plain words for CSS syntax in that file. (2) The **stale-Prisma-client
+  trap hit for the fourth consecutive feature** (78/79/80/81) and presented at its sharpest:
+  Save wrote nothing and left the SaveBar reading "Unsaved changes" — no toast, no error. The
+  discriminator settled it in one command (a fresh `node -e` writes fine ⇒ the server is just
+  stale). Also: `prisma generate` can report `EPERM … query_engine-windows.dll.node` while
+  still having rewritten the types and client JS, so typecheck/build pass on a "failed"
+  generate — the engine binary is version-, not schema-specific. Don't loop on it.
+- **Left saved with** Section title size 22 · case Uppercase · padding 18 (revert = two boxes
+  + one select). `headerFontWeight` / `headerTextColor` deliberately left null, which is what
+  made "absent from the wire when null" a real check.
+- Numbering: this takes **81**, so B2 starts at **82**. These five join feature 78's five,
+  79's divider and 80's gap in the B2 preset bundles — **twelve** fields now, and 81's are
+  what let the merchant's reference tables be reproduced rather than approximated.
 
 **Section separation + section gap (feature 80, doc `80-…`) — ✅ shipped & fully
 live-verified 2026-07-26**
@@ -518,23 +574,47 @@ Multi-value applies to PRODUCT + COLLECTION only. No migrations needed for the 4
 ## Next Up
 
 1. **Reshell Phase B2** — built-in preset gallery (Style tab steps 13–14; **starts at feature
-   doc 81**, since 70 = stacked-semantics, 71 = sidebar inner-scroll, 72 = device-preview
+   doc 82** now that 81 is spoken for; before that 70 = stacked-semantics, 71 = sidebar inner-scroll, 72 = device-preview
    mockups, 73 = desktop preview inner scroll, 74 = content-free tables, 75 = full-size preview
    modal (removed), 76 = collapsible Style rail, 77 = container stretch, 78 = width + outer
-   border, 79 = column divider, 80 = section separation + gap — a retired number is still
-   spent). **The five feature-78 fields plus `columnDividerStyle` and `sectionGapPx` must be in
-   the preset bundles** — those seven are what make "Bordered / Grid" and "Accordion" built-in
-   presets possible. Then C (Settings display rules) → E (assignment
-   into the reshell) → F (top-bar status/save + cleanup).
-2. **Storefront table semantics in stacked layouts (feature 70)** — code shipped; screen-reader pass still owed (see Open Questions).
-3. **Editor page should not scroll at the document level** — the app document overflows the
+   border, 79 = column divider, 80 = section separation + gap, 81 = section header typography —
+   a retired number is still spent). **The five feature-78 fields plus `columnDividerStyle`,
+   `sectionGapPx` and feature 81's five must be in the preset bundles** — those twelve are what
+   make "Bordered / Grid" and "Accordion" built-in presets possible, and 81's five are what let
+   the merchant's five reference tables be reproduced rather than approximated. Then C (Settings
+   display rules) → E (assignment into the reshell) → F (top-bar status/save + cleanup).
+2. **Section band radius / chevron position / animated open-close (proposed 82 / 83 / 84).**
+   The rest of the same merchant report feature 81 answered. Each is its own unit for a
+   recorded reason — see "Deliberately out of scope" in `81-…`: a radius behaves differently
+   on a `th` under `border-collapse` than on a `<summary>` and needs a gap to look right; a
+   right-aligned chevron means abandoning `list-style-type` for a pseudo-element, which
+   already broke once against Horizon's `summary { list-style: none }`; and height animation
+   needs `::details-content` + `interpolate-size`, so it is progressive-enhancement only and
+   must be reduced-motion guarded. 🚫 Not the JS `grid-template-rows` trick — that breaks the
+   zero-JS `<details>` invariant.
+3. **Storefront table semantics in stacked layouts (feature 70)** — code shipped;
+   screen-reader pass still owed (see Open Questions). ⚠️ **Now blocking feature 85**
+   (below), which would be the third `display`-departure riding on the same unverified
+   ARIA chain. Run the pass before building it.
+4. **Multi-column row flow (feature 85, doc `85-…`) — specced 2026-07-26, NOT built.**
+   Merchant sent five competitor tables laying rows out in 2–3 side-by-side tracks. Spec
+   covers "Type A" only (the unit laid out is one label/value pair — screenshots 1/2/4);
+   section-level flow ("Type B", screenshots 3/5) is out of scope with a recorded reason.
+   `GRID` joins `ROW_LAYOUTS`; one new nullable `gridMinColumnWidthPx`. **A minimum
+   column width, never a column count** — `auto-fit` + `minmax` makes it responsive with
+   no media query, and a count knob would make the ~640px editor preview lie about a
+   1400px storefront. No Liquid / markup / TOML change; hide-rule count 6 → 7. **Blocked
+   on item 3**, and needs three merchant decisions (default minimum, Stripes behaviour,
+   whether it belongs in a B2 preset — if yes it must land before B2 bakes
+   `stylePresets.ts`). Numbering: takes **85**; 82/83/84 stay reserved for item 2.
+5. **Editor page should not scroll at the document level** — the app document overflows the
    iframe by roughly the `.tipsFooter` height (it renders BELOW the card, outside
    `useScrollRegionHeight`'s flat `BOTTOM_PAD_REM = 3` budget), producing a stray outer
    scrollbar stranded beside admin's reserved 16px scrollbar gutter. Fix = measure the actual
    footer/card bottom instead of the hardcoded 3rem. Touches the measurer both scrollers share,
    so it is its own unit.
-4. **Templates-list Phase 2** — search / sort / pagination (server-side, with pagination) when the list can grow large; multi-select bulk actions later.
-5. **Pre-submission** — mandatory privacy webhooks (`customers/data_request`, `customers/redact`, `shop/redact`) + Billing (`prd.md`, `context/app-store-review-checklist.md`).
+6. **Templates-list Phase 2** — search / sort / pagination (server-side, with pagination) when the list can grow large; multi-select bulk actions later.
+7. **Pre-submission** — mandatory privacy webhooks (`customers/data_request`, `customers/redact`, `shop/redact`) + Billing (`prd.md`, `context/app-store-review-checklist.md`).
 
 **Deferred:** editor bulk-delete range-select (Shift+click) + Delete/Backspace shortcut; per-product overflow materialization + a bulk apply-to-all styling route.
 
@@ -548,6 +628,17 @@ Multi-value applies to PRODUCT + COLLECTION only. No migrations needed for the 4
 
 ## Open Questions
 
+- **Collapsible section titles do not inherit the table's typography (found 2026-07-26 while
+  specing feature 81; pre-existing since Step 9a).** `--appx-spec-font-size` / `-font-style` /
+  `-line-height` are declared on `.appx-spec-table__table` (`spec-table.css:141–143`), and the
+  collapsible shape is `<details><summary>…</summary><table>…</table></details>` — the summary
+  is a **sibling** of the table, not a descendant. So Text size = Large grows flat section
+  titles and leaves collapsible ones untouched. Closing it means adding the three vars to the
+  summary rule, which repaints every live collapsible table with a non-null `fontSize` — a
+  no-repaint-law decision of its own, not a rider on 81. (Feature 81 is unaffected either way:
+  `headerFontSizePx` is absolute px on the summary's own rule, which is precisely *why* it is
+  px and not an em-scale keyword — an em multiplier would resolve against two different bases
+  depending on the shape.)
 - 🔴 **Stacked-mode `<table>` semantics — screen-reader pass NOT run (feature 70).**
   `rowLayout=STACKED` and the mobile stacked layout apply `display: block`, dropping implicit
   table semantics. Code shipped 2026-07-20 (`f6ac4aa`): a static unconditional ARIA role chain

@@ -190,6 +190,84 @@ describe("spec-table.css ↔ styling vocabulary contract (feature 57 Step 3)", (
     });
   });
 
+  // --- Section header typography + spacing (feature 81) ----------------------
+  //
+  // Five nullable knobs that must land on BOTH section-header shapes — the flat
+  // `th[colspan=2]` and the collapsible `<summary>` — because a merchant
+  // toggling Collapsible must not see the band restyle itself. Two separate
+  // rule blocks, so nothing but a test keeps them in agreement.
+  describe("section header typography", () => {
+    // Every fallback is the literal that shipped BEFORE this feature. Pinning
+    // the fallbacks (not merely the var names) is what pins the no-repaint
+    // claim: change one and every untouched table in the wild moves.
+    const HEADER_DECLARATIONS = [
+      "padding-block: var(--appx-spec-header-padding-block, 0.75rem);",
+      "padding-inline: 0.75rem;",
+      "font-size: var(--appx-spec-header-font-size, inherit);",
+      "font-weight: var(--appx-spec-header-font-weight, 700);",
+      "text-transform: var(--appx-spec-header-transform, none);",
+      "color: var(--appx-spec-header-color, inherit);",
+    ];
+
+    // Anchored on `selector + " {"` — several of these selectors also appear
+    // inside grouped lists further down the file (the trap features 79 and 80
+    // both recorded).
+    const SHAPES = {
+      flat: ".appx-spec-table__section {",
+      collapsible:
+        ".appx-spec-table--collapsible .appx-spec-table__section-summary {",
+    };
+
+    for (const [shape, selector] of Object.entries(SHAPES)) {
+      it(`carries all five knobs on the ${shape} shape, with the pre-feature literals as fallbacks`, () => {
+        const start = css.indexOf(selector);
+        expect(
+          start,
+          `the ${shape} section-header rule is missing`,
+        ).toBeGreaterThan(-1);
+        const block = css.slice(start, css.indexOf("}", start));
+        for (const declaration of HEADER_DECLARATIONS) {
+          expect(block, `${shape} is missing: ${declaration}`).toContain(
+            declaration,
+          );
+        }
+      });
+    }
+
+    it("keeps the inline padding a literal in both shapes", () => {
+      // The knob is BLOCK-only on purpose: the section title and the label
+      // column share one text edge at 0.75rem, and a four-side knob would break
+      // that alignment the moment it was used. Two shapes, so exactly two
+      // declarations of the literal.
+      const declarations = css.match(/\n {2}padding-inline: 0\.75rem;/g) ?? [];
+      expect(declarations).toHaveLength(2);
+    });
+
+    it("never puts a var inside a padding SHORTHAND", () => {
+      // A shorthand containing a var is invalid-at-computed-value-time if that
+      // var is ever malformed, and IACVT drops the WHOLE shorthand to its
+      // initial value — zero padding on all four sides, not just one axis.
+      // Longhands make that failure mode impossible rather than unlikely.
+      expect(css).not.toMatch(/\n {2}padding: [^;]*var\(/);
+    });
+
+    it("emits no modifier class for any of the five", () => {
+      // The whole feature rides the Step 2 rule "nullable -> custom property",
+      // so `stylingToModifierClasses` must be blind to it. If this fails,
+      // something reached for a presence flag and the design drifted.
+      const withAll = variant({
+        headerTextColor: "#123456",
+        headerFontSizePx: 22,
+        headerFontWeight: "BOLD",
+        headerCase: "UPPERCASE",
+        headerPaddingBlockPx: 0,
+      });
+      expect(stylingToModifierClasses(withAll)).toEqual(
+        stylingToModifierClasses(DEFAULT_STYLING_VALUES),
+      );
+    });
+  });
+
   // --- Column divider (feature 79) -------------------------------------------
   //
   // The class-presence assertions above prove both members have a selector.

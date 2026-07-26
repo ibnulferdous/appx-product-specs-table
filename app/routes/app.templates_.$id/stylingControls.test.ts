@@ -7,6 +7,8 @@ import {
   FONT_SIZE_OPTIONS,
   FONT_STYLE_OPTIONS,
   FONT_WEIGHT_OPTIONS,
+  HEADER_CASE_OPTIONS,
+  HEADER_FONT_WEIGHT_OPTIONS,
   INHERIT_CONTROL_VALUE,
   LABEL_CASE_OPTIONS,
   LINE_HEIGHT_OPTIONS,
@@ -19,6 +21,8 @@ import {
   fontSizeControlValue,
   fromColorControlValue,
   fromControlValue,
+  fromHeaderFontSizeControlValue,
+  fromHeaderPaddingBlockControlValue,
   fromLabelWidthControlValue,
   fromOuterBorderRadiusControlValue,
   fromOuterBorderWidthControlValue,
@@ -36,6 +40,8 @@ import {
   toColorControlValue,
   toControlValue,
   toBoundedIntControlValue,
+  toHeaderFontSizeControlValue,
+  toHeaderPaddingBlockControlValue,
   toLabelWidthControlValue,
   toZeroMeansOffControlValue,
   type StylingOption,
@@ -45,6 +51,8 @@ import {
   DENSITIES,
   FONT_SIZE_PX_MAX,
   FONT_SIZE_PX_MIN,
+  HEADER_PADDING_BLOCK_PX_MAX,
+  HEADER_PADDING_BLOCK_PX_MIN,
   LABEL_CASES,
   LABEL_WIDTH_PCT_MAX,
   LABEL_WIDTH_PCT_MIN,
@@ -337,7 +345,7 @@ describe("COLOR_KNOBS (feature 57 Step 10a)", () => {
     expect(COLOR_KNOBS.map((knob) => knob.field)).toEqual(hexAccepting);
   });
 
-  it("enables alpha on the six surface colors and disables it on the two text colors", () => {
+  it("enables alpha on the six surface colors and disables it on the three text colors", () => {
     // The 2026-07-19 lock: the stylesheet's own defaults are translucent, so an
     // opaque-only surface picker could not reproduce the default look, while
     // translucent body text is a contrast bug rather than a design choice.
@@ -356,7 +364,13 @@ describe("COLOR_KNOBS (feature 57 Step 10a)", () => {
     ]);
     expect(
       COLOR_KNOBS.filter((knob) => !knob.alpha).map((k) => k.field),
-    ).toEqual(["labelTextColor", "valueTextColor"]);
+    ).toEqual([
+      // Feature 81's section-title color joins the text group, not the surface
+      // group — the band it sits on is a surface and keeps its alpha.
+      "headerTextColor",
+      "labelTextColor",
+      "valueTextColor",
+    ]);
   });
 
   it("gives every swatch distinct merchant-facing prose", () => {
@@ -763,6 +777,97 @@ describe("showsCustomFontSizeInput (feature 57 Step 10b)", () => {
 // similar one-liner again", it is "someone adds a fifth control and forgets the
 // law", and only a shared test catches that. A fifth knob inherits the law by
 // adding one row below.
+// --- Feature 81 · the two section-header number boxes ------------------------
+describe("section-header control converters (feature 81)", () => {
+  describe("title size — the blank-box idiom", () => {
+    it("round-trips a stored px", () => {
+      expect(toHeaderFontSizeControlValue(22)).toBe("22");
+      expect(fromHeaderFontSizeControlValue("22")).toBe(22);
+    });
+
+    it("shows an empty box for null and reads empty back as null", () => {
+      expect(toHeaderFontSizeControlValue(null)).toBe("");
+      expect(fromHeaderFontSizeControlValue("")).toBeNull();
+      expect(fromHeaderFontSizeControlValue("   ")).toBeNull();
+    });
+
+    it("clamps rather than rejecting — Polaris min/max are display only", () => {
+      expect(fromHeaderFontSizeControlValue("2")).toBe(FONT_SIZE_PX_MIN);
+      expect(fromHeaderFontSizeControlValue("9999")).toBe(FONT_SIZE_PX_MAX);
+      expect(fromHeaderFontSizeControlValue("21.6")).toBe(22);
+    });
+
+    it("degrades junk to null instead of guessing a size", () => {
+      for (const bad of ["abc", "12px", "NaN"]) {
+        expect(fromHeaderFontSizeControlValue(bad), bad).toBeNull();
+      }
+    });
+  });
+
+  describe("band padding — where 0 and empty differ", () => {
+    it("distinguishes an EMPTY box from a typed 0", () => {
+      // The one place in the rail where these two are not the same gesture.
+      // Empty = inherit the stylesheet's 0.75rem; 0 = no padding at all. If
+      // these ever collapse into one value, a merchant loses the ability to
+      // express one of the two states and will not be told which.
+      expect(fromHeaderPaddingBlockControlValue("")).toBeNull();
+      expect(fromHeaderPaddingBlockControlValue("0")).toBe(0);
+      expect(toHeaderPaddingBlockControlValue(null)).toBe("");
+      expect(toHeaderPaddingBlockControlValue(0)).toBe("0");
+    });
+
+    it("clamps a negative to 0 rather than degrading it to null", () => {
+      // Contrast the zero-means-off boxes, where anything at or below zero
+      // reads as null. The floor is a REAL value here, so clamping to it is
+      // the honest read of "less than none".
+      expect(fromHeaderPaddingBlockControlValue("-5")).toBe(
+        HEADER_PADDING_BLOCK_PX_MIN,
+      );
+    });
+
+    it("clamps the ceiling and rounds", () => {
+      expect(fromHeaderPaddingBlockControlValue("9999")).toBe(
+        HEADER_PADDING_BLOCK_PX_MAX,
+      );
+      expect(fromHeaderPaddingBlockControlValue("19.6")).toBe(20);
+    });
+  });
+
+  describe("the two selects", () => {
+    it("lead with Inherit and then the domain in domain order", () => {
+      expect(HEADER_FONT_WEIGHT_OPTIONS[0].value).toBe(INHERIT_CONTROL_VALUE);
+      expect(HEADER_FONT_WEIGHT_OPTIONS.slice(1).map((o) => o.value)).toEqual([
+        ...STYLING_FONT_WEIGHTS,
+      ]);
+      expect(HEADER_CASE_OPTIONS[0].value).toBe(INHERIT_CONTROL_VALUE);
+      expect(HEADER_CASE_OPTIONS.slice(1).map((o) => o.value)).toEqual([
+        ...LABEL_CASES,
+      ]);
+    });
+
+    it("says 'titles', never 'labels' — they are not the Typography twins", () => {
+      // Same domains, different surfaces. Identical prose in both groups would
+      // read as one control duplicated rather than two that can disagree.
+      for (const option of [
+        ...HEADER_FONT_WEIGHT_OPTIONS,
+        ...HEADER_CASE_OPTIONS,
+      ]) {
+        expect(option.helpText.toLowerCase(), option.label).not.toContain(
+          "label",
+        );
+      }
+    });
+
+    it("does not promise a THEME value behind Inherit", () => {
+      // There is none: the fallback is this app's own literal (700 / none), so
+      // the four Typography lists' "Use your theme's …" gloss would be a lie a
+      // merchant could catch by switching themes.
+      expect(HEADER_FONT_WEIGHT_OPTIONS[0].helpText).not.toContain("theme");
+      expect(HEADER_CASE_OPTIONS[0].helpText).not.toContain("theme");
+    });
+  });
+});
+
 const VISIBILITY_PREDICATES: ReadonlyArray<{
   name: string;
   predicate: (styling: StylingValues) => boolean;
@@ -848,6 +953,18 @@ const VISIBILITY_PREDICATES: ReadonlyArray<{
     preservedField: "sectionGapPx",
   },
 ];
+
+describe("the hide-rule count is unchanged by feature 81", () => {
+  it("still guards exactly six controls", () => {
+    // The five section-header knobs are visible in EVERY shape — they dress the
+    // flat `th` and the collapsible `<summary>` alike — so unlike the section
+    // gap none of them earns a predicate. Pinning the count is what turns "we
+    // decided not to add one" into something a later change has to confront:
+    // a seventh entry here means a new control gained a hide rule, and it must
+    // inherit the preserve-on-hide law below rather than reimplement it.
+    expect(VISIBILITY_PREDICATES).toHaveLength(6);
+  });
+});
 
 describe.each(VISIBILITY_PREDICATES)(
   "$name — the preserve-on-hide law (feature 57 Step 10 §4)",

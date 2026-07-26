@@ -384,6 +384,14 @@ model TableStyling {
   rowLayout            String?  // "TWO_COLUMN" (null default) | "STACKED"
   mobileLayout         String?  // "STACKED" (null default) | "SAME_AS_DESKTOP" — only meaningful when rowLayout is TWO_COLUMN
   sectionHeaderStyle   String?  // "BANDED" (null default) | "TEXT_ONLY"
+  // Section-header typography + spacing (feature 81). All four nullable, null =
+  // inherit the stylesheet's own literal, so an untouched table is byte-identical.
+  // They dress BOTH shapes (the flat th[colspan=2] and the collapsible summary),
+  // so unlike sectionGapPx none of them is hidden in any state.
+  headerFontSizePx     Int?     // 10–184 (shares the fontSize bounds); null = the size the title already renders at. ABSOLUTE px, never an em keyword: the collapsible <summary> is a SIBLING of the <table> that carries --appx-spec-font-size, so an em would resolve against a different base per shape and resize silently when Collapsible is toggled
+  headerFontWeight     String?  // "REGULAR" | "MEDIUM" | "BOLD"; null = the literal 700
+  headerCase           String?  // "DEFAULT" | "UPPERCASE"; null = as typed. Section titles ONLY — labelCase below is the label column's own knob
+  headerPaddingBlockPx Int?     // 0–48; null = the literal 0.75rem. BLOCK AXIS ONLY (the inline padding stays welded to the row cells' 0.75rem, or a large title would indent past its own labels). The ONE integer knob with a 0 floor — see the container-knob law below for why it does not apply here
   sectionsCollapsible  Boolean  @default(false)
   sectionsInitialState String?  // "ALL_OPEN" (null default) | "FIRST_OPEN" | "ALL_CLOSED" — only meaningful when sectionsCollapsible
   sectionGapPx         Int?     // 1–48; null = no gap (feature 80). Space between collapsible sections — only expressible when sectionsCollapsible, since a flat section header is a <tr> and a <tr> takes no margin. Takes the container knobs' law below: null = the DEFAULT, minimum 1
@@ -396,12 +404,19 @@ model TableStyling {
   // integer minimum is 1, never 0: a 0 would be a second spelling of the same
   // off state, which serializeStylingOverrides would write to the wire as an
   // override of a default that renders identically.
+  //
+  // ⚠️ This law is scoped to knobs where NULL ALREADY MEANS OFF. It does not
+  // reach headerPaddingBlockPx (feature 81), whose null means the stylesheet's
+  // 0.75rem: there 0 and null are different renders, so 0 is a FIRST spelling,
+  // and nothing keys a presence flag on it. That is the whole test — if a knob
+  // carries a presence flag keyed on non-null, its floor is 1.
   tableMaxWidthPx     Int?     // 240–1600; null = full width. A CAP: shrinks below it, so it cannot collide with the 749px mobile breakpoint
   tableAlign          String?  // "LEFT" (null default) | "CENTER" | "RIGHT" — only meaningful when tableMaxWidthPx is set
   outerBorderWidthPx  Int?     // 1–12; null = no outer border
   outerBorderRadiusPx Int?     // 1–48; null = square corners
 
   headerBgColor    String?
+  headerTextColor  String?  // the section title's own text (feature 81). Sits here, not with the four header knobs above, for the same reason as outerBorderColor: the swatch list is derived from STYLING_FIELD_NAMES order, and a test pins it
   labelBgColor     String?
   valueBgColor     String?
   stripeBgColor    String?  // zebra-stripe surface — used when rowDividerStyle = "STRIPES"

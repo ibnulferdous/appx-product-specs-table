@@ -112,6 +112,23 @@ export const OUTER_BORDER_RADIUS_PX_MAX = 48;
 export const SECTION_GAP_PX_MIN = 1;
 export const SECTION_GAP_PX_MAX = 48;
 
+// Vertical padding inside a section header band (feature 81). null = the
+// stylesheet's own `0.75rem`, NOT "off" — which is why this is the one integer
+// knob whose floor is 0 rather than 1.
+//
+// The feature 78 minimum-of-1 law governs knobs where null ALREADY means off
+// (no outline, square corners, no gap): there a stored 0 is a second spelling of
+// a state null already has, it serializes as a bogus override, and it trips a
+// presence flag that then paints nothing. None of that applies here. null means
+// `0.75rem` and 0 means no padding — two genuinely different renders, so 0 is a
+// FIRST spelling. Nothing keys a presence flag on this field either: the
+// stylesheet's `var(--…, 0.75rem)` fallback needs no class to gate it.
+//
+// Ceiling shared with the section gap and the corner radius. Past ~48px the band
+// is taller than the rows it introduces.
+export const HEADER_PADDING_BLOCK_PX_MIN = 0;
+export const HEADER_PADDING_BLOCK_PX_MAX = 48;
+
 export type RowLayout = (typeof ROW_LAYOUTS)[number];
 export type MobileLayout = (typeof MOBILE_LAYOUTS)[number];
 export type SectionHeaderStyle = (typeof SECTION_HEADER_STYLES)[number];
@@ -146,6 +163,26 @@ export interface StylingValues {
   rowLayout: RowLayout;
   mobileLayout: MobileLayout;
   sectionHeaderStyle: SectionHeaderStyle;
+
+  // Section-header typography + spacing (feature 81). All four are NULLABLE and
+  // null = inherit the literal the stylesheet already ships, so an untouched
+  // table renders byte-identically. They apply to BOTH shapes — the flat
+  // `th[colspan=2]` and the collapsible `<summary>` — so unlike the gap above
+  // none of them is hidden when collapsing is off.
+  //
+  // `headerFontSizePx` is an absolute px integer rather than an em-scale keyword
+  // like the table's own `fontSize`, and that is structural, not taste: the
+  // collapsible summary is a SIBLING of the table that carries
+  // `--appx-spec-font-size`, so an em multiplier would resolve against a
+  // different base in each shape and silently change size when a merchant
+  // toggled Collapsible. A px number resolves identically in both.
+  headerFontSizePx: number | null;
+  headerFontWeight: StylingFontWeight | null;
+  headerCase: LabelCase | null;
+  // Block axis only. The inline padding stays welded to the row cells' 0.75rem
+  // so a section title never drifts out of alignment with the label column.
+  headerPaddingBlockPx: number | null;
+
   sectionsCollapsible: boolean;
   sectionsInitialState: SectionsInitialState;
   // The one NULLABLE field among the section knobs, and null means "no gap" —
@@ -167,6 +204,10 @@ export interface StylingValues {
   outerBorderRadiusPx: number | null;
 
   headerBgColor: string | null;
+  // The section title's own text color. Grouped with the colors rather than
+  // with the four header knobs above because the rail's swatch list is DERIVED
+  // from `STYLING_FIELD_NAMES` order — see the note on that array.
+  headerTextColor: string | null;
   labelBgColor: string | null;
   valueBgColor: string | null;
   stripeBgColor: string | null;
@@ -195,6 +236,10 @@ export const STYLING_FIELD_NAMES = [
   "rowLayout",
   "mobileLayout",
   "sectionHeaderStyle",
+  "headerFontSizePx",
+  "headerFontWeight",
+  "headerCase",
+  "headerPaddingBlockPx",
   "sectionsCollapsible",
   "sectionsInitialState",
   "sectionGapPx",
@@ -206,6 +251,11 @@ export const STYLING_FIELD_NAMES = [
   "outerBorderWidthPx",
   "outerBorderRadiusPx",
   "headerBgColor",
+  // Must stay INSIDE the colour block, immediately after its background
+  // partner: `stylingControls.test.ts` derives `COLOR_KNOBS`' expected order by
+  // filtering this array for fields the parser accepts a hex for, so a colour
+  // placed anywhere else fails that test rather than merely reading oddly.
+  "headerTextColor",
   "labelBgColor",
   "valueBgColor",
   "stripeBgColor",
@@ -231,6 +281,10 @@ export const DEFAULT_STYLING_VALUES: StylingValues = Object.freeze({
   rowLayout: ROW_LAYOUTS[0],
   mobileLayout: MOBILE_LAYOUTS[0],
   sectionHeaderStyle: SECTION_HEADER_STYLES[0],
+  headerFontSizePx: null,
+  headerFontWeight: null,
+  headerCase: null,
+  headerPaddingBlockPx: null,
   sectionsCollapsible: false,
   sectionsInitialState: SECTIONS_INITIAL_STATES[0],
   sectionGapPx: null,
@@ -244,6 +298,7 @@ export const DEFAULT_STYLING_VALUES: StylingValues = Object.freeze({
   outerBorderRadiusPx: null,
 
   headerBgColor: null,
+  headerTextColor: null,
   labelBgColor: null,
   valueBgColor: null,
   stripeBgColor: null,
@@ -383,6 +438,25 @@ export function parseStylingValues(input: unknown): StylingValues {
       SECTION_HEADER_STYLES,
       d.sectionHeaderStyle,
     ),
+    // Section-header typography (feature 81). The px pair goes through
+    // `parseBoundedInt` like every other integer knob — note the padding's
+    // floor is 0, which is a real stored value here rather than a second
+    // spelling of null; see `HEADER_PADDING_BLOCK_PX_MIN`.
+    headerFontSizePx: parseBoundedInt(
+      raw.headerFontSizePx,
+      FONT_SIZE_PX_MIN,
+      FONT_SIZE_PX_MAX,
+    ),
+    headerFontWeight: parseNullableKeyword(
+      raw.headerFontWeight,
+      STYLING_FONT_WEIGHTS,
+    ),
+    headerCase: parseNullableKeyword(raw.headerCase, LABEL_CASES),
+    headerPaddingBlockPx: parseBoundedInt(
+      raw.headerPaddingBlockPx,
+      HEADER_PADDING_BLOCK_PX_MIN,
+      HEADER_PADDING_BLOCK_PX_MAX,
+    ),
     // Literal `true` only — "true"/1/null are not an opt-in.
     sectionsCollapsible: raw.sectionsCollapsible === true,
     sectionsInitialState: parseKeyword(
@@ -425,6 +499,7 @@ export function parseStylingValues(input: unknown): StylingValues {
     ),
 
     headerBgColor: parseColor(raw.headerBgColor),
+    headerTextColor: parseColor(raw.headerTextColor),
     labelBgColor: parseColor(raw.labelBgColor),
     valueBgColor: parseColor(raw.valueBgColor),
     stripeBgColor: parseColor(raw.stripeBgColor),

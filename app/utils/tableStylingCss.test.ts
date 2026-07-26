@@ -30,6 +30,7 @@ import {
 
 const COLOR_FIELDS = [
   "headerBgColor",
+  "headerTextColor",
   "labelBgColor",
   "valueBgColor",
   "stripeBgColor",
@@ -44,6 +45,10 @@ const FULLY_OVERRIDDEN: StylingValues = {
   rowLayout: "STACKED",
   mobileLayout: "SAME_AS_DESKTOP",
   sectionHeaderStyle: "TEXT_ONLY",
+  headerFontSizePx: 22,
+  headerFontWeight: "REGULAR",
+  headerCase: "UPPERCASE",
+  headerPaddingBlockPx: 20,
   sectionsCollapsible: true,
   sectionsInitialState: "ALL_CLOSED",
   sectionGapPx: 12,
@@ -55,6 +60,7 @@ const FULLY_OVERRIDDEN: StylingValues = {
   outerBorderWidthPx: 2,
   outerBorderRadiusPx: 12,
   headerBgColor: "#111111",
+  headerTextColor: "#1a1a1a",
   labelBgColor: "#222222",
   valueBgColor: "#333333",
   stripeBgColor: "#444444",
@@ -225,6 +231,91 @@ describe("stylingToCssVars — typography scales", () => {
     ] as const) {
       expect(vars).not.toHaveProperty(SPEC_TABLE_CSS_VARS[field]);
     }
+  });
+});
+
+// --- Feature 81 · section header typography + spacing ------------------------
+describe("stylingToCssVars — section header typography", () => {
+  const base = DEFAULT_STYLING_VALUES;
+
+  it("emits nothing while all five are null", () => {
+    const vars = stylingToCssVars(base);
+    for (const name of [
+      SPEC_TABLE_CSS_VARS.headerTextColor,
+      SPEC_TABLE_CSS_VARS.headerFontSizePx,
+      SPEC_TABLE_CSS_VARS.headerFontWeight,
+      SPEC_TABLE_CSS_VARS.headerCase,
+      SPEC_TABLE_CSS_VARS.headerPaddingBlockPx,
+    ]) {
+      expect(vars, name).not.toHaveProperty(name);
+    }
+  });
+
+  it("suffixes px on the two integers", () => {
+    expect(
+      stylingToCssVars({ ...base, headerFontSizePx: 22 })[
+        SPEC_TABLE_CSS_VARS.headerFontSizePx
+      ],
+    ).toBe("22px");
+    expect(
+      stylingToCssVars({ ...base, headerPaddingBlockPx: 20 })[
+        SPEC_TABLE_CSS_VARS.headerPaddingBlockPx
+      ],
+    ).toBe("20px");
+  });
+
+  it("emits `0px` for a stored 0 padding rather than omitting the var", () => {
+    // THE case this knob's 0 floor turns on. The loop guard is `!== null`, not
+    // falsiness — a truthiness check would drop 0, the var would be absent, and
+    // the stylesheet's own 0.75rem fallback would silently win. The merchant
+    // asked for no padding and would get the default instead.
+    const vars = stylingToCssVars({ ...base, headerPaddingBlockPx: 0 });
+    expect(vars[SPEC_TABLE_CSS_VARS.headerPaddingBlockPx]).toBe("0px");
+  });
+
+  it("reuses the label knobs' scales, so Bold means one number everywhere", () => {
+    const bold = stylingToCssVars({
+      ...base,
+      fontWeight: "BOLD",
+      headerFontWeight: "BOLD",
+    });
+    expect(bold[SPEC_TABLE_CSS_VARS.headerFontWeight]).toBe(
+      bold[SPEC_TABLE_CSS_VARS.fontWeight],
+    );
+
+    const upper = stylingToCssVars({
+      ...base,
+      labelCase: "UPPERCASE",
+      headerCase: "UPPERCASE",
+    });
+    expect(upper[SPEC_TABLE_CSS_VARS.headerCase]).toBe(
+      upper[SPEC_TABLE_CSS_VARS.labelCase],
+    );
+    expect(upper[SPEC_TABLE_CSS_VARS.headerCase]).toBe("uppercase");
+  });
+
+  it("passes a validated hex through verbatim", () => {
+    expect(
+      stylingToCssVars({ ...base, headerTextColor: "#1a2b3c" })[
+        SPEC_TABLE_CSS_VARS.headerTextColor
+      ],
+    ).toBe("#1a2b3c");
+  });
+
+  it("adds NO modifier class — the whole feature is custom properties", () => {
+    // The locked Step 2 rule: nullable -> var, non-null knob -> class. If any
+    // of these five ever grows a class, a presence flag crept in and the
+    // no-repaint guarantee needs re-deriving.
+    expect(
+      stylingToModifierClasses({
+        ...base,
+        headerTextColor: "#123456",
+        headerFontSizePx: 22,
+        headerFontWeight: "BOLD",
+        headerCase: "UPPERCASE",
+        headerPaddingBlockPx: 0,
+      }),
+    ).toEqual(stylingToModifierClasses(base));
   });
 });
 

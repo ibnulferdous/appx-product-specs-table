@@ -52,6 +52,10 @@ type TableStylingColumns = {
   rowLayout: string | null;
   mobileLayout: string | null;
   sectionHeaderStyle: string | null;
+  headerFontSizePx: number | null;
+  headerFontWeight: string | null;
+  headerCase: string | null;
+  headerPaddingBlockPx: number | null;
   sectionsCollapsible: boolean;
   sectionsInitialState: string | null;
   sectionGapPx: number | null;
@@ -63,6 +67,7 @@ type TableStylingColumns = {
   outerBorderWidthPx: number | null;
   outerBorderRadiusPx: number | null;
   headerBgColor: string | null;
+  headerTextColor: string | null;
   labelBgColor: string | null;
   valueBgColor: string | null;
   stripeBgColor: string | null;
@@ -102,6 +107,14 @@ export function stylingToDbColumns(values: StylingValues): TableStylingColumns {
     rowLayout: knob(values.rowLayout, d.rowLayout),
     mobileLayout: knob(values.mobileLayout, d.mobileLayout),
     sectionHeaderStyle: knob(values.sectionHeaderStyle, d.sectionHeaderStyle),
+    // Section-header typography (feature 81). All four are already
+    // "null = default" nullables, so none of them needs the `knob` treatment —
+    // including `headerPaddingBlockPx`, whose 0 is a real stored value and must
+    // pass through rather than being folded into null.
+    headerFontSizePx: values.headerFontSizePx,
+    headerFontWeight: values.headerFontWeight,
+    headerCase: values.headerCase,
+    headerPaddingBlockPx: values.headerPaddingBlockPx,
     sectionsCollapsible: values.sectionsCollapsible,
     sectionsInitialState: knob(
       values.sectionsInitialState,
@@ -119,6 +132,7 @@ export function stylingToDbColumns(values: StylingValues): TableStylingColumns {
     outerBorderWidthPx: values.outerBorderWidthPx,
     outerBorderRadiusPx: values.outerBorderRadiusPx,
     headerBgColor: values.headerBgColor,
+    headerTextColor: values.headerTextColor,
     labelBgColor: values.labelBgColor,
     valueBgColor: values.valueBgColor,
     stripeBgColor: values.stripeBgColor,

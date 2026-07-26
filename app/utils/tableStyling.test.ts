@@ -5,6 +5,8 @@ import {
   DENSITIES,
   FONT_SIZE_PX_MAX,
   FONT_SIZE_PX_MIN,
+  HEADER_PADDING_BLOCK_PX_MAX,
+  HEADER_PADDING_BLOCK_PX_MIN,
   LABEL_CASES,
   LABEL_WIDTH_PCT_MAX,
   LABEL_WIDTH_PCT_MIN,
@@ -26,13 +28,18 @@ import {
   type StylingValues,
 } from "./tableStyling";
 
-// The seven color fields all share one parser; iterate rather than repeat.
+// Every color field shares one parser; iterate rather than repeat. Kept in
+// `STYLING_FIELD_NAMES` order. (`outerBorderColor` was missing here until
+// feature 81 added its neighbour and the omission became visible — it parses
+// through the same `parseColor`, so it belongs in the same sweep.)
 const COLOR_FIELDS = [
   "headerBgColor",
+  "headerTextColor",
   "labelBgColor",
   "valueBgColor",
   "stripeBgColor",
   "borderColor",
+  "outerBorderColor",
   "labelTextColor",
   "valueTextColor",
 ] as const;
@@ -43,6 +50,10 @@ const FULLY_OVERRIDDEN: StylingValues = {
   rowLayout: "STACKED",
   mobileLayout: "SAME_AS_DESKTOP",
   sectionHeaderStyle: "TEXT_ONLY",
+  headerFontSizePx: 22,
+  headerFontWeight: "REGULAR",
+  headerCase: "UPPERCASE",
+  headerPaddingBlockPx: 20,
   sectionsCollapsible: true,
   sectionsInitialState: "ALL_CLOSED",
   sectionGapPx: 12,
@@ -54,6 +65,7 @@ const FULLY_OVERRIDDEN: StylingValues = {
   outerBorderWidthPx: 2,
   outerBorderRadiusPx: 12,
   headerBgColor: "#111111",
+  headerTextColor: "#1a1a1a",
   labelBgColor: "#222222",
   valueBgColor: "#333333",
   stripeBgColor: "#444444",
@@ -297,6 +309,106 @@ describe("parseStylingValues — sectionGapPx", () => {
     for (const bad of [12.5, "12", NaN, Infinity, -Infinity, null, true, {}]) {
       expect(parseStylingValues({ sectionGapPx: bad }).sectionGapPx).toBeNull();
     }
+  });
+});
+
+// --- Feature 81 · section header typography + spacing ------------------------
+describe("parseStylingValues — section header typography", () => {
+  it("defaults all five to null, so an untouched table is unchanged", () => {
+    const parsed = parseStylingValues({});
+    for (const field of [
+      "headerTextColor",
+      "headerFontSizePx",
+      "headerFontWeight",
+      "headerCase",
+      "headerPaddingBlockPx",
+    ] as const) {
+      expect(parsed[field], field).toBeNull();
+      expect(DEFAULT_STYLING_VALUES[field], field).toBeNull();
+    }
+  });
+
+  it("reuses the table font-size bounds for the title size", () => {
+    for (const value of [FONT_SIZE_PX_MIN, 22, FONT_SIZE_PX_MAX]) {
+      expect(
+        parseStylingValues({ headerFontSizePx: value }).headerFontSizePx,
+      ).toBe(value);
+    }
+    expect(
+      parseStylingValues({ headerFontSizePx: FONT_SIZE_PX_MIN - 1 })
+        .headerFontSizePx,
+    ).toBe(FONT_SIZE_PX_MIN);
+    expect(
+      parseStylingValues({ headerFontSizePx: FONT_SIZE_PX_MAX + 1 })
+        .headerFontSizePx,
+    ).toBe(FONT_SIZE_PX_MAX);
+  });
+
+  it("accepts a STORED 0 for the padding — the one integer knob that may", () => {
+    // The feature 78 minimum-of-1 law governs knobs where null already means
+    // off; here null means the stylesheet's 0.75rem, so 0 is a FIRST spelling
+    // of a genuinely different render. Contrast `sectionGapPx` directly above,
+    // where a 0 clamps up to 1 because it would trip a presence flag while
+    // painting nothing. Nothing keys a flag on this field, so 0 is safe — and
+    // it must survive the parse, or the merchant's "no padding" silently
+    // becomes "default padding" on the next read-back.
+    expect(
+      parseStylingValues({ headerPaddingBlockPx: 0 }).headerPaddingBlockPx,
+    ).toBe(0);
+    expect(HEADER_PADDING_BLOCK_PX_MIN).toBe(0);
+  });
+
+  it("serializes a stored 0 padding as a real override, not an absence", () => {
+    // `serializeStylingOverrides` compares against the default (null), so 0
+    // must survive to the wire. If it were folded away, the metaobject would
+    // carry no override and the storefront would repaint at 0.75rem.
+    expect(
+      serializeStylingOverrides(
+        parseStylingValues({ headerPaddingBlockPx: 0 }),
+      ),
+    ).toEqual({ headerPaddingBlockPx: 0 });
+  });
+
+  it("clamps the padding at both ends and rejects junk", () => {
+    expect(
+      parseStylingValues({
+        headerPaddingBlockPx: HEADER_PADDING_BLOCK_PX_MIN - 1,
+      }).headerPaddingBlockPx,
+    ).toBe(HEADER_PADDING_BLOCK_PX_MIN);
+    expect(
+      parseStylingValues({
+        headerPaddingBlockPx: HEADER_PADDING_BLOCK_PX_MAX + 1,
+      }).headerPaddingBlockPx,
+    ).toBe(HEADER_PADDING_BLOCK_PX_MAX);
+    for (const bad of [12.5, "12", NaN, Infinity, null, true, {}]) {
+      expect(
+        parseStylingValues({ headerPaddingBlockPx: bad }).headerPaddingBlockPx,
+      ).toBeNull();
+      expect(
+        parseStylingValues({ headerFontSizePx: bad }).headerFontSizePx,
+      ).toBeNull();
+    }
+  });
+
+  it("takes the label knobs' keyword domains and rejects anything else", () => {
+    for (const value of STYLING_FONT_WEIGHTS) {
+      expect(
+        parseStylingValues({ headerFontWeight: value }).headerFontWeight,
+      ).toBe(value);
+    }
+    for (const value of LABEL_CASES) {
+      expect(parseStylingValues({ headerCase: value }).headerCase).toBe(value);
+    }
+    for (const bad of ["LIGHTER", "bold", "", 700, null, {}]) {
+      expect(
+        parseStylingValues({ headerFontWeight: bad }).headerFontWeight,
+      ).toBeNull();
+      expect(parseStylingValues({ headerCase: bad }).headerCase).toBeNull();
+    }
+  });
+
+  it("writes no overrides while all five are untouched", () => {
+    expect(serializeStylingOverrides(parseStylingValues({}))).toEqual({});
   });
 });
 

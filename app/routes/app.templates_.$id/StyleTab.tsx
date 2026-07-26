@@ -9,6 +9,8 @@ import {
   FONT_SIZE_OPTIONS,
   FONT_STYLE_OPTIONS,
   FONT_WEIGHT_OPTIONS,
+  HEADER_CASE_OPTIONS,
+  HEADER_FONT_WEIGHT_OPTIONS,
   LABEL_CASE_OPTIONS,
   LINE_HEIGHT_OPTIONS,
   MOBILE_LAYOUT_OPTIONS,
@@ -20,6 +22,8 @@ import {
   fontSizeControlValue,
   fromColorControlValue,
   fromControlValue,
+  fromHeaderFontSizeControlValue,
+  fromHeaderPaddingBlockControlValue,
   fromLabelWidthControlValue,
   fromOuterBorderRadiusControlValue,
   fromOuterBorderWidthControlValue,
@@ -37,6 +41,8 @@ import {
   toBoundedIntControlValue,
   toColorControlValue,
   toControlValue,
+  toHeaderFontSizeControlValue,
+  toHeaderPaddingBlockControlValue,
   toLabelWidthControlValue,
   toZeroMeansOffControlValue,
   ZERO_MEANS_OFF_CONTROL_MIN,
@@ -45,6 +51,8 @@ import {
 import {
   FONT_SIZE_PX_MAX,
   FONT_SIZE_PX_MIN,
+  HEADER_PADDING_BLOCK_PX_MAX,
+  HEADER_PADDING_BLOCK_PX_MIN,
   LABEL_CASES,
   LABEL_WIDTH_PCT_MAX,
   LABEL_WIDTH_PCT_MIN,
@@ -382,6 +390,107 @@ export function StyleTab({ engine }: { engine: RowEngine }) {
               </s-option>
             ))}
           </s-select>
+
+          {/* Feature 81 — four knobs refining the band the select above turns
+            on, so they sit with it, above the collapsible/behavior controls.
+            None of them is hidden in any shape: all four apply to the flat
+            `th` and the collapsible `<summary>` alike, so the hide-rule count
+            stays at 6. The section title's COLOR is not here — it is a color,
+            so it lives with the other swatches below, the same split the band's
+            own background already takes.
+
+            Blank boxes, not the zero-means-off boxes the frame group uses:
+            for these two, clearing the field means "use the default", which is
+            a real state distinct from any number either box can hold. */}
+          <s-number-field
+            label="Section title size"
+            suffix="px"
+            details={
+              styling.headerFontSizePx === null
+                ? "Matches the surrounding text."
+                : "An exact size for section titles."
+            }
+            min={FONT_SIZE_PX_MIN}
+            max={FONT_SIZE_PX_MAX}
+            step={1}
+            value={toHeaderFontSizeControlValue(styling.headerFontSizePx)}
+            onChange={(event: Event) => {
+              setStylingField(
+                "headerFontSizePx",
+                fromHeaderFontSizeControlValue(readValue(event)),
+              );
+            }}
+          />
+
+          <s-select
+            label="Section title weight"
+            details={selectedHelpText(
+              HEADER_FONT_WEIGHT_OPTIONS,
+              toControlValue(styling.headerFontWeight),
+            )}
+            value={toControlValue(styling.headerFontWeight)}
+            onChange={(event: Event) => {
+              setStylingField(
+                "headerFontWeight",
+                fromControlValue(readValue(event), STYLING_FONT_WEIGHTS),
+              );
+            }}
+          >
+            {HEADER_FONT_WEIGHT_OPTIONS.map((option) => (
+              <s-option key={option.value} value={option.value}>
+                {option.label}
+              </s-option>
+            ))}
+          </s-select>
+
+          <s-select
+            label="Section title case"
+            details={selectedHelpText(
+              HEADER_CASE_OPTIONS,
+              toControlValue(styling.headerCase),
+            )}
+            value={toControlValue(styling.headerCase)}
+            onChange={(event: Event) => {
+              setStylingField(
+                "headerCase",
+                fromControlValue(readValue(event), LABEL_CASES),
+              );
+            }}
+          >
+            {HEADER_CASE_OPTIONS.map((option) => (
+              <s-option key={option.value} value={option.value}>
+                {option.label}
+              </s-option>
+            ))}
+          </s-select>
+
+          {/* ⚠️ The one box in the rail where an EMPTY field and a typed `0`
+            mean different things, and both are valid: empty inherits the
+            standard spacing, 0 removes it. Safe only because this knob's null
+            means "the default" rather than "off" — the frame group's px knobs
+            get the zero-means-off treatment precisely because for them the two
+            states would be the same render. */}
+          <s-number-field
+            label="Section header padding"
+            suffix="px"
+            details={
+              styling.headerPaddingBlockPx === null
+                ? "Standard space above and below a title."
+                : "Space above and below a title. 0 removes it."
+            }
+            min={HEADER_PADDING_BLOCK_PX_MIN}
+            max={HEADER_PADDING_BLOCK_PX_MAX}
+            step={1}
+            value={toHeaderPaddingBlockControlValue(
+              styling.headerPaddingBlockPx,
+            )}
+            onChange={(event: Event) => {
+              setStylingField(
+                "headerPaddingBlockPx",
+                fromHeaderPaddingBlockControlValue(readValue(event)),
+              );
+            }}
+          />
 
           {/* The rail's first NON-select control (Step 9b) — `sectionsCollapsible`
             is the one boolean in `StylingValues`, so it needs no option list.

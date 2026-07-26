@@ -55,6 +55,14 @@ import type {
 // `SPEC_TABLE_CSS_VARS.borderColor` instead of retyping the string.
 export const SPEC_TABLE_CSS_VARS = Object.freeze({
   headerBgColor: "--appx-spec-header-bg",
+  // Section-header typography + spacing (feature 81). Named on the same
+  // `header`/`label` pattern as the rest of the family, so a reader can tell
+  // which surface a var dresses from its name alone.
+  headerTextColor: "--appx-spec-header-color",
+  headerFontSizePx: "--appx-spec-header-font-size",
+  headerFontWeight: "--appx-spec-header-font-weight",
+  headerCase: "--appx-spec-header-transform",
+  headerPaddingBlockPx: "--appx-spec-header-padding-block",
   labelBgColor: "--appx-spec-label-bg",
   valueBgColor: "--appx-spec-value-bg",
   stripeBgColor: "--appx-spec-stripe-bg",
@@ -135,14 +143,20 @@ export function stylingToCssVars(
 ): Record<string, string> {
   const vars: Record<string, string> = {};
 
-  // The px knobs in `STYLING_FIELD_NAMES` order — the section gap, then the
-  // three container integers. All four are integer-clamped by Step 1, so the
-  // `px` suffix is appended to a validated number — the same posture as
-  // `fontSize`'s absolute override.
+  // The px knobs in `STYLING_FIELD_NAMES` order — the two section-header knobs,
+  // the section gap, then the three container integers. All six are
+  // integer-clamped by Step 1, so the `px` suffix is appended to a validated
+  // number — the same posture as `fontSize`'s absolute override.
+  //
+  // The guard is `!== null`, not falsiness, and that matters for exactly one
+  // field: `headerPaddingBlockPx` may legitimately be 0, which must emit
+  // `0px` rather than fall through to the stylesheet's `0.75rem` fallback.
   //
   // `tableAlign` is absent here on purpose: it is a non-null keyword knob, so it
   // travels as a modifier class (see `stylingToModifierClasses`).
   const pxFields = [
+    "headerFontSizePx",
+    "headerPaddingBlockPx",
     "sectionGapPx",
     "tableMaxWidthPx",
     "outerBorderWidthPx",
@@ -155,6 +169,7 @@ export function stylingToCssVars(
 
   const colorFields = [
     "headerBgColor",
+    "headerTextColor",
     "labelBgColor",
     "valueBgColor",
     "stripeBgColor",
@@ -177,6 +192,17 @@ export function stylingToCssVars(
   }
   if (values.fontWeight !== null) {
     vars[SPEC_TABLE_CSS_VARS.fontWeight] = FONT_WEIGHT_SCALE[values.fontWeight];
+  }
+  // The section-header keywords reuse the label knobs' scales rather than
+  // declaring parallel ones — same vocabulary, same numbers, no way for the two
+  // to drift into disagreeing about what "Bold" means.
+  if (values.headerFontWeight !== null) {
+    vars[SPEC_TABLE_CSS_VARS.headerFontWeight] =
+      FONT_WEIGHT_SCALE[values.headerFontWeight];
+  }
+  if (values.headerCase !== null) {
+    vars[SPEC_TABLE_CSS_VARS.headerCase] =
+      LABEL_CASE_TRANSFORMS[values.headerCase];
   }
   if (values.fontStyle !== null) {
     vars[SPEC_TABLE_CSS_VARS.fontStyle] = fontStyleValue(values.fontStyle);

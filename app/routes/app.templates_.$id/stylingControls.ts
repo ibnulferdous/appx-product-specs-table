@@ -3,6 +3,8 @@ import {
   DENSITIES,
   FONT_SIZE_PX_MAX,
   FONT_SIZE_PX_MIN,
+  HEADER_PADDING_BLOCK_PX_MAX,
+  HEADER_PADDING_BLOCK_PX_MIN,
   LABEL_CASES,
   LABEL_WIDTH_PCT_MAX,
   LABEL_WIDTH_PCT_MIN,
@@ -177,6 +179,62 @@ export const SECTION_HEADER_OPTIONS: ReadonlyArray<
   label: SECTION_HEADER_LABELS[value].label,
   helpText: SECTION_HEADER_LABELS[value].helpText,
 }));
+
+// --- Feature 81 · section-header typography + spacing ------------------------
+//
+// Four controls that refine the band the knob above turns on, so they sit
+// directly under it in the Sections group. All four are NULLABLE, so they take
+// the Step 10 "inherit" vocabulary further down this file — but note the two
+// selects below cannot reuse the label knobs' option lists even though they
+// reuse their DOMAINS: the help text has to say "section title", or a merchant
+// reads the two Uppercase controls as the same switch appearing twice.
+//
+// (The option lists themselves are declared after `withInheritOption` is
+// defined; only the domain reuse is worth flagging here.)
+
+/** A stored section-title size as the string a number field holds. */
+export function toHeaderFontSizeControlValue(px: number | null): string {
+  return toBoundedIntControlValue(px);
+}
+
+/**
+ * The section-title size box's string back to a clamped px, or null when empty.
+ *
+ * The blank-box idiom, deliberately NOT the zero-means-off one the three
+ * container px knobs use: clearing this means "match the surrounding text",
+ * which is a real inherit rather than an off state, and `0` is not a size a
+ * font can have. Anything below the floor clamps up to it, as everywhere else.
+ */
+export function fromHeaderFontSizeControlValue(raw: string): number | null {
+  return fromBoundedIntControlValue(raw, FONT_SIZE_PX_MIN, FONT_SIZE_PX_MAX);
+}
+
+/** A stored band padding as the string a number field holds; null = empty. */
+export function toHeaderPaddingBlockControlValue(px: number | null): string {
+  return toBoundedIntControlValue(px);
+}
+
+/**
+ * The band-padding box's string back to a stored px, or null when empty.
+ *
+ * ⚠️ The one converter in this file where a typed `0` and an EMPTY box mean
+ * different things, and both are legitimate. Empty is null — inherit the
+ * stylesheet's own 0.75rem. A typed 0 is a stored 0 — no padding at all, a
+ * visibly different render. That is only safe because this knob's null means
+ * "the default" rather than "off" (see `HEADER_PADDING_BLOCK_PX_MIN`); the
+ * container knobs' zero-means-off boxes exist precisely because for THEM the
+ * two states coincide.
+ *
+ * A negative therefore clamps to 0 (no padding) rather than degrading to null —
+ * the floor is a real value here, so clamping to it is the honest read.
+ */
+export function fromHeaderPaddingBlockControlValue(raw: string): number | null {
+  return fromBoundedIntControlValue(
+    raw,
+    HEADER_PADDING_BLOCK_PX_MIN,
+    HEADER_PADDING_BLOCK_PX_MAX,
+  );
+}
 
 // Density — a padding scale, nothing else. The help text says what the merchant
 // will see rather than quoting the rem values.
@@ -385,6 +443,7 @@ export function fromControlValue<T extends string>(
 // needed — `parseColor` already accepts `#rgb` / `#rrggbb` / `#rrggbbaa`.
 export type StylingColorFieldName =
   | "headerBgColor"
+  | "headerTextColor"
   | "labelBgColor"
   | "valueBgColor"
   | "stripeBgColor"
@@ -411,6 +470,15 @@ export const COLOR_KNOBS: ReadonlyArray<ColorKnob> = [
     // rules below, the merchant may legitimately set it before switching.
     helpText: "The band behind a section title.",
     alpha: true,
+  },
+  {
+    field: "headerTextColor",
+    label: "Section header text",
+    // The third TEXT swatch, so `alpha: false` by the 2026-07-19 lock:
+    // translucent body text is a contrast bug rather than a design choice, and
+    // a section title is the most load-bearing text in the table.
+    helpText: "The section title itself.",
+    alpha: false,
   },
   {
     field: "labelBgColor",
@@ -631,6 +699,47 @@ export const LABEL_CASE_OPTIONS = withInheritOption(
   LABEL_CASES,
   LABEL_CASE_LABELS,
   "Use your theme's letter casing.",
+);
+
+// --- Feature 81 · the two section-header selects -----------------------------
+//
+// Same DOMAINS as the two label knobs above (`STYLING_FONT_WEIGHTS`,
+// `LABEL_CASES`) and the same emitted scales, so "Bold" can never come to mean
+// two different numbers. Only the prose differs, and it has to: these controls
+// sit in Sections while their twins sit in Typography, and identical help text
+// on both would read as one control duplicated rather than two surfaces.
+//
+// Note the Inherit gloss does NOT say "your theme's" the way the four
+// Typography lists do. There is no theme value behind a section title's weight
+// or casing — the fallback is this app's own literal (700 / none), and saying
+// otherwise would be a lie the merchant could catch by switching themes.
+const HEADER_FONT_WEIGHT_LABELS: Record<
+  (typeof STYLING_FONT_WEIGHTS)[number],
+  { label: string; helpText: string }
+> = {
+  REGULAR: { label: "Regular", helpText: "Titles read as body text." },
+  MEDIUM: { label: "Medium", helpText: "Titles stand out a little." },
+  BOLD: { label: "Bold", helpText: "Titles stand out strongly." },
+};
+
+export const HEADER_FONT_WEIGHT_OPTIONS = withInheritOption(
+  STYLING_FONT_WEIGHTS,
+  HEADER_FONT_WEIGHT_LABELS,
+  "Keep the standard bold section title.",
+);
+
+const HEADER_CASE_LABELS: Record<
+  (typeof LABEL_CASES)[number],
+  { label: string; helpText: string }
+> = {
+  DEFAULT: { label: "As typed", helpText: "Titles appear as you wrote them." },
+  UPPERCASE: { label: "Uppercase", helpText: "Titles render in capitals." },
+};
+
+export const HEADER_CASE_OPTIONS = withInheritOption(
+  LABEL_CASES,
+  HEADER_CASE_LABELS,
+  "Keep the casing you typed.",
 );
 
 // --- The font-size tri-state -------------------------------------------------

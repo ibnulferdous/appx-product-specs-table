@@ -123,6 +123,13 @@ model TableStyling {
   rowLayout            String? // "TWO_COLUMN" (null default) | "STACKED"
   mobileLayout         String? // "STACKED" (null default) | "SAME_AS_DESKTOP" — only meaningful when rowLayout is TWO_COLUMN
   sectionHeaderStyle   String? // "BANDED" (null default) | "TEXT_ONLY"
+  // Section-header typography + spacing (feature 81). null = inherit the
+  // stylesheet literal, so an untouched table is unchanged. Applies to both the
+  // flat th and the collapsible summary.
+  headerFontSizePx     Int? // 10–184; null = the size the title already renders at. Absolute px, NOT an em keyword: the collapsible summary is a sibling of the table that carries --appx-spec-font-size, so an em would resolve against a different base in each shape
+  headerFontWeight     String? // "REGULAR" | "MEDIUM" | "BOLD"; null = the literal 700
+  headerCase           String? // "DEFAULT" | "UPPERCASE"; null = as typed
+  headerPaddingBlockPx Int? // 0–48; null = the literal 0.75rem. The ONE integer knob with a 0 floor — null means the default rather than "off", so 0 is a first spelling, not a second (contrast the container knobs)
   sectionsCollapsible  Boolean @default(false)
   sectionsInitialState String? // "ALL_OPEN" (null default) | "FIRST_OPEN" | "ALL_CLOSED" — only meaningful when sectionsCollapsible
   sectionGapPx         Int? // 1–48; null = no gap. Space between collapsible sections — only meaningful when sectionsCollapsible (a flat section header is a table row, which takes no margin)
@@ -130,7 +137,8 @@ model TableStyling {
   columnDividerStyle   String? // "NONE" (null default) | "LINE" — the vertical rule at the label/value seam; fixed 1px, colored by borderColor. Suppressed in stacked layouts (no seam).
   density              String? // "DEFAULT" (null default) | "COMPACT" | "SPACIOUS"
 
-  headerBgColor  String?
+  headerBgColor   String?
+  headerTextColor String? // the section title's own text color (feature 81)
   labelBgColor   String?
   valueBgColor   String?
   stripeBgColor  String? // zebra-stripe surface — used when rowDividerStyle = "STRIPES"
