@@ -18,6 +18,7 @@ import {
   ROW_LAYOUT_OPTIONS,
   SECTIONS_INITIAL_STATE_OPTIONS,
   SECTION_HEADER_OPTIONS,
+  STYLE_GROUP_HEADINGS,
   fontSizeControlValue,
   fromColorControlValue,
   fromControlValue,
@@ -48,6 +49,7 @@ import {
   toHeaderPaddingBlockControlValue,
   toLabelWidthControlValue,
   toZeroMeansOffControlValue,
+  type StyleGroupId,
   type StylingOption,
 } from "./stylingControls";
 import {
@@ -102,9 +104,14 @@ describe("ROW_DIVIDER_OPTIONS (feature 57 Step 5 — the Dividers control)", () 
   });
 
   it("gives every option merchant-facing prose", () => {
+    // One of only two lists where feature 86 kept EVERY gloss, and it survives
+    // the help-text cull on merit: `Lines` / `Stripes` / `None` name a
+    // mechanism, not an outcome, so each has to say what a shopper will see.
+    // Written `?? 0` rather than `!` because absence is now representable and a
+    // non-null assertion would report it as a crash instead of a failure.
     for (const option of ROW_DIVIDER_OPTIONS) {
       expect(option.label.length).toBeGreaterThan(0);
-      expect(option.helpText.length).toBeGreaterThan(0);
+      expect(option.helpText?.length ?? 0).toBeGreaterThan(0);
       // The label is prose, never the raw constant leaking into the UI.
       expect(option.label).not.toBe(option.value);
     }
@@ -130,9 +137,12 @@ describe("COLUMN_DIVIDER_OPTIONS (feature 79 — the Column divider control)", (
   });
 
   it("gives every option merchant-facing prose", () => {
+    // The other list feature 86 left whole. `LINE` carries a composition caveat
+    // that a test below pins as a shipped requirement, and `NONE` has to say
+    // WHICH rule is absent — there are two dividers and this knob owns one.
     for (const option of COLUMN_DIVIDER_OPTIONS) {
       expect(option.label.length).toBeGreaterThan(0);
-      expect(option.helpText.length).toBeGreaterThan(0);
+      expect(option.helpText?.length ?? 0).toBeGreaterThan(0);
       expect(option.label).not.toBe(option.value);
     }
   });
@@ -217,12 +227,22 @@ describe.each(KEYWORD_KNOB_LISTS)(
       expect(options[0].value).toBe(defaultValue);
     });
 
-    it("gives every option merchant-facing prose", () => {
+    it("gives every option a merchant-facing label", () => {
       for (const option of options) {
         expect(option.label.length).toBeGreaterThan(0);
-        expect(option.helpText.length).toBeGreaterThan(0);
         // Prose, never the raw constant leaking into the UI.
         expect(option.label).not.toBe(option.value);
+      }
+    });
+
+    it("carries either real help text or none, never an empty string", () => {
+      // Feature 86 made `helpText` optional and cut most of these lists' glosses
+      // — a label like `Compact` explains itself. What must not happen is a
+      // gloss deleted to `""`: `selectedHelpText` maps that to `undefined`, but
+      // if it ever stopped doing so an empty string would paint a blank subdued
+      // line and the control would hold the space of a description it lacks.
+      for (const option of options) {
+        expect(option.helpText ?? "absent").not.toBe("");
       }
     });
 
@@ -487,14 +507,74 @@ describe("COLOR_KNOBS (feature 57 Step 10a)", () => {
     ]);
   });
 
-  it("gives every swatch distinct merchant-facing prose", () => {
+  it("gives every swatch merchant-facing prose for BOTH of its states", () => {
     for (const knob of COLOR_KNOBS) {
       expect(knob.label.length).toBeGreaterThan(0);
       expect(knob.helpText.length).toBeGreaterThan(0);
+      // Feature 86: a swatch describes itself when set AND when empty. Unlike
+      // the option lists, neither is optional here — an empty swatch is the
+      // DEFAULT state of all nine, so a missing gloss would leave every color
+      // in the rail undescribed until a merchant touched it.
+      expect(knob.emptyHelpText.length).toBeGreaterThan(0);
+      expect(knob.helpText).not.toBe(knob.emptyHelpText);
       expect(knob.label).not.toBe(knob.field);
     }
-    const labels = COLOR_KNOBS.map((knob) => knob.label);
-    expect(new Set(labels).size).toBe(labels.length);
+  });
+
+  it("has a distinct label WITHIN each group, not across the rail", () => {
+    // Feature 86 weakened this from global uniqueness deliberately, and the
+    // weakening is the design: `Labels` and `Values` each contain a swatch
+    // called "Background" and one called "Text color", because the group
+    // heading is what distinguishes them. That is only legitimate while every
+    // group is a `role="group"` wired to its heading with `aria-labelledby`, so
+    // the scope is announced and not merely seen — see `STYLE_GROUP_HEADINGS`.
+    // Within one group two identical labels would be genuinely ambiguous, and
+    // nothing would tell them apart.
+    for (const group of Object.keys(STYLE_GROUP_HEADINGS) as StyleGroupId[]) {
+      const labels = COLOR_KNOBS.filter((knob) => knob.group === group).map(
+        (knob) => knob.label,
+      );
+      expect(new Set(labels).size, group).toBe(labels.length);
+    }
+  });
+
+  it("files every swatch under a real group", () => {
+    for (const knob of COLOR_KNOBS) {
+      expect(Object.keys(STYLE_GROUP_HEADINGS)).toContain(knob.group);
+    }
+  });
+
+  it("keeps the array in STYLING_FIELD_NAMES order, so groups select by filter", () => {
+    // The rail renders a group's swatches with `.filter(…)`, never by
+    // reordering, because `tableStyling.ts` documents the color block as
+    // contiguous and the order test above derives from it. Pinned here as well
+    // so the reason survives next to the code that depends on it: sorting
+    // `COLOR_KNOBS` by group would read as tidying and would break that test
+    // several files away.
+    const positions = COLOR_KNOBS.map((knob) =>
+      STYLING_FIELD_NAMES.indexOf(knob.field),
+    );
+    expect(positions).toEqual([...positions].sort((a, b) => a - b));
+  });
+
+  it("promises a theme value only where the stylesheet actually has one", () => {
+    // ⚠️ The claim the old group note got wrong. "Leave a swatch empty to
+    // inherit that color from your theme" was true for five of the nine: the
+    // band, the stripe and the row rules fall back to this app's own literals
+    // (`rgba(0,0,0,0.06)` / `0.04` / `0.1`), and the outline falls back THROUGH
+    // `borderColor` rather than to anything of the theme's. Per-swatch state
+    // text is what let each say the truth, so pin which ones may say "theme".
+    const inheritsFromTheme = COLOR_KNOBS.filter((knob) =>
+      knob.emptyHelpText.toLowerCase().includes("theme"),
+    ).map((knob) => knob.field);
+
+    expect(inheritsFromTheme).toEqual([
+      "headerTextColor",
+      "labelBgColor",
+      "valueBgColor",
+      "labelTextColor",
+      "valueTextColor",
+    ]);
   });
 
   it("starts every swatch in the Theme state, since colors default to inherit", () => {
@@ -586,11 +666,27 @@ describe.each(NULLABLE_KEYWORD_KNOB_LISTS)(
       expect(fromControlValue(options[0].value, domain)).toBeNull();
     });
 
-    it("gives every option merchant-facing prose", () => {
+    it("gives every option a merchant-facing label", () => {
       for (const option of options) {
         expect(option.label.length).toBeGreaterThan(0);
-        expect(option.helpText.length).toBeGreaterThan(0);
         expect(option.label).not.toBe(option.value);
+      }
+    });
+
+    it("always explains Inherit, whatever else it drops", () => {
+      // THE feature-86 asymmetry, and the reason `withInheritOption` takes the
+      // inherit gloss as a required argument while the domain options' copy is
+      // optional. `Bold` and `Uppercase` say what they do; `Inherit` is the one
+      // option in the rail whose meaning cannot be read off the word — it has to
+      // name what is inherited and from where. Cutting it would leave a merchant
+      // unable to tell "inherit" from a fourth concrete value.
+      expect(options[0].value).toBe(INHERIT_CONTROL_VALUE);
+      expect(options[0].helpText?.length ?? 0).toBeGreaterThan(0);
+    });
+
+    it("carries either real help text or none, never an empty string", () => {
+      for (const option of options) {
+        expect(option.helpText ?? "absent").not.toBe("");
       }
     });
 
@@ -1013,17 +1109,35 @@ describe("section-header control converters (feature 81)", () => {
       ]);
     });
 
-    it("says 'titles', never 'labels' — they are not the Typography twins", () => {
-      // Same domains, different surfaces. Identical prose in both groups would
-      // read as one control duplicated rather than two that can disagree.
+    it("never says 'labels' — they are not the Labels-group twins", () => {
+      // Same domains, different surfaces. Feature 86 cut the per-option prose on
+      // both sides (it only restated the label), so these lists are now
+      // IDENTICAL to their twins except for the Inherit gloss — which is exactly
+      // why this guard has to stay. The two `Record`s are deliberately not
+      // shared: collapse them and this test can no longer fail, because there
+      // would be one list rather than two that can drift apart.
       for (const option of [
         ...HEADER_FONT_WEIGHT_OPTIONS,
         ...HEADER_CASE_OPTIONS,
       ]) {
-        expect(option.helpText.toLowerCase(), option.label).not.toContain(
-          "label",
-        );
+        expect(
+          option.helpText?.toLowerCase() ?? "",
+          option.label,
+        ).not.toContain("label");
       }
+    });
+
+    it("differs from its Labels-group twin by the Inherit gloss", () => {
+      // The whole of the remaining difference, pinned so a future edit that
+      // makes the two glosses agree has to be deliberate. `Keep the standard
+      // bold section title.` vs `Use your theme's weight.` is not a wording
+      // preference: there IS no theme value behind a section title's weight.
+      expect(HEADER_FONT_WEIGHT_OPTIONS[0].helpText).not.toBe(
+        FONT_WEIGHT_OPTIONS[0].helpText,
+      );
+      expect(HEADER_CASE_OPTIONS[0].helpText).not.toBe(
+        LABEL_CASE_OPTIONS[0].helpText,
+      );
     });
 
     it("does not promise a THEME value behind Inherit", () => {

@@ -35,12 +35,16 @@ Everything upstream is done and live-verified on the dev store:
   persists to `TableStyling`, serializes to the metaobject, and renders on the storefront;
   rail a11y pass done; Reset-to-theme-defaults ships; docs reconciled.
 
-Test suite 981 tests / 37 files; full gate (typecheck · lint · format · test · build) green.
+Test suite 986 tests / 38 files; full gate (typecheck · lint · format · test · build) green.
 
 Since B1: the Style tab's width surface — the collapsible rail (feature 76). Feature 75's
 full-size preview modal shipped the same day and was **removed 2026-07-25**; see Completed.
 
-**Next:** ⚠️ **feature 85 (multi-column row flow) is BUILT but not signed off** — the
+**Next:** 🛠️ **feature 86 (Style tab reorganization) is IN PROGRESS and lands BEFORE
+B2** (merchant decision 2026-07-26 — presets should ship onto an organized rail, not the
+reverse). Six steps; **Step 1 done**, steps 2–6 outstanding. Doc `86-…`.
+
+Then: ⚠️ **feature 85 (multi-column row flow) is BUILT but not signed off** — the
 feature-70 screen-reader pass it was gated on was skipped at the merchant's instruction
 and is still owed, plus two small live checks (see Next Up item 4). It cleared B2's
 `ROW_LAYOUTS` blocker, so B2 = steps 13–14 can proceed
@@ -71,6 +75,107 @@ plan: `~/.claude/plans/style-tab-phase-b-implementation-plan.md` (1–12 = B1, 1
 ## Completed
 
 > One line per unit. Detail → the linked `context/features/` doc + git history.
+
+**Style tab reorganization (feature 86, doc `86-…`) — 🛠️ IN PROGRESS, Step 1 of 6 done
+2026-07-26**
+- Merchant reported the Style rail as unorganized and sent two Shopify theme-editor
+  screenshots as the target. Root cause: the rail's seven groups are cut on **two axes at
+  once** — four by OBJECT (Layout / Size & frame / Sections / Rows), two by CSS PROPERTY
+  (Colors / Typography). So `headerBgColor` sits ~20 controls from the band it paints,
+  `stripeBgColor` sits away from the switch that makes it visible, and `fontWeight` /
+  `labelCase` sit in Typography with no Labels group to belong to. Fix: one axis, the
+  object axis — **8 groups**, Colors and Typography dissolved, every group ending with its
+  own colors 2-up ("structure knobs, then colors" as one learnable rule).
+- **Six merchant decisions (2026-07-26)**, all recorded in `86-…`: Table layout leads (not
+  Size & frame — Row layout gates four other controls); Sections **splits** into Section
+  headers (7) + Collapsible sections (3); **Divider color stays always-visible** (🚫 the
+  proposed hide-unless-LINES is a functional regression — `borderColor` also dresses the
+  column divider, the feature-80 separator, and the outline whenever `outerBorderColor` is
+  unset); Stripe background likewise; **short labels inside groups** (`Weight`, `Title
+  size`); and it lands **before B2**.
+- **Three structural calls, not preferences.** (1) `labelCase` goes to Labels, NOT the
+  merchant's "Table text" — verified against the stylesheet, `--appx-spec-label-transform`
+  and `-font-weight` sit on `.appx-spec-table__label` while size/style/line-height sit on
+  `__table`; filing case as table-wide is falsifiable in one click. (2) Short labels are
+  safe only because every group keeps `role="group"` + `aria-labelledby` — the "do not
+  rename Label weight" lock in `stylingControls.ts` is satisfied by a different mechanism
+  and its comment must be updated (Step 6). (3) The Colors group's "leave a swatch empty to
+  inherit" note has no home once the swatches scatter, so **each swatch reports its own
+  state** instead (the idiom six number fields already use) — better than the group note
+  even for sighted users, and this is the feature's a11y answer rather than repeating one
+  sentence five times.
+- **Zero storefront diff, by construction.** No column added/renamed/dropped, no schema, no
+  migration, no CSS, no Liquid, no TOML, no `tableStylingCss.ts`, no metaobject change.
+  Every rename is a merchant-facing LABEL — `borderColor` stays `borderColor` on the wire.
+  No new hide predicates either: the count stays **7**.
+- ✅ **Step 1 — the drop guard** (`styleTabContract.test.ts`, 5 tests, 981 → 986). Nothing
+  stopped a Style-tab edit from silently dropping a control: the knob would vanish from the
+  rail while its column, CSS var, serialization and storefront rule all stayed live, so it
+  would keep round-tripping and rendering the last saved value while being unreachable —
+  no failing test, no type error, detectable only by eye. Tolerable when adding one
+  control; not when relocating all 34, so the guard was built **first and against the
+  pre-move rail**. Pins: every `STYLING_FIELD_NAMES` member is reachable from a control,
+  and **no field is reachable from two** (a field on both routes would render twice, each
+  control silently overwriting the other). Two routes because the rail has two — a literal
+  `setStylingField("field", …)` for the 24 non-colors, and a `COLOR_KNOBS` entry for the 9
+  colors, whose call passes a VARIABLE and is invisible to a text scan. Reads the real file
+  off disk with comments stripped, same technique + same reason as
+  `specTableCssContract` / `specTableAriaContract` (jsdom cannot render Polaris web
+  components, so text is the only handle on JSX).
+  ⚠️ **Mutation-tested, not assumed:** removing Density's literal call and the `COLOR_KNOBS`
+  render both failed the guard, and the first named `density` in the diff. The
+  `COLOR_KNOBS` check counts **≥2 occurrences** rather than `toContain` — the import alone
+  would satisfy a presence check, so a rail that imported the list and rendered none of it
+  would have passed.
+  🚫 **Deliberately NOT asserted:** that every scanned name is a real field.
+  `setStylingField` is generic over `keyof StylingValues` (`useRowEngine.ts:223`), so a typo
+  is already a compile error — a runtime check would be a weaker second copy of the type
+  system. And the guard proves **reachability, not correctness**: it cannot see a control in
+  the wrong group or a wrong label, which is why steps 4–5 are live verification.
+- ✅ **Step 2 — the copy and data pass** (986 → 1004 tests). Copy only: no control moved,
+  no group changed, no value changed. Eleven control labels shortened + two swatches
+  renamed (`Table outline` → `Outline color`, `Border` → `Divider color`) + four shortened
+  to bare `Background` / `Text color`. `StylingOption.helpText` became **optional**, which
+  cut ten always-on descriptions; the surviving glosses are mostly `Inherit` and
+  empty-state lines, so **the rail's help text is now state-reporting throughout** —
+  it speaks in the states that need explaining and stays quiet otherwise, which makes one
+  idiom out of what were two. `COLOR_KNOBS` gained `group` + `emptyHelpText`, and
+  `STYLE_GROUP_HEADINGS` is the new one table of truth for the eight groups.
+- ⚠️ **The `stylingControls.ts` scope lock was NOT broken, it changed mechanism.** It
+  forbade renaming "Label weight" because "the control names its own scope"; the control
+  now reads "Weight" and the `Labels` group heading states the scope instead — wired with
+  `role="group"` + `aria-labelledby`, so it is announced, not merely seen. What still
+  holds: a table-wide "Font weight" would require moving the var off
+  `.appx-spec-table__label` and repainting every live table. **Dropping a group wrapper
+  would silently break the lock**, which is why `STYLE_GROUP_HEADINGS` says so too.
+- ⚠️ **The old Colors group note was WRONG about four of nine swatches, and per-swatch
+  state text is what exposed it.** "Leave a swatch empty to inherit that color from your
+  theme" holds for five; the band (`rgba(0,0,0,0.06)`), the stripe (`0.04`) and the row
+  rules (`0.1`) fall back to this app's own literals, and **`outerBorderColor` inherits
+  nothing** — it falls back THROUGH `borderColor`, so its empty state is "follows another
+  control on this screen" ("Follows Divider color."), which no group-level sentence could
+  have said. A test pins which five may say "theme".
+- 🔴 **One defect found LIVE that the character count had passed.** `Header background`
+  (17 chars) wrapped in the 2-up color grid and pushed its swatch below its neighbour's,
+  misaligning the row — while `Stripe background`, the *same 17 characters*, fits, because
+  "Stripe" sets narrower than "Header". The usable cell is right at the boundary and the
+  real limit is nearer 15. Shortened to `Background` and re-verified. **Method note:
+  measuring labels analytically filters but does not substitute for looking at the rail.**
+- 🚫 The two feature-81 header `Record`s are now character-identical to their Labels-group
+  twins (the "titles" prose was cut on both sides) and are **deliberately not merged**: the
+  guard asserting the header lists never say "label" can only fail while they are
+  separable. A vacuous guard is worse than four lines of duplication. A second test pins
+  that the two `Inherit` glosses still differ.
+- **Live-verified** top to bottom on the DRAFT `Motorola Moto G45 5G` (0 assigned; nothing
+  saved, SaveBar never appeared): every rename, `On mobile`/`Density` with no help line and
+  **no leftover gap** (the `undefined` mapping works — `""` would paint a blank grey row),
+  and every empty-swatch state line.
+  ⚠️ **The rail is transiently worse in one spot until Step 4** — short labels landed
+  before the groups that justify them, so the still-undivided `Colors` group shows three
+  `Background`s and two `Text color`s in one run. Consequence of the step order, not a
+  defect; the per-group uniqueness test already asserts the post-Step-4 grouping.
+- **Remaining:** Step 3 divider + spacing treatment on today's groups; Step 4 the move;
+  Step 5 conditional-state + a11y pass; Step 6 lock reconciliation + docs.
 
 **Style tab — Reshell Phase B1 (feature 57, steps 1–12; docs `57-…`–`69-…`)**
 - Step 1 (`57-…`): pure styling domain `app/utils/tableStyling.ts` — allowed-value arrays,

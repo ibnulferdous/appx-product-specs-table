@@ -47,20 +47,55 @@ import {
 // (label width, colors, typography), which need a different UI vocabulary
 // because null means "inherit from the theme" rather than a concrete value —
 // see the "the null vocabulary" section near the bottom of this file.
+//
+// FEATURE 86 changes only the merchant-facing COPY in this file, never a value:
+// shorter labels that lean on their group heading for scope, a group id on each
+// color knob, and — the change with the widest reach — `helpText` becoming
+// OPTIONAL, which cut roughly ten always-on descriptions off the rail. The rule
+// that decides which survive is on `StylingOption.helpText` below; read it
+// before adding a gloss to anything here.
 
 export interface StylingOption<T extends string> {
   value: T;
   label: string;
-  // One-line plain-language gloss. The rail is ~300px, so these stay short.
-  helpText: string;
+  /**
+   * One-line plain-language gloss — OPTIONAL as of feature 86.
+   *
+   * Every one of the rail's 34 controls used to carry a description, and that
+   * is a large part of why it read as a wall of text. A gloss now earns its
+   * place only by doing one of three jobs:
+   *
+   *   1. reporting a state the control cannot show — a blank box, an empty
+   *      swatch, `Inherit`;
+   *   2. carrying a composition caveat — "two-column layouts only";
+   *   3. describing a shopper-facing behavior change — collapsing, Row layout.
+   *
+   * An option labelled `Italic` or `Compact` does its own explaining, so those
+   * options carry nothing. The net effect is that help text became
+   * STATE-REPORTING across the rail: it appears on the option whose meaning is
+   * not self-evident (almost always `Inherit`) and stays quiet otherwise.
+   *
+   * ⚠️ Absent, never `""`. An empty string renders as a blank grey line, which
+   * is exactly the noise this rule exists to cut — `selectedHelpText` in
+   * `StyleTab.tsx` is what keeps one from reaching a `details` attribute.
+   */
+  helpText?: string;
 }
+
+/**
+ * The merchant-facing copy for one option, keyed off a domain constant below.
+ *
+ * Named because twelve `Record`s repeat it, and because it is the one place the
+ * "help text is optional" rule above is visible in the type system.
+ */
+type OptionCopy = { label: string; helpText?: string };
 
 // Row dividers — the first control (Step 5). "Lines" is the default (it is
 // `ROW_DIVIDER_STYLES[0]`, the storefront's long-standing hairline look), so an
 // existing table's appearance is unchanged until a merchant picks otherwise.
 const ROW_DIVIDER_LABELS: Record<
   (typeof ROW_DIVIDER_STYLES)[number],
-  { label: string; helpText: string }
+  OptionCopy
 > = {
   LINES: { label: "Lines", helpText: "A hairline rule between rows." },
   STRIPES: {
@@ -146,7 +181,7 @@ export function rowDividerOptionsFor(
 // the LINE help text has to say so, or the no-op reads as a broken control.
 const COLUMN_DIVIDER_LABELS: Record<
   (typeof COLUMN_DIVIDER_STYLES)[number],
-  { label: string; helpText: string }
+  OptionCopy
 > = {
   NONE: { label: "None", helpText: "No rule between label and value." },
   LINE: {
@@ -171,10 +206,7 @@ export const COLUMN_DIVIDER_OPTIONS: ReadonlyArray<
 // silently. Labels follow `admin-screen-plan.md` §Tab 2 merchant-facing wording.
 
 // Row layout — how a label/value pair sits on desktop.
-const ROW_LAYOUT_LABELS: Record<
-  (typeof ROW_LAYOUTS)[number],
-  { label: string; helpText: string }
-> = {
+const ROW_LAYOUT_LABELS: Record<(typeof ROW_LAYOUTS)[number], OptionCopy> = {
   TWO_COLUMN: {
     label: "Two-column",
     helpText: "Label on the left, value on the right.",
@@ -198,18 +230,16 @@ export const ROW_LAYOUT_OPTIONS: ReadonlyArray<
 // Mobile layout — what happens to a TWO-COLUMN table on a narrow screen. On a
 // stacked table both options render identically, which is why the rail hides
 // this control then (see `showsMobileLayoutControl`).
+//
+// No help text (feature 86): under a control labelled "On mobile", `Stacked`
+// and `Same as desktop` each state their own effect, and the two glosses they
+// carried ("Label above the value on small screens.") only said the label back.
 const MOBILE_LAYOUT_LABELS: Record<
   (typeof MOBILE_LAYOUTS)[number],
-  { label: string; helpText: string }
+  OptionCopy
 > = {
-  STACKED: {
-    label: "Stacked",
-    helpText: "Label above the value on small screens.",
-  },
-  SAME_AS_DESKTOP: {
-    label: "Same as desktop",
-    helpText: "Keep two columns on small screens.",
-  },
+  STACKED: { label: "Stacked" },
+  SAME_AS_DESKTOP: { label: "Same as desktop" },
 };
 
 export const MOBILE_LAYOUT_OPTIONS: ReadonlyArray<
@@ -223,7 +253,7 @@ export const MOBILE_LAYOUT_OPTIONS: ReadonlyArray<
 // Section headers — how a section title row reads against the rows around it.
 const SECTION_HEADER_LABELS: Record<
   (typeof SECTION_HEADER_STYLES)[number],
-  { label: string; helpText: string }
+  OptionCopy
 > = {
   BANDED: {
     label: "Banded",
@@ -299,15 +329,13 @@ export function fromHeaderPaddingBlockControlValue(raw: string): number | null {
   );
 }
 
-// Density — a padding scale, nothing else. The help text says what the merchant
-// will see rather than quoting the rem values.
-const DENSITY_LABELS: Record<
-  (typeof DENSITIES)[number],
-  { label: string; helpText: string }
-> = {
-  DEFAULT: { label: "Default", helpText: "Standard spacing inside each row." },
-  COMPACT: { label: "Compact", helpText: "Tighter rows, less height overall." },
-  SPACIOUS: { label: "Spacious", helpText: "Roomier rows, easier to scan." },
+// Density — a padding scale, nothing else, and the three labels are the whole
+// vocabulary. No help text (feature 86): "Compact — Tighter rows" is the label
+// with more words.
+const DENSITY_LABELS: Record<(typeof DENSITIES)[number], OptionCopy> = {
+  DEFAULT: { label: "Default" },
+  COMPACT: { label: "Compact" },
+  SPACIOUS: { label: "Spacious" },
 };
 
 export const DENSITY_OPTIONS: ReadonlyArray<
@@ -322,15 +350,21 @@ export const DENSITY_OPTIONS: ReadonlyArray<
 //
 // Table alignment — the only non-nullable keyword knob in the container group,
 // so it follows the plain option-list shape above rather than the `Inherit`
-// vocabulary further down. Help text names the SPACE the table sits in, because
-// alignment is invisible until a max width leaves some space to sit in.
+// vocabulary further down.
+//
+// No help text (feature 86). The three glosses it carried named the SPACE the
+// table sits in ("Table hugs the left of the section."), because alignment is
+// invisible until a max width leaves some space to sit in — but the control is
+// HIDDEN until exactly that condition holds (`showsTableAlignControl`), so by
+// the time a merchant can read the caveat it no longer applies. Left / Center /
+// Right need no gloss once they are on screen at all.
 const TABLE_ALIGN_LABELS: Record<
   (typeof TABLE_ALIGNMENTS)[number],
-  { label: string; helpText: string }
+  OptionCopy
 > = {
-  LEFT: { label: "Left", helpText: "Table hugs the left of the section." },
-  CENTER: { label: "Center", helpText: "Equal space on both sides." },
-  RIGHT: { label: "Right", helpText: "Table hugs the right of the section." },
+  LEFT: { label: "Left" },
+  CENTER: { label: "Center" },
+  RIGHT: { label: "Right" },
 };
 
 export const TABLE_ALIGN_OPTIONS: ReadonlyArray<
@@ -365,22 +399,17 @@ export function showsTableAlignControl(styling: StylingValues): boolean {
 //
 // Sections initial state — which disclosures are open when the page loads. Only
 // meaningful while collapsible is on (see `showsSectionsInitialStateControl`).
+//
+// No help text (feature 86): the control reads "Sections start" and the options
+// complete the sentence — "Sections start: All open". The glosses were that
+// sentence written out a second time.
 const SECTIONS_INITIAL_STATE_LABELS: Record<
   (typeof SECTIONS_INITIAL_STATES)[number],
-  { label: string; helpText: string }
+  OptionCopy
 > = {
-  ALL_OPEN: {
-    label: "All open",
-    helpText: "Every section starts expanded.",
-  },
-  FIRST_OPEN: {
-    label: "First open",
-    helpText: "Only the first section starts expanded.",
-  },
-  ALL_CLOSED: {
-    label: "All closed",
-    helpText: "Every section starts collapsed.",
-  },
+  ALL_OPEN: { label: "All open" },
+  FIRST_OPEN: { label: "First open" },
+  ALL_CLOSED: { label: "All closed" },
 };
 
 export const SECTIONS_INITIAL_STATE_OPTIONS: ReadonlyArray<
@@ -517,9 +546,48 @@ export function fromControlValue<T extends string>(
   return (allowed as readonly string[]).includes(raw) ? (raw as T) : null;
 }
 
+// --- Feature 86 · the rail's group vocabulary --------------------------------
+
+/**
+ * The rail's eight groups, in render order, with their merchant-facing
+ * headings.
+ *
+ * Feature 86 recut the rail onto ONE axis — the object being styled. Before it,
+ * four groups were cut by object (Layout / Size & frame / Sections / Rows) and
+ * two by CSS property (Colors / Typography), so a merchant styling one part of
+ * the table had to visit three groups: the band's background sat ~20 controls
+ * from the control that turns the band on, and the label column had its weight
+ * in Typography, its colors in Colors, and no group of its own at all.
+ *
+ * Headings live here rather than inline in the JSX so the vocabulary is one
+ * table of truth: `COLOR_KNOBS` files each swatch under a group id from this
+ * object, and the rail's contract test can check that every id is rendered.
+ *
+ * ⚠️ THE HEADINGS ARE LOAD-BEARING, not decoration. Feature 86 shortened labels
+ * that used to name their own scope — "Label weight" became "Weight",
+ * "Section title case" became "Title case" — on the strength of the group
+ * heading stating it instead. That only holds while each group is a
+ * `role="group"` wired to its heading with `aria-labelledby`, which is what
+ * makes the scope announced rather than merely visible. Two swatches are
+ * literally called "Background" (Labels and Values); nothing else tells them
+ * apart.
+ */
+export const STYLE_GROUP_HEADINGS = {
+  tableLayout: "Table layout",
+  tableFrame: "Table size & frame",
+  tableText: "Table text",
+  sectionHeaders: "Section headers",
+  collapsibleSections: "Collapsible sections",
+  rows: "Rows",
+  labels: "Labels",
+  values: "Values",
+} as const;
+
+export type StyleGroupId = keyof typeof STYLE_GROUP_HEADINGS;
+
 // --- Step 10a · colors -------------------------------------------------------
 
-// The seven color fields, in `admin-screen-plan.md` §Tab 2 order.
+// The nine color fields, in `STYLING_FIELD_NAMES` order.
 //
 // `alpha` follows the 2026-07-19 lock: ON for the five SURFACE colors, OFF for
 // the two TEXT colors. The stylesheet's own defaults are translucent
@@ -540,79 +608,157 @@ export type StylingColorFieldName =
 
 export interface ColorKnob {
   field: StylingColorFieldName;
+  /**
+   * Which rail group the swatch renders in (feature 86).
+   *
+   * The nine swatches used to be one `Colors` group rendered by a single
+   * `.map`; they now scatter across five groups, each sitting with the controls
+   * it composes with. The array below stays in `STYLING_FIELD_NAMES` order —
+   * `tableStyling.ts` documents that the color block is contiguous and
+   * `stylingControls.test.ts` derives the expected order from it — so a group's
+   * swatches are selected by FILTERING, never by reordering. Within-group
+   * render order is therefore inherited from the canonical field order rather
+   * than chosen, which is fine: every group's swatches sit side by side in one
+   * 2-up row.
+   */
+  group: StyleGroupId;
   label: string;
   // One line, because the rail is ~300px wide. Says which SURFACE the color
   // paints, since several of them are only visible in certain combinations.
   helpText: string;
+  /**
+   * What the swatch says while it is EMPTY — the state, not the surface.
+   *
+   * Replaces the `Colors` group's single note ("Leave a swatch empty to inherit
+   * that color from your theme"), which had nowhere to live once the swatches
+   * scattered across five groups, and which repeating five times would have
+   * been precisely the help-text noise feature 86 exists to cut.
+   *
+   * It is also strictly MORE accurate than the note was, and that is the real
+   * argument for it: "inherit from your theme" was only true for five of the
+   * nine. Two of the remaining four fall back to a literal of this app's own
+   * (the band's `rgba(0,0,0,0.06)`, the stripe's `0.04`), one to the hairline
+   * `rgba(0,0,0,0.1)`, and `outerBorderColor` does not inherit anything — it
+   * falls back THROUGH `borderColor`, so its empty state is "follows another
+   * control on this screen", which no group-level sentence could have said.
+   *
+   * Same idiom the rail's six number fields already use, so it is
+   * programmatically associated on the control itself for a screen-reader user
+   * who lands directly in `Labels` without passing a group note.
+   */
+  emptyHelpText: string;
   alpha: boolean;
 }
 
 export const COLOR_KNOBS: ReadonlyArray<ColorKnob> = [
   {
     field: "headerBgColor",
-    label: "Section header background",
+    group: "sectionHeaders",
+    // "Header background" (17 chars) was the first try and it WRAPPED — measured
+    // live in the rail's 2-up color grid, where it broke to "Header /
+    // background" and pushed its swatch a line below its neighbour's, so the two
+    // fields in the row no longer aligned. `Stripe background` is the same 17
+    // characters and fits, because "Stripe" sets narrower than "Header"; the
+    // usable width is right at the boundary, so the real limit is nearer 15.
+    //
+    // Shortening rather than widening the cell: under a `Section headers`
+    // heading "Background" is unambiguous, and it makes the swatch pair read the
+    // same way in all three groups that have one (`Background` + a text color).
+    // Only the TITLE keeps a qualifier, because the band and the title text are
+    // genuinely different surfaces.
+    label: "Background",
     // Only visible while section headers are Banded, but that is a composition
-    // fact rather than a reason to hide the swatch: unlike the four visibility
-    // rules below, the merchant may legitimately set it before switching.
-    helpText: "The band behind a section title.",
+    // fact rather than a reason to hide the swatch: unlike the visibility
+    // rules elsewhere in this file, the merchant may legitimately set it before
+    // switching. Feature 86 moved the caveat INTO the text — the control it
+    // names now sits five rows above, so the reference is followable.
+    helpText: "The band behind a section title — needs Header style Banded.",
+    // Not "From your theme": the banded default is this app's own
+    // `rgba(0, 0, 0, 0.06)`, not a value the theme supplies.
+    emptyHelpText: "The default grey band.",
     alpha: true,
   },
   {
     field: "headerTextColor",
-    label: "Section header text",
+    group: "sectionHeaders",
+    label: "Title color",
     // The third TEXT swatch, so `alpha: false` by the 2026-07-19 lock:
     // translucent body text is a contrast bug rather than a design choice, and
     // a section title is the most load-bearing text in the table.
-    helpText: "The section title itself.",
+    helpText: "The section title text.",
+    emptyHelpText: "From your theme.",
     alpha: false,
   },
   {
     field: "labelBgColor",
-    label: "Label background",
+    group: "labels",
+    label: "Background",
     helpText: "Behind the label column.",
+    emptyHelpText: "From your theme.",
     alpha: true,
   },
   {
     field: "valueBgColor",
-    label: "Value background",
+    group: "values",
+    label: "Background",
     helpText: "Behind the value column.",
+    emptyHelpText: "From your theme.",
     alpha: true,
   },
   {
     field: "stripeBgColor",
+    group: "rows",
     label: "Stripe background",
     // The composition trap worth naming in the UI itself, so a merchant who
     // sets it on a lines table does not read the no-op as a broken control.
+    // Feature 86 put this swatch in the same group as the control it names.
     helpText: "Alternating rows — needs Row dividers set to Stripes.",
+    emptyHelpText: "The default grey shading.",
     alpha: true,
   },
   {
     field: "borderColor",
-    label: "Border",
-    // Was "Row rules and the table outline" until the outer border became its
-    // own knob. It still dresses BOTH by default — the outline only stops
-    // following it once the swatch below is set — and the text has to say so,
-    // or a merchant who sets Border and then wonders why the frame moved with
-    // it reads the coupling as a bug.
-    helpText: "Row rules, and the outline unless set below.",
+    group: "rows",
+    label: "Divider color",
+    // Was "Border" until feature 86. The rename is what lets the help text stop
+    // being positional: it used to end "unless set below", which was only true
+    // while the outline swatch happened to be the next entry in one long Colors
+    // list. Both ends now name each other, so neither depends on layout.
+    //
+    // The coupling itself is unchanged and has to be stated: this dresses the
+    // frame too until `outerBorderColor` is set, or a merchant who changes it
+    // and watches the outline move with it reads the coupling as a bug.
+    helpText:
+      "Row and column rules, and the outline unless Outline color is set.",
+    emptyHelpText: "The default hairline grey.",
     alpha: true,
   },
   {
     field: "outerBorderColor",
-    label: "Table outline",
-    helpText: "The outer frame — needs an Outline width.",
+    group: "tableFrame",
+    label: "Outline color",
+    helpText: "The table's outer frame. Needs an Outline width.",
+    // The one swatch whose empty state is NOT an inherit: `spec-table.css`
+    // falls back through `--appx-spec-border-color` before reaching a literal
+    // (feature 78), so an untouched outline tracks the Rows swatch. The single
+    // group note this replaced could not have expressed that.
+    emptyHelpText: "Follows Divider color.",
     alpha: true,
   },
   {
     field: "labelTextColor",
-    label: "Label text",
+    group: "labels",
+    label: "Text color",
     helpText: "The label column's text.",
+    emptyHelpText: "From your theme.",
     alpha: false,
   },
   {
     field: "valueTextColor",
-    label: "Value text",
+    group: "values",
+    label: "Text color",
     helpText: "The value column's text.",
+    emptyHelpText: "From your theme.",
     alpha: false,
   },
 ];
@@ -655,10 +801,17 @@ export function fromColorControlValue(raw: string): string | null {
  * `Inherit` leads for the same reason every other list leads with its default:
  * the control opens on the current look. The difference is only that this
  * list's leading value is `null` rather than a domain member.
+ *
+ * ⚠️ `inheritHelpText` is REQUIRED while the domain options' copy is optional,
+ * and that asymmetry is the feature-86 help-text rule in one signature.
+ * `Bold` and `Uppercase` explain themselves; `Inherit` is the one option in the
+ * rail whose meaning a merchant cannot read off the word — it has to say what
+ * is inherited and from where. Every gloss on these five lists was cut except
+ * this one.
  */
 function withInheritOption<T extends string>(
   domain: readonly T[],
-  labels: Record<T, { label: string; helpText: string }>,
+  labels: Record<T, OptionCopy>,
   inheritHelpText: string,
 ): ReadonlyArray<StylingOption<string>> {
   return [
@@ -700,9 +853,14 @@ export const CUSTOM_FONT_SIZE_CONTROL_VALUE = "CUSTOM";
  */
 export const CUSTOM_FONT_SIZE_SEED_PX = 16;
 
+// These three KEEP their help text where Weight / Case / Line height lost
+// theirs, and the reason is the feature-86 rule rather than an exception to it:
+// `Small` states a size but not that it is measured against the THEME. A
+// merchant reading `Small` has no way to know these are em multipliers that
+// follow a theme switch, which is exactly what separates them from `Custom`.
 const FONT_SIZE_LABELS: Record<
   (typeof STYLING_FONT_SIZES)[number],
-  { label: string; helpText: string }
+  OptionCopy
 > = {
   SMALL: { label: "Small", helpText: "Slightly smaller than your theme's." },
   MEDIUM: { label: "Medium", helpText: "Matches your theme's body text." },
@@ -724,30 +882,38 @@ export const FONT_SIZE_OPTIONS: ReadonlyArray<StylingOption<string>> = [
 
 // Label weight — LABEL COLUMN ONLY, settled in Step 3 when the stylesheet put
 // `--appx-spec-font-weight` on `.appx-spec-table__label` rather than the table.
-// The control says "Label weight" so the UI itself states the scope; do not
-// rename it to "Font weight" without also moving the var, which would change
-// every merchant's live table.
+//
+// ⚠️ THE SCOPE LOCK STILL HOLDS, BY A DIFFERENT MECHANISM (feature 86). This
+// used to read "the control says 'Label weight', so the UI itself states the
+// scope". The control now says just "Weight" — and the scope is still stated,
+// by the `Labels` group heading it sits under, which is wired to the control
+// with `role="group"` + `aria-labelledby`, so it is announced too. What has NOT
+// changed: renaming this to a table-wide "Font weight" would require MOVING THE
+// VAR off `.appx-spec-table__label`, which would repaint every live table.
+// Dropping the group wrapper would silently break the same lock.
 const FONT_WEIGHT_LABELS: Record<
   (typeof STYLING_FONT_WEIGHTS)[number],
-  { label: string; helpText: string }
+  OptionCopy
 > = {
-  REGULAR: { label: "Regular", helpText: "Labels read as body text." },
-  MEDIUM: { label: "Medium", helpText: "Labels stand out a little." },
-  BOLD: { label: "Bold", helpText: "Labels stand out strongly." },
+  REGULAR: { label: "Regular" },
+  MEDIUM: { label: "Medium" },
+  BOLD: { label: "Bold" },
 };
 
 export const FONT_WEIGHT_OPTIONS = withInheritOption(
   STYLING_FONT_WEIGHTS,
   FONT_WEIGHT_LABELS,
-  "Use your theme's label weight.",
+  // No longer "your theme's LABEL weight": the `Labels` heading carries the
+  // scope, and the gloss is short enough to read at 300px without it.
+  "Use your theme's weight.",
 );
 
 const FONT_STYLE_LABELS: Record<
   (typeof STYLING_FONT_STYLES)[number],
-  { label: string; helpText: string }
+  OptionCopy
 > = {
-  NORMAL: { label: "Normal", helpText: "Upright text." },
-  ITALIC: { label: "Italic", helpText: "Slanted text." },
+  NORMAL: { label: "Normal" },
+  ITALIC: { label: "Italic" },
 };
 
 export const FONT_STYLE_OPTIONS = withInheritOption(
@@ -756,13 +922,10 @@ export const FONT_STYLE_OPTIONS = withInheritOption(
   "Use your theme's text style.",
 );
 
-const LINE_HEIGHT_LABELS: Record<
-  (typeof LINE_HEIGHTS)[number],
-  { label: string; helpText: string }
-> = {
-  TIGHT: { label: "Tight", helpText: "Lines sit close together." },
-  NORMAL: { label: "Normal", helpText: "Comfortable line spacing." },
-  LOOSE: { label: "Loose", helpText: "Airy lines, easier to scan." },
+const LINE_HEIGHT_LABELS: Record<(typeof LINE_HEIGHTS)[number], OptionCopy> = {
+  TIGHT: { label: "Tight" },
+  NORMAL: { label: "Normal" },
+  LOOSE: { label: "Loose" },
 };
 
 export const LINE_HEIGHT_OPTIONS = withInheritOption(
@@ -771,14 +934,13 @@ export const LINE_HEIGHT_OPTIONS = withInheritOption(
   "Use your theme's line spacing.",
 );
 
-// Label case — label column only. The section header sets `font-weight: 700` as
-// a literal and takes no case var, so this never touches section titles.
-const LABEL_CASE_LABELS: Record<
-  (typeof LABEL_CASES)[number],
-  { label: string; helpText: string }
-> = {
-  DEFAULT: { label: "As typed", helpText: "Labels appear as you wrote them." },
-  UPPERCASE: { label: "Uppercase", helpText: "Labels render in capitals." },
+// Label case — label column only, and under the same scope lock as the weight
+// knob above: the `Labels` heading is what states the scope now that the
+// control reads "Case". The section header takes its own case var, so this
+// never touches section titles.
+const LABEL_CASE_LABELS: Record<(typeof LABEL_CASES)[number], OptionCopy> = {
+  DEFAULT: { label: "As typed" },
+  UPPERCASE: { label: "Uppercase" },
 };
 
 export const LABEL_CASE_OPTIONS = withInheritOption(
@@ -791,21 +953,35 @@ export const LABEL_CASE_OPTIONS = withInheritOption(
 //
 // Same DOMAINS as the two label knobs above (`STYLING_FONT_WEIGHTS`,
 // `LABEL_CASES`) and the same emitted scales, so "Bold" can never come to mean
-// two different numbers. Only the prose differs, and it has to: these controls
-// sit in Sections while their twins sit in Typography, and identical help text
-// on both would read as one control duplicated rather than two surfaces.
+// two different numbers.
 //
-// Note the Inherit gloss does NOT say "your theme's" the way the four
+// ⚠️ FEATURE 86 CHANGED WHAT SEPARATES THESE FROM THEIR TWINS. Until now it was
+// the per-option prose ("Titles stand out strongly." vs "Labels stand out
+// strongly."), written that way so a merchant reading two Uppercase controls in
+// two groups did not take them for one control appearing twice. That prose is
+// cut on both sides — it only said the label back — so the pairs are now
+// distinguished by their GROUP HEADING (`Section headers` vs `Labels`) and, in
+// the data, by the Inherit gloss alone.
+//
+// 🚫 The two `Record`s below are therefore IDENTICAL to `FONT_WEIGHT_LABELS` /
+// `LABEL_CASE_LABELS` today, and are deliberately NOT collapsed into them. The
+// duplication buys a real guard: the test asserting the header lists never say
+// "label" can only fail while the lists are separable. Share one record and
+// that test becomes structurally incapable of failing — a vacuous guard, which
+// is worse than four lines of repetition, and it is exactly the leak the
+// feature-81 comment above was written to prevent.
+//
+// The Inherit gloss still does NOT say "your theme's" the way the four
 // Typography lists do. There is no theme value behind a section title's weight
 // or casing — the fallback is this app's own literal (700 / none), and saying
 // otherwise would be a lie the merchant could catch by switching themes.
 const HEADER_FONT_WEIGHT_LABELS: Record<
   (typeof STYLING_FONT_WEIGHTS)[number],
-  { label: string; helpText: string }
+  OptionCopy
 > = {
-  REGULAR: { label: "Regular", helpText: "Titles read as body text." },
-  MEDIUM: { label: "Medium", helpText: "Titles stand out a little." },
-  BOLD: { label: "Bold", helpText: "Titles stand out strongly." },
+  REGULAR: { label: "Regular" },
+  MEDIUM: { label: "Medium" },
+  BOLD: { label: "Bold" },
 };
 
 export const HEADER_FONT_WEIGHT_OPTIONS = withInheritOption(
@@ -814,12 +990,9 @@ export const HEADER_FONT_WEIGHT_OPTIONS = withInheritOption(
   "Keep the standard bold section title.",
 );
 
-const HEADER_CASE_LABELS: Record<
-  (typeof LABEL_CASES)[number],
-  { label: string; helpText: string }
-> = {
-  DEFAULT: { label: "As typed", helpText: "Titles appear as you wrote them." },
-  UPPERCASE: { label: "Uppercase", helpText: "Titles render in capitals." },
+const HEADER_CASE_LABELS: Record<(typeof LABEL_CASES)[number], OptionCopy> = {
+  DEFAULT: { label: "As typed" },
+  UPPERCASE: { label: "Uppercase" },
 };
 
 export const HEADER_CASE_OPTIONS = withInheritOption(

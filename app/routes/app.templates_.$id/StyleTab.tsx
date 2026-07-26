@@ -146,11 +146,20 @@ function readChecked(event: Event): boolean {
 // The subdued line under a control, describing whatever is currently selected.
 // A lookup, not a control abstraction — it stays valid for Step 10's non-select
 // shapes because it knows nothing about how the value is picked.
+//
+// ⚠️ Returns `undefined`, never `""` (feature 86). Most options no longer carry
+// a gloss at all — see the rule on `StylingOption.helpText` — and a `details=""`
+// paints an empty subdued line, so the control would keep the vertical space of
+// a description it does not have. `undefined` omits the attribute instead.
+// The `||` rather than `??` is deliberate: it catches a stray `""` in the option
+// data as well as a missing key, so neither can reach the DOM.
 function selectedHelpText<T extends string>(
   options: ReadonlyArray<StylingOption<T>>,
   value: T,
-): string {
-  return options.find((option) => option.value === value)?.helpText ?? "";
+): string | undefined {
+  return (
+    options.find((option) => option.value === value)?.helpText || undefined
+  );
 }
 
 export function StyleTab({ engine }: { engine: RowEngine }) {
@@ -281,7 +290,7 @@ export function StyleTab({ engine }: { engine: RowEngine }) {
             the box is the way back to the theme's default ratio. */}
           {showsLabelWidthControl(styling) && (
             <s-number-field
-              label="Label width"
+              label="Label column width"
               suffix="%"
               details={
                 styling.labelWidthPct === null
@@ -369,7 +378,11 @@ export function StyleTab({ engine }: { engine: RowEngine }) {
             details={
               styling.outerBorderWidthPx === null
                 ? "No outline. Set 1 or more to frame the table."
-                : "Colored by Table outline, or Border if that is unset."
+                : // Feature 86 renamed both swatches this names. "Border" was
+                  // ambiguous once it moved to Rows, and the old sentence ended
+                  // "…if that is unset" — a reference that only parsed while the
+                  // two sat next to each other in one Colors list.
+                  "Colored by Outline color, or Divider color if that is unset."
             }
             min={ZERO_MEANS_OFF_CONTROL_MIN}
             max={OUTER_BORDER_WIDTH_PX_MAX}
@@ -413,7 +426,7 @@ export function StyleTab({ engine }: { engine: RowEngine }) {
           <s-heading id={headingId("sections")}>Sections</s-heading>
 
           <s-select
-            label="Section headers"
+            label="Header style"
             details={selectedHelpText(
               SECTION_HEADER_OPTIONS,
               styling.sectionHeaderStyle,
@@ -445,7 +458,7 @@ export function StyleTab({ engine }: { engine: RowEngine }) {
             for these two, clearing the field means "use the default", which is
             a real state distinct from any number either box can hold. */}
           <s-number-field
-            label="Section title size"
+            label="Title size"
             suffix="px"
             details={
               styling.headerFontSizePx === null
@@ -465,7 +478,7 @@ export function StyleTab({ engine }: { engine: RowEngine }) {
           />
 
           <s-select
-            label="Section title weight"
+            label="Title weight"
             details={selectedHelpText(
               HEADER_FONT_WEIGHT_OPTIONS,
               toControlValue(styling.headerFontWeight),
@@ -486,7 +499,7 @@ export function StyleTab({ engine }: { engine: RowEngine }) {
           </s-select>
 
           <s-select
-            label="Section title case"
+            label="Title case"
             details={selectedHelpText(
               HEADER_CASE_OPTIONS,
               toControlValue(styling.headerCase),
@@ -513,7 +526,7 @@ export function StyleTab({ engine }: { engine: RowEngine }) {
             get the zero-means-off treatment precisely because for them the two
             states would be the same render. */}
           <s-number-field
-            label="Section header padding"
+            label="Title spacing"
             suffix="px"
             details={
               styling.headerPaddingBlockPx === null
@@ -539,7 +552,7 @@ export function StyleTab({ engine }: { engine: RowEngine }) {
             This is what confirms Step 8's rejection of a generic
             `<StylingSelect>` wrapper: the shapes really do diverge. */}
           <s-switch
-            label="Collapsible sections"
+            label="Enable collapsing"
             details="Each section becomes an expandable group shoppers can open and close."
             checked={styling.sectionsCollapsible}
             onChange={(event: Event) => {
@@ -553,7 +566,7 @@ export function StyleTab({ engine }: { engine: RowEngine }) {
             the merchant's choice survives a trip through off and back on. */}
           {showsSectionsInitialStateControl(styling) && (
             <s-select
-              label="When the page loads"
+              label="Sections start"
               details={selectedHelpText(
                 SECTIONS_INITIAL_STATE_OPTIONS,
                 styling.sectionsInitialState,
@@ -711,7 +724,15 @@ export function StyleTab({ engine }: { engine: RowEngine }) {
               <s-color-field
                 key={knob.field}
                 label={knob.label}
-                details={knob.helpText}
+                // State-reporting, like the rail's six number fields (feature
+                // 86). An empty swatch says what it currently falls back to;
+                // a set one says which surface it paints. This is what replaces
+                // the group note above — see `ColorKnob.emptyHelpText`.
+                details={
+                  styling[knob.field] === null
+                    ? knob.emptyHelpText
+                    : knob.helpText
+                }
                 alpha={knob.alpha}
                 value={toColorControlValue(styling[knob.field])}
                 onChange={(event: Event) => {
@@ -733,7 +754,7 @@ export function StyleTab({ engine }: { engine: RowEngine }) {
           <s-heading id={headingId("typography")}>Typography</s-heading>
 
           <s-select
-            label="Font size"
+            label="Text size"
             details={selectedHelpText(
               FONT_SIZE_OPTIONS,
               fontSizeControlValue(styling.fontSize),
@@ -781,7 +802,7 @@ export function StyleTab({ engine }: { engine: RowEngine }) {
             "Label weight", not "Font weight": Step 3 put the var on
             `.appx-spec-table__label`, so the control names its own scope. */}
           <s-select
-            label="Label weight"
+            label="Weight"
             details={selectedHelpText(
               FONT_WEIGHT_OPTIONS,
               toControlValue(styling.fontWeight),
@@ -847,7 +868,7 @@ export function StyleTab({ engine }: { engine: RowEngine }) {
 
           {/* Label column only — the section header takes no case var. */}
           <s-select
-            label="Label case"
+            label="Case"
             details={selectedHelpText(
               LABEL_CASE_OPTIONS,
               toControlValue(styling.labelCase),
