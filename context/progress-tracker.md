@@ -35,12 +35,20 @@ Everything upstream is done and live-verified on the dev store:
   persists to `TableStyling`, serializes to the metaobject, and renders on the storefront;
   rail a11y pass done; Reset-to-theme-defaults ships; docs reconciled.
 
-Test suite 986 tests / 38 files; full gate (typecheck · lint · format · test · build) green.
+Test suite 1021 tests / 38 files; full gate (typecheck · lint · format · test · build) green.
 
 Since B1: the Style tab's width surface — the collapsible rail (feature 76). Feature 75's
 full-size preview modal shipped the same day and was **removed 2026-07-25**; see Completed.
 
-**Next:** ✅ **feature 86 (Style tab reorganization) is COMPLETE** — all six steps, shipped
+**Next:** ⚠️ **feature 87 (plain section header) is BUILT + live-verified rail → Postgres
+→ metaobject 2026-07-27; three legs owed** (rendered storefront on an ACTIVE template,
+mobile ≤749px, and a template stored as `TEXT_ONLY`) — a third `SECTION_HEADER_STYLES`
+member plus a relabel; doc `87-…`. It is item 1
+of a five-item merchant report and blocks two of the five reference tables; items 2–5 are
+unscoped. Zero-cost by construction (no migration, no new field, no hide predicate, no
+`StyleTab.tsx` edit), so it does not move B2.
+
+Then: ✅ **feature 86 (Style tab reorganization) is COMPLETE** — all six steps, shipped
 2026-07-26, and it landed BEFORE B2 by merchant decision so presets arrive onto an
 organised rail rather than adding a group to a disorganised one. The rail now carries
 **eight groups on one axis** (the object being styled), each ending with its own colors.
@@ -77,6 +85,72 @@ plan: `~/.claude/plans/style-tab-phase-b-implementation-plan.md` (1–12 = B1, 1
 ## Completed
 
 > One line per unit. Detail → the linked `context/features/` doc + git history.
+
+**Plain section header (feature 87, doc `87-…`) — 🛠️ BUILT 2026-07-27, ✅ live-verified
+rail → Postgres → metaobject, ⚠️ 3 legs owed**
+- Merchant report item 1 of 5: there is no **plain** section header, and `TEXT_ONLY`
+  **is not text-only** — it drops the band but keeps `border-block-end: 2px solid`
+  (`spec-table.css:218`). Both reference tables (JBL, Samsung) show a bare bold title with
+  no rule, so nothing the rail offered could reproduce them. Fix is a third
+  `SECTION_HEADER_STYLES` member, `PLAIN`. Tests 1012 → 1021.
+- **The cheapest unit the Style tab has had, and it is the Step 2 rule paying out again.**
+  `sectionHeaderStyle` is a non-null keyword ⇒ modifier class, so: **no migration** (a
+  third legal string in an existing `String?` column), **no new field** in
+  `STYLING_FIELD_NAMES` (feature 86's drop guard and the `COLOR_KNOBS` grids untouched),
+  **no hide predicate** (count stays 7), **no Liquid / TOML / markup** — the sixth feature
+  running that "server precomputes `styling_css`; Liquid only prints" pays for — and
+  **no `StyleTab.tsx` edit at all**, because `SECTION_HEADER_OPTIONS` is a `.map` over the
+  domain. Appended, never inserted, so `BANDED` stays `[0]` and nothing repaints.
+- **It is a member AND a relabel** (merchant decision 2026-07-27). `TEXT_ONLY`'s LABEL
+  becomes **`Underlined`** ("Bold title with a rule beneath it"); `PLAIN` reads `Plain`
+  ("Bold title, nothing else"). Every label now names the look and **no label is reused
+  across values.** 🚫 Giving `PLAIN` the freed "Text only" string was rejected: it is the
+  strongest label for the new member but points the same words at a different value, so a
+  merchant who remembers picking "Text only" would find "Underlined" selected. Renaming a
+  choice is honest; silently re-pointing its name is not. The wire value is unchanged.
+- **Two CSS rules, one per shape**, because the collapsible `<summary>` is a **sibling** of
+  the section table carrying its own copy of every header declaration — a member styling
+  only the flat shape hands the rule back the moment Collapsible is enabled (the Step 9a
+  composition hazard). `border-block-end: none`, not a transparent or zero-width border:
+  those still occupy the box. ⚠️ **No source-order hazard, unlike feature 79** — the three
+  members are mutually exclusive at matching specificity, so they never contest a property.
+- **The new guard is the one that would have caught the original defect**, and it is
+  derived from the domain rather than hand-listed: **each member states BOTH its
+  `background` and its `border-block-end`**, in both shapes (3 × 2). A member declaring
+  only one silently inherits the other from the base rule — precisely how "text only" ended
+  up underlined. ✅ **Mutation-tested:** dropping `TEXT_ONLY`'s `border-block-end` fails it,
+  so it bites on an existing member and not only on the new one. Selector lookups anchor on
+  the CLASS and walk to the brace, because all three collapsible selectors wrap at
+  prettier's 80 columns and hardcoding the wrap would make reformatting a test failure.
+- ⚠️ **Two consequences accepted in writing.** (1) Collapsible + Plain + all closed is a run
+  of bare titles with **no separator** — the feature-80 hairline is deliberately NOT
+  extended, since it exists because BANDED *drops* an edge and two closed bands merge into
+  a slab; a plain title has no fill to merge with, and the absent edge IS the member.
+  `sectionGapPx` is the answer, and a test pins the banded-only scope so a later change has
+  to revisit the decision rather than drift into it. (2) **`headerBgColor` does nothing
+  under Plain** — the rule hardcodes `transparent`, exactly as `TEXT_ONLY` always has.
+  Pre-existing; the swatch already self-reports ("needs Header style Banded"). Hiding it
+  would be an 8th hide predicate + a feature-86 group change — **open question, not done.**
+- ✅ **Live-verified on the DRAFT `Motorola Moto G45 5G`** (0 assigned; merchant added a
+  `Phone Details` section header for the purpose). All three options walked by keyboard;
+  🔴 **the reported defect reproduced en route** — `Underlined` paints the heavy 2px rule
+  with the band gone, which is the state a merchant reached by picking the option that
+  said "Text only". `Plain` renders a bare bold title in the flat shape **and** as a
+  native disclosure once collapsing is toggled on — the composition hazard the second
+  rule exists for, confirmed rather than assumed. Postgres `sectionHeaderStyle="PLAIN"`
+  (only column touched). **Measured on the wire:** `styling` overrides-only,
+  `styling_css.classes` carries `--section-plain` in field order with the **count
+  unchanged at 7**, and **`vars` is EMPTY** — the no-custom-property claim measured, not
+  asserted. Left saved on Plain; collapsing discarded back off.
+- ⚠️ **Three legs owed:** rendered storefront on an ACTIVE template (this one is DRAFT
+  with 0 assigned, so it renders nothing by design), mobile ≤749px in the Mobile preview,
+  and a template already STORED as `TEXT_ONLY` to confirm the relabel reads on load.
+  🚫 The `.harness/` CSS matrix was **skipped** (recorded as a deviation): two
+  declarations with no specificity or source-order interaction to explore, unlike
+  79/80/85 where the harness caught real plan errors first.
+- ⚠️ **The stale-Prisma-client trap does NOT apply** (no migration), so the dev server
+  needs no restart before the first save. Numbering: takes **87**; 82/83/84 stay reserved.
+  Report items 2–5 are **unscoped** — feature 86's lesson was not to bundle boundaries.
 
 **Style tab reorganization (feature 86, doc `86-…`) — ✅ COMPLETE, all 6 steps
 2026-07-26**

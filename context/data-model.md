@@ -391,7 +391,13 @@ model TableStyling {
   // flag keys on it — the --layout-grid class is the gate.
   gridMinColumnWidthPx Int?     // 160–640; only meaningful when rowLayout is GRID
   mobileLayout         String?  // "STACKED" (null default) | "SAME_AS_DESKTOP" — only meaningful when rowLayout is TWO_COLUMN (a GRID table is responsive by construction, so the rail hides this for both non-TWO_COLUMN layouts)
-  sectionHeaderStyle   String?  // "BANDED" (null default) | "TEXT_ONLY"
+  sectionHeaderStyle   String?  // "BANDED" (null default) | "TEXT_ONLY" | "PLAIN"
+  // Three LOOKS, and each member's CSS rule states BOTH the band and the rule
+  // rather than inheriting either from the base rule — pinned by a test, because
+  // that is exactly what went wrong: TEXT_ONLY drops only the background and
+  // keeps a 2px border-block-end, so before feature 87 nothing produced a bare
+  // bold title. Its merchant-facing label is "Underlined" for that reason; the
+  // wire value keeps its original spelling, so no stored row repaints.
   // Section-header typography + spacing (feature 81). All four nullable, null =
   // inherit the stylesheet's own literal, so an untouched table is byte-identical.
   // They dress BOTH shapes (the flat th[colspan=2] and the collapsible summary),

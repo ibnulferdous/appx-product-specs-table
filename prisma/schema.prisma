@@ -123,7 +123,7 @@ model TableStyling {
   rowLayout            String? // "TWO_COLUMN" (null default) | "STACKED" | "GRID"
   gridMinColumnWidthPx Int? // 160–640; null = the stylesheet literal 240px. The narrowest a GRID track may get — a MINIMUM WIDTH, never a column count, so the track count falls out of the container width (auto-fit + minmax) and the layout is responsive with no media query. Only meaningful when rowLayout is GRID
   mobileLayout         String? // "STACKED" (null default) | "SAME_AS_DESKTOP" — only meaningful when rowLayout is TWO_COLUMN
-  sectionHeaderStyle   String? // "BANDED" (null default) | "TEXT_ONLY"
+  sectionHeaderStyle   String? // "BANDED" (null default) | "TEXT_ONLY" (band off, 2px rule kept — labelled "Underlined" in the rail) | "PLAIN" (neither, feature 87)
   // Section-header typography + spacing (feature 81). null = inherit the
   // stylesheet literal, so an untouched table is unchanged. Applies to both the
   // flat th and the collapsible summary.

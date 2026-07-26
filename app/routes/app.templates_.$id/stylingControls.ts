@@ -251,6 +251,12 @@ export const MOBILE_LAYOUT_OPTIONS: ReadonlyArray<
 }));
 
 // Section headers — how a section title row reads against the rows around it.
+//
+// Every label names the LOOK, and no label is reused across values. TEXT_ONLY
+// reads "Underlined" (feature 87) because it was never text-only: it drops the
+// band and keeps a 2px rule, which is what sent a merchant looking for a bare
+// title and finding nothing that produced one. The wire value is untouched, so
+// a merchant already on it sees their choice renamed, not changed.
 const SECTION_HEADER_LABELS: Record<
   (typeof SECTION_HEADER_STYLES)[number],
   OptionCopy
@@ -260,8 +266,12 @@ const SECTION_HEADER_LABELS: Record<
     helpText: "A shaded band behind the section title.",
   },
   TEXT_ONLY: {
-    label: "Text only",
-    helpText: "Bold title with no background band.",
+    label: "Underlined",
+    helpText: "Bold title with a rule beneath it.",
+  },
+  PLAIN: {
+    label: "Plain",
+    helpText: "Bold title, nothing else.",
   },
 };
 

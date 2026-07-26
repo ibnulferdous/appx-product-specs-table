@@ -400,6 +400,7 @@ describe("stylingToModifierClasses — class matrix", () => {
       classes: {
         BANDED: "appx-spec-table--section-banded",
         TEXT_ONLY: "appx-spec-table--section-text-only",
+        PLAIN: "appx-spec-table--section-plain",
       },
     },
     {

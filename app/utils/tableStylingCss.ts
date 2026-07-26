@@ -269,6 +269,8 @@ function sectionHeaderStyleClass(style: SectionHeaderStyle): string {
       return `${BLOCK}--section-banded`;
     case "TEXT_ONLY":
       return `${BLOCK}--section-text-only`;
+    case "PLAIN":
+      return `${BLOCK}--section-plain`;
     default:
       return assertNever(style);
   }

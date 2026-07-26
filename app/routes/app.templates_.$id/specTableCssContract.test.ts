@@ -84,13 +84,15 @@ describe("spec-table.css ↔ styling vocabulary contract (feature 57 Step 3)", (
   });
 
   it("covers the full producible class list (sanity: the loop above found every knob)", () => {
-    // 3 layouts + 2 mobile + 2 section styles + 3 row dividers + 2 column
+    // 3 layouts + 2 mobile + 3 section styles + 3 row dividers + 2 column
     // dividers + 3 densities + 3 alignments + the collapsible flag + the three
     // presence flags (--section-gap, --outer-border, --outer-radius). If a knob
     // gains a member, this count and the selector assertions below both move
     // together. 21 -> 22 when GRID joined the row layouts (feature 85); note it
     // added NO fourth presence flag — the --layout-grid class is its own gate.
-    expect(producibleClasses.size).toBe(22);
+    // 22 -> 23 when PLAIN joined the section header styles (feature 87), which
+    // likewise needed no flag: it is a modifier class like its two siblings.
+    expect(producibleClasses.size).toBe(23);
   });
 
   // --- Section separation + gap (feature 80) ---------------------------------
@@ -266,6 +268,91 @@ describe("spec-table.css ↔ styling vocabulary contract (feature 57 Step 3)", (
       expect(stylingToModifierClasses(withAll)).toEqual(
         stylingToModifierClasses(DEFAULT_STYLING_VALUES),
       );
+    });
+  });
+
+  // --- Section header style members (feature 87) -----------------------------
+  //
+  // The class-presence assertions above prove each member has a selector
+  // SOMEWHERE. These pin what each one actually declares, which is the failure
+  // feature 87 was reported for: TEXT_ONLY was labelled "text only" while still
+  // painting a 2px rule, so no setting produced a bare bold title — visible only
+  // by looking at a rendered table, since nothing here disagreed.
+  describe("section header style members", () => {
+    // Selectors wrap across lines once prettier passes 80 columns, and all three
+    // collapsible ones do. Anchor on the CLASS and walk forward to the brace
+    // rather than matching a formatted selector verbatim, so reformatting the
+    // stylesheet cannot break these. Requiring `__section {` (with the space)
+    // is what keeps the flat lookup from matching `__section-summary`.
+    function declarationsFor(cls: string, element: string): string {
+      const match = css.match(
+        new RegExp(
+          `\\.${cls}[^{}]*\\.appx-spec-table__${element} \\{([^}]*)\\}`,
+        ),
+      );
+      return match?.[1] ?? "";
+    }
+
+    // Derived from the domain, never hand-listed: a fourth member added later
+    // must satisfy every assertion below or fail here. `--section-gap` cannot
+    // be caught by the prefix filter because its presence flag needs a non-null
+    // sectionGapPx, and these variants leave it at the default null.
+    const MEMBERS = SECTION_HEADER_STYLES.map((sectionHeaderStyle) => {
+      const cls = stylingToModifierClasses(
+        variant({ sectionHeaderStyle }),
+      ).find((candidate) => candidate.startsWith("appx-spec-table--section-"));
+      return { sectionHeaderStyle, cls: cls ?? "" };
+    });
+
+    const SHAPES = [
+      { shape: "flat", element: "section" },
+      { shape: "collapsible", element: "section-summary" },
+    ];
+
+    for (const { sectionHeaderStyle, cls } of MEMBERS) {
+      for (const { shape, element } of SHAPES) {
+        it(`${sectionHeaderStyle} owns BOTH the band and the rule on the ${shape} shape`, () => {
+          // The invariant that makes the three members distinguishable: each one
+          // states its own `background` AND its own `border-block-end`, so which
+          // look a merchant gets is never left to whatever the base rule happens
+          // to say. A member declaring only one of the two silently inherits the
+          // other — which is how "text only" ended up underlined.
+          const block = declarationsFor(cls, element);
+          expect(block, `${cls} has no ${shape} rule`).not.toBe("");
+          expect(
+            block,
+            `${cls} (${shape}) does not set its background`,
+          ).toMatch(/\n {2}background:/);
+          expect(block, `${cls} (${shape}) does not set its rule`).toMatch(
+            /\n {2}border-block-end:/,
+          );
+        });
+      }
+    }
+
+    for (const { shape, element } of SHAPES) {
+      it(`PLAIN paints neither a band nor a rule on the ${shape} shape`, () => {
+        // The whole feature in two declarations. `none`, not a transparent or
+        // zero-width border: those still occupy the box and would leave the
+        // title sitting on an invisible 2px gap.
+        const block = declarationsFor(
+          "appx-spec-table--section-plain",
+          element,
+        );
+        expect(block).toContain("background: transparent;");
+        expect(block).toContain("border-block-end: none;");
+      });
+    }
+
+    it("leaves the feature-80 separator scoped to BANDED alone", () => {
+      // Deliberate, not an oversight: that hairline exists because BANDED drops
+      // an edge it would otherwise have, so two closed bands merge into one
+      // slab. A plain title has no fill to merge with, and the absent edge IS
+      // the member. Merchants wanting the sections held apart set the gap.
+      const start = css.indexOf(".appx-spec-table__section-group:not([open])");
+      const rule = css.slice(css.lastIndexOf("\n.", start), start);
+      expect(rule).toContain("appx-spec-table--section-banded");
+      expect(rule).not.toContain("appx-spec-table--section-plain");
     });
   });
 

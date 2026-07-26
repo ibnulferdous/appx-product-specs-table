@@ -233,9 +233,30 @@ export const SPEC_TABLE_CSS = `/* Appx — Product Specs Table storefront styles
   border-block-end: none;
 }
 
+/* Text only: no band, but the rule stays — this is the UNDERLINED look, and
+   the merchant-facing label says so (feature 87). Same declarations as the
+   base rule; stated explicitly so all three members read as one rule set per
+   member at equal specificity, rather than one member meaning "whatever the
+   base rule happens to do". */
 .appx-spec-table--section-text-only .appx-spec-table__section {
   background: transparent;
   border-block-end: 2px solid var(--appx-spec-border-color, currentColor);
+}
+
+/* Plain (feature 87): neither the band nor the rule. The third member exists
+   because the two above between them could not produce a bare bold title —
+   TEXT_ONLY drops only the background, so a merchant asking for "just the
+   title" still got a 2px rule under it.
+
+   Nothing stands in for the missing rule. Contrast the banded shape, where the
+   feature-80 hairline exists precisely because BANDED DROPS an edge it would
+   otherwise have and two closed bands would merge into one slab; here the
+   absent edge is the whole point of the member, and a title has no fill to
+   merge with the next one. A merchant who wants the sections held apart sets
+   the section gap, which is available whenever collapsing is on. */
+.appx-spec-table--section-plain .appx-spec-table__section {
+  background: transparent;
+  border-block-end: none;
 }
 
 /* --- Collapsible sections (Step 9a) ---------------------------------------
@@ -310,6 +331,21 @@ export const SPEC_TABLE_CSS = `/* Appx — Product Specs Table storefront styles
   .appx-spec-table__section-summary {
   background: transparent;
   border-block-end: 2px solid var(--appx-spec-border-color, currentColor);
+}
+
+/* The summary counterpart of the plain rule above. The summary is a SIBLING of
+   the section table rather than a cell inside it, so it carries its own copy of
+   every header declaration; a member that styled only the flat shape would give
+   a merchant their band or rule back the moment they enabled collapsing.
+
+   Three classes against the two-class collapsible base rule, matching the two
+   members above exactly. The three members are mutually exclusive, so they
+   never contest a property with each other and source order is not load-bearing
+   here. */
+.appx-spec-table--collapsible.appx-spec-table--section-plain
+  .appx-spec-table__section-summary {
+  background: transparent;
+  border-block-end: none;
 }
 
 /* --- Section separation (feature 80, Part A) -------------------------------

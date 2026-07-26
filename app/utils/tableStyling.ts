@@ -22,7 +22,15 @@
 // this array would repaint every table that exists.
 export const ROW_LAYOUTS = ["TWO_COLUMN", "STACKED", "GRID"] as const;
 export const MOBILE_LAYOUTS = ["STACKED", "SAME_AS_DESKTOP"] as const;
-export const SECTION_HEADER_STYLES = ["BANDED", "TEXT_ONLY"] as const;
+// How a section title reads against the rows around it. Three LOOKS, and each
+// one owns both of the properties in play: TEXT_ONLY is a rule with no band,
+// PLAIN is neither (feature 87 — a merchant reported that "Text only" still
+// painted a 2px rule, so there was no way to get a bare bold title). The
+// merchant-facing label for TEXT_ONLY is "Underlined" for exactly that reason;
+// the wire value keeps its original spelling, so nothing repaints.
+//
+// Appended, never inserted — the first member is the default.
+export const SECTION_HEADER_STYLES = ["BANDED", "TEXT_ONLY", "PLAIN"] as const;
 export const SECTIONS_INITIAL_STATES = [
   "ALL_OPEN",
   "FIRST_OPEN",
