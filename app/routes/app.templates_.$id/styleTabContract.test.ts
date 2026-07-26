@@ -130,3 +130,44 @@ describe("feature 86 — the Style rail renders a control for every knob", () =>
     expect(doubled).toEqual([]);
   });
 });
+
+// Feature 86 Step 3 — the separation treatment. Two assertions, both scale-free:
+// they say how the rail is separated, never how many groups it has, so Step 4
+// can move all 34 controls and add two groups without touching either one.
+describe("feature 86 — the Style rail separates its groups", () => {
+  const groupCount = (body.match(/role="group"/g) ?? []).length;
+  const dividerCount = (body.match(/<s-divider\b/g) ?? []).length;
+
+  it("draws one divider per group", () => {
+    // Not the coincidence it looks like. Dividers sit BETWEEN the groups, which
+    // is N-1 of them, plus one closing rule above Reset — so N groups always
+    // want exactly N dividers, at six today and at eight after the move.
+    //
+    // This is the one thing about the treatment worth pinning: a group added
+    // later without its rule is invisible to every other test in the repo, and
+    // reads as a rendering glitch rather than a missing line of JSX.
+    expect(groupCount).toBeGreaterThan(0); // guards the guard
+    expect(dividerCount).toBe(groupCount);
+  });
+
+  it("keeps the rail's outer gap wider than the gap inside a group", () => {
+    // The proximity signal, and the half of the treatment that survives if a
+    // merchant's OS is set to reduce visual noise. `large-200` outside, `base`
+    // within: controls in one group sit closer to each other than to the next
+    // group, so the rail is legible before a single rule is drawn.
+    //
+    // The outer stack is the first `<s-stack>` in the file — the element the
+    // component returns.
+    const firstStack = body.match(/<s-stack\b[^>]*>/);
+    expect(firstStack).not.toBeNull();
+    expect(firstStack?.[0]).toMatch(/gap="large-\d+"/);
+
+    // And the per-group stacks stay tight. Anything but `base` here would
+    // either flatten the contrast or double it.
+    const innerGaps = (body.match(/<s-stack\b[^>]*>/g) ?? []).slice(1);
+    expect(innerGaps.length).toBe(groupCount);
+    for (const stack of innerGaps) {
+      expect(stack).toContain('gap="base"');
+    }
+  });
+});

@@ -21,7 +21,7 @@ where each group collects everything about **one thing** — never a global
 
 The rail ships 34 controls over 33 `StylingValues` fields (the extra control is
 the Custom-size px box, which is a second shape of `fontSize`). They sit in
-seven groups, and those groups are not carved the same way:
+six groups, and those groups are not carved the same way:
 
 | group | axis |
 | --- | --- |
@@ -227,7 +227,7 @@ render on top of each other. Steps 4–5 are live verification for a reason.
 ## Step 2 — the copy and data pass (2026-07-26)
 
 Copy only. No control moved, no group changed, no value changed — the rail still
-renders today's seven groups, with new words in them. Tests 986 → 1004.
+renders today's six groups, with new words in them. Tests 986 → 1004.
 
 ### Short labels, and where the scope went
 
@@ -367,3 +367,92 @@ three swatches labelled `Background` and two labelled `Text color` in one run.
 Nothing distinguishes them until they separate into Section headers / Labels /
 Values. The per-group uniqueness test passes throughout, because it already
 asserts the post-Step-4 grouping.
+
+---
+
+## Step 3 — the separation treatment (2026-07-26)
+
+Visual only. **Nothing moved between groups**, no control changed, no copy
+changed — this step answers one question in isolation, *does the separation read
+well at 300px*, so that Step 4's 34-control diff is not also litigating spacing.
+
+### Two gap scales, and the divider is the second cue
+
+- The **outer** stack went `gap="base"` → **`gap="large-200"`**.
+- The **inner** per-group stacks stayed **`base`**.
+- A **`<s-divider>`** now sits between each pair of groups, and one above Reset.
+
+The point of the pair is proximity: controls inside a group are closer to each
+other than to anything in the next group, so the rail is already legible as
+groups **before a single rule is drawn**. The dividers restate that boundary for
+anyone reading structure rather than rhythm. That redundancy is the reason to do
+both rather than pick one.
+
+`large-200` is a real `SizeKeyword` (checked against `polaris-types`, not
+guessed); the token's px value is not in the npm package, so the amount was
+settled by looking at the rail, where it lands around 20px.
+
+### Count correction — the rail has SIX groups, not seven
+
+Earlier notes in this doc say seven. Counting `role="group"` in `StyleTab.tsx`
+gives **six**: Layout · Size & frame · Sections · Rows · Colors · Typography.
+That is exactly what the root-cause section already described — four cut by
+object plus two cut by CSS property — so six is the number the "two axes"
+diagnosis predicts, and seven was a miscount. The target is still 8.
+
+This mattered concretely: it set the divider count.
+
+### `Reset` lost its `paddingBlockStart`
+
+`<s-box paddingBlockStart="base">` existed only to buy separation back when the
+outer stack ran `base` and there was no rule above the button. With `large-200`
+plus a divider it was a third helping of the same space. The box stays (it keeps
+the button at intrinsic width); only the padding went.
+
+Reset takes a rule despite not being a group: it acts on **everything above it**,
+so the line reads as "end of the knobs" rather than as another boundary between
+two of them.
+
+### The guard — two assertions, both scale-free
+
+Added to `styleTabContract.test.ts` (+2 tests, 1004 → **1006**). Neither
+mentions how many groups there are, so Step 4 can add two groups and move all 34
+controls without either one needing an edit:
+
+1. **`dividerCount === groupCount`.** Not the coincidence it looks like —
+   dividers sit *between* groups (N−1) plus one closing rule above Reset, so N
+   groups always want exactly N dividers. Six today, eight after the move. This
+   is the one part of the treatment worth pinning: a group added later without
+   its rule is invisible to every other test in the repo and reads as a
+   rendering glitch rather than a missing line of JSX.
+2. **The two scales stay different** — the first `<s-stack>` (the one the
+   component returns) matches `gap="large-\d+"`, and every remaining stack is
+   `gap="base"`. Setting the outer stack back to `base` would not merely tighten
+   the rail, it would delete the proximity signal and leave the dividers working
+   alone.
+
+### Verified — live on the dev store
+
+Full gate green (typecheck · lint · format · build), **1006 tests / 38 files**.
+Then walked in the real rail on the DRAFT `Motorola Moto G45 5G` (0 assigned
+products). **Nothing saved — the SaveBar never appeared.**
+
+All **six** boundaries seen on screen and reading cleanly: Layout→Size & frame,
+Size & frame→Sections, Sections→Rows, Rows→Colors, Colors→Typography,
+Typography→Reset. The rule renders as a faint hairline inset to the control
+width — subtle, which is correct here: `s-divider`'s default `base` color keeps
+whitespace as the primary signal, where `strong` would make the rail read boxy
+and heavier than the theme-editor inspiration. Spacing above and below each rule
+is even, and the Reset button now sits at the same rhythm as a group heading
+instead of one notch further down.
+
+⚠️ **"Both rail widths" turned out to be a non-question.** The rail is a fixed
+`18.75rem` grid track (`EditorShell.tsx:252`) or it is hidden outright
+(`railCollapsed` → `1fr`). There is no intermediate width, so window size cannot
+change how the treatment renders and there is only one width to check.
+
+⚠️ Tooling note for future live passes: **mouse-wheel scroll does not reach the
+rail inside the admin iframe** — the earlier session note claiming it did was
+wrong. What works is clicking a control and pressing `Tab`; the scroll container
+follows focus. Each `s-color-field` takes **two** tab stops (swatch + text
+input), which is worth knowing before counting presses.

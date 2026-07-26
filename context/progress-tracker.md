@@ -76,10 +76,10 @@ plan: `~/.claude/plans/style-tab-phase-b-implementation-plan.md` (1–12 = B1, 1
 
 > One line per unit. Detail → the linked `context/features/` doc + git history.
 
-**Style tab reorganization (feature 86, doc `86-…`) — 🛠️ IN PROGRESS, Step 1 of 6 done
+**Style tab reorganization (feature 86, doc `86-…`) — 🛠️ IN PROGRESS, Step 3 of 6 done
 2026-07-26**
 - Merchant reported the Style rail as unorganized and sent two Shopify theme-editor
-  screenshots as the target. Root cause: the rail's seven groups are cut on **two axes at
+  screenshots as the target. Root cause: the rail's six groups are cut on **two axes at
   once** — four by OBJECT (Layout / Size & frame / Sections / Rows), two by CSS PROPERTY
   (Colors / Typography). So `headerBgColor` sits ~20 controls from the band it paints,
   `stripeBgColor` sits away from the switch that makes it visible, and `fontWeight` /
@@ -174,8 +174,44 @@ plan: `~/.claude/plans/style-tab-phase-b-implementation-plan.md` (1–12 = B1, 1
   before the groups that justify them, so the still-undivided `Colors` group shows three
   `Background`s and two `Text color`s in one run. Consequence of the step order, not a
   defect; the per-group uniqueness test already asserts the post-Step-4 grouping.
-- **Remaining:** Step 3 divider + spacing treatment on today's groups; Step 4 the move;
-  Step 5 conditional-state + a11y pass; Step 6 lock reconciliation + docs.
+- ✅ **Step 3 — the separation treatment** (1004 → 1006 tests). Visual only: nothing moved
+  between groups, no control and no copy changed, so the step answers *does the separation
+  read well at 300px* on its own rather than inside Step 4's 34-control diff. Outer stack
+  `gap="base"` → **`large-200`**, inner per-group stacks stay **`base`**, and an
+  `<s-divider>` between each pair of groups plus one above Reset. The pair is the point:
+  proximity alone already reads as groups **before a rule is drawn**, and the dividers
+  restate that boundary for anyone reading structure rather than rhythm. `large-200`
+  verified as a real `SizeKeyword` against `polaris-types`; its px value is not shipped in
+  the package, so the amount was settled by looking (~20px). Reset lost its
+  `paddingBlockStart="base"` — it only ever existed to buy space the stack and rule now
+  supply twice over — and takes a rule despite not being a group, because it acts on
+  everything above it.
+- 🔢 **Count correction: the rail has SIX groups, not seven.** Earlier notes here (and the
+  root-cause line above) say seven; `role="group"` in `StyleTab.tsx` counts **six** —
+  Layout · Size & frame · Sections · Rows · Colors · Typography. That is exactly what the
+  two-axes diagnosis predicts (four by object + two by CSS property), so seven was a
+  miscount. The target is still 8. It mattered concretely: it set the divider count.
+- **The Step 3 guard is scale-free on purpose** (+2 tests in `styleTabContract.test.ts`),
+  so Step 4 can add two groups and move all 34 controls without editing either assertion.
+  (1) **`dividerCount === groupCount`** — not a coincidence: N−1 rules between groups plus
+  one closing rule above Reset means N groups always want N dividers, six today and eight
+  after the move. A group added later without its rule is invisible to every other test in
+  the repo and reads as a rendering glitch rather than a missing line of JSX. (2) **the two
+  gap scales stay different** — outer matches `large-\d+`, every inner stack is `base`;
+  collapsing them would delete the proximity signal, not merely tighten the rail.
+- **Live-verified** on the DRAFT `Motorola Moto G45 5G` (nothing saved, SaveBar never
+  appeared): all six boundaries reading cleanly, even spacing either side of each rule, and
+  Reset now sitting at the same rhythm as a group heading. The rule is a faint hairline
+  inset to the control width — correct here, since `s-divider`'s default `base` keeps
+  whitespace primary where `strong` would read boxy.
+  ⚠️ **"Both rail widths" was a non-question:** the rail is a fixed `18.75rem` track
+  (`EditorShell.tsx:252`) or hidden outright (`railCollapsed` → `1fr`). No intermediate
+  width exists, so window size cannot change the treatment.
+  ⚠️ **Tooling correction:** mouse-wheel scroll does **not** reach the rail inside the admin
+  iframe — the earlier session note claiming it did was wrong. Click a control and `Tab`;
+  the scroll container follows focus. Each `s-color-field` takes **two** tab stops.
+- **Remaining:** Step 4 the move; Step 5 conditional-state + a11y pass; Step 6 lock
+  reconciliation + docs.
 
 **Style tab — Reshell Phase B1 (feature 57, steps 1–12; docs `57-…`–`69-…`)**
 - Step 1 (`57-…`): pure styling domain `app/utils/tableStyling.ts` — allowed-value arrays,

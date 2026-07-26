@@ -187,7 +187,17 @@ export function StyleTab({ engine }: { engine: RowEngine }) {
   const rememberedPx = rememberedPxRef.current;
 
   return (
-    <s-stack direction="block" gap="base">
+    // Two gap scales, and the difference between them is the whole separation
+    // treatment (feature 86 Step 3). The OUTER stack runs `large-200` and the
+    // inner per-group stacks stay `base`, so whitespace alone already groups the
+    // rail: controls that belong together sit closer to each other than to
+    // anything in the next group. The `<s-divider>`s then draw that same
+    // boundary for anyone who reads structure rather than rhythm.
+    //
+    // ⚠️ The two scales have to STAY different. Setting the outer stack back to
+    // `base` would not just tighten the rail, it would flatten the proximity
+    // signal entirely and leave the dividers doing the work alone.
+    <s-stack direction="block" gap="large-200">
       <s-heading>Style</s-heading>
 
       {/* Layout — complete as of Step 10b, which fills the slot Step 8 left
@@ -312,6 +322,8 @@ export function StyleTab({ engine }: { engine: RowEngine }) {
         </s-stack>
       </div>
 
+      <s-divider></s-divider>
+
       {/* Size & frame — the container knobs. Every one of these defaults to an
           OFF state (no cap, no outline, square corners), so an untouched table
           renders exactly as it did before the group existed.
@@ -419,6 +431,8 @@ export function StyleTab({ engine }: { engine: RowEngine }) {
           />
         </s-stack>
       </div>
+
+      <s-divider></s-divider>
 
       {/* Sections — complete as of Step 9b. */}
       <div role="group" aria-labelledby={headingId("sections")}>
@@ -617,6 +631,8 @@ export function StyleTab({ engine }: { engine: RowEngine }) {
         </s-stack>
       </div>
 
+      <s-divider></s-divider>
+
       {/* Rows — the Step 5 Dividers control, unchanged, now under a heading. */}
       <div role="group" aria-labelledby={headingId("rows")}>
         <s-stack direction="block" gap="base">
@@ -696,6 +712,8 @@ export function StyleTab({ engine }: { engine: RowEngine }) {
         </s-stack>
       </div>
 
+      <s-divider></s-divider>
+
       {/* Colors (Step 10a) — the rail's first NULLABLE group, and the first
           place "inherit from the theme" needs to be visible and reachable.
           An empty swatch IS the Theme state, and clearing the field is the
@@ -746,6 +764,8 @@ export function StyleTab({ engine }: { engine: RowEngine }) {
           </s-grid>
         </s-stack>
       </div>
+
+      <s-divider></s-divider>
 
       {/* Typography (Step 10b). Four nullable keyword selects that lead with
           `Inherit`, plus the one genuinely three-shaped knob. */}
@@ -890,13 +910,23 @@ export function StyleTab({ engine }: { engine: RowEngine }) {
         </s-stack>
       </div>
 
+      <s-divider></s-divider>
+
       {/* Reset (Step 12) — last in the rail and LOW-emphasis on purpose: it is a
           bulk undo of every knob above it, not a primary action. It never applies
           on first click; the confirmation lives in `ResetStylingModal`, mounted up
           in `SpecTableEditor` so switching tabs cannot tear it out mid-confirm.
           No `saving` guard here — the whole rail is inside the editor's inert
-          freeze, unlike the portalled modal it opens. */}
-      <s-box paddingBlockStart="base">
+          freeze, unlike the portalled modal it opens.
+
+          It takes a divider like a group does, though it is not one: it acts on
+          everything above it, so the rule reads as "end of the knobs" rather than
+          as another boundary between two of them.
+
+          The box lost its `paddingBlockStart` in Step 3 — it existed only to buy
+          separation back when the outer stack ran `base` and there was no rule
+          here. The stack's own `large-200` now supplies it, twice over. */}
+      <s-box>
         <s-button onClick={() => shopify.modal.show(RESET_STYLING_MODAL_ID)}>
           Reset to theme defaults
         </s-button>
