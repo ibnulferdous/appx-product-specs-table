@@ -23,8 +23,8 @@
 // card, which is the one promise this whole module is arranged to protect.
 //
 // Framework-free on purpose (same rationale as `tableStyling.ts` and `rows.ts`):
-// the rail, the gallery route, and the server-side seed all consume it, so it
-// must stay client-safe and Node-testable.
+// the gallery route, the `/new?style=` loader seed, and the model layer's write
+// gate all consume it, so it must stay client-safe and Node-testable.
 
 import {
   DEFAULT_STYLING_VALUES,
@@ -37,22 +37,27 @@ import {
 
 /**
  * The fields a preset is judged on — the four pattern axes plus the collapsible
- * pair. Drives the rail's "Customized" hint and nothing else.
+ * pair.
  *
- * ⚠️ **This is deliberately NOT `stylingEquals` over all 34 fields**, and the
- * reason is feature 93 (accent themes). `stylingEquals` compares the whole shape; the moment an
- * accent theme writes `headerBgColor`, every freshly created template would
- * differ from its own bundle and read "Customized" without the merchant having
- * touched anything. The hint would die on arrival and Step 13 would reopen.
+ * **This is the structure-only rule in executable form.** The rule ("a bundle
+ * sets structure; an accent sets color; they compose") is stated in prose at the
+ * top of this file, and prose does not fail a build. Two guards in
+ * `stylePresets.test.ts` are written in terms of this list — no bundle may set a
+ * field outside it, and every pattern must differ from every other pattern
+ * somewhere inside it — and together they are what stops a color, a font size or
+ * a padding from being smuggled into a "pattern".
+ *
+ * ⚠️ It is deliberately NOT `stylingEquals` over all 34 fields. A whole-shape
+ * compare would call two patterns identical only if their tuning matched too,
+ * and once feature 93's accents write `headerBgColor` on top of a bundle, every
+ * seeded template would differ from the bundle it came from. Comparisons here
+ * must see the pattern and ignore the paint.
  *
  * 🚫 It is also NOT "the keys this bundle sets". `banded`'s bundle is `{}`, so
- * that form compares ZERO fields: a Banded template could never read
- * "Customized", not even after the merchant switched it to `GRID`. A fixed set
- * resolves `{}` against the defaults and gets it right.
+ * that form compares ZERO fields and would make Banded equal to everything. A
+ * fixed set resolves `{}` against the defaults and gets it right.
  *
- * Append-only. Feature 93 adds the accent's color fields here and nothing else
- * about the hint changes. A test pins that no bundle sets a field outside this
- * list — a field outside it is invisible to the hint forever.
+ * Append-only. Feature 93 appends the accent's color fields.
  */
 export const PRESET_SCOPED_FIELDS = [
   "rowLayout",
@@ -86,7 +91,7 @@ export interface StylePreset {
    */
   id: string;
   label: string;
-  /** One line, merchant-facing. Shown on the gallery card and the rail card. */
+  /** One line, merchant-facing. Shown on the gallery card, under the label. */
   description: string;
   bundle: StyleBundle;
 }
@@ -94,8 +99,9 @@ export interface StylePreset {
 /**
  * The five built-in patterns.
  *
- * ORDER IS MERCHANT-FACING — it is the order of the gallery cards and the rail
- * cards. `banded` leads because it is both the most frequent reference shape
+ * ORDER IS MERCHANT-FACING — it is the order of the gallery cards, with the
+ * "Blank" card appended after them. `banded` leads because it is both the most
+ * frequent reference shape
  * (2 of 7, and the dominant electronics-retail look) and the app's own default;
  * `simple` and `minimal` follow as the same two-column family with progressively
  * less chrome; the two structural departures come last. Reordering changes what
@@ -114,10 +120,11 @@ export const STYLE_PRESETS: readonly StylePreset[] = Object.freeze([
     // ⚠️ The bundle is EMPTY, and that is a finding rather than an oversight.
     // BANDED + LINES + no frame is exactly `DEFAULT_STYLING_VALUES`, so the
     // app's zero-config default already IS the dominant retail pattern. Two
-    // consequences: this card and the once-planned "start with your theme's
-    // styles" option are the same thing and were merged, and picking it writes
-    // no override at all — only the `basedOnPreset` stamp distinguishes it from
-    // the skip path. A test pins the emptiness, so a future change to
+    // consequences: this card and the "Blank" card resolve to the SAME 34
+    // values, which is why Blank is not a sixth entry here (it is the absence of
+    // a preset, and shows no preview for exactly this reason), and picking this
+    // one writes no override at all — only the `basedOnPreset` stamp
+    // distinguishes it from Blank. A test pins the emptiness, so a future change to
     // `DEFAULT_STYLING_VALUES` has to revisit this decision rather than
     // silently redefine the card.
     id: "banded",
@@ -189,7 +196,7 @@ export const STYLE_PRESETS: readonly StylePreset[] = Object.freeze([
 
 /**
  * Tolerant lookup, used by every trust boundary that can carry a preset id: the
- * `?style=` query param, a stored `basedOnPreset` column, and the rail.
+ * `?style=` query param, a stored `basedOnPreset` column, and a Save payload.
  *
  * **Never throws, never guesses.** An unknown id, a null, an empty string and a
  * `?style=<garbage>` all degrade to `null` — which the callers read as "no
@@ -240,7 +247,7 @@ export function normalizeStylePresetStamp(value: unknown): string | null {
  * route, and the seed would touch every one of them.
  *
  * A null/unknown preset resolves to `DEFAULT_STYLING_VALUES` — the theme-inherit
- * state — so the skip path and an invalid param share one code path with the
+ * state — so the "Blank" card and an invalid param share one code path with the
  * "picked Banded" path. They differ only in whether `basedOnPreset` is stamped.
  */
 export function seedStylingFromPreset(
@@ -256,7 +263,7 @@ export function stylePresetValues(preset: StylePreset): StylingValues {
   return parseStylingValues(preset.bundle);
 }
 
-// --- The "Customized" hint ----------------------------------------------------
+// --- Pattern comparison -------------------------------------------------------
 
 /**
  * Do these two value sets agree on every field a preset is judged on?
@@ -273,15 +280,22 @@ export function presetScopedEquals(
 }
 
 /**
- * Has the merchant moved off the pattern they picked?
+ * Has the merchant moved off the pattern they were created from?
+ *
+ * ⚠️ **Currently has no consumer, and that is deliberate** (feature 88 step 90).
+ * It was written for an in-editor rail that showed a "Customized" hint beside
+ * the selected card; the 2026-07-27 create-time-only decision cut the rail, and
+ * the hint went with it. Kept rather than deleted because two things ahead want
+ * exactly this comparison — feature 93 (accents) and the B3 saved-preset phase,
+ * which has to answer "is this still the shared preset?" before it can offer to
+ * update one. Six tested lines; re-deriving it later costs more than the wait.
  *
  * `false` when nothing was picked (or the stamp is unrecognized): with no preset
- * there is no baseline to deviate from, and "Customized" against nothing would
- * be noise on every unstyled template.
+ * there is no baseline to deviate from.
  *
  * ⚠️ Changing a COLOR never makes this true, by construction. That is the
  * intended reading — colors were never part of the pattern — and it is what
- * keeps the hint meaningful once accents ship.
+ * keeps the answer meaningful once accents ship.
  */
 export function isCustomizedFromPreset(
   values: StylingValues,

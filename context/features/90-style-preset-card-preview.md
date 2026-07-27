@@ -1,6 +1,6 @@
 # Step 90 — the canned sample + the preset preview card
 
-**Status:** 📋 drafted 2026-07-27, not built.
+**Status:** ✅ **complete 2026-07-27** — 1055 → **1072** tests.
 **Parent feature:** `88-style-preset-gallery.md` (binding design — read it first).
 **Position:** step 2 of 4. Previous `89-style-preset-engine-persistence.md` ✅.
 Next `91-style-preset-gallery-route.md`.
@@ -233,12 +233,75 @@ Step 91 owns these, listed here so the debt is visible from this file:
 
 ## Completion checklist
 
-- [ ] `applyStylePreset` + `isCustomizedFromStylePreset` removed from the engine
-- [ ] `isCustomizedFromPreset` + `PRESET_SCOPED_FIELDS` doc comments corrected
-- [ ] Canned sample built from real `EditorRow` types, static ids
-- [ ] Card renders via `renderSpecTablePreviewDocument`, iframe hidden from AT
-- [ ] Blank variant renders no preview
-- [ ] Tests 1–10 passing; mutation on test 6 run and reverted
-- [ ] Full gate green, new test total recorded
-- [ ] `context/progress-tracker.md` updated
-- [ ] Committed with a message naming feature 88 step 90
+- [x] `applyStylePreset` + `isCustomizedFromStylePreset` removed from the engine
+- [x] `isCustomizedFromPreset` + `PRESET_SCOPED_FIELDS` doc comments corrected
+- [x] Canned sample built from real `EditorRow` types, static ids
+- [x] Card renders via `renderSpecTablePreviewDocument`, iframe hidden from AT
+- [x] Blank variant renders no preview
+- [x] Tests 1–10 passing; mutation on test 6 run and reverted
+- [x] Full gate green, new test total recorded
+- [x] `context/progress-tracker.md` updated
+- [x] Committed with a message naming feature 88 step 90
+
+---
+
+## What was actually built
+
+| file | what |
+| --- | --- |
+| `app/routes/app.templates_.choose-style/sampleRows.ts` | the canned table — 2 section headers, 7 data rows, static `sample-*` ids |
+| `…/StylePresetCard.tsx` | `StylePresetCard` (live preview) + `BlankStyleCard` (no preview) |
+| `…/StylePresetCard.module.css` | card frame, focus ring, the scale geometry |
+| `…/sampleRows.test.ts` | 8 tests — fixture shape + the pipeline |
+| `…/StylePresetCardContract.test.ts` | 9 source-text tests — control, a11y, Blank |
+| `app/routes/app.templates_.$id/useRowEngine.ts` | two exports removed; three comments rewritten |
+| `app/utils/stylePresets.ts` | doc comments only — no behaviour change |
+
+The directory contains **no `route.tsx`**, so `flatRoutes()` does not turn it into
+a route. Nothing imports the card yet, so it is absent from the build output
+entirely — verified, and expected until step 91.
+
+### Three findings worth carrying forward
+
+**1. `800px` is a hard floor, not a taste call.** The render width has to clear
+the storefront stylesheet's **749px mobile breakpoint**. Below it every card —
+Banded, Simple, Multi-column alike — renders in its `--mobile-stacked` form, so
+all five thumbnails converge on one stacked shape and the gallery distinguishes
+nothing. This is the whole "scale, don't shrink" rule reduced to one number, and
+it is recorded in the CSS beside the value.
+
+**2. The viewport height was wrong on the first try, and only looking caught
+it.** 470px left a visible band of dead white under every card. Cut to **420px**
+— the tallest pattern (Banded, ~395px) plus slack. No test could have found this;
+it was found by rendering all six into a static harness page and looking at them.
+
+**3. Test 6's class check is not sufficient on its own, and the doc's framing hid
+that.** `appx-spec-table--layout-grid` is emitted from `styling` alone, so it
+appears on a two-row sample just as readily — the class cannot see that the card
+is showing a single column. The test therefore also counts RENDERED data rows
+(`scope="row"` occurrences, so a `hideWhenEmpty`-dropped row does not count). The
+mutation confirms it: shrinking the sample to 3 rows fails the 🔴 test, and the
+class assertion inside it still passes.
+
+### Verification
+
+`npx vitest run` **1072 passed** · `npx tsc --noEmit` 0 · `npx eslint app` 0 ·
+`prettier --write` · `npm run build` ✓.
+
+**Mutation on test 6** — sample sliced to 3 rows: the 🔴 Multi-column test failed
+on the rendered-row count (as did the ≥2-sections and ≥6-data-rows guards).
+Reverted.
+
+**Looked at, off-route.** All six cards were rendered into a throwaway static
+page (deleted) and inspected: five visibly distinct; Banded's bands vs Simple's
+plain titles vs Minimal's ruleless rows all legible at 0.4 scale; Multi-column
+flows into **3 columns**; Accordion shows disclosure markers and the section gap;
+Blank reads as a different kind of choice. This is not the step-91 live check —
+it verified the geometry, not the page.
+
+**Live, on the dev store:** an existing template was opened after the engine
+deletions and the editor loaded and hydrated normally — the one regression
+surface the deletions could have had. The Style rail itself was not exercised:
+its segmented control does not respond to synthetic clicks inside the embedded
+admin iframe ([[embedded-admin-iframe-automation]]). It is covered by `tsc` +
+the build + the rail's own coverage contract test, and by step 91's live pass.

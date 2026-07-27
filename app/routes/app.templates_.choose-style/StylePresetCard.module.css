@@ -1,0 +1,139 @@
+/* Style-preset gallery cards (feature 88 · step 90).
+ *
+ * Two card shapes share one frame: `.card` + `.preview` (a scaled live table)
+ * for the five patterns, `.card` + `.blankPlate` for the "Blank" choice, which
+ * shows no table at all — its output is pixel-identical to Banded's, so a second
+ * thumbnail of the same table would read as a rendering bug.
+ *
+ * Colour: Polaris colour tokens are sealed in shadow DOM and unreachable from
+ * light-DOM CSS ([[polaris-web-component-gotchas]]), the same constraint
+ * `DevicePreview.module.css` works under. Same answer here: every literal is
+ * declared ONCE as a custom property on `.card` and referenced by `var()`, so
+ * the card look is retuned from one block. Neutral surfaces are fixed literals
+ * (they read against a light admin); hairlines and muted text derive from
+ * `currentColor` so they follow the theme ink. */
+
+.card {
+  /* The one place to retune the card look. */
+  --appx-preset-surface: #ffffff;
+  --appx-preset-hairline: color-mix(in srgb, currentColor 14%, transparent);
+  --appx-preset-hairline-hover: color-mix(
+    in srgb,
+    currentColor 35%,
+    transparent
+  );
+  --appx-preset-shadow: color-mix(in srgb, currentColor 12%, transparent);
+  --appx-preset-muted: color-mix(in srgb, currentColor 65%, transparent);
+  --appx-preset-blank-fill: color-mix(in srgb, currentColor 3%, #ffffff);
+
+  /* --- The scale geometry ------------------------------------------------
+     "Scale, don't shrink": the preview is the REAL table rendered at a real
+     desktop width and then visually scaled down, never the table rendered into
+     a 320px box.
+
+     ⚠️ `--appx-preset-render-width` MUST stay above the storefront
+     stylesheet's 749px mobile breakpoint. Below it the `--mobile-stacked`
+     rules fire and every card — Banded, Simple, Multi-column alike — renders
+     in its phone form, so all five thumbnails converge on the same stacked
+     shape and the gallery stops distinguishing anything. That single number is
+     what the whole scale-don't-shrink rule reduces to.
+
+     The render HEIGHT is a viewport, not a measurement: the frame crops
+     whatever does not fit rather than auto-sizing, so a future bundle that
+     renders taller crops cleanly instead of resizing the card.
+
+     420px is measured, not guessed — it is the tallest of the five (Banded,
+     ~395px at this width) plus a little slack. The first value tried was 470px
+     and every card carried a visible band of dead white under its last row;
+     the cards are all one height by design, so the viewport has to be sized to
+     the TALLEST pattern and no more. Multi-column still ends well short of the
+     bottom, and that is honest — it genuinely is a shorter table. */
+  --appx-preset-render-width: 800px;
+  --appx-preset-render-height: 420px;
+  --appx-preset-scale: 0.4;
+
+  display: flex;
+  flex-direction: column;
+  /* The preview box's scaled width IS the card's content width, so the frame
+     hugs the thumbnail exactly and every card in the gallery is the same size —
+     including Blank, which has no thumbnail to size itself from. */
+  width: calc(var(--appx-preset-render-width) * var(--appx-preset-scale));
+  gap: 0.75rem;
+  padding: 0.75rem;
+  border: 0.0625rem solid var(--appx-preset-hairline);
+  border-radius: 0.75rem;
+  background: var(--appx-preset-surface);
+  /* It is an anchor: kill the underline and inherit the admin ink, so it reads
+     as a card rather than as a link with a picture in it. */
+  text-decoration: none;
+  color: inherit;
+}
+
+.card:hover {
+  border-color: var(--appx-preset-hairline-hover);
+  box-shadow: 0 0.125rem 0.5rem var(--appx-preset-shadow);
+}
+
+/* Keyboard users must SEE which card they are on. `:focus-visible` only, so a
+   pointer click does not leave a ring behind; `outline-offset` puts the ring
+   outside the border rather than on top of it. */
+.card:focus-visible {
+  outline: 0.125rem solid currentColor;
+  outline-offset: 0.125rem;
+}
+
+/* The scaled viewport. `overflow: hidden` is what makes the render height a
+   crop rather than a stretch. */
+.preview {
+  display: block;
+  width: calc(var(--appx-preset-render-width) * var(--appx-preset-scale));
+  height: calc(var(--appx-preset-render-height) * var(--appx-preset-scale));
+  overflow: hidden;
+  border-radius: 0.375rem;
+  border: 0.0625rem solid var(--appx-preset-hairline);
+  background: var(--appx-preset-surface);
+}
+
+.frame {
+  display: block;
+  width: var(--appx-preset-render-width);
+  height: var(--appx-preset-render-height);
+  border: none;
+  transform: scale(var(--appx-preset-scale));
+  transform-origin: top left;
+  /* ⚠️ Load-bearing, not cosmetic. An iframe swallows pointer events, so
+     without this the middle of every card — the part a merchant actually aims
+     at — would not activate the link wrapping it. */
+  pointer-events: none;
+}
+
+/* Blank's stand-in: the same footprint as a preview so the cards line up in the
+   grid, but a dashed empty plate that is obviously NOT a sixth look. */
+.blankPlate {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: calc(var(--appx-preset-render-width) * var(--appx-preset-scale));
+  height: calc(var(--appx-preset-render-height) * var(--appx-preset-scale));
+  border-radius: 0.375rem;
+  border: 0.125rem dashed var(--appx-preset-hairline);
+  background: var(--appx-preset-blank-fill);
+  color: var(--appx-preset-muted);
+  font-size: 1.75rem;
+  line-height: 1;
+}
+
+.body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+}
+
+.title {
+  font-weight: 600;
+}
+
+.description {
+  font-size: 0.8125rem;
+  color: var(--appx-preset-muted);
+}

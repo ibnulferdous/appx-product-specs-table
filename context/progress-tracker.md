@@ -21,8 +21,8 @@ Building the MVP.
 > | --- | --- | --- | --- |
 > | 13a | — | pure domain (`app/utils/stylePresets.ts`) | ✅ `3714361`, 1021 → 1044 tests |
 > | 89 | `89-style-preset-engine-persistence.md` | `basedOnPreset` state + write path | ✅ **2026-07-27**, 1044 → **1055** |
-> | 90 | `90-style-preset-card-preview.md` | canned sample + preview card | 📋 drafted, ⬜ next |
-> | 91 | `91-style-preset-gallery-route.md` | `/app/templates/choose-style`, six cards | ⬜ |
+> | 90 | `90-style-preset-card-preview.md` | canned sample + preview card | ✅ **2026-07-27**, 1055 → **1072** |
+> | 91 | `91-style-preset-gallery-route.md` | `/app/templates/choose-style`, six cards | 📋 ⬜ next |
 > | 92 | `92-style-preset-create-flow.md` | repoint Create buttons, `?style=` seeding | ⬜ |
 >
 > 🔴 **Merchant decisions 2026-07-27 — presets are CREATE-TIME ONLY.** A planned
@@ -40,12 +40,34 @@ Building the MVP.
 > **Step 89 landed 2026-07-27.** A preset id now travels merchant → engine →
 > dirty snapshot → Save payload → action → Postgres → loader → engine, normalized
 > at both ends by `normalizeStylePresetStamp` (an unknown id or a non-string
-> stores NULL). Engine gained `basedOnPreset`, `applyStylePreset`,
-> `isCustomizedFromStylePreset`; `resetStyling` clears the stamp,
-> `setStylingField` deliberately does not. **No control writes it yet**, so a
-> merchant sees no change — live verification is owed by step 90 and listed in
-> the step-89 file. No migration (the column has existed since feature 57 Step 4),
-> so the stale-Prisma-client trap does not apply.
+> stores NULL). `resetStyling` clears the stamp, `setStylingField` deliberately
+> does not. **No control writes it yet**, so a merchant sees no change — live
+> verification is owed by the gallery steps and listed in the step-89 file. No
+> migration (the column has existed since feature 57 Step 4), so the
+> stale-Prisma-client trap does not apply.
+>
+> **Step 90 landed 2026-07-27.** Two things, and no page to put them on:
+> `sampleRows.ts` (the one canned table every card previews — 2 section headers +
+> 7 data rows, static ids) and `StylePresetCard.tsx` (`StylePresetCard` +
+> `BlankStyleCard`). The preview renders through `renderSpecTablePreviewDocument`
+> — the SAME pipeline as the editor's device previews, so a card can never drift
+> from the storefront the way a static thumbnail would — into a `sandbox=""`
+> iframe, hidden from AT, inside a real `<Link>`. It also removed the two engine
+> exports the create-time-only decision orphaned (`applyStylePreset`,
+> `isCustomizedFromStylePreset`); `isCustomizedFromPreset` +
+> `PRESET_SCOPED_FIELDS` stay in the domain module with corrected comments — the
+> latter is now justified as the executable form of the structure-only rule, which
+> never depended on the cut hint. **Nothing imports the card yet**, so it is
+> absent from the build until step 91 mounts it.
+>
+> 🔍 **The scale geometry is measured, not guessed.** The preview is the real
+> table at **800px** scaled to **0.4** — 800 because below the storefront
+> stylesheet's **749px mobile breakpoint** every card renders in its identical
+> phone form and the gallery stops distinguishing anything. The viewport height
+> was cut 470 → **420px** after a static harness showed a band of dead white under
+> every card. All six cards were rendered and inspected off-route: five visibly
+> distinct, Multi-column flows into 3 columns, Blank reads as a different kind of
+> choice. Untouched live: the five checks in the step-90 file, owed by step 91.
 >
 > ⚠️ **The accent/colour-theme feature renumbered 89 → 93** when the step files
 > took 89–92. Doc 88 and `stylePresets.ts` were updated; the design is unchanged.
