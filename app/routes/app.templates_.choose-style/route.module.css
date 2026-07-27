@@ -1,0 +1,41 @@
+/* The gallery page's layout (feature 88 · step 91).
+ *
+ * ⚠️ This file owns the ARRANGEMENT of the cards and nothing about a card. The
+ * card sizes itself in `StylePresetCard.module.css`, whose every number is
+ * scale geometry; a card that knew it lived in a two-column grid could not be
+ * dropped anywhere else, and the two-per-row decision would end up recorded in
+ * the wrong file. If the layout seems to need a card change, change the card
+ * deliberately — do not nudge it from this side. */
+
+.gallery {
+  display: flex;
+  flex-direction: column;
+  /* Owned here rather than left to `<s-page>`'s child spacing, so the gap
+     between the help line and the grid is the same whatever the page component
+     does with arbitrary (non-`<s-section>`) children. */
+  gap: 1rem;
+}
+
+.grid {
+  display: grid;
+  /* 🚫 NOT `auto-fit` / `auto-fill`. Two cards per row is a merchant decision
+     (2026-07-27), not a fallback: the card was sized by arithmetic against a
+     measured 1086px `inlineSize="base"` page —
+
+       card    = 480 preview + 24 padding + 2 border = 506px
+       one row = 506 x 2 + 16 gap                    = 1028px   (58px slack)
+
+     — and an auto-fitting track would silently seat a third card on a wide
+     admin, turning that decision into a coincidence. Pinned by a test.
+
+     `minmax(0, 1fr)` rather than `1fr`: a `1fr` track's floor is its content's
+     min-content size, and the card carries an explicit 480px preview box. With
+     a bare `1fr` a narrow admin could not shrink the track, so the page would
+     scroll sideways and defeat the `max-width: 100%` escape the card ships. */
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+  /* The cards have a fixed width, so this only decides where the 58px of slack
+     goes: at the start of each track, keeping the two columns' left edges
+     aligned with the page rather than drifting apart. */
+  justify-items: start;
+}
