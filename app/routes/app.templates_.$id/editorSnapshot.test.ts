@@ -23,6 +23,7 @@ const BASE: EditorMetaSnapshotInput = {
   scopeValues: [],
   excludes: [],
   styling: DEFAULT_STYLING_VALUES,
+  basedOnPreset: null,
 };
 
 const styled = (overrides: Partial<StylingValues>): StylingValues => ({
@@ -175,5 +176,60 @@ describe("reset to theme defaults (feature 57 Step 12)", () => {
     // serializes to `{}`, which the existing Save path writes as an all-NULL
     // row. Reset state and never-styled state are identical in the database.
     expect(serializeStylingOverrides(RESET)).toEqual({});
+  });
+});
+
+describe("editorMetaSnapshot — the style-preset stamp (feature 88 step 89)", () => {
+  it("changes when only basedOnPreset changes", () => {
+    expect(editorMetaSnapshot({ ...BASE, basedOnPreset: "minimal" })).not.toBe(
+      editorMetaSnapshot(BASE),
+    );
+  });
+
+  it("🔴 sees a Banded pick even though it moves no styling value", () => {
+    // THE load-bearing case, and the reason this key exists at all. Banded's
+    // bundle is `{}` — the app's zero-config default IS that pattern — so
+    // picking it on an untouched template leaves all 34 values where they were
+    // and `serializeStylingOverrides` returns `{}` on both sides. A dirty check
+    // watching only the styling would not notice: the SaveBar would stay shut
+    // and the stamp could never be persisted.
+    //
+    // ⚠️ NOT a duplicate of the test above. That one proves the key is IN the
+    // snapshot; this one proves it is the ONLY signal in the Banded case. Assert
+    // the premise first, so a future change to DEFAULT_STYLING_VALUES fails here
+    // loudly rather than making this test pass for the wrong reason.
+    const picked: EditorMetaSnapshotInput = {
+      ...BASE,
+      styling: DEFAULT_STYLING_VALUES,
+      basedOnPreset: "banded",
+    };
+    expect(serializeStylingOverrides(BASE.styling)).toEqual({});
+    expect(serializeStylingOverrides(picked.styling)).toEqual({});
+    expect(editorMetaSnapshot(picked)).not.toBe(editorMetaSnapshot(BASE));
+  });
+
+  it("returns to the baseline when the stamp is cleared again", () => {
+    // The no-false-dirty case for the stamp: pick a card, then Reset (which
+    // clears it), and the SaveBar must close rather than stay open forever.
+    const picked = editorMetaSnapshot({ ...BASE, basedOnPreset: "accordion" });
+    const cleared = editorMetaSnapshot({ ...BASE, basedOnPreset: null });
+    expect(picked).not.toBe(cleared);
+    expect(cleared).toBe(editorMetaSnapshot(BASE));
+  });
+
+  it("leaves every other snapshot field untouched", () => {
+    // Adding a key must not change what any existing field means — the same
+    // check the reset test above makes for `styling`.
+    const after = JSON.parse(
+      editorMetaSnapshot({ ...BASE, basedOnPreset: "simple" }),
+    ) as Record<string, unknown>;
+    const before = JSON.parse(editorMetaSnapshot(BASE)) as Record<
+      string,
+      unknown
+    >;
+    for (const key of Object.keys(before)) {
+      if (key === "basedOnPreset") continue;
+      expect(after[key]).toEqual(before[key]);
+    }
   });
 });

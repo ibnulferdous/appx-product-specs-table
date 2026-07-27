@@ -48,6 +48,7 @@ import {
 } from "./pendingAssignment";
 import { createInitialRows } from "../../utils/rows";
 import { parseRows } from "../../utils/rowsSerialize";
+import { normalizeStylePresetStamp } from "../../utils/stylePresets";
 import {
   DEFAULT_STYLING_VALUES,
   parseStylingValues,
@@ -132,6 +133,13 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
       // Feature 57 Step 4: a never-saved template has no styling row — all
       // defaults. Dormant (no component reads it); Step 5 seeds the engine.
       styling: DEFAULT_STYLING_VALUES,
+      // Feature 88 step 89. Nothing has been picked on a fresh scaffold.
+      //
+      // ⚠️ Step 92 changes EXACTLY these two lines and nothing else: the gallery
+      // hands the editor `?style=<id>`, which seeds `styling` from the bundle and
+      // stamps the id here. The seam is why the loader returns an explicit key
+      // rather than letting the client dig the stamp out of `template.styling`.
+      basedOnPreset: null,
     };
   }
 
@@ -177,7 +185,15 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
   // rule. Dormant until Step 5 seeds the engine from it.
   const styling = parseStylingValues(template.styling ?? {});
 
-  return { template, assignment, excludes, styling };
+  // Feature 88 step 89. Resolved server-side like `styling`, and normalized on
+  // the way OUT as well as in: a stamp left behind by a preset removed in a
+  // later release degrades to "no pattern" here, rather than reaching the rail
+  // as an id that matches no card.
+  const basedOnPreset = normalizeStylePresetStamp(
+    template.styling?.basedOnPreset,
+  );
+
+  return { template, assignment, excludes, styling, basedOnPreset };
 };
 
 export const action = async ({ request, params }: ActionFunctionArgs) => {
@@ -193,6 +209,7 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
     scopeValues?: unknown;
     excludes?: unknown;
     styling?: unknown;
+    basedOnPreset?: unknown;
     intent?: unknown;
   };
 
@@ -270,6 +287,10 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
       const styled = await saveTemplateForShop(shop.id, result.data.id, {
         rows: result.data.rows,
         styling: payload.styling,
+        // Feature 88 step 89 — the stamp rides this call, not the create above.
+        // Omitting it here would lose a preset picked on /app/templates/new at
+        // its very first Save, which is the most common path into the feature.
+        basedOnPreset: payload.basedOnPreset,
       });
       // Sync from the STYLED row (feature 57 Step 7). `result.data` predates the
       // write above and carries no styling relation, so syncing it would publish
@@ -488,12 +509,14 @@ function TemplateOverview({
   assignment,
   excludes,
   styling,
+  basedOnPreset,
   onDiscard,
 }: {
   template: { id: string; name: string; status: TemplateStatus; rows: unknown };
   assignment: AssignmentSeed | null;
   excludes: Array<{ gid: string; label: string; image: string | null }>;
   styling: StylingValues;
+  basedOnPreset: string | null;
   onDiscard: () => void;
 }) {
   const engine = useRowEngine({
@@ -509,6 +532,9 @@ function TemplateOverview({
     // Seed the Style tab from the loader's RESOLVED styling (feature 57 Step 5);
     // fully-default for a template with no styling row.
     initialStyling: styling,
+    // Seed the style-preset provenance (feature 88 step 89); `null` for a
+    // template that never had a pattern picked, which is every template today.
+    initialBasedOnPreset: basedOnPreset,
     // The "new" sentinel id (loader) marks a never-saved template; the engine uses
     // it to gate the file-23 first-paste scaffold replace. A real cuid is never
     // "new", and the create-on-first-save remount reseeds this to false.
@@ -559,7 +585,7 @@ function TemplateOverview({
 }
 
 export default function TemplateEditorPage() {
-  const { template, assignment, excludes, styling } =
+  const { template, assignment, excludes, styling, basedOnPreset } =
     useLoaderData<typeof loader>();
 
   // Bumped to remount the engine owner (TemplateOverview) — resetting its reducer
@@ -583,6 +609,7 @@ export default function TemplateEditorPage() {
       assignment={assignment}
       excludes={excludes}
       styling={styling}
+      basedOnPreset={basedOnPreset}
       onDiscard={() => setEditorNonce((nonce) => nonce + 1)}
     />
   );

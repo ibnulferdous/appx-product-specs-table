@@ -1,7 +1,19 @@
 # Feature 88 — Style preset gallery (Reshell Phase B2, steps 13–14)
 
-**Status:** 📋 **specced 2026-07-27, not built.** Taxonomy, bundles, route contract
-and comparison scope are settled by merchant decision; no code written.
+**Status:** 🛠️ **in progress.** Specced 2026-07-27; taxonomy, bundles, route
+contract and comparison scope settled by merchant decision. **This file is the
+binding design; it is not an implementation plan.** The build is split into four
+step files, each with its own build instructions and completion gate:
+
+| Step | File | Scope | Merchant-visible |
+| --- | --- | --- | --- |
+| 89 | `89-style-preset-engine-persistence.md` | `basedOnPreset` state + write path | no |
+| 90 | `90-style-preset-rail-cards.md` | rail cards + "Customized" hint | ✅ |
+| 91 | `91-style-preset-card-preview.md` | preview component + canned sample | no |
+| 92 | `92-style-preset-gallery-route.md` | `/app/templates/styles`, Skip, `?style=` | ✅ |
+
+Step 13a of the Phase B plan (the pure domain module `app/utils/stylePresets.ts`)
+landed 2026-07-27 in `3714361` and is **not** re-covered by those four files.
 **Depends on:** nothing unbuilt. Feature 87 (`PLAIN`), feature 85 (`GRID`), features
 78–81 (frame, column divider, section gap, header typography) are all shipped and
 live-verified — this feature is **composition only**.
@@ -131,8 +143,18 @@ new serialization path.
 | **Accordion** | `{ sectionsCollapsible: true, sectionHeaderStyle: "TEXT_ONLY", sectionGapPx: 12 }` | #7 Trek |
 
 Every card differs from every other on at least one axis a merchant can see at a
-glance. Ordering is by observed frequency: **Banded leads** (2 of 7, and the
-dominant electronics-retail shape), Multi-column is next (2 of 7).
+glance.
+
+**Card order is the table order above**, and it is merchant-facing (gallery and
+rail both). **Banded leads** — most frequent reference shape (2 of 7, the
+dominant electronics-retail look) *and* the app's own default. Simple and Minimal
+follow as the same side-by-side family with progressively less chrome, so the
+first three cards read as one spectrum; the two structural departures come last.
+
+⚠️ An earlier draft of this section ordered by frequency alone ("Banded leads,
+Multi-column next"), which would have split the side-by-side family across the
+grid. Corrected 2026-07-27 to match the table; `stylePresets.ts` carries the same
+reasoning at `STYLE_PRESETS`.
 
 ### Banded is `{}` — the app's default already IS the dominant retail pattern
 
@@ -262,16 +284,20 @@ even after the merchant switched it to `GRID`. A fixed set resolves `{}` against
 the defaults and gets it right.
 
 Today this returns the same answers a 34-field compare would, so it costs nothing.
-Next step it is the difference between additive and a rewrite.
+In feature 93 it is the difference between additive and a rewrite.
 
 ---
 
-## Step 89 — accent themes (forward compatibility)
+## Feature 93 — accent themes (forward compatibility)
 
 **Merchant decision 2026-07-27:** the colour-theme swatch row is **not** in this
-feature, but **is** the next step, so build for it now.
+feature, but **is** the next feature, so build for it now.
 
-Six seams to cut in Step 13/14 so Step 89 is purely additive:
+⚠️ **Renumbered 2026-07-27.** This section said "Step 89" when drafted. Feature 88
+is now built as four implementation steps documented in `89`–`92`, so accents move
+to **93**. Nothing about the design changed — only the file number.
+
+Six seams to cut in steps 89–92 so feature 93 is purely additive:
 
 1. **Split the vocabulary.** `stylePresets.ts` ships `STYLE_PRESETS` now and gains
    `ACCENT_PRESETS` later — both partial `StylingValues`. **Bundle = structure,
@@ -291,7 +317,7 @@ Six seams to cut in Step 13/14 so Step 89 is purely additive:
    swatch row drops in without reflowing the page. Kaching puts it there.
 6. **`PRESET_SCOPED_FIELDS` is append-only** — see above.
 
-Two things that do **not** change in Step 89: `basedOnPreset` stays the *structure*
+Two things that do **not** change in feature 93: `basedOnPreset` stays the *structure*
 id only (an accent needs no provenance column, because its effect lands in real
 colour columns the merchant can see and edit in the rail), and the default accent
 must be **"Theme", first and pre-selected**, so picking a card still writes zero
@@ -365,7 +391,7 @@ schema change, and there isn't one.)
 
 ## Deliberately out of scope
 
-- **Accent / colour themes** — Step 89, seams cut above.
+- **Accent / colour themes** — feature 93, seams cut above.
 - **B3 saved presets** (`StylePreset` model, "Save as preset", shop-level themes) —
   steps 15+, still cuttable to post-MVP without rework.
 - **Category starter content** — explicitly rejected 2026-07-27; stays in
@@ -398,18 +424,37 @@ schema change, and there isn't one.)
 
 ---
 
-## Open questions
+## Open questions — all three closed 2026-07-27
 
-1. **Gallery path name** — `/app/templates/styles` (recommended, shortest) vs
-   `/app/templates/choose-style` (reads as a step). Not blocking; one string.
-2. **Card preview content.** The cards need canned sample rows — **one generic
-   sample reused by all five** (2 sections, ~6 rows), not per-category content.
-   Rendering them through `renderSpecTablePreviewDocument`
-   (`specTablePreviewHtml.ts:393`) gives zero drift against the storefront at the
-   cost of five scaled iframes on one page; static thumbnails are cheaper and can
-   go stale. **Recommend the iframes** — the drift guard is the reason the preview
-   pipeline exists.
-3. **Does the skip link need to exist at all**, given Banded is `{}` and a merchant
-   can simply pick it? Keeping it costs one link and distinguishes "chose the
-   default look" from "did not choose", which is what makes `basedOnPreset`
-   meaningful.
+1. ✅ **Gallery path name** → **`/app/templates/styles`**. Shortest of the
+   candidates and reads as a noun, matching every other segment in the app.
+   Owned by step 92.
+2. ✅ **Card preview content** → **one generic canned sample reused by all five**
+   (2 sections, ~6 rows), rendered through `renderSpecTablePreviewDocument`
+   (`specTablePreviewHtml.ts:393`). Zero drift against the storefront is the whole
+   reason that pipeline exists; static thumbnails are cheaper and go stale
+   silently, which is the failure mode a gallery can least afford. Owned by
+   step 91.
+   ⚠️ **Previews are GALLERY-ONLY.** The rail is a fixed ~300px track (feature 86);
+   a five-up thumbnail column there would be unreadable and would push the eight
+   existing groups below the fold. **Rail cards are text** — label, description,
+   selected state, "Customized" hint. Decided 2026-07-27 with the split.
+3. ✅ **Keep the skip link.** It costs one link and is what distinguishes "chose
+   the default look" from "did not choose" — which is the only thing that makes a
+   `basedOnPreset` of `"banded"` mean anything different from `null`. Owned by
+   step 92.
+
+### Two gaps found during the step split (2026-07-27)
+
+Both are resolved in step 89 and recorded here because the design above did not
+anticipate them:
+
+- 🔴 **`basedOnPreset` must ride in `editorMetaSnapshot`.** Picking **Banded** on
+  an untouched template changes no styling value at all — the bundle is `{}` — so
+  a dirty check that watches only `serializeStylingOverrides(styling)` would not
+  notice the pick, the SaveBar would not open, and the stamp could never be
+  persisted. The Banded-is-`{}` finding reaching a surface nobody checked.
+- **Reset clears the stamp.** `resetStyling` returns the 34 values to
+  `DEFAULT_STYLING_VALUES`; it must set `basedOnPreset` to `null` in the same
+  action, or a reset template keeps claiming a pattern it no longer has and the
+  rail shows a selected card for a look that is gone.

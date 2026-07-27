@@ -5,6 +5,7 @@ import {
   findStylePreset,
   isCustomizedFromPreset,
   isThemeDefault,
+  normalizeStylePresetStamp,
   presetScopedEquals,
   seedStylingFromPreset,
   stylePresetValues,
@@ -72,7 +73,7 @@ describe("style presets — the constants", () => {
   it("the comparison scope contains no color field", () => {
     // Together with the test above this is the structure-only rule: bundles
     // may only touch scoped fields, and no scoped field is a color. Stated on
-    // the scope rather than on each bundle so feature 89 has exactly one place
+    // the scope rather than on each bundle so feature 93 has exactly one place
     // to revisit when accent colors join the scope.
     for (const field of PRESET_SCOPED_FIELDS) {
       expect(COLOR_FIELDS).not.toContain(field);
@@ -213,6 +214,54 @@ describe("findStylePreset — tolerant at every trust boundary", () => {
   });
 });
 
+describe("normalizeStylePresetStamp — the column's one gate", () => {
+  it("passes through every known preset id", () => {
+    // Derived from the array, so a sixth card is covered here with no edit.
+    for (const preset of STYLE_PRESETS) {
+      expect(normalizeStylePresetStamp(preset.id)).toBe(preset.id);
+    }
+  });
+
+  it("returns null for anything else, whatever its type", () => {
+    // The Save payload is JSON the client composes, so this is the server's
+    // re-validation — same posture as `parseRows` and `parseStylingValues`. The
+    // non-string cases matter as much as the wrong-string ones: a hand-crafted
+    // POST is not obliged to send a string at all.
+    for (const junk of [
+      null,
+      undefined,
+      "",
+      "   ",
+      "Banded", // right card, wrong case
+      "bordered", // a card that was specced and withdrawn
+      "banded ", // trailing space — no trimming, no guessing
+      "<script>alert(1)</script>",
+      "x".repeat(10_000),
+      42,
+      0,
+      true,
+      {},
+      [],
+      ["banded"],
+      { id: "banded" },
+    ]) {
+      expect(normalizeStylePresetStamp(junk), `${String(junk)}`).toBeNull();
+    }
+  });
+
+  it("can only ever emit null or a member of the id set", () => {
+    // The closed-vocabulary claim, stated rather than assumed: it is what lets a
+    // later reader treat `basedOnPreset` as an enum-in-a-string without auditing
+    // every writer, and what makes normalizing on READ enough to heal a stamp
+    // left behind by a preset removed in a future release.
+    const ids = new Set(STYLE_PRESETS.map((preset) => preset.id));
+    for (const input of [...ids, "nope", 7, null, {}]) {
+      const stamp = normalizeStylePresetStamp(input);
+      expect(stamp === null || ids.has(stamp)).toBe(true);
+    }
+  });
+});
+
 describe("seedStylingFromPreset", () => {
   it("seeds the full working shape from a preset", () => {
     expect(seedStylingFromPreset("multi-column").rowLayout).toBe("GRID");
@@ -227,9 +276,9 @@ describe("seedStylingFromPreset", () => {
     expect(seedStylingFromPreset("banded")).toEqual(DEFAULT_STYLING_VALUES);
   });
 
-  it("lets an accent overlay win over the bundle (feature 89 seam)", () => {
+  it("lets an accent overlay win over the bundle (feature 93 seam)", () => {
     // `ACCENT_PRESETS` does not exist yet; the merge order it will depend on
-    // does, and is asserted now so Step 89 is additive rather than a rewrite.
+    // does, and is asserted now so feature 93 is additive rather than a rewrite.
     const seeded = seedStylingFromPreset("minimal", {
       headerBgColor: "#112233",
       sectionHeaderStyle: "BANDED",

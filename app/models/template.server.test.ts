@@ -357,8 +357,11 @@ describe("stylingToDbColumns (feature 57 Step 4 — the DB column mapping)", () 
     expect(columns.sectionsCollapsible).toBe(true);
     expect(columns.labelWidthPct).toBe(45);
     expect(columns.fontSize).toBe("LARGE");
-    // basedOnPreset / extraStyles are NOT this mapping's to emit (Step 13 /
-    // post-MVP own those columns).
+    // basedOnPreset / extraStyles are NOT this mapping's to emit, and feature
+    // 88 step 89 did NOT change that: the stamp is not in STYLING_FIELD_NAMES
+    // and `parseStylingValues` neither reads nor emits it, so folding it in here
+    // would break the round-trip law asserted below. `saveTemplateForShop`
+    // merges it BESIDE this output instead (see its own tests).
     expect(columns).not.toHaveProperty("basedOnPreset");
     expect(columns).not.toHaveProperty("extraStyles");
   });
@@ -534,6 +537,9 @@ describe("saveTemplateForShop", () => {
     const expectedColumns = {
       ...ALL_DEFAULT_COLUMNS,
       rowDividerStyle: "STRIPES",
+      // Merged in beside the mapping's output (feature 88 step 89), null here
+      // because this payload carries no stamp.
+      basedOnPreset: null,
     };
     // Upsert: create (lazy first row) and update (full replace) are the SAME
     // full-column shape — a knob back at default writes an explicit null.
@@ -557,9 +563,112 @@ describe("saveTemplateForShop", () => {
 
     expect(result.ok).toBe(true);
     const updateArg = prismaMock.template.update.mock.calls[0][0];
+    const expectedColumns = { ...ALL_DEFAULT_COLUMNS, basedOnPreset: null };
     expect(updateArg.data.styling).toEqual({
-      upsert: { create: ALL_DEFAULT_COLUMNS, update: ALL_DEFAULT_COLUMNS },
+      upsert: { create: expectedColumns, update: expectedColumns },
     });
+  });
+
+  // --- the style-preset stamp (feature 88 step 89) -------------------------
+  //
+  // `basedOnPreset` is provenance, not styling: it emits no CSS, never reaches
+  // the storefront, and is never re-read as a live link. It rides the styling
+  // upsert because that upsert's `create` arm needs a complete column set — a
+  // stamp-only write path would have to invent one out of defaults and would
+  // silently clobber a styled template's look.
+
+  const stampedColumns = (stamp: string | null) => ({
+    ...ALL_DEFAULT_COLUMNS,
+    basedOnPreset: stamp,
+  });
+
+  const savedWithStamp = async (basedOnPreset: unknown) => {
+    prismaMock.template.findFirst.mockResolvedValue({
+      id: "t1",
+      shopId: "shop_A",
+      rows: [],
+    });
+    prismaMock.template.update.mockResolvedValue({ id: "t1" });
+    await saveTemplateForShop("shop_A", "t1", {
+      rows: [],
+      styling: {},
+      basedOnPreset,
+    });
+    return prismaMock.template.update.mock.calls[0][0].data.styling;
+  };
+
+  it("writes a known preset id into BOTH arms of the nested upsert", async () => {
+    // Both arms, because a first styling save takes `create` and every later
+    // one takes `update` — a stamp landing in only one would persist on some
+    // saves and not others, which is the hardest kind of bug to notice.
+    expect(await savedWithStamp("minimal")).toEqual({
+      upsert: {
+        create: stampedColumns("minimal"),
+        update: stampedColumns("minimal"),
+      },
+    });
+  });
+
+  it("normalizes an untrusted stamp to null rather than storing junk", async () => {
+    // The payload is JSON the client composes, so the server re-validates it —
+    // same posture as `parseRows` and `parseStylingValues`. This also self-heals
+    // a stamp left behind by a preset removed in a later release.
+    for (const junk of [
+      "bordered",
+      "Banded",
+      "",
+      "<script>alert(1)</script>",
+      42,
+      {},
+      [],
+      null,
+    ]) {
+      prismaMock.template.update.mockClear();
+      expect(await savedWithStamp(junk)).toEqual({
+        upsert: { create: stampedColumns(null), update: stampedColumns(null) },
+      });
+    }
+  });
+
+  it("CLEARS the stamp when a styling save omits it — absent means null, not 'leave it'", async () => {
+    // The full-replace law the styling columns already follow, applied to the
+    // stamp rather than a second rule beside it. Pinned here so a later
+    // "only write it when provided" refactor fails loudly: partial-patch
+    // semantics would make a template's stamp depend on which client saved it.
+    prismaMock.template.findFirst.mockResolvedValue({
+      id: "t1",
+      shopId: "shop_A",
+      rows: [],
+    });
+    prismaMock.template.update.mockResolvedValue({ id: "t1" });
+
+    await saveTemplateForShop("shop_A", "t1", { rows: [], styling: {} });
+
+    const written = prismaMock.template.update.mock.calls[0][0].data.styling;
+    expect(written.upsert.create.basedOnPreset).toBeNull();
+    expect(written.upsert.update.basedOnPreset).toBeNull();
+  });
+
+  it("touches the styling relation not at all when the payload omits styling, stamp or no stamp", async () => {
+    // The coupling stated in the doc comment, asserted: a rows-only or
+    // rename-only save can never reach the styling row, so it cannot clear a
+    // stamp either. A caller sending a stamp without styling gets nothing
+    // written — deliberate, and the reason the coupling is documented.
+    prismaMock.template.findFirst.mockResolvedValue({
+      id: "t1",
+      shopId: "shop_A",
+      rows: [],
+    });
+    prismaMock.template.update.mockResolvedValue({ id: "t1" });
+
+    await saveTemplateForShop("shop_A", "t1", {
+      rows: [aRow],
+      basedOnPreset: "minimal",
+    });
+
+    expect(prismaMock.template.update.mock.calls[0][0].data).not.toHaveProperty(
+      "styling",
+    );
   });
 
   it("blocks a cross-shop styling write at the ownership read (priority #1) — nothing reaches Prisma", async () => {

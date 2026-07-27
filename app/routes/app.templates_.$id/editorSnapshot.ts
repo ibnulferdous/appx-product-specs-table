@@ -36,6 +36,17 @@ export interface EditorMetaSnapshotInput {
   scopeValues: string[];
   excludes: string[];
   styling: StylingValues;
+  /**
+   * The style-preset provenance stamp (feature 88 step 89).
+   *
+   * 🔴 It is in the snapshot because it CANNOT be derived from `styling`.
+   * Banded's bundle is `{}` — the app's zero-config default already IS that
+   * pattern — so picking Banded on an untouched template moves none of the 34
+   * values and `serializeStylingOverrides` returns `{}` before and after. Watch
+   * only the styling and that pick is invisible: the SaveBar never opens and the
+   * stamp can never be persisted. This key is the whole reason it can.
+   */
+  basedOnPreset: string | null;
 }
 
 export function editorMetaSnapshot(input: EditorMetaSnapshotInput): string {
@@ -47,5 +58,9 @@ export function editorMetaSnapshot(input: EditorMetaSnapshotInput): string {
     scopeValues: [...input.scopeValues].sort(),
     excludes: [...input.excludes].sort(),
     styling: serializeStylingOverrides(input.styling),
+    // Appended, not interleaved: the key order above is load-bearing for
+    // `JSON.stringify`, and adding to the end is the one edit that cannot
+    // change what an existing snapshot means.
+    basedOnPreset: input.basedOnPreset,
   });
 }

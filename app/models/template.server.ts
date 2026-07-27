@@ -11,6 +11,7 @@ import {
   parseStylingValues,
   type StylingValues,
 } from "../utils/tableStyling";
+import { normalizeStylePresetStamp } from "../utils/stylePresets";
 import { copyName, validateTemplateName } from "../utils/templateName";
 import { validateTemplateStatus } from "../utils/templateStatus";
 
@@ -97,8 +98,13 @@ type TableStylingColumns = {
  * tolerant parse doubles as the one DB decoder (NULL -> default/inherit,
  * "18" -> 18, corrupt legacy values degrade per-field), so the round-trip law
  * `parseStylingValues(stylingToDbColumns(v))` deep-equals `v` holds for every
- * valid value (tested). `basedOnPreset` / `extraStyles` are deliberately NOT
- * emitted — Step 13 (presets) and post-MVP own those columns.
+ * valid value (tested).
+ *
+ * `basedOnPreset` / `extraStyles` are deliberately NOT emitted, and feature 88
+ * did not change that. The stamp is not a member of `STYLING_FIELD_NAMES` and
+ * `parseStylingValues` neither reads nor emits it, so folding it in here would
+ * break the round-trip law above. `saveTemplateForShop` merges it BESIDE this
+ * function's output instead; `extraStyles` stays unwritten (post-MVP).
  */
 export function stylingToDbColumns(values: StylingValues): TableStylingColumns {
   const d = DEFAULT_STYLING_VALUES;
@@ -266,6 +272,22 @@ export async function getTemplateByIdForShop(shopId: string, id?: string) {
  * is deliberately no free-standing styling write function anywhere (a
  * bare-templateId path would be a cross-shop hole waiting for a caller). The
  * upsert is also the lazy row creation: no row until the first styling save.
+ *
+ * `basedOnPreset` (feature 88 step 89) is the style-preset provenance stamp, and
+ * it **rides inside the `styling` branch** — a save that omits `styling` leaves
+ * the stamp alone along with everything else in the row. Two consequences a
+ * second caller has to know, because neither is guessable:
+ *
+ *  - **Sending `styling` without `basedOnPreset` CLEARS the stamp.** Absent means
+ *    null, not "leave it"; the styling write is a full replace and the stamp
+ *    follows the same law rather than inventing a second one beside it.
+ *  - There is deliberately no stamp-only write. The nested upsert's `create` arm
+ *    needs a complete column set, so a stamp-only path would have to invent one
+ *    out of defaults and would silently clobber a styled template's look.
+ *
+ * The value is untrusted client JSON, so it goes through
+ * `normalizeStylePresetStamp`: an unknown id, a hand-edited string or a
+ * non-string all store NULL rather than junk.
  */
 export async function saveTemplateForShop(
   shopId: string,
@@ -275,7 +297,14 @@ export async function saveTemplateForShop(
     name,
     status,
     styling,
-  }: { rows?: unknown; name?: unknown; status?: unknown; styling?: unknown },
+    basedOnPreset,
+  }: {
+    rows?: unknown;
+    name?: unknown;
+    status?: unknown;
+    styling?: unknown;
+    basedOnPreset?: unknown;
+  },
 ) {
   const rowsResult = parseRowsWithinCap(rows);
   if (!rowsResult.ok) {
@@ -309,7 +338,14 @@ export async function saveTemplateForShop(
     data.status = resolveStatus(status);
   }
   if (styling !== undefined) {
-    const columns = stylingToDbColumns(parseStylingValues(styling));
+    // The stamp is spread in BESIDE the mapping's output, never through it —
+    // `stylingToDbColumns` owes a round-trip law that `basedOnPreset` is not
+    // part of (see its doc comment). Same object on both upsert arms, so a
+    // first styling save and a later one write identical shapes.
+    const columns = {
+      ...stylingToDbColumns(parseStylingValues(styling)),
+      basedOnPreset: normalizeStylePresetStamp(basedOnPreset),
+    };
     data.styling = { upsert: { create: columns, update: columns } };
   }
 

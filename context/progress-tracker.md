@@ -12,14 +12,31 @@ Update this file after every meaningful implementation change.
 
 Building the MVP.
 
-> 🛠️ **IN PROGRESS — feature 88 (style preset gallery), Step 13a of 2 landed
-> 2026-07-27.** `app/utils/stylePresets.ts` + its test file: the five bundles,
-> `PRESET_SCOPED_FIELDS`, `findStylePreset` / `seedStylingFromPreset` /
-> `isCustomizedFromPreset`. Pure domain, framework-free, **no UI and no
-> persistence yet** — nothing is merchant-visible. Full gate green, tests
-> 1021 → **1044**. Remaining for Step 13: engine state for `basedOnPreset`
-> (`useRowEngine.ts` + `editorSnapshot.ts`), loader/action persistence, and the
-> rail preset cards in `StyleTab.tsx`. Then Step 14 = the gallery route.
+> 🛠️ **IN PROGRESS — feature 88 (style preset gallery).** The design is
+> `context/features/88-style-preset-gallery.md`; the build is split into four
+> step files, each with its own instructions and completion gate. **Nothing is
+> merchant-visible until step 90.**
+>
+> | Step | File | Scope | Status |
+> | --- | --- | --- | --- |
+> | 13a | — | pure domain (`app/utils/stylePresets.ts`) | ✅ `3714361`, 1021 → 1044 tests |
+> | 89 | `89-style-preset-engine-persistence.md` | `basedOnPreset` state + write path | ✅ **2026-07-27**, 1044 → **1055** |
+> | 90 | `90-style-preset-rail-cards.md` | rail cards + "Customized" hint | ⬜ next |
+> | 91 | `91-style-preset-card-preview.md` | preview component + canned sample | ⬜ |
+> | 92 | `92-style-preset-gallery-route.md` | `/app/templates/styles`, Skip, `?style=` | ⬜ |
+>
+> **Step 89 landed 2026-07-27.** A preset id now travels merchant → engine →
+> dirty snapshot → Save payload → action → Postgres → loader → engine, normalized
+> at both ends by `normalizeStylePresetStamp` (an unknown id or a non-string
+> stores NULL). Engine gained `basedOnPreset`, `applyStylePreset`,
+> `isCustomizedFromStylePreset`; `resetStyling` clears the stamp,
+> `setStylingField` deliberately does not. **No control writes it yet**, so a
+> merchant sees no change — live verification is owed by step 90 and listed in
+> the step-89 file. No migration (the column has existed since feature 57 Step 4),
+> so the stale-Prisma-client trap does not apply.
+>
+> ⚠️ **The accent/colour-theme feature renumbered 89 → 93** when the step files
+> took 89–92. Doc 88 and `stylePresets.ts` were updated; the design is unchanged.
 
 ## Current Goal
 

@@ -17,7 +17,7 @@
 // pattern, and is therefore absent from every bundle below.
 //
 // **A bundle sets structure; an accent sets color; they compose.** The accent
-// half is feature 89 and does not exist yet, but every seam it needs is cut here
+// half is feature 93 and does not exist yet, but every seam it needs is cut here
 // — see `seedStylingFromPreset`. Do not fold a color into a bundle to save the
 // wait: it would opt a merchant out of theme inheritance the moment they pick a
 // card, which is the one promise this whole module is arranged to protect.
@@ -40,7 +40,7 @@ import {
  * pair. Drives the rail's "Customized" hint and nothing else.
  *
  * ⚠️ **This is deliberately NOT `stylingEquals` over all 34 fields**, and the
- * reason is feature 89. `stylingEquals` compares the whole shape; the moment an
+ * reason is feature 93 (accent themes). `stylingEquals` compares the whole shape; the moment an
  * accent theme writes `headerBgColor`, every freshly created template would
  * differ from its own bundle and read "Customized" without the merchant having
  * touched anything. The hint would die on arrival and Step 13 would reopen.
@@ -50,7 +50,7 @@ import {
  * "Customized", not even after the merchant switched it to `GRID`. A fixed set
  * resolves `{}` against the defaults and gets it right.
  *
- * Append-only. Feature 89 adds the accent's color fields here and nothing else
+ * Append-only. Feature 93 adds the accent's color fields here and nothing else
  * about the hint changes. A test pins that no bundle sets a field outside this
  * list — a field outside it is invisible to the hint forever.
  */
@@ -204,10 +204,36 @@ export function findStylePreset(
 }
 
 /**
+ * Narrow an UNTRUSTED value to a storable `basedOnPreset` (feature 88 step 89).
+ *
+ * The one gate on the column. Returns a known preset id or `null`; a number, an
+ * object, a 10KB string and a `<script>` all become `null`. Same posture as
+ * `parseRows` and `parseStylingValues` — the Save payload is JSON the client
+ * composes, so the server re-validates it rather than trusting the one client we
+ * happen to ship.
+ *
+ * Applied on the WRITE and on the READ, which is not belt-and-braces: a preset
+ * removed in a future release leaves stamps behind in rows nobody rewrites, and
+ * normalizing on read is what makes those quietly degrade to "no pattern"
+ * instead of pointing at nothing. It is also what keeps the column a closed
+ * vocabulary, so a later reader can treat it as an enum-in-a-string without
+ * auditing every writer.
+ *
+ * Returns the plain id, not the `StylePreset` — callers that need the object
+ * call `findStylePreset`. That is what lets the model layer use this without
+ * importing a shape it has no use for.
+ */
+export function normalizeStylePresetStamp(value: unknown): string | null {
+  return typeof value === "string"
+    ? (findStylePreset(value)?.id ?? null)
+    : null;
+}
+
+/**
  * Resolve a preset (plus, later, an accent) to the full working shape the engine
  * holds.
  *
- * The `accent` parameter is feature 89's seam and is doing real work today by
+ * The `accent` parameter is feature 93's seam and is doing real work today by
  * being absent-able: the merge order fixes that an accent's colors win over a
  * bundle's, and the signature does not change when `ACCENT_PRESETS` lands. Built
  * now because retrofitting a second overrides source through the rail, the

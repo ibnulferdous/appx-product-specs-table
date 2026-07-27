@@ -35,6 +35,11 @@ import {
   serializeStylingOverrides,
   type StylingValues,
 } from "../../utils/tableStyling";
+import {
+  isCustomizedFromPreset,
+  normalizeStylePresetStamp,
+  seedStylingFromPreset,
+} from "../../utils/stylePresets";
 import { editorMetaSnapshot } from "./editorSnapshot";
 import {
   filterMetafieldDefinitions,
@@ -120,6 +125,13 @@ export interface UseRowEngineArgs {
   // styling change. NOT the same thing as Step 12's `resetStyling`: Discard
   // reverts to the LAST SAVED styling, Reset goes to theme defaults.
   initialStyling: StylingValues;
+  // The persisted style-preset stamp (feature 88 step 89), already normalized by
+  // the loader — a known preset id, or `null` for a template that never had a
+  // pattern picked. PROVENANCE ONLY: it records which card the merchant started
+  // from and is never re-read as a live link, so changing a bundle constant in a
+  // future release cannot restyle an existing template (`data-model.md` §5).
+  // Rides the dirty snapshot + Save payload like `initialStyling`.
+  initialBasedOnPreset: string | null;
   // True only for the `/app/templates/new` sentinel mount (route.tsx). A stable
   // per-mount fact: after the first Save the URL flips to the real cuid and the
   // engine remounts with `isNew = false`, so the scaffold-replace (file 23) can
@@ -185,6 +197,7 @@ export function useRowEngine({
   initialScopeValues,
   initialExcludes,
   initialStyling,
+  initialBasedOnPreset,
   isNew,
   onDiscard,
 }: UseRowEngineArgs) {
@@ -217,14 +230,52 @@ export function useRowEngine({
   // touching the engine again: they all go through `setStylingField`.
   const [styling, setStyling] = useState<StylingValues>(initialStyling);
 
+  // The style-preset provenance stamp (feature 88 step 89). A SECOND cell rather
+  // than a 35th styling field, because it is not styling: it is not in
+  // `STYLING_FIELD_NAMES`, it emits no CSS, and it never reaches the storefront.
+  // Folding it into `styling` would push it through `serializeStylingOverrides`
+  // and into the metaobject.
+  const [basedOnPreset, setBasedOnPreset] = useState<string | null>(
+    initialBasedOnPreset,
+  );
+
   // The ONE mutator every Style-tab control calls. Generic over the field so the
   // value type is checked against that field's type at the call site — a control
   // cannot write "STRIPES" into `density`. No knob gets a bespoke setter.
+  //
+  // ⚠️ It deliberately LEAVES `basedOnPreset` ALONE. That is not an omission —
+  // it is the entire mechanism behind the rail's "Customized" hint: the stamp
+  // records where the merchant started, the values drift as they tune, and the
+  // gap between the two is what the hint reports. Clearing the stamp here would
+  // make the hint permanently unreachable.
   const setStylingField = useCallback(
     <K extends keyof StylingValues>(field: K, value: StylingValues[K]) => {
       setStyling((previous) => ({ ...previous, [field]: value }));
     },
     [],
+  );
+
+  // Apply a built-in pattern (feature 88 step 89). COPY semantics: the bundle is
+  // resolved to all 34 values and written into state exactly like a manual edit,
+  // so SaveBar Discard is the undo and the merchant can tune any knob afterwards.
+  //
+  // Both cells move in ONE action, so a pick is a single undo unit and the values
+  // can never disagree with the stamp. An unknown id resolves to
+  // `DEFAULT_STYLING_VALUES` with a `null` stamp — the same state as never having
+  // picked — which is what keeps the `?style=` route contract (step 92) total
+  // without a validation branch at the call site.
+  const applyStylePreset = useCallback((presetId: string | null) => {
+    setStyling(seedStylingFromPreset(presetId));
+    setBasedOnPreset(normalizeStylePresetStamp(presetId));
+  }, []);
+
+  // Has the merchant moved off the pattern they picked? Scoped to
+  // `PRESET_SCOPED_FIELDS`, NOT a 34-field compare — see the long note in
+  // `stylePresets.ts`. Derived on every render rather than stored: a cached flag
+  // would be a third thing to keep in sync with two that already move together.
+  const isCustomizedFromStylePreset = isCustomizedFromPreset(
+    styling,
+    basedOnPreset,
   );
 
   // Reset to theme defaults (feature 57 Step 12). A WHOLESALE replace, not a loop
@@ -237,8 +288,13 @@ export function useRowEngine({
   // the existing Save path writes an all-NULL row. Purely client state riding the
   // SaveBar — and correctly UN-flips isDirty if the reset lands back on the saved
   // baseline, since the dirty check is a compare, not a counter.
+  // Clears the stamp too (feature 88 step 89): reset means "no pattern", and a
+  // reset template that still claimed one would leave the rail showing a card as
+  // selected for a look that is gone. The pair moves together here for the same
+  // reason it does in `applyStylePreset`.
   const resetStyling = useCallback(() => {
     setStyling(DEFAULT_STYLING_VALUES);
+    setBasedOnPreset(null);
   }, []);
 
   // Assignment scope (features 44/46/47). Two pieces of state: the picker kind
@@ -396,6 +452,7 @@ export function useRowEngine({
     scopeValues: scopeValues.map((item) => item.value),
     excludes,
     styling,
+    basedOnPreset,
   });
   const metaJsonRef = useRef(currentMetaJson);
   metaJsonRef.current = currentMetaJson;
@@ -428,6 +485,7 @@ export function useRowEngine({
       scopeValues: scopeValuesPayload,
       excludes,
       styling,
+      basedOnPreset,
     });
     saveFetcher.submit(
       {
@@ -443,6 +501,11 @@ export function useRowEngine({
         // override rather than persisting the default as data. This is the same
         // serialization the dirty snapshot above uses.
         styling: serializeStylingOverrides(styling),
+        // Provenance, sent raw (feature 88 step 89) — the server re-validates it
+        // with `normalizeStylePresetStamp`, so an id this build does not know
+        // stores NULL rather than junk. Note the server reads an ABSENT stamp as
+        // `null`, so this key must always be sent alongside `styling`.
+        basedOnPreset,
       } as unknown as Parameters<typeof saveFetcher.submit>[0],
       { method: "post", encType: "application/json" },
     );
@@ -455,6 +518,7 @@ export function useRowEngine({
     scopeValues,
     excludes,
     styling,
+    basedOnPreset,
     scopeComplete,
   ]);
 
@@ -1176,6 +1240,13 @@ export function useRowEngine({
     setStylingField,
     // Step 12's wholesale reset to theme defaults, behind a confirm dialog.
     resetStyling,
+    // Style presets (feature 88 step 89). The rail (step 90) and the gallery
+    // route (step 92) both drive the editor through exactly these three: the
+    // stamp to mark the selected card, the mutator to pick one, and the derived
+    // flag for the "Customized" hint. Nothing reads them yet.
+    basedOnPreset,
+    applyStylePreset,
+    isCustomizedFromStylePreset,
     // Save / dirty
     isDirty,
     saving,
