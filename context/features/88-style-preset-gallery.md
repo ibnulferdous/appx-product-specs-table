@@ -7,13 +7,38 @@ step files, each with its own build instructions and completion gate:
 
 | Step | File | Scope | Merchant-visible |
 | --- | --- | --- | --- |
-| 89 | `89-style-preset-engine-persistence.md` | `basedOnPreset` state + write path | no |
-| 90 | `90-style-preset-rail-cards.md` | rail cards + "Customized" hint | ✅ |
-| 91 | `91-style-preset-card-preview.md` | preview component + canned sample | no |
-| 92 | `92-style-preset-gallery-route.md` | `/app/templates/styles`, Skip, `?style=` | ✅ |
+| 89 ✅ | `89-style-preset-engine-persistence.md` | `basedOnPreset` state + write path | no |
+| 90 | `90-style-preset-card-preview.md` | canned sample + preview card component | no |
+| 91 | `91-style-preset-gallery-route.md` | `/app/templates/choose-style`, six cards | ✅ |
+| 92 | `92-style-preset-create-flow.md` | repoint Create buttons, `?style=` seeding | ✅ |
 
 Step 13a of the Phase B plan (the pure domain module `app/utils/stylePresets.ts`)
-landed 2026-07-27 in `3714361` and is **not** re-covered by those four files.
+landed 2026-07-27 in `3714361` and is **not** re-covered by those files.
+
+### 🔴 Merchant decision 2026-07-27: presets are CREATE-TIME ONLY
+
+> "The merchant will only have the option to pick a preset card while he is
+> creating a brand new template. Once they selected a preset card and proceed to
+> `/app/templates/:id`, there is no way to choose a preset card again."
+
+**A planned fifth step — preset cards in the Style rail, plus the "Customized"
+hint — was CUT by this decision.** Everything below that describes an in-rail
+picker is superseded; the rail keeps its eight feature-86 tuning groups and
+gains nothing.
+
+Three consequences, all simplifications:
+
+1. **No capability is lost.** A pattern is 5 of the 34 rail knobs, so a merchant
+   who wants Minimal on an existing template still gets there in three selects.
+   Only the *shortcut* is create-time.
+2. **"Does a pick overwrite a tuned template?" is moot.** A preset can only land
+   on a brand-new scaffold, where all 34 values are already at their defaults —
+   so writing 5 fields and writing 34 produce byte-identical results. No merge
+   rule, and no confirm dialog, because nothing destructive can happen.
+3. **Two of step 89's engine exports are now dead** — `applyStylePreset` (the
+   loader seeds server-side; no client picks) and `isCustomizedFromStylePreset`
+   (the hint was the rail's). Step 90 removes them. `basedOnPreset` itself stays
+   load-bearing: state → snapshot → payload → save.
 **Depends on:** nothing unbuilt. Feature 87 (`PLAIN`), feature 85 (`GRID`), features
 78–81 (frame, column divider, section gap, header typography) are all shipped and
 live-verified — this feature is **composition only**.
@@ -160,11 +185,50 @@ reasoning at `STYLE_PRESETS`.
 
 `BANDED` + `LINES` + no frame is exactly `DEFAULT_STYLING_VALUES`. So the Banded
 card and the planned **"Start with your theme's styles"** card would produce
-byte-identical output. **They merge**: five cards, no sixth option. The skip path
-is a quiet text link, not a card.
+byte-identical output. **They merge as PATTERNS**: five patterns, not six.
 
 This is a genuine simplification, not a coincidence — the app's defaults were
 chosen from the same kind of reference tables two phases ago.
+
+### 🔴 …and the sixth card, "Blank" — merchant decision 2026-07-27
+
+> "There will be another one — 'Blank'. It will take you to a clean table like we
+> had before preset cards. Blank will use the theme defaults."
+
+The gallery therefore shows **six cards over five patterns**. That is not a
+contradiction of the merge finding above, and the distinction is the whole point:
+
+**Blank is not a sixth pattern. It is DECLINING to pick one, made visible as a
+card.** It exists because the gallery is unskippable (below), so the old quiet
+skip link needed somewhere to go.
+
+✅ **Modelled as the absence of a preset, NOT as a `STYLE_PRESETS` member:**
+
+| | |
+| --- | --- |
+| in `STYLE_PRESETS` | **no** — the array stays five real patterns |
+| `?style=` param | **absent** |
+| `basedOnPreset` | **`null`** |
+| resolved styling | `DEFAULT_STYLING_VALUES`, via the existing tolerant path |
+| domain code needed | **none** — step 89 already handles it |
+
+🚫 **Rejected: a sixth entry with `id: "blank"` and `bundle: {}`.** Its bundle
+would be byte-identical to Banded's, so `each pattern differs from every other on
+a scoped field` would have to be weakened to exempt it — dismantling the guard
+that keeps the gallery's cards genuinely distinguishable, to record a fact `null`
+already records.
+
+⚠️ **The stamp gets MORE meaningful, not less.** With no skip path,
+`basedOnPreset: null` on a template created after this feature ships means
+exactly one thing: the merchant chose Blank. ("We don't know" was only possible
+while a skip link existed.) Templates predating the feature are also null, which
+is correct — they were never offered a choice.
+
+**Blank's card carries NO preview** (decided 2026-07-27). Every other card shows
+a rendered mini-table; Blank's would be pixel-identical to Banded's, and two
+identical thumbnails in one grid read as a bug. It renders as text only — a title
+and one line — so it reads as a different *kind* of choice, which is what it is.
+Owned by step 91.
 
 ### `sectionGapPx: 12` is the one tuning value in any bundle
 
@@ -225,13 +289,44 @@ Same call here.
 | URL | Renders |
 | --- | --- |
 | `/app/templates` | list (unchanged) |
-| **`/app/templates/styles`** | **the gallery — 5 cards + Skip** |
+| **`/app/templates/choose-style`** | **the gallery — 5 pattern cards + Blank** |
 | `/app/templates/new?style=<id>` | editor scaffold, seeded, `basedOnPreset` stamped |
-| `/app/templates/new` | editor scaffold, unstyled, **not stamped** |
+| `/app/templates/new` | editor scaffold, theme defaults, **not stamped** — the Blank landing |
 | `/app/templates/:id` | editor (unchanged) |
 
-The two **Create template** buttons (`app.templates.tsx:98`, `:648`) repoint from
-`/new` to `/styles`. Nothing else moves.
+The two **Create template** buttons (`app.templates.tsx:98` empty state, `:648`
+page primary action) repoint from `/new` to `/choose-style`. Nothing else moves.
+
+**The path is `choose-style`, not `styles`** (merchant decision 2026-07-27):
+it reads as the step it is. ⚠️ **The route file must be
+`app.templates_.choose-style.tsx` — with the underscore.** `app.templates.tsx`
+renders its own `<s-page>` and has **no `<Outlet/>`**, so a nested
+`app.templates.choose-style.tsx` would match the URL and render nothing at all.
+The underscore escapes the parent layout, exactly as the editor route does.
+
+### 🔴 The gallery is UNSKIPPABLE — merchant decision 2026-07-27
+
+> "While you create a new template, it will take you straight to
+> `/app/templates/choose-style`. No way to skip this route. If a merchant does not
+> like any preset card, we can choose the last one — 'Blank'."
+
+**The skip link is deleted.** Blank does its job as a card, which is why Blank
+exists at all. Four consequences:
+
+1. **Duplicate still bypasses the gallery, and should.** A copy inherits its
+   source's look and stamp (`duplicateTemplateForShop`), which is the correct
+   behaviour for a copy — it is not a hole to close.
+2. **Bare `/app/templates/new` stays reachable and stays working** — by typed
+   URL, bookmark, or the back button after the create-on-first-save redirect. It
+   lands on theme defaults with no stamp, which is byte-identical to what Blank
+   produces, so nothing inconsistent can be created. **Deliberately NOT
+   redirected to the gallery**: a redirect would fight the back button
+   immediately after the create hop.
+3. **The gallery still needs a way OUT.** "No skip" means no proceeding without
+   choosing; it must not mean the merchant is trapped. A back link to
+   `/app/templates` is required, not optional.
+4. Doc-88 open question 3 ("does the skip link need to exist at all?") is
+   answered by deletion rather than by keeping it.
 
 **Why a route, not a modal**, in order of weight: the five cards carry live
 mini-previews and need page width (a Polaris modal would cramp them); the choice
@@ -255,8 +350,24 @@ unchanged.
 
 ## The "Customized" hint — a fixed comparison scope
 
-⚠️ **This is the one decision in Step 13 that would foreclose Step 89, and it is
-not the obvious implementation.**
+🚫 **THE HINT ITSELF IS CUT** (create-time-only decision, 2026-07-27) — it was a
+rail feature and there is no rail picker. `isCustomizedFromPreset` loses its
+consumer; step 90 removes the engine wiring and keeps the pure function marked as
+having none.
+
+✅ **`PRESET_SCOPED_FIELDS` survives the cut on its own merits**, which is why
+this section stays rather than being deleted. Two of the test guards below are
+stated in terms of it — "every key any bundle sets is a member of it" and "the
+scope contains no colour field" — and together they are the **structure-only rule
+made executable**. That value never depended on the hint. Feature 93 also still
+appends the accent's colour fields here.
+
+The reasoning below is preserved because it is the record of *why* the constant
+is a fixed set rather than derived, and feature 93 will need it if the hint is
+ever revived.
+
+⚠️ **This is the one decision in Step 13 that would foreclose accent themes, and
+it is not the obvious implementation.**
 
 The Phase B plan says the hint shows when current values ≠ the stamped bundle. The
 obvious tool is `stylingEquals` (`tableStyling.ts:605`) — a flat compare over all
@@ -336,8 +447,10 @@ Guards to build with the constants, all derived from data rather than hand-liste
   nothing, with no type error to catch it (bundles are `Record<string, unknown>`
   on the wire by construction).
 - **Every key any bundle sets is a member of `PRESET_SCOPED_FIELDS`.** The drift
-  guard that keeps the two lists in agreement: a bundle setting a field outside
-  the comparison scope is invisible to the "Customized" hint forever.
+  guard that keeps the two lists in agreement. Written when it protected the
+  "Customized" hint; it outlived the hint because, paired with the colour guard
+  below, it is what makes the structure-only rule executable rather than
+  remembered.
 - **No bundle sets a colour or typography field** — the structure-only rule, pinned
   rather than remembered. Derived by filtering `STYLING_FIELD_NAMES` for the fields
   `parseColor` accepts, so a tenth colour added later is covered automatically.
@@ -356,26 +469,25 @@ Follows the house sequence — rail → Postgres → metaobject → rendered sto
 on a DRAFT template with 0 assigned products, then one ACTIVE template for the
 storefront leg.
 
-**Step 13 (in-rail cards):**
-1. Each of the five cards restyles **both device previews** instantly.
-2. SaveBar Discard is the undo (no confirm dialog) and returns every one of the
-   34 fields to its pre-pick value.
-3. Save persists values + `basedOnPreset`; re-read from Postgres.
-4. Tweaking one knob after a pick shows **"Customized"**; tweaking a **colour**
-   does **not** (the scoped-comparison decision, verified rather than asserted —
-   this is the check that would have caught a 34-field compare).
-5. Banded reads as Banded, not as "Customized", on a template that was never
-   touched.
+🚫 **The five in-rail checks that stood here are void** — presets are create-time
+only, so there are no rail cards, no live restyle-on-pick, and no "Customized"
+hint to verify. Superseded 2026-07-27.
 
-**Step 14 (gallery route):**
-6. Both paths end to end: pick a card → editor seeded; Skip → editor unstyled.
-7. **Reload of `/app/templates/new?style=multi-column` keeps the seed**; a garbage
-   `?style=` value degrades to unstyled with no error.
-8. Back button from the editor returns to the gallery.
-9. No stray templates in the list after abandoning either path (the zero-footprint
+**Steps 90–92 (the gallery and the create flow):**
+1. All six cards end to end: each of the five patterns → editor seeded and
+   stamped; **Blank → editor at theme defaults, `basedOnPreset` NULL**.
+2. Save persists values + `basedOnPreset`; re-read from Postgres — the six saves
+   produce five distinct stamps and one NULL.
+3. **Reload of `/app/templates/new?style=multi-column` keeps the seed**; a garbage
+   `?style=` value degrades to theme defaults with no error and no stamp.
+4. Back button from the editor returns to the gallery; the gallery's own back
+   link returns to `/app/templates`.
+5. No stray templates in the list after abandoning any path (the zero-footprint
    invariant, checked in Postgres, not by eye).
-10. The dashboard's "Create your first template" entry point also reaches the
-    gallery.
+6. **Both** Create entry points reach the gallery — the list's page action and the
+   empty state's "Create your first template".
+7. Bare `/app/templates/new` (typed) still opens a working unstyled scaffold.
+8. Duplicate still bypasses the gallery and carries the source's stamp.
 
 **Storefront leg:** one ACTIVE template saved from **Multi-column**, verified on
 the rendered storefront — `--layout-grid` in `styling_css.classes` in
@@ -426,23 +538,22 @@ schema change, and there isn't one.)
 
 ## Open questions — all three closed 2026-07-27
 
-1. ✅ **Gallery path name** → **`/app/templates/styles`**. Shortest of the
-   candidates and reads as a noun, matching every other segment in the app.
-   Owned by step 92.
+1. ✅ **Gallery path name** → **`/app/templates/choose-style`** (merchant
+   decision 2026-07-27; an earlier draft of this line recommended `styles` on
+   brevity grounds). It reads as the step it is. Owned by step 91.
 2. ✅ **Card preview content** → **one generic canned sample reused by all five**
    (2 sections, ~6 rows), rendered through `renderSpecTablePreviewDocument`
    (`specTablePreviewHtml.ts:393`). Zero drift against the storefront is the whole
    reason that pipeline exists; static thumbnails are cheaper and go stale
    silently, which is the failure mode a gallery can least afford. Owned by
-   step 91.
-   ⚠️ **Previews are GALLERY-ONLY.** The rail is a fixed ~300px track (feature 86);
-   a five-up thumbnail column there would be unreadable and would push the eight
-   existing groups below the fold. **Rail cards are text** — label, description,
-   selected state, "Customized" hint. Decided 2026-07-27 with the split.
-3. ✅ **Keep the skip link.** It costs one link and is what distinguishes "chose
-   the default look" from "did not choose" — which is the only thing that makes a
-   `basedOnPreset` of `"banded"` mean anything different from `null`. Owned by
-   step 92.
+   step 90. **Five previews, not six** — Blank's card carries none (above).
+   ⚠️ Previews were briefly scoped as gallery-only-vs-rail; **the rail question
+   is moot** now that presets are create-time only.
+3. ✅ **The skip link is DELETED**, not kept. Superseded by the unskippable-gallery
+   decision above: Blank is the card that does that job. An earlier draft of this
+   line argued for keeping the link on the grounds that it made `"banded"` mean
+   something different from `null` — which is now delivered better, since with no
+   skip path `null` means "chose Blank" precisely.
 
 ### Two gaps found during the step split (2026-07-27)
 

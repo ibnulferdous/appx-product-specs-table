@@ -21,9 +21,21 @@ Building the MVP.
 > | --- | --- | --- | --- |
 > | 13a | — | pure domain (`app/utils/stylePresets.ts`) | ✅ `3714361`, 1021 → 1044 tests |
 > | 89 | `89-style-preset-engine-persistence.md` | `basedOnPreset` state + write path | ✅ **2026-07-27**, 1044 → **1055** |
-> | 90 | `90-style-preset-rail-cards.md` | rail cards + "Customized" hint | ⬜ next |
-> | 91 | `91-style-preset-card-preview.md` | preview component + canned sample | ⬜ |
-> | 92 | `92-style-preset-gallery-route.md` | `/app/templates/styles`, Skip, `?style=` | ⬜ |
+> | 90 | `90-style-preset-card-preview.md` | canned sample + preview card | 📋 drafted, ⬜ next |
+> | 91 | `91-style-preset-gallery-route.md` | `/app/templates/choose-style`, six cards | ⬜ |
+> | 92 | `92-style-preset-create-flow.md` | repoint Create buttons, `?style=` seeding | ⬜ |
+>
+> 🔴 **Merchant decisions 2026-07-27 — presets are CREATE-TIME ONLY.** A planned
+> in-rail preset picker (+ the "Customized" hint) was **cut**: a merchant picks a
+> pattern only while creating a template, and the Style rail keeps its eight
+> feature-86 groups and gains nothing. No capability is lost — a pattern is 5 of
+> the 34 rail knobs. Three more decisions the same day: the gallery lives at
+> **`/app/templates/choose-style`** and is **unskippable** (both Create buttons go
+> straight there, the Skip link is deleted); a **sixth "Blank" card** replaces it,
+> modelled as the ABSENCE of a preset (`basedOnPreset` stays NULL, no
+> `STYLE_PRESETS` entry, no preview — its output is pixel-identical to Banded's);
+> and card order stays Banded · Simple · Minimal · Multi-column · Accordion ·
+> Blank. Step 90 removes the two engine exports these cuts orphaned.
 >
 > **Step 89 landed 2026-07-27.** A preset id now travels merchant → engine →
 > dirty snapshot → Save payload → action → Postgres → loader → engine, normalized

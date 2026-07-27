@@ -1,0 +1,244 @@
+# Step 90 — the canned sample + the preset preview card
+
+**Status:** 📋 drafted 2026-07-27, not built.
+**Parent feature:** `88-style-preset-gallery.md` (binding design — read it first).
+**Position:** step 2 of 4. Previous `89-style-preset-engine-persistence.md` ✅.
+Next `91-style-preset-gallery-route.md`.
+**Depends on:** `app/utils/stylePresets.ts`, `renderSpecTablePreviewDocument`
+(`specTablePreviewHtml.ts:393`) — both shipped.
+**Migration:** none. **No route, no persistence, no merchant-visible change.**
+
+---
+
+## What this step is
+
+Two things and no page to put them on:
+
+1. **The canned sample** — one set of fake spec rows, reused by every card.
+2. **The preview card component** — renders one `StylePreset` as a card with a
+   live mini-table inside, plus the no-preview **Blank** variant.
+
+Step 91 lays six of these out on a route. Cutting the card out first means the
+route step is layout and wiring only, and it means the riskiest thing in the
+whole feature — **five scaled iframes on one page** — gets built and measured on
+its own rather than discovered during page assembly.
+
+---
+
+## First: delete what the create-time-only decision orphaned
+
+Do this **before** writing anything new, so the new code is not built against
+exports that are about to go.
+
+The 2026-07-27 decision — presets are pickable only while creating a template —
+cut the planned in-rail picker. Two of step 89's engine exports lost their only
+consumer:
+
+| export | in `useRowEngine.ts` | action |
+| --- | --- | --- |
+| `basedOnPreset` | state → snapshot → payload | ✅ **keep** — still the whole write path |
+| `applyStylePreset` | mutator | 🚫 **remove** — the `/new?style=` loader seeds server-side; no client picks |
+| `isCustomizedFromStylePreset` | derived flag | 🚫 **remove** — the hint was the rail's |
+
+Removing `applyStylePreset` also drops the `seedStylingFromPreset` /
+`normalizeStylePresetStamp` / `isCustomizedFromPreset` imports from the engine.
+`resetStyling` still clears the stamp — that behaviour is unrelated to the rail
+and stays.
+
+⚠️ **In `app/utils/stylePresets.ts`, KEEP everything.** The domain module is
+consumed by the model layer, the loader, and its own tests. Two functions need
+their doc comments corrected rather than deleted:
+
+- `isCustomizedFromPreset` — **now has no consumer.** Keep it, and say so in the
+  comment: retained for feature 93 (accents) and the B3 saved-preset phase, both
+  of which want exactly this comparison. Six tested lines; deleting and
+  re-deriving it later costs more than the comment does.
+- `PRESET_SCOPED_FIELDS` — its doc comment justifies itself by the hint. Rewrite
+  the justification: with the hint gone it earns its place as the **executable
+  form of the structure-only rule** (two test guards are stated in terms of it),
+  and feature 93 still appends the accent colours to it.
+
+**Expected test movement: none.** Every `stylePresets.test.ts` guard is written
+against the domain module, not the engine, so all 1055 must still pass. If a test
+breaks here, the deletion went too far.
+
+---
+
+## The canned sample
+
+New file: `app/routes/app.templates_.choose-style/sampleRows.ts` — or wherever
+step 91's route directory lands; keep it beside the card, not in `app/utils`,
+because it is presentation fixture data and nothing outside the gallery reads it.
+
+**One generic sample reused by all five previews** (doc 88, open question 2).
+Not per-category content — that is the starter-content idea the merchant
+explicitly rejected, arriving through the back door.
+
+Shape requirements, each with a reason:
+
+| requirement | why |
+| --- | --- |
+| **2 section headers**, ~3 rows each | Fewer than 2 sections and the section-header axis is invisible — Banded vs Plain vs Text-only is the difference between three of the six cards. |
+| **~6–8 value rows total** | Enough tracks for `GRID` to actually flow into columns; a 3-row sample renders Multi-column as one column and the card lies. |
+| **One long-ish value** | The wrapping behaviour is half of what distinguishes the layouts (feature 85: narrower tracks wrap more, so smaller is taller). |
+| **Generic vocabulary** | "Material", "Weight", "Warranty" — plausible for any store. No electronics, no apparel; a category-flavoured sample is a category starter in disguise. |
+| **STATIC row ids** | The preview renderer keys off them. `newRowId()` would produce different markup on every render for no benefit and would defeat any memoisation. |
+
+Rows must be real `EditorRow`s built through the shared `rows.ts` types — not a
+hand-shaped object literal that merely resembles one. If the row contract
+changes, this fixture must fail to compile.
+
+---
+
+## The preview card
+
+New component, colocated with the route: one `StylePreset` in, one card out.
+
+### Preview rendering — the pipeline, not a screenshot
+
+Render through **`renderSpecTablePreviewDocument`** (`specTablePreviewHtml.ts:393`),
+the same function the editor's device previews use, into an **iframe** — exactly
+as `SpecTablePreview.tsx` does. Read that component before writing this one; it
+already solved sandboxing, the shared stylesheet, and auto-height (features
+51/52/54), and this must not fork a second answer to any of them.
+
+**Why the pipeline and not static thumbnails:** zero drift against the storefront
+is the entire reason that pipeline exists. A thumbnail goes stale silently — the
+worst possible failure for a gallery, because the card would keep promising a look
+the app no longer produces, and nothing would fail.
+
+**The cost is real and this step owns measuring it.** Five iframes on one page is
+the single most expensive thing in feature 88. Record on the step's completion
+note: how long the gallery takes to become interactive, and whether the frames
+render in parallel. If it is bad, the fallback is a shared stylesheet with scaled
+`<div>`s rather than per-card documents — but do not pre-emptively optimise;
+measure first, on the real page, in step 91.
+
+### Scale, don't shrink
+
+The mini-table must be the **real** table at a real width, visually scaled down —
+not the table rendered into a narrow box. Rendering narrow triggers the mobile
+and wrapping behaviour and would show every card in its mobile form, which is
+precisely not what the card is advertising.
+
+### The card is a control, not a decoration
+
+Whatever wraps the preview must be a **real interactive control** — a link or a
+button, reachable by Tab, activated by Enter/Space, with a visible focus ring. A
+`<div onClick>` with a preview inside is unreachable by keyboard and unnamed to a
+screen reader.
+
+Its accessible name is the preset **label**; the description is associated help
+text, not part of the name. **The iframe is decorative** and must be hidden from
+assistive tech — the merchant is choosing a look, and a screen-reader user
+should hear "Minimal — no bands and no rules, spacing does the work", not the
+fake sample's rows read aloud six times over.
+
+⚠️ Feature 70's stacked-layout screen-reader pass is owed on the storefront
+table; **do not try to pay it here.** Hiding the iframe is what keeps this card
+out of that debt entirely.
+
+### The Blank variant
+
+**Blank is not a `StylePreset` and must not be faked into one** (doc 88). It is a
+separate, simpler card:
+
+- **no iframe, no preview** — its output is pixel-identical to Banded's, and two
+  identical thumbnails in one grid read as a bug
+- text only: a title and one line, e.g. *"Start with your theme's own styles —
+  nothing added."*
+- it must be visibly a **different kind of choice**, not a sixth look
+- it targets `/app/templates/new` with **no `?style=` param**
+
+Implement it as an explicit second variant of the card component (or a sibling
+component) rather than a `preset === null` branch threaded through the preview
+path — the two share a frame and nothing else.
+
+---
+
+## Tests
+
+jsdom cannot render Polaris web components, so JSX is tested by reading the
+source off disk — the established technique
+(`styleTabContract.test.ts`, `specTableAriaContract.test.ts`). Strip comments
+before matching, as those files do, or the guard counts its own documentation.
+
+**The sample fixture** — real assertions, not shape-echoes:
+1. It parses as valid `EditorRow[]` through the shared parser.
+2. It contains **at least 2 `SECTION_HEADER` rows** — the axis three cards depend
+   on. Assert the count, not "some".
+3. It contains at least 6 non-header rows, so `GRID` has something to flow.
+4. Row ids are unique and stable across two imports (no `newRowId()` leak).
+5. It renders through `renderSpecTablePreviewDocument` **for every one of the five
+   presets** without throwing, and the five outputs are **not all identical** —
+   the cheapest possible proof that the bundles reach the rendered markup at all.
+
+**The Multi-column guard, stated by name:**
+6. The sample rendered under `multi-column` emits `--layout-grid` in the
+   document's classes. This is the one bundle that touches markup-adjacent
+   behaviour, and a sample too small to flow would silently render it as a
+   single column.
+
+**The card:**
+7. The card source contains no `<div onClick` / `onClick` on a non-interactive
+   element — it is a link or a button.
+8. The iframe carries an aria-hidden (or equivalent) attribute.
+9. The Blank variant renders **no iframe** — asserted against the Blank branch
+   specifically, since a global "there is an iframe somewhere" check would pass
+   on the pattern card alone.
+
+**Regression:**
+10. Full suite green at **1055** after the engine deletions, minus nothing. Any
+    drop means a live guard was removed with the dead code.
+
+### Mutation-test the one guard that matters
+
+Test 6. Shrink the sample to 2 rows and confirm the `--layout-grid` / flow
+assertion fails — a sample too small to demonstrate Multi-column is the specific
+way this fixture goes quietly wrong. Revert.
+
+### Full gate
+
+`npx vitest run` · `npx tsc --noEmit` · `npx eslint app` · `npx prettier --write`
+· `npm run build` — all clean, new total recorded.
+
+---
+
+## Live verification — deferred to step 91
+
+**There is no page to open.** The card has no route until step 91 mounts it, and
+a throwaway harness route would verify a thing we are about to delete.
+
+Step 91 owns these, listed here so the debt is visible from this file:
+
+1. All five previews render, and each looks like the pattern it names.
+2. **Blank shows no table** and reads as a different kind of choice.
+3. **Measure the five-iframe cost** — time to interactive, parallel or serial.
+4. Tab reaches every card; focus is visible; Enter activates.
+5. A screen reader announces the label + description, **not** the sample rows.
+
+---
+
+## Deliberately out of scope
+
+- The route, the layout, the back link, `?style=` seeding → step 91/92.
+- Per-category sample content — the rejected starter-content idea.
+- Any change to `SpecTablePreview.tsx` or the device previews. If this card needs
+  something that component has, **extract it**; do not edit the editor's preview
+  to suit the gallery.
+- `SpecTableEditor.module.css` / `RowGrid.tsx` — still byte-clean against
+  `a7b304c`.
+
+---
+
+## Completion checklist
+
+- [ ] `applyStylePreset` + `isCustomizedFromStylePreset` removed from the engine
+- [ ] `isCustomizedFromPreset` + `PRESET_SCOPED_FIELDS` doc comments corrected
+- [ ] Canned sample built from real `EditorRow` types, static ids
+- [ ] Card renders via `renderSpecTablePreviewDocument`, iframe hidden from AT
+- [ ] Blank variant renders no preview
+- [ ] Tests 1–10 passing; mutation on test 6 run and reverted
+- [ ] Full gate green, new test total recorded
+- [ ] `context/progress-tracker.md` updated
+- [ ] Committed with a message naming feature 88 step 90
