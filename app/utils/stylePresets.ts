@@ -311,6 +311,53 @@ export function stylePresetValues(preset: StylePreset): StylingValues {
   return parseStylingValues(preset.bundle);
 }
 
+/**
+ * Read the gallery's choice off a URL's query string (feature 88 step 92).
+ *
+ * The `/app/templates/new` loader's whole share of the create flow: the gallery
+ * links each card at `?style=<id>`, and this turns that param into the two
+ * things a brand-new scaffold needs — the resolved styling to open with, and the
+ * provenance stamp to save.
+ *
+ * 🔴 **ONE lookup, BOTH outputs, and that is the point.** The failure this step
+ * exists to prevent is a template seeded from one bundle and stamped with a
+ * different one (or with nothing) — a lie that no later code recomputes, because
+ * `basedOnPreset` is provenance and is never re-read as a live link. Calling
+ * `seedStylingFromPreset(raw)` beside `normalizeStylePresetStamp(raw)` at the
+ * call site would agree today only because both happen to be tolerant in the
+ * same way, which is a property an edit can break silently. Deriving both from a
+ * single `findStylePreset` makes disagreement unrepresentable rather than
+ * merely tested.
+ *
+ * Everything invalid degrades to the same place: an absent param, `""`, an
+ * unknown id, a wrong-cased id, a withdrawn card's id and a 10KB string all
+ * produce `DEFAULT_STYLING_VALUES` + a `null` stamp — byte-identical to the
+ * "Blank" card's landing, and to bare `/app/templates/new`. **No throw, no 404,
+ * no redirect, no toast**: the param is not merchant-authored (it comes from a
+ * card), so a bad one means a stale bookmark or an id dropped in a later
+ * release, and the right answer to both is a working blank scaffold.
+ *
+ * ⚠️ Takes `URLSearchParams`, not a `string`, on purpose: feature 93's route
+ * contract is `?style=<id>&accent=<token>` with the two independently optional.
+ * The accent read is one line INSIDE this function when it lands, and no call
+ * site changes. Parsing the URL itself stays the loader's job so this module
+ * stays framework-free and client-safe.
+ */
+export function resolveGalleryParams(params: URLSearchParams): {
+  styling: StylingValues;
+  basedOnPreset: string | null;
+} {
+  const preset = findStylePreset(params.get("style"));
+  return {
+    // Routed through `seedStylingFromPreset` rather than `parseStylingValues`
+    // directly, because that function is where the bundle/accent merge ORDER
+    // lives. Feature 93 passes its accent there; bypassing it would mean
+    // retrofitting the merge in two places.
+    styling: seedStylingFromPreset(preset?.id),
+    basedOnPreset: preset?.id ?? null,
+  };
+}
+
 // --- Pattern comparison -------------------------------------------------------
 
 /**

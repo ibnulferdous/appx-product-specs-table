@@ -26,11 +26,12 @@
 .grid {
   display: grid;
   /* 🚫 NOT `auto-fit` / `auto-fill`. Two cards per row is a merchant decision
-     (2026-07-27), not a fallback: the card was sized by arithmetic against a
-     measured 1086px `inlineSize="base"` page —
+     (2026-07-27), not a fallback: the card was sized by arithmetic against the
+     measured 966px `inlineSize="base"` page (see `StylePresetCard.module.css`
+     for how that number was obtained, and for the 1086px it replaced) —
 
-       card    = 480 preview + 24 padding + 2 border = 506px
-       one row = 506 x 2 + 16 gap                    = 1028px   (58px slack)
+       card    = 440 preview + 24 padding + 2 border = 466px
+       one row = 466 x 2 + 16 gap                    = 948px    (18px slack)
 
      — and an auto-fitting track would silently seat a third card on a wide
      admin, turning that decision into a coincidence. Pinned by a test.
@@ -41,7 +42,7 @@
      scroll sideways and defeat the `max-width: 100%` escape the card ships. */
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 1rem;
-  /* The cards have a fixed width, so this only decides where the 58px of slack
+  /* The cards have a fixed width, so this only decides where the 18px of slack
      goes: at the start of each track, keeping the two columns' left edges
      aligned with the page rather than drifting apart. */
   justify-items: start;

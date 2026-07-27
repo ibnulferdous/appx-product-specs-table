@@ -12,10 +12,9 @@ Update this file after every meaningful implementation change.
 
 Building the MVP.
 
-> 🛠️ **IN PROGRESS — feature 88 (style preset gallery).** The design is
-> `context/features/88-style-preset-gallery.md`; the build is split into four
-> step files, each with its own instructions and completion gate. **Nothing is
-> merchant-visible until step 90.**
+> ✅ **COMPLETE 2026-07-27 — feature 88 (style preset gallery).** The design is
+> `context/features/88-style-preset-gallery.md`; the build ran as four step
+> files, each with its own instructions and completion gate.
 >
 > | Step | File | Scope | Status |
 > | --- | --- | --- | --- |
@@ -23,7 +22,23 @@ Building the MVP.
 > | 89 | `89-style-preset-engine-persistence.md` | `basedOnPreset` state + write path | ✅ **2026-07-27**, 1044 → **1055** |
 > | 90 | `90-style-preset-card-preview.md` | canned sample + preview card | ✅ **2026-07-27**, 1055 → **1072** |
 > | 91 | `91-style-preset-gallery-route.md` | `/app/templates/choose-style`, six cards | ✅ **2026-07-27**, 1072 → **1085**, live 10/10 |
-> | 92 | `92-style-preset-create-flow.md` | repoint Create buttons, `?style=` seeding | 📋 ⬜ next |
+> | 92 | `92-style-preset-create-flow.md` | repoint Create buttons, `?style=` seeding | ✅ **2026-07-27**, 1085 → **1097**, live 8/9 + storefront |
+>
+> **What shipped:** Create template → an unskippable gallery of six cards → a
+> scaffold already styled like the card and stamped with which card it was,
+> through to `styling_css` on the rendered storefront. Six saved rows in the dev
+> store carry five distinct `basedOnPreset` values and one NULL, **with no colour
+> column written by any card** — the zero-config theme-inherit promise survived a
+> preset pick on real data.
+>
+> ⚠️ **Dev-store baseline moved: 6 → 13 templates.** Seven "Untitled template"
+> DRAFT rows from step 92's live pass were left in place deliberately (the
+> evidence is re-readable); the one that was set ACTIVE was reverted to DRAFT, so
+> the storefront is unchanged.
+>
+> 🔴 **A test file directly in `app/routes/` is a ROUTE** and breaks
+> `npm run build` while leaving the whole suite green (step 92 finding 1).
+> `app/routes.ts` now passes `ignoredRouteFiles: ["**/*.test.{ts,tsx}"]`.
 >
 > 🔴 **Merchant decisions 2026-07-27 — presets are CREATE-TIME ONLY.** A planned
 > in-rail preset picker (+ the "Customized" hint) was **cut**: a merchant picks a

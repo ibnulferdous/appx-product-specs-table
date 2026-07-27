@@ -30,8 +30,8 @@ const css = read("./route.module.css").replace(/\/\*[\s\S]*?\*\//g, "");
 
 describe("the page is sized for the card geometry", () => {
   it("renders an inlineSize=base page", () => {
-    // Not cosmetic. The card's scale (0.6) is arithmetic against a MEASURED
-    // 1086px base content width: two 506px cards + a 16px gap = 1028px. A
+    // Not cosmetic. The card's scale (0.55) is arithmetic against a MEASURED
+    // 966px base content width: two 466px cards + a 16px gap = 948px. A
     // silent switch to `large` breaks nothing visibly — it just leaves a third
     // card's worth of dead space beside a two-column grid, which is exactly the
     // kind of wrong that never gets noticed.

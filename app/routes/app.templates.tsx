@@ -95,7 +95,13 @@ const EmptyTemplatesState = () => (
           paddingBlockEnd="none"
           direction="inline"
         >
-          <s-button href="/app/templates/new" variant="primary">
+          {/* Feature 88 step 92: Create leads to the style gallery, not
+              straight to the editor. The gallery is UNSKIPPABLE — a merchant who
+              likes none of the five patterns picks "Blank", which lands on the
+              same scaffold this button used to open. Label unchanged: the
+              gallery is a step inside creating a template, not a different
+              destination. */}
+          <s-button href="/app/templates/choose-style" variant="primary">
             Create template
           </s-button>
         </s-stack>
@@ -642,10 +648,15 @@ export default function TemplatesPage() {
 
   return (
     <s-page heading="Templates" inlineSize={hasTemplates ? "large" : "base"}>
+      {/* Feature 88 step 92 — the list's Create entry point, repointed at the
+          style gallery alongside the empty state's. These two are the ONLY
+          links into the create flow, which is what makes the gallery
+          unskippable and what makes `basedOnPreset: null` mean "chose Blank"
+          on every template created from here on. */}
       <s-button
         slot="primary-action"
         variant="primary"
-        href="/app/templates/new"
+        href="/app/templates/choose-style"
       >
         Create template
       </s-button>

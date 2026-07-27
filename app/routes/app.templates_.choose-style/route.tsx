@@ -44,8 +44,8 @@ import styles from "./route.module.css";
 export default function ChooseStylePage() {
   return (
     // `inlineSize="base"` is not cosmetic: the card's whole scale geometry is
-    // arithmetic against a MEASURED base content width of 1086px (two 506px
-    // cards + a 16px gap = 1028px). Widening this page to `large` would not
+    // arithmetic against a MEASURED base content width of 966px (two 466px
+    // cards + a 16px gap = 948px). Widening this page to `large` would not
     // break anything visibly — it would quietly leave a third card's worth of
     // dead space beside a two-column grid. Pinned by a test for that reason.
     <s-page heading="Choose a style" inlineSize="base">

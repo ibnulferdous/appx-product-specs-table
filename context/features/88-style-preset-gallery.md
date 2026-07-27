@@ -1,16 +1,17 @@
 # Feature 88 — Style preset gallery (Reshell Phase B2, steps 13–14)
 
-**Status:** 🛠️ **in progress.** Specced 2026-07-27; taxonomy, bundles, route
-contract and comparison scope settled by merchant decision. **This file is the
-binding design; it is not an implementation plan.** The build is split into four
-step files, each with its own build instructions and completion gate:
+**Status:** ✅ **COMPLETE 2026-07-27** — all four steps shipped and live-verified.
+Specced 2026-07-27; taxonomy, bundles, route contract and comparison scope
+settled by merchant decision. **This file is the binding design; it is not an
+implementation plan.** The build was split into four step files, each with its
+own build instructions and completion gate:
 
 | Step | File | Scope | Merchant-visible |
 | --- | --- | --- | --- |
 | 89 ✅ | `89-style-preset-engine-persistence.md` | `basedOnPreset` state + write path | no |
 | 90 ✅ | `90-style-preset-card-preview.md` | canned sample + preview card component | no |
 | 91 ✅ | `91-style-preset-gallery-route.md` | `/app/templates/choose-style`, six cards | ✅ |
-| 92 | `92-style-preset-create-flow.md` | repoint Create buttons, `?style=` seeding | ✅ |
+| 92 ✅ | `92-style-preset-create-flow.md` | repoint Create buttons, `?style=` seeding | ✅ |
 
 Step 13a of the Phase B plan (the pure domain module `app/utils/stylePresets.ts`)
 landed 2026-07-27 in `3714361` and is **not** re-covered by those files.

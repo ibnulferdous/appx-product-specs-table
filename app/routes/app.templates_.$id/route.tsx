@@ -48,9 +48,11 @@ import {
 } from "./pendingAssignment";
 import { createInitialRows } from "../../utils/rows";
 import { parseRows } from "../../utils/rowsSerialize";
-import { normalizeStylePresetStamp } from "../../utils/stylePresets";
 import {
-  DEFAULT_STYLING_VALUES,
+  normalizeStylePresetStamp,
+  resolveGalleryParams,
+} from "../../utils/stylePresets";
+import {
   parseStylingValues,
   type StylingValues,
 } from "../../utils/tableStyling";
@@ -121,6 +123,27 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
   // `context/features/19-template-create-on-first-save.md`. A brand-new template
   // has no assignment yet.
   if (params.id === "new") {
+    // Feature 88 step 92 — the gallery's choice, applied SERVER-SIDE before the
+    // engine ever mounts. `/app/templates/choose-style` links each card at
+    // `?style=<id>`; this resolves that param to the styling the scaffold opens
+    // with AND the provenance stamp, from one lookup so the two cannot disagree.
+    //
+    // 🔴 The read is INSIDE this branch deliberately, and the branch returns.
+    // `/app/templates/<real-id>?style=classic` must be completely inert: seeding
+    // a SAVED template from a URL would hand the editor values that are not in
+    // Postgres, and the merchant's next Save — of a rename, of anything — would
+    // write them plus a stamp it never earned. Structurally impossible here
+    // rather than conditionally avoided; pinned by `createFlowContract.test.ts`.
+    //
+    // Anything unrecognized (absent, empty, unknown, wrong-cased, a withdrawn
+    // id) degrades to theme defaults with a null stamp — the "Blank" card's
+    // landing, and byte-identical to what bare /new returned before this step.
+    // Nothing is written here either way: the scaffold is in-memory until the
+    // first Save, so choosing a card and leaving creates no row.
+    const { styling, basedOnPreset } = resolveGalleryParams(
+      new URL(request.url).searchParams,
+    );
+
     return {
       template: {
         id: "new",
@@ -130,16 +153,12 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
       },
       assignment: null,
       excludes: [],
-      // Feature 57 Step 4: a never-saved template has no styling row — all
-      // defaults. Dormant (no component reads it); Step 5 seeds the engine.
-      styling: DEFAULT_STYLING_VALUES,
-      // Feature 88 step 89. Nothing has been picked on a fresh scaffold.
-      //
-      // ⚠️ Step 92 changes EXACTLY these two lines and nothing else: the gallery
-      // hands the editor `?style=<id>`, which seeds `styling` from the bundle and
-      // stamps the id here. The seam is why the loader returns an explicit key
-      // rather than letting the client dig the stamp out of `template.styling`.
-      basedOnPreset: null,
+      // Feature 57 Step 4: a never-saved template has no styling row. Defaults
+      // unless the gallery seeded a pattern above (feature 88 step 92).
+      styling,
+      // Feature 88 step 89/92. `null` on a bare /new — and with the gallery
+      // unskippable, that null now means "the merchant chose Blank".
+      basedOnPreset,
     };
   }
 

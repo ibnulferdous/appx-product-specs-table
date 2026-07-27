@@ -7,6 +7,7 @@ import {
   isThemeDefault,
   normalizeStylePresetStamp,
   presetScopedEquals,
+  resolveGalleryParams,
   seedStylingFromPreset,
   stylePresetValues,
 } from "./stylePresets";
@@ -318,6 +319,102 @@ describe("seedStylingFromPreset", () => {
         expect(seeded[field], `${preset.id} wrote ${field}`).toBeNull();
       }
     }
+  });
+});
+
+describe("resolveGalleryParams — the create flow's one decode (step 92)", () => {
+  const resolve = (query: string) =>
+    resolveGalleryParams(new URLSearchParams(query));
+
+  const PRESET_IDS = STYLE_PRESETS.map((preset) => preset.id);
+
+  it("round-trips every preset id — styling AND stamp", () => {
+    // Derived by iterating the array, so a sixth pattern is covered the day it
+    // is added.
+    for (const preset of STYLE_PRESETS) {
+      const resolved = resolve(`style=${encodeURIComponent(preset.id)}`);
+      expect(resolved.styling, preset.id).toEqual(stylePresetValues(preset));
+      expect(resolved.basedOnPreset, preset.id).toBe(preset.id);
+    }
+  });
+
+  it("🔴 never seeds without stamping, and never stamps without seeding", () => {
+    // THE test this step is arranged around. It states "styled like Classic but
+    // stamped null" and "stamped classic but styled like nothing" as the same
+    // forbidden thing, without naming either — so a resolver that splits its
+    // two outputs across two lookups fails here however it drifts.
+    const inputs = [
+      "",
+      "style=",
+      "style=zzz",
+      "style=Classic", // wrong case
+      "style=bordered", // a withdrawn card
+      "style=%20classic%20", // padded
+      "style=classic&style=minimal", // repeated key
+      `style=${"x".repeat(10_000)}`,
+      "accent=blue",
+      ...PRESET_IDS.map((id) => `style=${encodeURIComponent(id)}`),
+    ];
+
+    for (const query of inputs) {
+      const { styling, basedOnPreset } = resolve(query);
+      if (basedOnPreset === null) {
+        expect(styling, query).toEqual(DEFAULT_STYLING_VALUES);
+      } else {
+        const preset = findStylePreset(basedOnPreset);
+        expect(preset, query).not.toBeNull();
+        expect(styling, query).toEqual(stylePresetValues(preset!));
+      }
+    }
+  });
+
+  it("🔴 stamps `banded` even though it changes no styling value", () => {
+    // The Modern card's bundle is `{}`, so the stamp is the ONLY observable
+    // effect of picking it. A resolver that skipped stamping when the bundle
+    // resolved to the defaults would pass every other test in this block, and
+    // would make Modern indistinguishable from Blank in Postgres forever.
+    const resolved = resolve("style=banded");
+    expect(resolved.styling).toEqual(DEFAULT_STYLING_VALUES);
+    expect(resolved.basedOnPreset).toBe("banded");
+  });
+
+  it("treats absent, empty and unknown as the Blank landing", () => {
+    // All three are byte-identical to what bare /app/templates/new returned
+    // before this step — no error, no redirect, no toast (D6).
+    const blank = resolve("");
+    expect(blank).toEqual({
+      styling: DEFAULT_STYLING_VALUES,
+      basedOnPreset: null,
+    });
+    expect(resolve("style=")).toEqual(blank);
+    expect(resolve("style=zzz")).toEqual(blank);
+    expect(resolve("foo=1&bar=2")).toEqual(blank);
+  });
+
+  it("ignores unrelated params, `accent` included (feature 93 seam)", () => {
+    // `accent` is not read yet. When it is, this assertion is the one that
+    // changes — and until then it pins that an unknown second param degrades
+    // rather than throwing.
+    expect(resolve("style=classic&accent=blue&foo=1")).toEqual(
+      resolve("style=classic"),
+    );
+  });
+
+  it("takes the FIRST value of a repeated `style` key", () => {
+    // `URLSearchParams.get` semantics, pinned because it is the one place URL
+    // decoding could surprise a later reader — and because "?style=a&style=b"
+    // is exactly what a hand-edited or double-appended URL looks like.
+    expect(resolve("style=classic&style=minimal").basedOnPreset).toBe(
+      "classic",
+    );
+  });
+
+  it("decodes the param before matching", () => {
+    // The ids are URL-safe today (a test above pins that), so encoding is a
+    // no-op for every real one — asserted anyway because it is what makes the
+    // `URLSearchParams` signature safe to rely on, and because a future id with
+    // a hyphen-encoded character would otherwise fail silently.
+    expect(resolve("style=multi%2Dcolumn").basedOnPreset).toBe("multi-column");
   });
 });
 
