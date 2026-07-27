@@ -12,6 +12,15 @@ Update this file after every meaningful implementation change.
 
 Building the MVP.
 
+> 🛠️ **IN PROGRESS — feature 88 (style preset gallery), Step 13a of 2 landed
+> 2026-07-27.** `app/utils/stylePresets.ts` + its test file: the five bundles,
+> `PRESET_SCOPED_FIELDS`, `findStylePreset` / `seedStylingFromPreset` /
+> `isCustomizedFromPreset`. Pure domain, framework-free, **no UI and no
+> persistence yet** — nothing is merchant-visible. Full gate green, tests
+> 1021 → **1044**. Remaining for Step 13: engine state for `basedOnPreset`
+> (`useRowEngine.ts` + `editorSnapshot.ts`), loader/action persistence, and the
+> rail preset cards in `StyleTab.tsx`. Then Step 14 = the gallery route.
+
 ## Current Goal
 
 **Reshell Phase B2 — the built-in preset gallery (Style tab feature 57, steps 13–14).**
@@ -57,11 +66,12 @@ Doc `86-…`. B2's preset cards slot in ABOVE all eight.
 Then: ⚠️ **feature 85 (multi-column row flow) is BUILT but not signed off** — the
 feature-70 screen-reader pass it was gated on was skipped at the merchant's instruction
 and is still owed, plus two small live checks (see Next Up item 4). It cleared B2's
-`ROW_LAYOUTS` blocker, so B2 = steps 13–14 can proceed
-(built-in preset gallery: `stylePresets.ts` constants, rail
-preset cards, skippable creation-gallery popup — **copy** semantics into real `TableStyling`
-columns, `basedOnPreset` as provenance only). `basedOnPreset` / `extraStyles` exist in the
-schema, deliberately unwritten until Step 13. Then Phase C (Settings display rules) → E
+`ROW_LAYOUTS` blocker, so B2 = steps 13–14 can proceed. **Specced 2026-07-27 as
+feature 88, doc `88-…`** — `stylePresets.ts` constants, rail preset cards, and a
+gallery **route** (`/app/templates/styles`, NOT a modal) reached from Create template.
+**Copy** semantics into real `TableStyling` columns, `basedOnPreset` as provenance
+only. `basedOnPreset` / `extraStyles` exist in the schema, deliberately unwritten
+until Step 13. Then Phase C (Settings display rules) → E
 (assignment folded into the reshell) → F (top-bar status/save model + cleanup). 14-step
 plan: `~/.claude/plans/style-tab-phase-b-implementation-plan.md` (1–12 = B1, 13–14 = B2,
 15+ = B3 saved presets, cuttable).
@@ -487,9 +497,14 @@ rail → Postgres → metaobject, ⚠️ 3 legs owed**
   restarted before the first save** — the discipline works. Restarting also let
   `prisma generate` complete without the usual `EPERM … query_engine-windows.dll.node`,
   since the running server was what held the lock.
-- Numbering: takes **85**; 82/83/84 stay reserved. `gridMinColumnWidthPx` + `GRID` must
-  land in the B2 preset bundles (13 fields now), and B2 must assert **no bundle ships
-  `GRID` + `STRIPES`**.
+- Numbering: takes **85**; 82/83/84 stay reserved. ⚠️ **Superseded by feature 88
+  (2026-07-27):** the "must land in the B2 preset bundles" claim repeated across 78–85
+  is wrong — bundles set **structure only** (4 axes + collapsible, 0–3 fields each), so
+  every colour, typography and frame field stays a rail knob and is deliberately absent
+  from every bundle. `GRID` DOES land (Multi-column's bundle); `gridMinColumnWidthPx`
+  does not — null = the stylesheet's 240px, which measured shortest. **No bundle ships
+  `GRID` + `STRIPES`** still holds and now falls out of the rule for free, since no
+  bundle names a divider style other than `NONE`.
 
 **Section header typography & spacing (feature 81, doc `81-…`) — ✅ shipped & fully
 live-verified 2026-07-26**
@@ -543,9 +558,10 @@ live-verified 2026-07-26**
 - **Left saved with** Section title size 22 · case Uppercase · padding 18 (revert = two boxes
   + one select). `headerFontWeight` / `headerTextColor` deliberately left null, which is what
   made "absent from the wire when null" a real check.
-- Numbering: this takes **81**, so B2 starts at **82**. These five join feature 78's five,
-  79's divider and 80's gap in the B2 preset bundles — **twelve** fields now, and 81's are
-  what let the merchant's reference tables be reproduced rather than approximated.
+- Numbering: this takes **81**. ⚠️ **Superseded by feature 88 (2026-07-27):** these five
+  do **not** join any preset bundle — header typography is tuning within a pattern, not a
+  pattern. They remain what lets the reference tables be reproduced rather than
+  approximated; that reproduction now happens in the rail after a card is picked.
 
 **Section separation + section gap (feature 80, doc `80-…`) — ✅ shipped & fully
 live-verified 2026-07-26**
@@ -609,9 +625,11 @@ live-verified 2026-07-26**
   it); knowing it saves a false "the knob is dead" diagnosis.
   **The DJI template is left saved with `Banded` + `Gap = 12`** (it had been on `Text
   only`, which was the workaround for this bug). Revert = two controls.
-- Numbering: this takes **80**, so B2 starts at **81**. `sectionGapPx` must land in the B2
-  preset bundles alongside feature 78's five and feature 79's divider — banded +
-  collapsible + a gap **is** the "Accordion" preset.
+- Numbering: this takes **80**. `sectionGapPx` is the ONE tuning value feature 88 keeps in
+  a bundle (`Accordion`, at 12px) — a Trek-style accordion needs whitespace between
+  disclosures to read as separate blocks. ⚠️ **Corrected 2026-07-27:** the Accordion preset
+  is collapsible + **`TEXT_ONLY`** + a gap, not banded — a clickable header wants the 2px
+  rule, and banded is its own card.
 
 **Column divider (feature 79, doc `79-…`) — ✅ shipped & fully live-verified 2026-07-26**
 - Merchant sent two competitor spec tables (techlandbd, AppleGadgets) rendering a full
@@ -658,9 +676,12 @@ live-verified 2026-07-26**
   ⚠️ **`resize_window` is not a usable responsive check here** — it reports success but the
   viewport never reflows (`innerWidth` stayed 1397); the Mobile device preview is what gives a
   genuine narrow render. The DJI template is **left saved with `Line`**.
-- Numbering: this takes **79**, so B2 starts at **80**. `columnDividerStyle` must land in the
-  B2 preset bundles alongside feature 78's five — it is what makes a "Bordered / Grid"
-  built-in preset possible.
+- Numbering: this takes **79**. ⚠️ **Superseded by feature 88 (2026-07-27):**
+  `columnDividerStyle` lands in **no** bundle, and the "Bordered / Grid" preset it was
+  meant to enable was **withdrawn**. The two banded references (startech, techlandbd)
+  differ only on the frame and column-rule axes, which is evidence those are tuning
+  *within* Banded rather than a look a merchant starts from. The knob is unaffected —
+  it is two clicks from the Banded card.
 
 **Table width + outer border (features 77–78, docs `77-…` / `78-…`) — ✅ shipped 2026-07-25**
 - **77 — the block now fills its container (CSS-only bug fix, live-verified).** Merchant
@@ -705,7 +726,10 @@ live-verified 2026-07-26**
   so the server called a client without the new columns — the same reason `prisma generate`
   reported `EPERM ... query_engine-windows.dll.node`. Tell it apart from a real bug by running
   the upsert from a fresh `node -e`: if that writes, the server is just stale.
-  B2 note: these five must land in the built-in preset bundles.
+  ⚠️ B2 note **superseded by feature 88 (2026-07-27)**: none of these five lands in a
+  preset bundle. Frame and width are tuning within a pattern, not a pattern — and the
+  frame is the one axis that can collide with the merchant's theme (startech's apparent
+  "frame" is the theme's own section card, not the table's).
 - **Follow-up 2026-07-26 — Outline width and Corner radius show `0` for off; neither box is
   ever blank.** Merchant report: reaching "no outline" meant *removing the text*, which is a
   poor gesture on a knob whose whole vocabulary is a px number. So for these two knobs
@@ -966,21 +990,35 @@ Multi-value applies to PRODUCT + COLLECTION only. No migrations needed for the 4
 
 ## Next Up
 
-1. **Reshell Phase B2** — built-in preset gallery (Style tab steps 13–14). Feature 85 has
-   now landed, so the `ROW_LAYOUTS` blocker is cleared: B2's bundles gain `rowLayout:
-   "GRID"` + `gridMinColumnWidthPx` (13 fields now) and must assert **no bundle ships
-   `GRID` + `STRIPES`** — a preset writes styling values without passing through the
-   rail's option list, so it is the one writer that can produce the combination the rail
-   hides, and the CSS stand-down is what catches it. (**Starts at feature
-   doc 82** now that 81 is spoken for; before that 70 = stacked-semantics, 71 = sidebar inner-scroll, 72 = device-preview
-   mockups, 73 = desktop preview inner scroll, 74 = content-free tables, 75 = full-size preview
-   modal (removed), 76 = collapsible Style rail, 77 = container stretch, 78 = width + outer
-   border, 79 = column divider, 80 = section separation + gap, 81 = section header typography —
-   a retired number is still spent.) **The five feature-78 fields plus `columnDividerStyle`,
-   `sectionGapPx` and feature 81's five must be in the preset bundles** — those twelve are what
-   make "Bordered / Grid" and "Accordion" built-in presets possible, and 81's five are what let
-   the merchant's five reference tables be reproduced rather than approximated. Then C (Settings
-   display rules) → E (assignment into the reshell) → F (top-bar status/save + cleanup).
+1. **Reshell Phase B2** — built-in preset gallery (Style tab steps 13–14), **specced
+   2026-07-27 as feature 88, doc `88-…`**. Every blocker is cleared and there is **no
+   migration** (`basedOnPreset` already exists, unwritten since Step 4).
+   **The plan is derived from SEVEN merchant-supplied reference tables**, not invented:
+   four axes define a pattern (pair layout · section headers · row separation · frame)
+   plus one behavioural axis (collapsible); everything else in `STYLING_FIELD_NAMES` is
+   tuning *within* a pattern.
+   ⚠️ **This overturns the "must land in the preset bundles" note repeated across 78–85.**
+   A bundle sets **structure only** — no colour, no typography, no density, no width — so
+   bundles are 0–3 fields, all nine swatches stay null after a pick, and the zero-config
+   theme-inherit promise survives a preset pick intact. Five cards: **Banded `{}`** (the
+   app's default already IS the dominant retail pattern, so it merges with the planned
+   "use my theme's styles" option) · Simple · Minimal · Multi-column (`GRID`) · Accordion.
+   **No bundle ships `GRID` + `STRIPES`** still holds — now for free, since no bundle
+   names a divider style other than `NONE`.
+   Two decisions that must be built in Step 13 rather than retrofitted: the gallery is a
+   **route** (`/app/templates/styles`), not a modal, and the "Customized" hint compares a
+   **fixed `PRESET_SCOPED_FIELDS` set**, NOT `stylingEquals` over all 34 fields (which
+   would break the moment Step 89's accent themes write a colour) and NOT the bundle's own
+   keys (Banded's `{}` would compare nothing). **Feature 89 = accent / colour themes**,
+   deferred by merchant decision with its six seams cut in 88.
+   (**Feature 88**; 82/83/84 stay reserved, 86 = Style tab reorganization, 87 = plain
+   section header. Before those: 70 = stacked-semantics, 71 = sidebar inner-scroll,
+   72 = device-preview mockups, 73 = desktop preview inner scroll, 74 = content-free
+   tables, 75 = full-size preview modal (removed), 76 = collapsible Style rail,
+   77 = container stretch, 78 = width + outer border, 79 = column divider, 80 = section
+   separation + gap, 81 = section header typography, 85 = multi-column row flow — a
+   retired number is still spent.) Then C (Settings display rules) → E (assignment into
+   the reshell) → F (top-bar status/save + cleanup).
 2. **Section band radius / chevron position / animated open-close (proposed 82 / 83 / 84).**
    The rest of the same merchant report feature 81 answered. Each is its own unit for a
    recorded reason — see "Deliberately out of scope" in `81-…`: a radius behaves differently
