@@ -263,6 +263,30 @@ entirely — verified, and expected until step 91.
 
 ### Three findings worth carrying forward
 
+**0. The card is sized by the page it will sit on** (merchant decision
+2026-07-27: **two cards per row**, in an `inlineSize="base"` `<s-page>`). Base is
+not documented in pixels, so it was **measured on the dev store** — `/app/additional`
+uses the default `base` and gives **1086px** of content. That fixes the card:
+
+```
+card    = 480 preview + 24 padding + 2 border = 506px
+one row = 506 × 2 + 16 gap                    = 1028px   (fits 1086, 58px slack)
+```
+
+so `--appx-preset-scale` is **0.6**, not the 0.4 first shipped. The slack is
+deliberate — a card sized to fill the column exactly would need a scale of
+0.636 and would overflow if the base width is even slightly different on another
+admin. Cards carry `max-width: 100%` so a narrow admin drops to one column
+instead of scrolling sideways.
+
+The scale change is not only about fit: preview label text goes from ~6.4px to
+**~9.6px**, which is the difference between seeing that a pattern has rows and
+being able to read them.
+
+⚠️ **This constrains step 91**: the gallery grid is
+`repeat(2, minmax(0, 1fr))` inside `<s-page inlineSize="base">`. Do not use
+`auto-fit` — the two-per-row layout is a decision, not a fallback.
+
 **1. `800px` is a hard floor, not a taste call.** The render width has to clear
 the storefront stylesheet's **749px mobile breakpoint**. Below it every card —
 Banded, Simple, Multi-column alike — renders in its `--mobile-stacked` form, so

@@ -80,12 +80,21 @@ Building the MVP.
 > `gridMinColumnWidthPx` stay off-limits and are still named field-by-field in a
 > test that now says why the others left.
 >
+> 🔴 **Layout decision 2026-07-27: TWO CARDS PER ROW, in an
+> `inlineSize="base"` `<s-page>`.** Base is not documented in pixels, so it was
+> measured on the dev store (`/app/additional` uses the default) — **1086px** of
+> content. That sizes the card: 480px preview + 24 padding + 2 border = 506px, so
+> two + a 16px gap = 1028px with 58px of deliberate slack. **Step 91's grid is
+> therefore `repeat(2, minmax(0, 1fr))`, not `auto-fit`.**
+>
 > 🔍 **The scale geometry is measured, not guessed.** The preview is the real
-> table at **800px** scaled to **0.4** — 800 because below the storefront
+> table at **800px** scaled to **0.6** — 800 because below the storefront
 > stylesheet's **749px mobile breakpoint** every card renders in its identical
 > phone form and the gallery stops distinguishing anything. The viewport height
 > was cut 470 → **420px** after a static harness showed a band of dead white under
-> every card. All six cards were rendered and inspected off-route: five visibly
+> every card. The scale rose 0.4 → 0.6 with the two-per-row decision, which also
+> took preview label text from ~6.4px to ~9.6px — readable rather than merely
+> textured. All six cards were rendered and inspected off-route: five visibly
 > distinct, Multi-column flows into 3 columns, Blank reads as a different kind of
 > choice. Untouched live: the five checks in the step-90 file, owed by step 91.
 >
