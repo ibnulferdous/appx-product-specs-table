@@ -51,27 +51,45 @@
 
      The SCALE is set by the page the cards sit on (merchant decision
      2026-07-27: two cards per row, in an `inlineSize="base"` `<s-page>`).
-     Measured on the dev store, a base page gives 1086px of content, so:
 
-       card    = 480 preview + 24 padding + 2 border = 506px
-       one row = 506 x 2 + 16 gap                    = 1028px   (fits 1086)
+     🔴 The base width was MIS-MEASURED once, and the correction is the reason
+     this block reads the way it does. Step 90 recorded 1086px, read off a
+     screenshot; the real figure, measured in step 91 by asking the page itself
+     through a `@container` ladder, is **966px** — capped there, identical at a
+     1600px and a 2400px window. The 0.6 scale that 1086 justified never fit:
+     every card overran its grid track by ~26px and the previews were quietly
+     cropped. Measure a container by querying it, not by counting pixels in a
+     screenshot.
 
-     0.6 rather than the 0.4 first shipped, and the gain is not only fit:
-     label text goes from ~6.4px to ~9.6px, which is the difference between
+       card    = 440 preview + 24 padding + 2 border = 466px
+       one row = 466 x 2 + 16 gap                    = 948px   (fits 966)
+
+     ⚠️ `route.module.css`'s one-column `@container` breakpoint is that 948 and
+     must move whenever this scale does — they are one decision in two files.
+
+     0.55 rather than the 0.4 first shipped, and the gain is not only fit:
+     label text goes from ~6.4px to ~8.8px, which is the difference between
      seeing that a pattern has rows and being able to read them. */
   --appx-preset-render-width: 800px;
   --appx-preset-render-height: 420px;
-  --appx-preset-scale: 0.6;
+  --appx-preset-scale: 0.55;
 
   display: flex;
   flex-direction: column;
   /* The preview box's scaled width IS the card's content width, so the frame
      hugs the thumbnail exactly and every card in the gallery is the same size —
      including Blank, which has no thumbnail to size itself from.
-     `max-width: 100%` is the narrow-admin escape: the grid drops to one column
-     rather than pushing the page into a horizontal scroll. */
+     The `max-width` is the narrow-admin escape, and it 🔴 SUBTRACTS THIS BOX'S
+     OWN CHROME on purpose. These boxes are content-box (the 506px in the
+     arithmetic above is 480 + padding + border), so a plain `max-width: 100%`
+     caps the CONTENT at the grid track and lets the border box overrun it by
+     the padding and border — 26px per card, which is exactly the sideways
+     scroll the admin grew when the window was narrowed. Found live in step 91,
+     not by a test: at base width every card fits its track with room to spare,
+     so nothing overflows until the page is squeezed. Same reason on `.preview`
+     and `.blankPlate` below, with their own chrome subtracted. */
   width: calc(var(--appx-preset-render-width) * var(--appx-preset-scale));
-  max-width: 100%;
+  max-width: calc(100% - 1.5rem - 0.125rem);
   gap: 0.75rem;
   padding: 0.75rem;
   border: 0.0625rem solid var(--appx-preset-hairline);
@@ -102,7 +120,8 @@
   display: block;
   width: calc(var(--appx-preset-render-width) * var(--appx-preset-scale));
   height: calc(var(--appx-preset-render-height) * var(--appx-preset-scale));
-  max-width: 100%;
+  /* Minus its own 1px hairline on each side — see `.card`. */
+  max-width: calc(100% - 0.125rem);
   overflow: hidden;
   border-radius: 0.375rem;
   border: 0.0625rem solid var(--appx-preset-hairline);
@@ -130,7 +149,8 @@
   justify-content: center;
   width: calc(var(--appx-preset-render-width) * var(--appx-preset-scale));
   height: calc(var(--appx-preset-render-height) * var(--appx-preset-scale));
-  max-width: 100%;
+  /* Minus its own 2px dashed edge on each side — see `.card`. */
+  max-width: calc(100% - 0.25rem);
   border-radius: 0.375rem;
   border: 0.125rem dashed var(--appx-preset-hairline);
   background: var(--appx-preset-blank-fill);

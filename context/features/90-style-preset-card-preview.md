@@ -264,28 +264,43 @@ entirely — verified, and expected until step 91.
 ### Three findings worth carrying forward
 
 **0. The card is sized by the page it will sit on** (merchant decision
-2026-07-27: **two cards per row**, in an `inlineSize="base"` `<s-page>`). Base is
-not documented in pixels, so it was **measured on the dev store** — `/app/additional`
-uses the default `base` and gives **1086px** of content. That fixes the card:
+2026-07-27: **two cards per row**, in an `inlineSize="base"` `<s-page>`).
+
+🔴 **SUPERSEDED — the number below is WRONG, and step 91 corrected it. Left in
+place because the mistake is the lesson.** Base is not documented in pixels, so
+it was measured on the dev store by reading `/app/additional` off a screenshot:
+**1086px**. Step 91 asked the page itself instead — a temporary ladder of
+`@container (width >= Npx)` rules, each printing its own threshold — and got
+**966px**, capped there at both a 1600px and a 2400px window. 120px out.
+
+The original arithmetic, and what it produced:
 
 ```
 card    = 480 preview + 24 padding + 2 border = 506px
-one row = 506 × 2 + 16 gap                    = 1028px   (fits 1086, 58px slack)
+one row = 506 × 2 + 16 gap                    = 1028px   (does NOT fit 966)
 ```
 
-so `--appx-preset-scale` is **0.6**, not the 0.4 first shipped. The slack is
-deliberate — a card sized to fill the column exactly would need a scale of
-0.636 and would overflow if the base width is even slightly different on another
-admin. Cards carry `max-width: 100%` so a narrow admin drops to one column
-instead of scrolling sideways.
+So `--appx-preset-scale: 0.6` **never fit**: the grid still made two tracks, each
+card overran its track by ~26px, and every preview was cropped on the right where
+the crop happened to land in the table's empty margin. The corrected figures are
+**scale 0.55**, card 466, row 948 in 966 — see
+`91-style-preset-gallery-route.md` findings 4–6, which also fix the separate
+`max-width: 100%` overflow bug this hid behind.
 
-The scale change is not only about fit: preview label text goes from ~6.4px to
-**~9.6px**, which is the difference between seeing that a pattern has rows and
-being able to read them.
+⚠️ **The method is the takeaway.** A container's width is a question the browser
+answers exactly if you ask it in CSS. Counting pixels in a scaled screenshot gave
+a number that was wrong by 120px and survived two sessions and a merchant review,
+because everything downstream was derived consistently from the same mistake.
+
+The scale change from the 0.4 first shipped is not only about fit: preview label
+text goes from ~6.4px to **~8.8px**, which is the difference between seeing that
+a pattern has rows and being able to read them.
 
 ⚠️ **This constrains step 91**: the gallery grid is
 `repeat(2, minmax(0, 1fr))` inside `<s-page inlineSize="base">`. Do not use
-`auto-fit` — the two-per-row layout is a decision, not a fallback.
+`auto-fit` — the two-per-row layout is a decision, not a fallback. (Step 91 adds
+a `@container` one-column fallback below 948px, which is not the same thing:
+`auto-fit` would seat a *third* card on a wide admin.)
 
 **1. `800px` is a hard floor, not a taste call.** The render width has to clear
 the storefront stylesheet's **749px mobile breakpoint**. Below it every card —

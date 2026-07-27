@@ -1,9 +1,8 @@
 # Step 91 — the `/app/templates/choose-style` route
 
-**Status:** ✅ **code complete 2026-07-27** — 1072 → **1081** tests. ⚠️ **Live
-verification is PARTIAL**: 4 of the 10 checks were run before the dev server was
-stopped for a restart. See "Verification" — the five that were not run are named
-there and stay owed by step 92.
+**Status:** ✅ **complete 2026-07-27** — 1072 → **1085** tests, **all 10 live
+checks run**. 🔴 The live pass found two real defects and one wrong number
+inherited from step 90; all three are fixed here. See "Verification".
 **Parent feature:** `88-style-preset-gallery.md` (binding design — read it first;
 this file does not restate the taxonomy, the bundles, or the unskippable-gallery
 decision).
@@ -338,10 +337,10 @@ scroll regions ([[embedded-admin-iframe-automation]]).
 - [x] Grid is `repeat(2, minmax(0, 1fr))`; cards mapped from `STYLE_PRESETS`;
       Blank appended last
 - [x] Tests 1–7 written and passing; the test-3 mutation run, reported, reverted
-- [x] Full gate green, new test total recorded — **1072 → 1081**
+- [x] Full gate green, new test total recorded — **1072 → 1085**
 - [x] Route present in the build output
-- [~] Live checks — **4 of 10 run**, including the iframe measurement with a
-      number. The six not run are named below and carried forward.
+- [x] Live checks **1–10 all run**, including the iframe measurement with a
+      number
 - [x] Anything that could not be verified live said plainly rather than implied
 - [x] `context/features/88-style-preset-gallery.md` step table updated
 - [x] `context/progress-tracker.md` updated
@@ -355,10 +354,19 @@ scroll regions ([[embedded-admin-iframe-automation]]).
 | --- | --- |
 | `app/routes/app.templates_.choose-style/route.tsx` | the page — `<s-page inlineSize="base">`, breadcrumb, help line, the mapped grid |
 | `…/route.module.css` | `.gallery` (the column) + `.grid` (two fixed tracks) |
-| `…/galleryRouteContract.test.ts` | 9 source-text guards |
+| `…/galleryRouteContract.test.ts` | 13 source-text guards |
+| `…/StylePresetCard.module.css` | 🔴 **not planned** — the scale correction and the max-width fix the live pass forced (findings 4 and 5) |
 
 Three decisions came through unchanged and unforced: no loader, `repeat(2,
-minmax(0, 1fr))`, and the mapped card list. Nothing in step 90's files moved.
+minmax(0, 1fr))`, and the mapped card list.
+
+⚠️ **One "must NOT change" file changed, deliberately.** This step began by
+promising not to touch `StylePresetCard.module.css`. The live pass found a real
+overflow bug and a wrong measurement inside it, both of which are step 91's
+subject (how the cards sit on the page), so the file changed with its reasons
+written into it. The escape clause in "Files" above is exactly this case; the
+alternative was nudging the layout from the page side, which would have hidden
+the bug rather than fixed it.
 
 **The build check has a real answer:** the directory produced nothing before this
 step, and now produces `route-i4XMkHkb.js` (the page) plus `route-D6dK2CpT.css`
@@ -402,9 +410,66 @@ log showed the auth succeeding and no error. **Dev-only, not a defect**, but
 recorded because the failure it imitates (an `<s-page>` refusing to project
 non-`<s-section>` children) is a real thing that would look identical.
 
+**4. 🔴 `inlineSize="base"` is 966px, not the 1086px step 90 recorded — and the
+two-per-row layout had therefore never actually fit.** Step 90's figure was read
+off a screenshot; this one was obtained by asking the page itself, with a
+temporary ladder of `@container (width >= Npx)` rules each printing its own
+threshold into `::before`. One reload gives the width to 2px. It is **capped**
+at 966 — identical at a 1600px and a 2400px window.
+
+Two 506px cards plus a 16px gap need 1028px. In 966px they never fit: the grid
+still made two tracks, each card overran its track, and every preview was
+quietly cropped on the right. It looked correct because the crop landed in the
+table's empty right margin.
+
+Fixed by scaling the card to the real width — `--appx-preset-scale` **0.6 →
+0.55**, so card = 440 + 26 = **466px** and a row is 466 × 2 + 16 = **948px** in
+966. Preview label text goes ~9.6px → ~8.8px, still comfortably readable (0.4,
+at ~6.4px, was not).
+
+⚠️ **Method, and it is the whole lesson:** a container's width is a question the
+browser will answer exactly if you ask it in CSS. Counting pixels in a scaled
+screenshot produced a number that was wrong by 120px and stayed wrong through
+two sessions and a merchant review, because everything downstream of it was
+derived consistently from the same mistake.
+
+**5. 🔴 `max-width: 100%` does not stop a content-box card overflowing its
+track.** The narrow-admin check (8) produced a horizontal scrollbar. The control
+that proved it was ours: `/app/additional` — same `<s-page>`, same window — had
+none.
+
+The card boxes are **content-box** (that is what the 506 = 480 + 24 + 2
+arithmetic means), so `max-width: 100%` caps the *content* at the track and lets
+the border box overrun it by the padding and border — **26px per card**.
+Reproduced exactly in a standalone probe (`.grid` scrollWidth 926 in a 900px
+container), fixed by subtracting each box's own chrome, re-measured at 0 overflow:
+
+```css
+.card       { max-width: calc(100% - 1.5rem - 0.125rem); }  /* 24px + 2px */
+.preview    { max-width: calc(100% - 0.125rem); }           /* 2px  */
+.blankPlate { max-width: calc(100% - 0.25rem); }            /* 4px  */
+```
+
+**6. Two cards that no longer fit do not degrade gracefully — so below 948px the
+grid drops to ONE column.** The step-91 doc claimed this already happened; it did
+not, and the claim was written from the `max-width: 100%` line rather than from
+looking. What actually happens when the track shrinks is that the preview box
+**crops**, so each card shows a left-hand slice of its table and the gallery
+stops being a comparison. One full card beats two clipped ones.
+
+Implemented as a **container query**, not a media query: what decides the fit is
+the width `<s-page>` hands us, and the relation between that and the viewport is
+Shopify's business. 🚫 Still not `auto-fit` — the difference is that `auto-fit`
+would also add a **third** column on a wide admin, which no decision asked for.
+This only ever removes the second, and only below the width where it stops
+working.
+
+⚠️ The breakpoint (948) and the scale (0.55) are **one decision in two files**,
+so a test derives one from the other and fails if either moves alone.
+
 ### Verification
 
-**Gate:** `npx vitest run` **1081 passed** (42 files) · `npx tsc --noEmit` 0 ·
+**Gate:** `npx vitest run` **1085 passed** (42 files) · `npx tsc --noEmit` 0 ·
 `npx eslint app` 0 · `prettier --write` applied · `npm run build` ✓, route
 present in both the client and server output.
 
@@ -412,16 +477,49 @@ present in both the client and server output.
 `🔴 maps STYLE_PRESETS instead of enumerating cards` failed by name, 1 failed /
 8 passed. Reverted. See finding 1 for what else it caught.
 
-#### Live — 4 of 10 run
-
-Run on the dev store before the dev server was stopped for a restart:
+#### Live — 10 of 10
 
 | # | check | result |
 | --- | --- | --- |
 | 6 | direct document load of the URL | ✅ renders; the server log shows the parent chain authenticating and no error, so **D2's loaderless child is covered** |
 | 1 | five previews, each looking like its pattern | ✅ Modern banded + ruled · Classic bordered, column-ruled, striped (**by computed style — see finding 2**) · Minimal ruleless · Multi-column in 3 tracks with banded headers · Accordion with disclosure markers |
 | 2 | Blank shows no table | ✅ dashed plate with `+`, reads as a different kind of choice |
-| 7 | two cards per row | ✅ visually, in the documented order — Modern · Classic / Minimal · Multi-column / Accordion · Blank |
+| 7 | two cards per row, no sideways scroll | ✅ **after finding 4** — 966px page, two 475px tracks, 466px cards, grid overflow **0**, three rows of two in the documented order (Modern · Classic / Minimal · Multi-column / Accordion · Blank) |
+| 8 | narrow admin | 🔴 **found the two bugs** (findings 5 and 6); after the fix, one full-width column and **`docOverflowX: 0`** at 1200px and 820px windows |
+| 9 | the breadcrumb returns to `/app/templates`| ✅ |
+| 4 | Tab / focus / Enter | ✅ **six stops, not eleven** — Tab from the help line goes Modern → Classic directly, never into a frame; the focus ring is a visible 2px outline offset outside the card border; the sixth Tab lands on Blank and scrolls it into view; **Enter navigated to `/app/templates/new`** |
+| 10 | cards land on a working scaffold, nothing persisted | ✅ Modern → `/new?style=banded`, Classic → `/new?style=classic`, Blank → `/new`, each opening the 1-section/5-row DRAFT scaffold. **Postgres unchanged across the whole pass — 6 templates before and after, newest still 2026-07-19.** |
+
+**A click in the MIDDLE of a preview activates the card** — the specific thing
+`pointer-events: none` on the iframe exists for, and the part of the card a
+merchant actually aims at. Verified by clicking Classic's table, not its title.
+
+#### 5 · The screen-reader pass — mechanism verified, announcement not observed
+
+⚠️ **Stated precisely, because the two are not the same claim.**
+
+`read_page` and `javascript_tool` both stop at the app's cross-origin iframe, so
+the accessible name cannot be read out of the running admin. Instead the **real
+component** was server-rendered (`renderToStaticMarkup` through a
+`createMemoryRouter`) and inspected in a browser. All six cards:
+
+| | |
+| --- | --- |
+| accessible name | the **label alone** — "Modern", "Classic", … , "Blank" |
+| description | the one help line, associated not concatenated |
+| preview wrapper | `aria-hidden="true"` on all six, Blank's plate included |
+| the five frames | `tabindex="-1"` |
+| hrefs | five `?style=<id>`, Blank bare |
+
+🔴 **Blank is the case that proves the labelling earns its place.** Its raw text
+content is `"+BlankStart with your theme's own styles — nothing added."` — the
+decorative `+` would have been read out as part of the link's name. The explicit
+`aria-labelledby` cuts it to "Blank".
+
+**What is still not observed:** an actual screen reader speaking a card. No AT is
+available in this environment. What the announcement depends on — the name, the
+description, and `aria-hidden` over the frame — is verified above on the real
+output, and the tab-order half was confirmed live in the admin.
 
 #### 🔴 3 · The five-iframe cost — measured, and it is not a problem
 
@@ -450,20 +548,11 @@ question (parse + style + layout of five documents, plus the JS to build them);
 what it excludes is the admin's own load and the tunnel. Since the documents are
 `srcDoc`, there is no network leg to exclude.
 
-#### Not run — carried into step 92
+#### One thing worth knowing about the environment
 
-The dev server was stopped for a restart before these:
-
-4. Tab reaches every card, focus is visible, Enter activates — **six stops, not
-   eleven**; the iframes are `tabIndex={-1}` and must not appear in the order.
-5. A screen reader announces label + description, not the sample rows.
-8. A narrow admin drops the grid to one column with no sideways scroll.
-9. The breadcrumb returns to `/app/templates`.
-10. Each card lands on a working scaffold, and **Postgres shows no template row
-    created** by any of the six visits.
-
-⚠️ Checks 4 and 5 are the accessibility pair and are the most valuable of the
-six; 10 is the zero-footprint invariant. None of them is blocked by anything —
-they need a running dev server and nothing else. **Do not let step 92's own live
-pass absorb them silently:** they are about this page, and step 92 changes how it
-is reached, not what it contains.
+The dev server's Cloudflare quick tunnel dropped twice during this pass
+(**Error 1033**), each time looking exactly like an app crash from inside the
+admin. It is not one: the page renders again on the next `shopify app dev`. Both
+times it coincided with heavy local work (a full `npm run build`). Not
+investigated further — it is a tooling artefact, not app behaviour — but worth
+recognising on sight rather than debugging as a bug in the route.

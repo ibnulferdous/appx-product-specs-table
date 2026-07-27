@@ -14,6 +14,13 @@
      between the help line and the grid is the same whatever the page component
      does with arbitrary (non-`<s-section>`) children. */
   gap: 1rem;
+  /* The query container for the one-column fallback below. A CONTAINER query,
+     not a media query: what decides whether two cards fit is the width
+     `<s-page>` hands us, and the relationship between that and the viewport is
+     `s-page`'s business (measured at ~221px of chrome, but that is an
+     observation, not a contract). Asking the box we actually get is exact and
+     survives Shopify retuning the page. */
+  container-type: inline-size;
 }
 
 .grid {
@@ -38,4 +45,26 @@
      goes: at the start of each track, keeping the two columns' left edges
      aligned with the page rather than drifting apart. */
   justify-items: start;
+}
+
+/* 🔴 Below the width two cards need, ONE column — added in step 91 after
+   looking at a narrowed admin.
+
+   This is not a retreat from the two-per-row decision; it is the decision
+   stated honestly. Two cards that no longer fit do not politely shrink: the
+   preview box crops, so each card shows a left-hand SLICE of its table and the
+   gallery's whole job — comparing five looks — degrades exactly when the
+   merchant can least afford it. One full card beats two clipped ones.
+
+   🚫 Still not `auto-fit`. The difference matters: `auto-fit` would also add a
+   THIRD column on a wide admin, which no decision ever asked for. This only
+   ever removes the second one, and only below the width where it stops working.
+
+   948px is the arithmetic from the card geometry — 466 x 2 + a 16px gap — so
+   the breakpoint is the fit itself rather than a guessed device width. It must
+   move with `--appx-preset-scale`; the two numbers are one decision. */
+@container (width < 948px) {
+  .grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }

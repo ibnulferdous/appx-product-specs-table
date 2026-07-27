@@ -22,7 +22,7 @@ Building the MVP.
 > | 13a | — | pure domain (`app/utils/stylePresets.ts`) | ✅ `3714361`, 1021 → 1044 tests |
 > | 89 | `89-style-preset-engine-persistence.md` | `basedOnPreset` state + write path | ✅ **2026-07-27**, 1044 → **1055** |
 > | 90 | `90-style-preset-card-preview.md` | canned sample + preview card | ✅ **2026-07-27**, 1055 → **1072** |
-> | 91 | `91-style-preset-gallery-route.md` | `/app/templates/choose-style`, six cards | ✅ **2026-07-27**, 1072 → **1081** (live partial) |
+> | 91 | `91-style-preset-gallery-route.md` | `/app/templates/choose-style`, six cards | ✅ **2026-07-27**, 1072 → **1085**, live 10/10 |
 > | 92 | `92-style-preset-create-flow.md` | repoint Create buttons, `?style=` seeding | 📋 ⬜ next |
 >
 > 🔴 **Merchant decisions 2026-07-27 — presets are CREATE-TIME ONLY.** A planned
@@ -81,11 +81,10 @@ Building the MVP.
 > test that now says why the others left.
 >
 > 🔴 **Layout decision 2026-07-27: TWO CARDS PER ROW, in an
-> `inlineSize="base"` `<s-page>`.** Base is not documented in pixels, so it was
-> measured on the dev store (`/app/additional` uses the default) — **1086px** of
-> content. That sizes the card: 480px preview + 24 padding + 2 border = 506px, so
-> two + a 16px gap = 1028px with 58px of deliberate slack. **Step 91's grid is
-> therefore `repeat(2, minmax(0, 1fr))`, not `auto-fit`.**
+> `inlineSize="base"` `<s-page>`.** ⚠️ The width recorded here at the time
+> (1086px, counted off a screenshot) was **wrong — it is 966px**; see the step-91
+> correction above for the real arithmetic. The decision itself stands, and
+> **step 91's grid is `repeat(2, minmax(0, 1fr))`, not `auto-fit`.**
 >
 > **Step 91 landed 2026-07-27 — the gallery is LIVE at
 > `/app/templates/choose-style`,** and it is the first merchant-visible piece of
@@ -119,25 +118,54 @@ Building the MVP.
 > screenshot for structure (bands, rules, column count, disclosures), not tint.**
 > Relevant to feature 93, which is entirely about colour.
 >
-> ⚠️ **Live verification is PARTIAL — 4 of 10 checks.** The dev server was
-> stopped for a restart. Run and passing: the direct document load (proving the
-> loaderless child is covered by the parent auth chain), all five previews
-> looking like the patterns they name, Blank showing no table, two cards per row
-> in the documented order, and the iframe measurement. **Still owed, and named in
-> the step-91 file:** Tab order + visible focus + Enter (six stops, not eleven),
-> the screen-reader pass, the narrow-admin single column, the back link, and the
-> Postgres check that no template row is created by visiting.
+> 🔴 **`inlineSize="base"` is 966px, NOT the 1086px step 90 recorded — so
+> two-per-row had never actually fit.** Step 90's figure was counted off a
+> screenshot; step 91 asked the page itself (a temporary ladder of
+> `@container (width >= Npx)` rules, each printing its own threshold) and got 966,
+> **capped** — identical at a 1600px and a 2400px window. Two 506px cards + a
+> 16px gap need 1028: the grid still made two tracks, every card overran its
+> track by ~26px, and every preview was cropped on the right, invisibly, because
+> the crop landed in the table's empty margin. Fixed by scaling to the real
+> width — **`--appx-preset-scale` 0.6 → 0.55**, card 466, row 948 in 966; label
+> text ~9.6px → ~8.8px, still readable. ⚠️ **Measure a container by querying it,
+> not by counting pixels in a screenshot** — that number was wrong by 120px and
+> survived two sessions and a merchant review because everything downstream was
+> derived consistently from it.
+>
+> 🔴 **`max-width: 100%` does not stop a content-box card overflowing its grid
+> track.** The narrow-admin check produced a sideways scroll; `/app/additional` at
+> the same window size did not, which is what proved it was ours. The card boxes
+> are content-box, so `max-width: 100%` caps the CONTENT at the track and lets the
+> border box overrun by the padding and border — 26px per card. Each box now
+> subtracts its own chrome. And below 948px the grid drops to **one column** via a
+> `@container` query — two cards that no longer fit do not shrink, they CROP, and
+> one full card beats two slices. 🚫 Still not `auto-fit`, which would also seat a
+> third card on a wide admin.
+>
+> ✅ **Live verification complete — 10 of 10.** Direct document load (the
+> loaderless child is covered by the parent auth chain); five previews each
+> looking like the pattern they name; Blank showing no table; two per row with
+> grid overflow 0; narrow admin → one column, `docOverflowX: 0`; breadcrumb back
+> to the list; **Tab gives six stops, not eleven** (frames are untabbable), focus
+> is a visible ring, Enter navigates; a click in the MIDDLE of a preview activates
+> the card (`pointer-events: none` earning its comment); every card lands on the
+> blank scaffold with `?style=` inert; and **Postgres unchanged throughout — 6
+> templates before and after**. The accessible name was verified on the real
+> component's server-rendered output (the admin's cross-origin iframe cannot be
+> read from outside): name = the label alone, description associated, preview
+> `aria-hidden`. ⚠️ An actual screen reader was not run — no AT in this
+> environment; the mechanism is verified, the announcement is not observed.
 >
 > 🔍 **The scale geometry is measured, not guessed.** The preview is the real
-> table at **800px** scaled to **0.6** — 800 because below the storefront
+> table at **800px** scaled to **0.55** — 800 because below the storefront
 > stylesheet's **749px mobile breakpoint** every card renders in its identical
 > phone form and the gallery stops distinguishing anything. The viewport height
 > was cut 470 → **420px** after a static harness showed a band of dead white under
-> every card. The scale rose 0.4 → 0.6 with the two-per-row decision, which also
-> took preview label text from ~6.4px to ~9.6px — readable rather than merely
-> textured. All six cards were rendered and inspected off-route: five visibly
-> distinct, Multi-column flows into 3 columns, Blank reads as a different kind of
-> choice. Untouched live: the five checks in the step-90 file, owed by step 91.
+> every card. The scale rose 0.4 → 0.6 with the two-per-row decision and was
+> corrected to **0.55** in step 91 once the base width was measured properly —
+> preview label text ~6.4px → **~8.8px**, readable rather than merely textured.
+> All six cards were rendered and inspected: five visibly distinct, Multi-column
+> flows into 3 columns, Blank reads as a different kind of choice.
 >
 > ⚠️ **The accent/colour-theme feature renumbered 89 → 93** when the step files
 > took 89–92. Doc 88 and `stylePresets.ts` were updated; the design is unchanged.

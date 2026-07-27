@@ -53,6 +53,64 @@ describe("the grid is two columns by decision", () => {
     expect(css).not.toContain("auto-fit");
     expect(css).not.toContain("auto-fill");
   });
+
+  it("falls back to ONE column below the width two cards need", () => {
+    // Found live in step 91: two cards that no longer fit do not shrink
+    // gracefully — the preview box crops, so each card shows a left-hand slice
+    // of its table and the gallery stops being comparable. A container query,
+    // not a media query, because what decides the fit is the width `<s-page>`
+    // hands us; and 948px because that is the card arithmetic (466 x 2 + 16),
+    // not a guessed device width.
+    expect(css).toContain("container-type: inline-size");
+    expect(css).toMatch(/@container\s*\(width\s*<\s*948px\)/);
+    expect(css).toMatch(
+      /@container[^{]*\{\s*\.grid\s*\{\s*grid-template-columns:\s*minmax\(0,\s*1fr\);/,
+    );
+  });
+});
+
+describe("nothing overflows its track when the admin is narrow", () => {
+  // 🔴 The regression this pins is invisible at base width and was found only
+  // by narrowing a real admin: the card boxes are CONTENT-box, so a plain
+  // `max-width: 100%` caps the content at the grid track and lets the border
+  // box overrun it by the padding and border — 26px per card of sideways
+  // scroll. Each box therefore subtracts its own chrome.
+  const cardCss = read("./StylePresetCard.module.css").replace(
+    /\/\*[\s\S]*?\*\//g,
+    "",
+  );
+
+  it("🔴 keeps the one-column breakpoint equal to two cards plus the gap", () => {
+    // The breakpoint lives in `route.module.css` and the scale that decides the
+    // card width lives in `StylePresetCard.module.css`, so nothing but this
+    // test keeps them in agreement. Derived from the CSS, not restated: change
+    // the scale and this fails until the breakpoint follows.
+    const renderWidth = Number(
+      /--appx-preset-render-width:\s*(\d+)px/.exec(cardCss)?.[1],
+    );
+    const scale = Number(/--appx-preset-scale:\s*([\d.]+)/.exec(cardCss)?.[1]);
+    const breakpoint = Number(
+      /@container\s*\(width\s*<\s*(\d+)px\)/.exec(css)?.[1],
+    );
+
+    // 24px of padding + 2px of border is the card's chrome; 16px is the gap.
+    const cardWidth = renderWidth * scale + 24 + 2;
+    // `toBeCloseTo`, because 800 * 0.55 is 440.00000000000006 in binary floats
+    // and the breakpoint is a whole number of pixels.
+    expect(breakpoint).toBeCloseTo(cardWidth * 2 + 16, 6);
+  });
+
+  it("subtracts each box's own padding and border from its max-width", () => {
+    expect(cardCss).toContain("max-width: calc(100% - 1.5rem - 0.125rem)");
+    expect(cardCss).toContain("max-width: calc(100% - 0.125rem)");
+    expect(cardCss).toContain("max-width: calc(100% - 0.25rem)");
+  });
+
+  it("leaves no bare max-width: 100% behind", () => {
+    // The three fixed lines were all `max-width: 100%`. If one comes back, the
+    // box it belongs to has started overflowing again.
+    expect(cardCss).not.toContain("max-width: 100%");
+  });
 });
 
 describe("the cards come from the data, not from the page", () => {
