@@ -84,7 +84,7 @@ describe("the Blank variant", () => {
   });
 
   it("renders NO iframe", () => {
-    // Blank's output is pixel-identical to Banded's, so a preview here would put
+    // Blank's output is pixel-identical to Modern's, so a preview here would put
     // two identical thumbnails in one grid — which reads as a rendering bug.
     expect(blank).not.toContain("<iframe");
     expect(blank).not.toContain("renderSpecTablePreviewDocument");

@@ -141,7 +141,7 @@ export function StylePresetCard({ preset }: { preset: StylePreset }) {
  * The sixth card: start with no pattern at all.
  *
  * ⚠️ Blank is NOT a `StylePreset` and must never be faked into one. Its output
- * is byte-identical to Banded's — `DEFAULT_STYLING_VALUES` already IS the banded
+ * is byte-identical to Modern's — `DEFAULT_STYLING_VALUES` already IS the banded
  * pattern (see the `banded` bundle's note in `stylePresets.ts`) — so it is
  * modelled as the ABSENCE of a preset: no bundle, no `?style=` param, and
  * `basedOnPreset` left null. With the gallery unskippable, that null is now

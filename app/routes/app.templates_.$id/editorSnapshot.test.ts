@@ -221,7 +221,7 @@ describe("editorMetaSnapshot — the style-preset stamp (feature 88 step 89)", (
     // Adding a key must not change what any existing field means — the same
     // check the reset test above makes for `styling`.
     const after = JSON.parse(
-      editorMetaSnapshot({ ...BASE, basedOnPreset: "simple" }),
+      editorMetaSnapshot({ ...BASE, basedOnPreset: "classic" }),
     ) as Record<string, unknown>;
     const before = JSON.parse(editorMetaSnapshot(BASE)) as Record<
       string,

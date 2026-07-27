@@ -16,9 +16,9 @@
 // `sampleRows.test.ts` pins every one of them:
 //
 //   - TWO section headers. Section-header treatment is the axis that separates
-//     three of the five cards (Banded's band, Simple/Minimal/Multi-column's
-//     plain title, Accordion's clickable rule). With one header there is nothing
-//     to compare it against; with none the axis is invisible entirely.
+//     three of the five cards (Modern's and Multi-column's band, Classic's and
+//     Minimal's plain title, Accordion's clickable rule). With one header there
+//     is nothing to compare it against; with none the axis is invisible.
 //   - SEVEN data rows. `GRID` flows tracks into columns at a minimum column
 //     width; too few rows and Multi-column renders as a single column, so the
 //     card would show the merchant something the preset does not do.

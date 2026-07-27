@@ -2,7 +2,7 @@
  *
  * Two card shapes share one frame: `.card` + `.preview` (a scaled live table)
  * for the five patterns, `.card` + `.blankPlate` for the "Blank" choice, which
- * shows no table at all — its output is pixel-identical to Banded's, so a second
+ * shows no table at all — its output is pixel-identical to Modern's, so a second
  * thumbnail of the same table would read as a rendering bug.
  *
  * Colour: Polaris colour tokens are sealed in shadow DOM and unreachable from
@@ -33,7 +33,7 @@
 
      ⚠️ `--appx-preset-render-width` MUST stay above the storefront
      stylesheet's 749px mobile breakpoint. Below it the `--mobile-stacked`
-     rules fire and every card — Banded, Simple, Multi-column alike — renders
+     rules fire and every card — Modern, Classic, Multi-column alike — renders
      in its phone form, so all five thumbnails converge on the same stacked
      shape and the gallery stops distinguishing anything. That single number is
      what the whole scale-don't-shrink rule reduces to.
@@ -42,8 +42,8 @@
      whatever does not fit rather than auto-sizing, so a future bundle that
      renders taller crops cleanly instead of resizing the card.
 
-     420px is measured, not guessed — it is the tallest of the five (Banded,
-     ~395px at this width) plus a little slack. The first value tried was 470px
+     420px is measured, not guessed — it is the tallest of the five (the
+     two-column family, ~395px at this width) plus slack. The first value was 470px
      and every card carried a visible band of dead white under its last row;
      the cards are all one height by design, so the viewport has to be sized to
      the TALLEST pattern and no more. Multi-column still ends well short of the

@@ -159,32 +159,60 @@ Bundles are **overrides-only wire shapes** — the same shape as `payload.stylin
 and the metaobject `styling` field (`serializeStylingOverrides`), so they need no
 new serialization path.
 
-| Card | Bundle | References |
-| --- | --- | --- |
-| **Banded** | `{}` | #1 startech, #2 techlandbd |
-| **Simple** | `{ sectionHeaderStyle: "PLAIN" }` | — (the safe middle) |
-| **Minimal** | `{ sectionHeaderStyle: "PLAIN", rowDividerStyle: "NONE" }` | #4 |
-| **Multi-column** | `{ rowLayout: "GRID", sectionHeaderStyle: "PLAIN", rowDividerStyle: "NONE" }` | #5 Samsung, #6 Lazada |
-| **Accordion** | `{ sectionsCollapsible: true, sectionHeaderStyle: "TEXT_ONLY", sectionGapPx: 12 }` | #7 Trek |
+| Card | `id` | Bundle | References |
+| --- | --- | --- | --- |
+| **Modern** | `banded` | `{}` | #1 startech, #2 techlandbd |
+| **Classic** | `classic` | `{ sectionHeaderStyle: "PLAIN", rowDividerStyle: "STRIPES", columnDividerStyle: "LINE", outerBorderWidthPx: 1 }` | ACEFAST YF4 |
+| **Minimal** | `minimal` | `{ sectionHeaderStyle: "PLAIN", rowDividerStyle: "NONE" }` | #4 |
+| **Multi-column** | `multi-column` | `{ rowLayout: "GRID", rowDividerStyle: "NONE" }` | #5 Samsung, #6 Lazada |
+| **Accordion** | `accordion` | `{ sectionsCollapsible: true, sectionHeaderStyle: "TEXT_ONLY", sectionGapPx: 12 }` | #7 Trek |
 
 Every card differs from every other on at least one axis a merchant can see at a
 glance.
 
-**Card order is the table order above**, and it is merchant-facing (gallery and
-rail both). **Banded leads** — most frequent reference shape (2 of 7, the
-dominant electronics-retail look) *and* the app's own default. Simple and Minimal
-follow as the same side-by-side family with progressively less chrome, so the
-first three cards read as one spectrum; the two structural departures come last.
+**Card order is the table order above**, and it is merchant-facing. **Modern
+leads** — most frequent reference shape (2 of 7, the dominant electronics-retail
+look) *and* the app's own default. Then the rest of the side-by-side family
+ordered by chrome — Classic (all of it) and Minimal (none), with the default
+sitting between them — so the first three cards read as one spectrum; the two
+structural departures come last.
 
-⚠️ An earlier draft of this section ordered by frequency alone ("Banded leads,
-Multi-column next"), which would have split the side-by-side family across the
-grid. Corrected 2026-07-27 to match the table; `stylePresets.ts` carries the same
-reasoning at `STYLE_PRESETS`.
+### 🔴 Revision, merchant decisions 2026-07-27 (after step 90's first render)
 
-### Banded is `{}` — the app's default already IS the dominant retail pattern
+Four changes, made **after looking at the rendered cards**, which is how three of
+them were spotted:
 
-`BANDED` + `LINES` + no frame is exactly `DEFAULT_STYLING_VALUES`. So the Banded
-card and the planned **"Start with your theme's styles"** card would produce
+1. **"Banded" → "Modern"** — label only. The `id` stays `banded`: it names the
+   PATTERN and is a wire format, while the label is merchant-facing branding.
+   The two are allowed to diverge and now do.
+2. **"Simple" → "Classic", and it became the FULL GRID** — outer border, column
+   rule, and stripes instead of hairlines, from a merchant-supplied reference
+   (ACEFAST YF4). The `id` DID change (`simple` → `classic`) because `simple` had
+   become actively misleading on the most decorated card of the five; safe
+   because `basedOnPreset` has never been written outside tests — step 92 has not
+   repointed the Create buttons yet. **This is the last moment that rename is
+   free.**
+3. **Multi-column gets BANDED section headers** — by DROPPING
+   `sectionHeaderStyle` from its bundle, so it inherits the default. It matters
+   more here than anywhere: a GRID section header spans every track
+   (`grid-column: 1 / -1`), so a plain one is a bare line of text floating across
+   a wide flow with nothing tying it to the items beneath.
+4. Minimal, Accordion and Blank untouched.
+
+⚠️ **Consequence: `PRESET_SCOPED_FIELDS` gained three fields** —
+`columnDividerStyle`, `outerBorderWidthPx`, `outerBorderRadiusPx`. This is the
+comparison scope catching up with this document's own taxonomy, which has listed
+the frame as **pattern axis 4** from the start; no bundle had used it, so the
+list had never needed it. The column rule joins for the same reason
+`rowDividerStyle` was already there — it is the same kind of thing on the other
+axis. What did **not** move, and is still named field-by-field in a test:
+typography, density, widths, padding, and `gridMinColumnWidthPx` (feature 85
+measured the stylesheet's own 240px shorter than any pinned value).
+
+### Modern is `{}` — the app's default already IS the dominant retail pattern
+
+`BANDED` + `LINES` + no frame is exactly `DEFAULT_STYLING_VALUES`. So this card
+and the planned **"Start with your theme's styles"** card would produce
 byte-identical output. **They merge as PATTERNS**: five patterns, not six.
 
 This is a genuine simplification, not a coincidence — the app's defaults were

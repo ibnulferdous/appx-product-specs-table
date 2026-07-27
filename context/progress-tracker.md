@@ -60,6 +60,26 @@ Building the MVP.
 > never depended on the cut hint. **Nothing imports the card yet**, so it is
 > absent from the build until step 91 mounts it.
 >
+> 🔴 **Card revision 2026-07-27, after looking at the rendered gallery.** Three
+> of the four changes were spotted by eye, not by a test. **Banded → "Modern"**
+> (label only — the `id` stays `banded`, since the id names the pattern and is a
+> wire format while the label is branding). **Simple → "Classic", and it became
+> the full grid** — outer border, column rule, stripes, from the merchant's
+> ACEFAST YF4 reference; its `id` DID change (`simple` → `classic`) because
+> `simple` had become misleading on the most decorated card, and no
+> `basedOnPreset` has ever been written outside tests, so this was the last free
+> moment for that rename. **Multi-column gained BANDED section headers** by
+> dropping `sectionHeaderStyle` from its bundle — a GRID header spans every track,
+> so a plain one floats over the flow with nothing tying it to the items beneath.
+> Minimal / Accordion / Blank untouched.
+>
+> ⚠️ **`PRESET_SCOPED_FIELDS` gained `columnDividerStyle` + the two frame
+> fields.** Not a widening of the structure-only rule — the frame has been
+> **pattern axis 4** in `stylePresets.ts`'s taxonomy since the module was written
+> and no bundle had ever used it. Typography, density, widths and
+> `gridMinColumnWidthPx` stay off-limits and are still named field-by-field in a
+> test that now says why the others left.
+>
 > 🔍 **The scale geometry is measured, not guessed.** The preview is the real
 > table at **800px** scaled to **0.4** — 800 because below the storefront
 > stylesheet's **749px mobile breakpoint** every card renders in its identical

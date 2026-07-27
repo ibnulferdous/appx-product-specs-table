@@ -8,7 +8,7 @@
 //
 //   1. pair layout       -> `rowLayout`
 //   2. section headers   -> `sectionHeaderStyle`
-//   3. row separation    -> `rowDividerStyle`
+//   3. separation        -> `rowDividerStyle` + `columnDividerStyle`
 //   4. frame             -> `outerBorderWidthPx` + `outerBorderRadiusPx`
 //   +  collapsible       -> `sectionsCollapsible` (+ `sectionGapPx`)
 //
@@ -58,11 +58,27 @@ import {
  * fixed set resolves `{}` against the defaults and gets it right.
  *
  * Append-only. Feature 93 appends the accent's color fields.
+ *
+ * 📌 **The frame and column-rule fields were appended 2026-07-27** (merchant
+ * decision: the Classic card gets an outer border, a column rule and stripes).
+ * They are not a widening of the rule — they are the rule catching up with the
+ * taxonomy at the top of this file, which has named the frame as pattern axis 4
+ * since the module was written. Nothing had used it, so the list had never
+ * needed it. `columnDividerStyle` joins for the same reason `rowDividerStyle` is
+ * already here: it is the interior VERTICAL rule, the same kind of thing on the
+ * other axis.
+ *
+ * What must NOT follow them: `gridMinColumnWidthPx`, `tableMaxWidthPx`,
+ * `tableAlign`, and every typography / density / padding knob. Those are tuning,
+ * and a test still names them one by one.
  */
 export const PRESET_SCOPED_FIELDS = [
   "rowLayout",
   "sectionHeaderStyle",
   "rowDividerStyle",
+  "columnDividerStyle",
+  "outerBorderWidthPx",
+  "outerBorderRadiusPx",
   "sectionsCollapsible",
   "sectionGapPx",
 ] as const satisfies readonly StylingFieldName[];
@@ -101,11 +117,18 @@ export interface StylePreset {
  *
  * ORDER IS MERCHANT-FACING — it is the order of the gallery cards, with the
  * "Blank" card appended after them. `banded` leads because it is both the most
- * frequent reference shape
- * (2 of 7, and the dominant electronics-retail look) and the app's own default;
- * `simple` and `minimal` follow as the same two-column family with progressively
- * less chrome; the two structural departures come last. Reordering changes what
+ * frequent reference shape (2 of 7, and the dominant electronics-retail look)
+ * and the app's own default. Then the rest of the two-column family, ordered by
+ * how much chrome they carry — `classic` (the full grid: frame, column rule,
+ * stripes) and `minimal` (none of it) are the two ends, with the default sitting
+ * between them. The two structural departures come last. Reordering changes what
  * a merchant sees first, never what anything means.
+ *
+ * ⚠️ `id` and `label` are allowed to diverge, and do. The id names the PATTERN
+ * and is a wire format; the label is merchant-facing and may be re-branded
+ * without touching a stored stamp. `banded` is labelled "Modern" for exactly
+ * that reason — the bundle really is the banded pattern, and the id still says
+ * so where it matters.
  *
  * Reference attribution lives in the per-preset comments so a future reader can
  * check a bundle against the thing it was derived from rather than re-deriving
@@ -128,18 +151,37 @@ export const STYLE_PRESETS: readonly StylePreset[] = Object.freeze([
     // `DEFAULT_STYLING_VALUES` has to revisit this decision rather than
     // silently redefine the card.
     id: "banded",
-    label: "Banded",
+    label: "Modern",
     description: "A shaded band behind each section title.",
     bundle: Object.freeze({}),
   },
   {
-    // No direct reference — the safe middle, and the only bundle not derived
-    // from a supplied table. Earns its place as the one-step-quieter answer for
-    // a merchant who finds the band heavy but still wants rows separated.
-    id: "simple",
-    label: "Simple",
-    description: "Plain section titles, a hairline between rows.",
-    bundle: Object.freeze({ sectionHeaderStyle: "PLAIN" }),
+    // The full spec-table grid: outer frame, the label/value column rule, and
+    // striped rows. Derived from the ACEFAST YF4 reference table supplied
+    // 2026-07-27 — the look a merchant means by "a proper specs table", and the
+    // only card that turns every separation knob ON at once.
+    //
+    // It is the reason `PRESET_SCOPED_FIELDS` gained the frame and column-rule
+    // fields: before this card, no bundle had ever used pattern axes 3b and 4,
+    // so the comparison scope had never needed them.
+    //
+    // ⚠️ STRIPES, not LINES — the two are alternatives, not a stack. With
+    // stripes on, the storefront CSS drops the row rules and the alternating
+    // fill does the separating; asking for both would just be the striped look
+    // with dead declarations under it.
+    //
+    // No `outerBorderRadiusPx`: square corners. The reference reads as very
+    // slightly rounded, but a radius is a taste knob a merchant can add in one
+    // click, and a curved frame is not what makes this pattern legible.
+    id: "classic",
+    label: "Classic",
+    description: "A bordered grid with alternating row shading.",
+    bundle: Object.freeze({
+      sectionHeaderStyle: "PLAIN",
+      rowDividerStyle: "STRIPES",
+      columnDividerStyle: "LINE",
+      outerBorderWidthPx: 1,
+    }),
   },
   {
     // The black "SPECS" audio-product page: bare bold titles, no rules at all,
@@ -163,12 +205,18 @@ export const STYLE_PRESETS: readonly StylePreset[] = Object.freeze([
     // narrower value on the live 44-row reference (feature 85 — narrower tracks
     // wrap long values more, so smaller is taller). A bundle that pinned a
     // number would ship the worse default.
+    // `sectionHeaderStyle` is deliberately ABSENT, so this card inherits the
+    // BANDED default (merchant decision 2026-07-27). It matters more here than
+    // anywhere else: a section header in GRID spans every track
+    // (`grid-column: 1 / -1`), so without a band it is a bare line of text
+    // floating across a wide flow with no visible tie to the items under it.
+    // The band is what makes the groups read as groups once the pairs stop
+    // being stacked in one column.
     id: "multi-column",
     label: "Multi-column",
     description: "Specs flow into several columns, each label above its value.",
     bundle: Object.freeze({
       rowLayout: "GRID",
-      sectionHeaderStyle: "PLAIN",
       rowDividerStyle: "NONE",
     }),
   },

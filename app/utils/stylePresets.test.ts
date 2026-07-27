@@ -80,11 +80,21 @@ describe("style presets — the constants", () => {
     }
   });
 
-  it("no bundle sets a typography, density, width or frame field", () => {
+  it("no bundle sets a typography, density or width field", () => {
     // Falls out of the scope guard above, but asserted by name because that is
     // how the rule was recorded: those knobs are TUNING WITHIN a pattern, and a
     // future edit that widened PRESET_SCOPED_FIELDS would silently take the
-    // scope guard with it. This one does not move.
+    // scope guard with it. This list is the part that does not move with it.
+    //
+    // 📌 2026-07-27: `outerBorderWidthPx`, `outerBorderRadiusPx` and
+    // `columnDividerStyle` were REMOVED from this list when the Classic card
+    // took a frame, a column rule and stripes. That was a deliberate merchant
+    // decision, not drift — the frame has been pattern axis 4 in
+    // `stylePresets.ts`'s taxonomy since the module was written, and the column
+    // rule is the vertical twin of the already-scoped `rowDividerStyle`. The
+    // fields below are the ones with no such claim: they change how a pattern is
+    // TUNED, never which pattern it is. Moving one out of this list is a design
+    // decision that needs the same kind of reason, in writing.
     const OFF_LIMITS: readonly StylingFieldName[] = [
       "fontSize",
       "fontWeight",
@@ -95,13 +105,14 @@ describe("style presets — the constants", () => {
       "density",
       "tableMaxWidthPx",
       "tableAlign",
-      "outerBorderWidthPx",
-      "outerBorderRadiusPx",
       "headerFontSizePx",
       "headerFontWeight",
       "headerCase",
       "headerPaddingBlockPx",
-      "columnDividerStyle",
+      // Stays off-limits even though its siblings moved: feature 85 measured the
+      // stylesheet's own 240px SHORTER than any narrower value on the live
+      // 44-row reference, so a bundle pinning a number would ship the worse
+      // default. The Multi-column card's comment states the same thing.
       "gridMinColumnWidthPx",
     ];
     for (const preset of STYLE_PRESETS) {
@@ -181,13 +192,22 @@ describe("style presets — the five patterns", () => {
     expect(values("banded").sectionHeaderStyle).toBe("BANDED");
     expect(values("banded").rowDividerStyle).toBe("LINES");
 
-    expect(values("simple").sectionHeaderStyle).toBe("PLAIN");
-    expect(values("simple").rowDividerStyle).toBe("LINES");
+    // The full grid, all four claims its description makes.
+    expect(values("classic").sectionHeaderStyle).toBe("PLAIN");
+    expect(values("classic").rowDividerStyle).toBe("STRIPES");
+    expect(values("classic").columnDividerStyle).toBe("LINE");
+    expect(values("classic").outerBorderWidthPx).toBe(1);
+    // Square corners — the radius is a taste knob, not part of the pattern.
+    expect(values("classic").outerBorderRadiusPx).toBeNull();
 
     expect(values("minimal").sectionHeaderStyle).toBe("PLAIN");
     expect(values("minimal").rowDividerStyle).toBe("NONE");
 
     expect(values("multi-column").rowLayout).toBe("GRID");
+    // BANDED, inherited rather than set (2026-07-27). A GRID section header
+    // spans every track, so without a band it reads as a bare line of text
+    // floating over the flow with nothing tying it to the items beneath.
+    expect(values("multi-column").sectionHeaderStyle).toBe("BANDED");
     // Null, not a number: the stylesheet's own 240px measured shorter than any
     // narrower value, so pinning one would ship the worse default (feature 85).
     expect(values("multi-column").gridMinColumnWidthPx).toBeNull();
