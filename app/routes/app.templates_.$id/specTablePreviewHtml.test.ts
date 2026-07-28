@@ -489,12 +489,18 @@ describe("styling → preview document (feature 57 · Step 6)", () => {
   // UI-reachable range. (Thirteen at Step 10; seventeen since the container
   // knobs; eighteen since the section gap; twenty-three since the
   // section-header typography set; twenty-four since the grid minimum column
-  // width — the assertion is derived from SPEC_TABLE_CSS_VARS, so the count in
-  // this comment is the only thing that has to be maintained by hand.)
+  // width; twenty-five since the section-header underline color — the assertion
+  // is derived from SPEC_TABLE_CSS_VARS, so the count in this comment is the
+  // only thing that has to be maintained by hand.)
   it("carries every custom property for a fully-overridden value (Step 10 totality)", () => {
     const everyKnobSet: StylingValues = {
       ...DEFAULT_STYLING_VALUES,
       headerBgColor: "#111111",
+      // Feature 96. Set here even though the rail only shows its swatch under
+      // TEXT_ONLY: this fixture is about the PIPE, and a var must reach the
+      // preview document whenever the field is non-null — the stylesheet, not
+      // the rail, is what decides whether a rule reads it.
+      headerUnderlineColor: "#15151580",
       headerTextColor: "#1a1a1a",
       headerFontSizePx: 22,
       headerFontWeight: "REGULAR",

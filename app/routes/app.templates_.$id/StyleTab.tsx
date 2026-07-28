@@ -116,21 +116,22 @@ import type { RowEngine } from "./useRowEngine";
 // wrapper silently widens two controls' apparent scope to the whole table — see
 // the lock note in `stylingControls.ts`.
 //
-// ⚠️ NO GROUP MAY CONSIST ENTIRELY OF HIDE-GATED CONTROLS. Nine of the 34 are
+// ⚠️ NO GROUP MAY CONSIST ENTIRELY OF HIDE-GATED CONTROLS. Ten of the 35 are
 // behind a visibility predicate; a group where all of them were would render as
 // a heading and a divider fencing nothing — an empty section a merchant reads as
 // a broken screen, and a `role="group"` with no members. Pinned in
 // `styleTabContract.test.ts`.
 //
-// Seven of those nine are JSX guards — `{showsX(styling) && <control/>}`. The
-// other two (feature 95) gate COLORS, which this file never writes as JSX: the
-// nine swatches are one `.filter(…).map(…)` over `COLOR_KNOBS`, so their
+// Seven of those ten are JSX guards — `{showsX(styling) && <control/>}`. The
+// other three (features 95, 96) gate COLORS, which this file never writes as
+// JSX: the ten swatches are one `.filter(…).map(…)` over `COLOR_KNOBS`, so their
 // predicates ride `ColorKnob.visibleWhen` and are applied inside `colorGrid`.
 // Same law, same registry, different attachment point — and they carry their own
 // version of the rule above: no group's swatches may ALL be gated, or
-// `colorGrid` paints an empty `<s-grid>`. Both gated swatches sit in groups
-// whose OTHER swatch is unconditional (Title color, Divider color), which is
-// what keeps that true today.
+// `colorGrid` paints an empty `<s-grid>`. ⚠️ Section headers is now the closest
+// call in the rail — 2 of its 3 swatches are gated, and only `Title color`
+// stands between that group and an empty grid. Rows is the same shape with
+// `Divider color`. Pinned in `stylingControls.test.ts`.
 //
 // Knobs added here already rode the pipe end to end before they had a control:
 // the previews and the live storefront both render from the same
@@ -271,6 +272,15 @@ export function StyleTab({ engine }: { engine: RowEngine }) {
           // which surface it paints. This is what replaced the old Colors group
           // note — see `ColorKnob.emptyHelpText`, and note the note was WRONG
           // about four of the nine.
+          //
+          // ⚠️ `emptyHelpText` is OPTIONAL since feature 96, so this can be
+          // `undefined` — which renders no `details` line at all, and that is
+          // the intended result rather than a hole to patch. Exactly one swatch
+          // (`Underline color`) omits it, because its fallback chain is two
+          // links deep and no true sentence about it fits the rail. Do not
+          // substitute `knob.helpText` here as a "safe" default: it describes
+          // the surface a SET colour paints, so an empty swatch would claim to
+          // be painting something.
           details={
             styling[knob.field] === null ? knob.emptyHelpText : knob.helpText
           }
@@ -828,15 +838,23 @@ export function StyleTab({ engine }: { engine: RowEngine }) {
             />
           )}
 
-          {/* The band and the title text — two genuinely different surfaces,
-              which is why this is the one swatch pair where the second keeps a
-              qualifier ("Title color") instead of the bare "Text color" that
-              Labels and Values use. The difference now shows: `Background` HIDES
-              unless Header style is Banded (feature 95 — the two non-banded
-              members hardcode `background: transparent`, so the var is read by
-              nothing), while `Title color` stays, because the base rule's
-              `color:` is never overridden and a title is coloured under all
-              three members. Same asymmetry as the Rows grid, same reason. */}
+          {/* Three swatches, and the group's geometry is the design. Two of
+              them are MUTUALLY EXCLUSIVE: `Background` shows only under Banded
+              (feature 95) and `Underline color` only under Underlined
+              (feature 96), because each member hardcodes the other's surface
+              away — so slot 1 always holds whatever the current header style
+              actually paints, and `Title color` always holds slot 2 without
+              moving. Plain shows `Title color` alone.
+
+              `Title color` stays ungated because the base rule's `color:` is
+              never overridden by a member, so a title is coloured under all
+              three — and it is what keeps this grid from ever rendering empty,
+              the same role `Divider color` plays in Rows.
+
+              It is also the one swatch pair where the second keeps a qualifier
+              ("Title color") rather than the bare "Text color" Labels and Values
+              use: the band, the rule and the text are three different
+              surfaces. */}
           {colorGrid("sectionHeaders")}
         </s-stack>
       </div>

@@ -246,6 +246,15 @@ export interface StylingValues {
   outerBorderRadiusPx: number | null;
 
   headerBgColor: string | null;
+  // The 2px rule under an Underlined section header (feature 96). Like
+  // `outerBorderColor` below, null is NOT "inherit the theme" — the stylesheet
+  // falls back through `borderColor` first, so an untouched underline tracks the
+  // Divider color swatch exactly as it did before this field existed.
+  //
+  // ⚠️ Its fallback chain ends in `currentColor`, not a literal, which is what
+  // makes its empty state unstateable in one short string and is why this is the
+  // one swatch with no `emptyHelpText` (feature 96 decision (a)).
+  headerUnderlineColor: string | null;
   // The section title's own text color. Grouped with the colors rather than
   // with the four header knobs above because the rail's swatch list is DERIVED
   // from `STYLING_FIELD_NAMES` order — see the note on that array.
@@ -298,10 +307,19 @@ export const STYLING_FIELD_NAMES = [
   "outerBorderWidthPx",
   "outerBorderRadiusPx",
   "headerBgColor",
-  // Must stay INSIDE the colour block, immediately after its background
-  // partner: `stylingControls.test.ts` derives `COLOR_KNOBS`' expected order by
-  // filtering this array for fields the parser accepts a hex for, so a colour
-  // placed anywhere else fails that test rather than merely reading oddly.
+  // Second, ahead of `headerTextColor`, and the ORDER IS MERCHANT-FACING:
+  // `stylingControls.test.ts` derives `COLOR_KNOBS`' expected order by filtering
+  // this array for fields the parser accepts a hex for, and the rail renders a
+  // group's swatches in that order. `headerBgColor` and `headerUnderlineColor`
+  // are mutually exclusive (exactly one is visible per `sectionHeaderStyle`), so
+  // seating them adjacently keeps the Section headers grid geometry stable —
+  // slot 1 is always "this header style's own surface", slot 2 is always
+  // `Title color`. Filed after `headerTextColor` instead, the constant would
+  // jump cells between Banded and Underlined for no reason.
+  "headerUnderlineColor",
+  // Must stay INSIDE the colour block, with the two section-header surfaces
+  // above it: a colour placed outside that block fails the derived-order test
+  // rather than merely reading oddly.
   "headerTextColor",
   "labelBgColor",
   "valueBgColor",
@@ -346,6 +364,7 @@ export const DEFAULT_STYLING_VALUES: StylingValues = Object.freeze({
   outerBorderRadiusPx: null,
 
   headerBgColor: null,
+  headerUnderlineColor: null,
   headerTextColor: null,
   labelBgColor: null,
   valueBgColor: null,
@@ -552,6 +571,7 @@ export function parseStylingValues(input: unknown): StylingValues {
     ),
 
     headerBgColor: parseColor(raw.headerBgColor),
+    headerUnderlineColor: parseColor(raw.headerUnderlineColor),
     headerTextColor: parseColor(raw.headerTextColor),
     labelBgColor: parseColor(raw.labelBgColor),
     valueBgColor: parseColor(raw.valueBgColor),

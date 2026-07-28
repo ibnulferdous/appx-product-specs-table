@@ -55,6 +55,13 @@ import type {
 // `SPEC_TABLE_CSS_VARS.borderColor` instead of retyping the string.
 export const SPEC_TABLE_CSS_VARS = Object.freeze({
   headerBgColor: "--appx-spec-header-bg",
+  // The Underlined member's rule, and the one var in this whole map whose
+  // fallback chain has TWO links: the stylesheet reads
+  // `var(--appx-spec-header-underline-color, var(--appx-spec-border-color,
+  // currentColor))`, so an unset underline follows the Divider color swatch and
+  // then the title's own colour (feature 96). That is also why its swatch is
+  // the only one in the rail with no empty-state help text.
+  headerUnderlineColor: "--appx-spec-header-underline-color",
   // Section-header typography + spacing (feature 81). Named on the same
   // `header`/`label` pattern as the rest of the family, so a reader can tell
   // which surface a var dresses from its name alone.
@@ -180,6 +187,7 @@ export function stylingToCssVars(
 
   const colorFields = [
     "headerBgColor",
+    "headerUnderlineColor",
     "headerTextColor",
     "labelBgColor",
     "valueBgColor",

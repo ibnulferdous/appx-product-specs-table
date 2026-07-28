@@ -138,14 +138,20 @@ model TableStyling {
   columnDividerStyle   String? // "NONE" (null default) | "LINE" — the vertical rule at the label/value seam; fixed 1px, colored by borderColor. Suppressed in stacked layouts (no seam).
   density              String? // "DEFAULT" (null default) | "COMPACT" | "SPACIOUS"
 
-  headerBgColor   String?
-  headerTextColor String? // the section title's own text color (feature 81)
-  labelBgColor   String?
-  valueBgColor   String?
-  stripeBgColor  String? // zebra-stripe surface — used when rowDividerStyle = "STRIPES"
-  borderColor    String?
-  labelTextColor String?
-  valueTextColor String?
+  headerBgColor        String?
+  // The 2px rule under an Underlined section header (feature 96). null does NOT
+  // mean "inherit the theme": it falls back to borderColor and then to
+  // currentColor, so an untouched underline still tracks the Divider color
+  // swatch exactly as it always has. Only read while sectionHeaderStyle is
+  // TEXT_ONLY — BANDED and PLAIN both hardcode the rule away.
+  headerUnderlineColor String?
+  headerTextColor      String? // the section title's own text color (feature 81)
+  labelBgColor         String?
+  valueBgColor         String?
+  stripeBgColor        String? // zebra-stripe surface — used when rowDividerStyle = "STRIPES"
+  borderColor          String?
+  labelTextColor       String?
+  valueTextColor       String?
 
   // Container: how wide the table is and what frames it. Unlike the color and
   // typography fields above, null here is the DEFAULT rather than "inherit the

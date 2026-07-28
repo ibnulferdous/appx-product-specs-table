@@ -253,7 +253,60 @@ Test suite **1138 tests / 43 files** (was 1021 at B1 sign-off); full gate
 Since B1: the Style tab's width surface — the collapsible rail (feature 76). Feature 75's
 full-size preview modal shipped the same day and was **removed 2026-07-25**; see Completed.
 
-**Next:** ✅ **feature 87 (plain section header) is COMPLETE 2026-07-27** — built,
+**Next:** 🟡 **feature 96 (Underline color) is BUILT 2026-07-28, gate green, LIVE
+VERIFICATION OWED** — doc
+`96-…`. A dedicated colour for the `Underlined` section-header rule, which today is
+`borderColor` (the `Divider color` swatch) and so cannot differ from the row rules,
+column divider and outline. Same shape as `outerBorderColor` (feature 78): a nested
+`var(--appx-spec-header-underline-color, var(--appx-spec-border-color, currentColor))`,
+so a null value repaints nothing. Hidden unless `Header style` is `Underlined`
+(merchant decision (b) 2026-07-28) — the third `ColorKnob.visibleWhen`, predicate count
+9 → 10, JSX guards still 7. **No empty-state help text** (decision (a)): the fallback
+chain ends in `currentColor`, not a literal, so the empty state has a two-level truth
+no short string can tell — which makes `ColorKnob.helpText` / `emptyHelpText` optional,
+exactly as feature 86 did to `StylingOption.helpText`. ⚠️ **The first Style-tab unit to
+need a MIGRATION since feature 86** — features 87 / 94 / 95 all avoided one, so the
+silent-save-failure-until-`shopify app dev`-restart trap is live again. Liquid / TOML /
+metaobject definition unchanged.
+
+**Built the same day. Tests 1147 → 1158 (+11); gate green (typecheck · lint · format ·
+1158 · build).** Migration `20260728083021_add_header_underline_color_styling` applied —
+one additive nullable column, no backfill; the `EPERM` on `prisma generate` did not stop
+the client regenerating (verified in the generated types). **Eight existing guards failed
+on the first run and all eight were predicted**; six needed only a number moved, because
+they were derived from the domain rather than hand-listed — the `stylePresets` colour
+probe in particular had said in a comment that a tenth colour would need no edit, and it
+did not, so the preset gallery's zero-colour promise held by construction. ✅
+**Mutation-tested three ways** (flatten the fallback chain → only the 2 new CSS-contract
+tests; unwire `visibleWhen` → the wiring guard + the BAR; weaken the predicate to
+`!== "BANDED"` → both `SECTION_HEADER_STYLES`-derived assertions, no hand-listed one).
+🔴 **Two deviations, both narrowing:** only `emptyHelpText` became optional, not
+`helpText`; and the `visibleWhen` bar was **reworded from "one live RULE" to "one
+SURFACE"** — a section header has two markup shapes, so both header gates feed two rules
+apiece and a rule-count bar would have disqualified the two gates that exist.
+✅ **LIVE-VERIFIED 6 of 8 the same day, rail → Postgres → metaobject → REAL STOREFRONT**
+(not the editor mirror — the embedded admin's iframe would not accept the interactions
+needed to drive the rail this session, so the merchant set the colour and every
+downstream leg was measured by query and by `getComputedStyle` at 1:1). 🔴 **The two
+claims that mattered are now measurements, not arguments.** Before the write, with the
+field null, both custom properties were absent and the section rule computed
+`1.81818px solid rgb(0,0,0)` — the chain resolving to `currentColor`, i.e. byte-for-byte
+the pre-96 rendering. After the merchant set `#E47272` on the ACTIVE `Motorola Moto G45
+5G`: all five section headers compute `rgb(228,114,114)` while the row rules stay
+`rgba(0,0,0,0.1)` — **the underline moved and the row rules did not**, which is the whole
+feature. Postgres touched **exactly one column** (every other colour still NULL, every
+pre-existing value byte-identical); `styling_css.vars` carries the new declaration and
+**`classes` is unchanged** — the "nullable ⇒ custom property, never a modifier class"
+rule holding for the tenth colour. The live CDN extension asset is byte-identical to the
+local file, and its `@media` block never mentions the new var, so **mobile is
+breakpoint-independent by construction** rather than needing feature 87's 390px walk.
+⚠️ **Still owed (2):** the Banded/Plain hide transitions with preserve-on-hide, and the
+collapsible `<summary>` shape (the verified template has collapsing off) — both
+unit-tested and mutation-tested, neither observed. ⚠️ **`Motorola Moto G45 5G` still
+carries `#E47272` and was deliberately NOT reverted** — the merchant chose it on their
+own live template.
+
+Then: ✅ **feature 87 (plain section header) is COMPLETE 2026-07-27** — built,
 live-verified rail → Postgres → metaobject, and all three remaining legs (rendered
 storefront on the ACTIVE `Unikyy Blade Pro Turbo Fan` template / product `Motorola Edge
 60 Fusion 5G`, mobile ≤749px on the real storefront tab, and `AGX TF36 Handheld Turbo

@@ -402,6 +402,47 @@ describe("spec-table.css ↔ styling vocabulary contract (feature 57 Step 3)", (
       });
     }
 
+    for (const { shape, element } of SHAPES) {
+      it(`TEXT_ONLY reads the underline color THROUGH borderColor on the ${shape} shape (feature 96)`, () => {
+        // 🔴 THE ZERO-REPAINT CLAIM, and it lives in the INNER fallback. Before
+        // feature 96 this rule read `var(--appx-spec-border-color,
+        // currentColor)` outright, so every underlined table on every live
+        // storefront is currently painted by the Divider color swatch. Nesting
+        // the new var OUTSIDE the old chain is what keeps that true for a
+        // template that never sets the knob: the new var is emitted only when a
+        // merchant sets it, so an untouched table never reaches the new link.
+        //
+        // Drop the inner `var(...)` and this fails — which is the mutation that
+        // matters, because a flat `var(--appx-spec-header-underline-color,
+        // currentColor)` would typecheck, pass every other test in the suite,
+        // and silently restyle every existing underlined table to the theme's
+        // text colour.
+        const block = declarationsFor(
+          "appx-spec-table--section-text-only",
+          element,
+        );
+        expect(block).toContain("--appx-spec-header-underline-color");
+        expect(block).toContain("var(--appx-spec-border-color, currentColor)");
+      });
+    }
+
+    it("gives the underline color to TEXT_ONLY and to no other member", () => {
+      // Derived over the domain, like the band assertion above. BANDED and
+      // PLAIN both state `border-block-end: none`, so there is no rule for the
+      // var to reach — which is exactly the fact the rail's hide predicate
+      // rests on. If a future member starts painting a rule, this fails and
+      // forces the question of whether the swatch should show for it too.
+      for (const { sectionHeaderStyle, cls } of MEMBERS) {
+        for (const { shape, element } of SHAPES) {
+          const block = declarationsFor(cls, element);
+          const reads = block.includes("--appx-spec-header-underline-color");
+          expect(reads, `${cls} (${shape})`).toBe(
+            sectionHeaderStyle === "TEXT_ONLY",
+          );
+        }
+      }
+    });
+
     it("leaves the feature-80 separator scoped to BANDED alone", () => {
       // Deliberate, not an oversight: that hairline exists because BANDED drops
       // an edge it would otherwise have, so two closed bands merge into one

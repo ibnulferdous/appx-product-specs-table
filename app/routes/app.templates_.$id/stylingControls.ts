@@ -582,6 +582,43 @@ export function showsHeaderBackgroundControl(styling: StylingValues): boolean {
 }
 
 /**
+ * Whether the rail shows the Section headers "Underline color" swatch
+ * (feature 96).
+ *
+ * The TENTH hide rule and the third over a color, and it is the exact mirror of
+ * `showsHeaderBackgroundControl` above: one surface, two markup shapes, two live
+ * rules, and two members that hardcode the surface away.
+ * `--appx-spec-header-underline-color` is read by the two `--section-text-only`
+ * rules (flat `th` + collapsible `<summary>`) and by the two BASE rules, which
+ * are unreachable for the same specificity reason feature 95 documented above.
+ * `BANDED` and `PLAIN` both state `border-block-end: none` at member
+ * specificity, so under either of them there is no rule left to consult the var.
+ *
+ * No second clause, and unlike `showsStripeBackgroundControl` there is no orphan
+ * to guard: no other knob can strand this surface from a stored-data
+ * combination the rail would not otherwise show. The one partial suppression —
+ * the outer-border exception that drops the LAST closed summary's rule so it
+ * does not double against the wrapper frame — takes away one element's underline
+ * on one table, not the surface, so it is not a hide condition.
+ *
+ * ⚠️ The safety argument is `headerBgColor`'s, mirrored and stronger. That one
+ * is safe to hide because `BANDED` is `SECTION_HEADER_STYLES[0]`, the default,
+ * so "I wanted to set the colour before switching" needs an order of work nobody
+ * arrives in. Here it is the reverse: `TEXT_ONLY` is NOT the default, so the
+ * only way to reach this swatch at all is to have actively picked Underlined —
+ * the merchant is already standing in the state the colour applies to.
+ *
+ * A pure READ like the other nine, registered in `VISIBILITY_PREDICATES` so the
+ * shared preserve-on-hide law test covers it: a hex survives Underlined →
+ * Banded → Underlined. Consumed through `ColorKnob.visibleWhen`.
+ */
+export function showsHeaderUnderlineColorControl(
+  styling: StylingValues,
+): boolean {
+  return styling.sectionHeaderStyle === "TEXT_ONLY";
+}
+
+/**
  * Whether the rail shows the "Stripe background" swatch (feature 95).
  *
  * The EIGHTH instance of hide-when-irrelevant, the FIRST one over a color, and
@@ -710,6 +747,7 @@ export type StyleGroupId = keyof typeof STYLE_GROUP_HEADINGS;
 // needed — `parseColor` already accepts `#rgb` / `#rrggbb` / `#rrggbbaa`.
 export type StylingColorFieldName =
   | "headerBgColor"
+  | "headerUnderlineColor"
   | "headerTextColor"
   | "labelBgColor"
   | "valueBgColor"
@@ -758,8 +796,22 @@ export interface ColorKnob {
    * Same idiom the rail's six number fields already use, so it is
    * programmatically associated on the control itself for a screen-reader user
    * who lands directly in `Labels` without passing a group note.
+   *
+   * ⚠️ OPTIONAL since feature 96, and the exception must stay a SHORT NAMED LIST
+   * (pinned in `stylingControls.test.ts`), not a habit. It was dropped for
+   * exactly one swatch — `headerUnderlineColor` — because that one's fallback
+   * chain has two links and ends in `currentColor` rather than a literal, so its
+   * empty state is "follows Divider color, or the title's own colour if that is
+   * unset too". No string that fits a ~300px rail says that, and the rule this
+   * file already enforces is that a gloss which cannot be true is worse than no
+   * gloss (the same call feature 95 made when it deleted two `needs …` caveats).
+   *
+   * The precedent for loosening a required string is one interface over:
+   * feature 86 made `StylingOption.helpText` optional and cut ten always-on
+   * descriptions, leaving the rail's help text state-reporting rather than
+   * decorative throughout.
    */
-  emptyHelpText: string;
+  emptyHelpText?: string;
   alpha: boolean;
   /**
    * When present, the swatch renders only while this returns true (feature 95).
@@ -769,18 +821,25 @@ export interface ColorKnob {
    * are produced by one `.filter(…).map(…)` over this array, so the guard has
    * to be a property of the knob and be applied inside that filter.
    *
-   * OPTIONAL, and it must stay the exception. Seven of the nine swatches are
+   * OPTIONAL, and it must stay the exception. Seven of the ten swatches are
    * always visible. The bar for gating one is narrow and it is a fact about the
-   * STYLESHEET, not a judgement about tidiness: the field must feed exactly one
-   * live rule, and the state that hides it must be one where that rule cannot
-   * fire at all — a var that is emitted, inherited, and read by nothing.
+   * STYLESHEET, not a judgement about tidiness: the field must dress exactly one
+   * SURFACE, and the state that hides it must be one where that surface's rules
+   * cannot fire at all — a var that is emitted, inherited, and read by nothing.
+   *
+   * ⚠️ "One surface", not "one rule", and the difference is not pedantry: a
+   * section header has TWO markup shapes (the flat `th` and the collapsible
+   * `<summary>`), so `headerBgColor` and `headerUnderlineColor` each feed two
+   * live rules while dressing one surface. Feature 87's mirroring law is what
+   * guarantees the pair always agrees, which is why one predicate can cover
+   * both. Counting rules would have wrongly disqualified both of them.
    *
    * 🚫 `borderColor` fails that bar and must stay ungated: it dresses the row
    * rules, the column divider, the feature-80 section separator, AND the table
    * outline whenever `outerBorderColor` is unset, so at Row dividers = None it
    * is still the only control for two live surfaces. Check the stylesheet
-   * before adding a third entry here — the swatches that survived are the ones
-   * whose var appears in more than one place.
+   * before adding a fourth entry here — the swatches that survived are the ones
+   * whose var dresses more than one thing.
    *
    * ⚠️ A group must never end up with ALL of its swatches conditional: the
    * group would render an empty `<s-grid>` — visible dead space, and a hole in
@@ -819,6 +878,36 @@ export const COLOR_KNOBS: ReadonlyArray<ColorKnob> = [
     emptyHelpText: "The default grey band.",
     alpha: true,
     visibleWhen: showsHeaderBackgroundControl,
+  },
+  {
+    field: "headerUnderlineColor",
+    group: "sectionHeaders",
+    // Deliberately seated between `Background` and `Title color` rather than
+    // after both — see the note on `STYLING_FIELD_NAMES`, which is what fixes
+    // this order. `Background` and `Underline color` are mutually exclusive, so
+    // slot 1 of this group is always "the header style's own surface" and slot 2
+    // is always `Title color`, which then never moves as a merchant switches
+    // between Banded and Underlined.
+    //
+    // 13 characters, inside the ~15 the 2-up grid actually allows (see the
+    // wrap measurement on `Background` above).
+    label: "Underline color",
+    // No "needs Header style Underlined" caveat, for the reason feature 95
+    // deleted two of them: the swatch is only on screen while the condition
+    // already holds, so the caveat could never be read by anyone who needed it.
+    helpText: "The rule beneath a section title.",
+    // 🔴 NO `emptyHelpText`, and this is the only swatch without one
+    // (feature 96 decision (a), 2026-07-28). Every other empty state is one
+    // hop — a theme value, or an app literal, or `outerBorderColor`'s single
+    // "Follows Divider color." This one is two: `borderColor` first, and then
+    // `currentColor`, which resolves to the section title's own colour. So the
+    // honest sentence is "follows Divider color, or the title colour if that is
+    // unset too", which does not fit a ~300px rail, and the half-truth that does
+    // fit would be wrong precisely when a merchant has left both empty — the
+    // DEFAULT state. See the `emptyHelpText` doc for why a missing gloss beats
+    // an untrue one.
+    alpha: true,
+    visibleWhen: showsHeaderUnderlineColorControl,
   },
   {
     field: "headerTextColor",

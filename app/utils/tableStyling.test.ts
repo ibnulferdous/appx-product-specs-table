@@ -36,6 +36,7 @@ import {
 // through the same `parseColor`, so it belongs in the same sweep.)
 const COLOR_FIELDS = [
   "headerBgColor",
+  "headerUnderlineColor",
   "headerTextColor",
   "labelBgColor",
   "valueBgColor",
@@ -68,6 +69,7 @@ const FULLY_OVERRIDDEN: StylingValues = {
   outerBorderWidthPx: 2,
   outerBorderRadiusPx: 12,
   headerBgColor: "#111111",
+  headerUnderlineColor: "#151515",
   headerTextColor: "#1a1a1a",
   labelBgColor: "#222222",
   valueBgColor: "#333333",

@@ -37,6 +37,7 @@ import {
   showsCustomFontSizeInput,
   showsGridMinColumnWidthControl,
   showsHeaderBackgroundControl,
+  showsHeaderUnderlineColorControl,
   showsLabelWidthControl,
   showsMobileLayoutControl,
   showsSectionGapControl,
@@ -52,6 +53,7 @@ import {
   toLabelWidthControlValue,
   toZeroMeansOffControlValue,
   type StyleGroupId,
+  type StylingColorFieldName,
   type StylingOption,
 } from "./stylingControls";
 import {
@@ -481,7 +483,7 @@ describe("COLOR_KNOBS (feature 57 Step 10a)", () => {
     expect(COLOR_KNOBS.map((knob) => knob.field)).toEqual(hexAccepting);
   });
 
-  it("enables alpha on the six surface colors and disables it on the three text colors", () => {
+  it("enables alpha on the seven surface colors and disables it on the three text colors", () => {
     // The 2026-07-19 lock: the stylesheet's own defaults are translucent, so an
     // opaque-only surface picker could not reproduce the default look, while
     // translucent body text is a contrast bug rather than a design choice.
@@ -490,6 +492,11 @@ describe("COLOR_KNOBS (feature 57 Step 10a)", () => {
     );
     expect(alphaOn).toEqual([
       "headerBgColor",
+      // Feature 96's underline is a surface LINE, so it files with the row
+      // rules and the outline rather than with the three text colors — and its
+      // own fallback chain runs through `borderColor`, whose swatch has alpha,
+      // so an opaque-only picker here could not reproduce what it inherits.
+      "headerUnderlineColor",
       "labelBgColor",
       "valueBgColor",
       "stripeBgColor",
@@ -509,18 +516,52 @@ describe("COLOR_KNOBS (feature 57 Step 10a)", () => {
     ]);
   });
 
+  // ⚠️ THE EXCEPTION LIST, and it is a LIST rather than a count on purpose —
+  // the same call the `visibleWhen` bar test below makes. Feature 96 made
+  // `emptyHelpText` optional for exactly one swatch, and a count would let a
+  // second omission swap in silently while this file kept passing.
+  //
+  // `headerUnderlineColor` earns it because its fallback chain is two links
+  // deep and ends in `currentColor`: the honest empty-state sentence is
+  // "follows Divider color, or the title colour if that is unset too", which
+  // does not fit the rail — and the short version that does fit would be WRONG
+  // in the state a merchant is actually in when both are empty, which is the
+  // default. Feature 95 already established that a gloss which cannot be true
+  // is worse than no gloss (it deleted two `needs …` caveats on that ground).
+  const NO_EMPTY_HELP_TEXT: ReadonlyArray<StylingColorFieldName> = [
+    "headerUnderlineColor",
+  ];
+
   it("gives every swatch merchant-facing prose for BOTH of its states", () => {
     for (const knob of COLOR_KNOBS) {
       expect(knob.label.length).toBeGreaterThan(0);
       expect(knob.helpText.length).toBeGreaterThan(0);
-      // Feature 86: a swatch describes itself when set AND when empty. Unlike
-      // the option lists, neither is optional here — an empty swatch is the
-      // DEFAULT state of all nine, so a missing gloss would leave every color
-      // in the rail undescribed until a merchant touched it.
-      expect(knob.emptyHelpText.length).toBeGreaterThan(0);
-      expect(knob.helpText).not.toBe(knob.emptyHelpText);
       expect(knob.label).not.toBe(knob.field);
+
+      // Feature 86: a swatch describes itself when set AND when empty. An empty
+      // swatch is the DEFAULT state of all ten, so a missing gloss leaves that
+      // color undescribed until a merchant touches it — which is why the
+      // exception above had to be argued rather than merely allowed.
+      if (NO_EMPTY_HELP_TEXT.includes(knob.field)) {
+        expect(knob.emptyHelpText, `${knob.field}`).toBeUndefined();
+        continue;
+      }
+
+      expect(knob.emptyHelpText, `${knob.field}`).toBeDefined();
+      expect(knob.emptyHelpText!.length).toBeGreaterThan(0);
+      expect(knob.helpText).not.toBe(knob.emptyHelpText);
     }
+  });
+
+  it("keeps the missing-gloss exception to the one swatch that argued for it", () => {
+    // Asserted from the DATA rather than restating the list: if a second knob
+    // drops its `emptyHelpText`, this fails and names it, so the omission has
+    // to be defended in a review instead of arriving as a copy-paste.
+    const omitted = COLOR_KNOBS.filter(
+      (knob) => knob.emptyHelpText === undefined,
+    ).map((knob) => knob.field);
+
+    expect(omitted).toEqual([...NO_EMPTY_HELP_TEXT]);
   });
 
   it("has a distinct label WITHIN each group, not across the rail", () => {
@@ -566,8 +607,11 @@ describe("COLOR_KNOBS (feature 57 Step 10a)", () => {
     // (`rgba(0,0,0,0.06)` / `0.04` / `0.1`), and the outline falls back THROUGH
     // `borderColor` rather than to anything of the theme's. Per-swatch state
     // text is what let each say the truth, so pin which ones may say "theme".
+    // `?? ""` because `emptyHelpText` is optional since feature 96. A swatch
+    // with no empty-state gloss promises nothing, which is the correct answer
+    // here — it cannot claim a theme value it does not have.
     const inheritsFromTheme = COLOR_KNOBS.filter((knob) =>
-      knob.emptyHelpText.toLowerCase().includes("theme"),
+      (knob.emptyHelpText ?? "").toLowerCase().includes("theme"),
     ).map((knob) => knob.field);
 
     expect(inheritsFromTheme).toEqual([
@@ -1321,10 +1365,27 @@ const VISIBILITY_PREDICATES: ReadonlyArray<{
     hide: (styling) => ({ ...styling, sectionHeaderStyle: "PLAIN" }),
     preservedField: "headerBgColor",
   },
+  {
+    // The tenth (feature 96), and the mirror of the ninth: the same group, the
+    // same two markup shapes, the opposite member. The hiding edit is to
+    // `BANDED` deliberately — the DEFAULT — so this fixture doubles as the
+    // check that the value survives the trip a merchant is most likely to make
+    // by accident, which is switching Header style back and forth while
+    // deciding.
+    name: "showsHeaderUnderlineColorControl",
+    predicate: showsHeaderUnderlineColorControl,
+    visible: {
+      ...DEFAULT_STYLING_VALUES,
+      sectionHeaderStyle: "TEXT_ONLY",
+      headerUnderlineColor: "#c0392b",
+    },
+    hide: (styling) => ({ ...styling, sectionHeaderStyle: "BANDED" }),
+    preservedField: "headerUnderlineColor",
+  },
 ];
 
-describe("the hide-rule count (feature 95 took it from seven to nine)", () => {
-  it("guards exactly nine controls", () => {
+describe("the hide-rule count (feature 96 took it from nine to ten)", () => {
+  it("guards exactly ten controls", () => {
     // The five section-header knobs are visible in EVERY shape — they dress the
     // flat `th` and the collapsible `<summary>` alike — so unlike the section
     // gap none of them earns a predicate. Pinning the count is what turns "we
@@ -1337,6 +1398,9 @@ describe("the hide-rule count (feature 95 took it from seven to nine)", () => {
     // (feature 86 decision 4 kept the stripe swatch always visible, and
     // `headerBgColor` carried its own "a composition fact rather than a reason
     // to hide" comment), so the count moving is the trace of those reversals.
+    // 9 -> 10 for feature 96's `showsHeaderUnderlineColorControl`, which
+    // reverses nothing — it arrived WITH its field, so the swatch has never
+    // been visible under a header style that paints no rule.
     //
     // Note what did NOT land here: feature 85 hides the Stripes OPTION in Grid
     // mode, and that is deliberately absent. This registry enforces
@@ -1345,7 +1409,7 @@ describe("the hide-rule count (feature 95 took it from seven to nine)", () => {
     // the option filter is a different mechanism with a different failure mode
     // (the orphan value) and carries its own tests instead. Registering it
     // would assert a law it does not obey.
-    expect(VISIBILITY_PREDICATES).toHaveLength(9);
+    expect(VISIBILITY_PREDICATES).toHaveLength(10);
     expect(VISIBILITY_PREDICATES.map((entry) => entry.name)).not.toContain(
       "rowDividerOptionsFor",
     );
@@ -1364,13 +1428,19 @@ describe("the hide-rule count (feature 95 took it from seven to nine)", () => {
 
     expect(wired).toContain(showsStripeBackgroundControl);
     expect(wired).toContain(showsHeaderBackgroundControl);
-    expect(wired).toHaveLength(2);
+    expect(wired).toContain(showsHeaderUnderlineColorControl);
+    expect(wired).toHaveLength(3);
   });
 
-  it("gates exactly the two colors whose var has ONE live rule", () => {
+  it("gates exactly the three colors that dress ONE surface", () => {
     // The bar, asserted rather than left in prose, because "this control looks
     // useless right now" is a much lower bar than the one actually used and the
     // next swatch to be proposed for hiding will be argued on it.
+    //
+    // ⚠️ ONE SURFACE, not one rule, and feature 96 is what forced the wording:
+    // a section header has two markup shapes, so `headerBgColor` and
+    // `headerUnderlineColor` each feed TWO live rules while dressing one thing.
+    // Counting rules would have disqualified both of the header gates.
     //
     // 🚫 `borderColor` is the standing counter-example and the reason this is a
     // list and not a count: it is a no-op under Row dividers = None too, and it
@@ -1378,7 +1448,75 @@ describe("the hide-rule count (feature 95 took it from seven to nine)", () => {
     // section separator, and the outline whenever `outerBorderColor` is unset.
     expect(
       COLOR_KNOBS.filter((knob) => knob.visibleWhen).map((k) => k.field),
-    ).toEqual(["headerBgColor", "stripeBgColor"]);
+    ).toEqual(["headerBgColor", "headerUnderlineColor", "stripeBgColor"]);
+  });
+
+  it("gates the two section-header surfaces to MUTUALLY EXCLUSIVE members", () => {
+    // The group's geometry, asserted from the domain rather than from a
+    // screenshot. Exactly one of `Background` / `Underline color` is visible
+    // under any header style, so the Section headers grid never grows a third
+    // swatch row and `Title color` never moves cell — the reason feature 96
+    // seated the underline BETWEEN them in `STYLING_FIELD_NAMES`.
+    //
+    // Derived over `SECTION_HEADER_STYLES`, so a fourth member added later must
+    // come here and say which surface it paints instead of silently showing
+    // both swatches or neither.
+    const visibleCounts = SECTION_HEADER_STYLES.map((sectionHeaderStyle) => {
+      const styling = { ...DEFAULT_STYLING_VALUES, sectionHeaderStyle };
+      return [
+        showsHeaderBackgroundControl(styling),
+        showsHeaderUnderlineColorControl(styling),
+      ].filter(Boolean).length;
+    });
+
+    // BANDED -> the band; TEXT_ONLY -> the rule; PLAIN -> neither, and that
+    // last 0 is exactly why `Title color` must stay ungated.
+    expect(visibleCounts).toEqual([1, 1, 0]);
+    for (const sectionHeaderStyle of SECTION_HEADER_STYLES) {
+      const styling = { ...DEFAULT_STYLING_VALUES, sectionHeaderStyle };
+      expect(
+        showsHeaderBackgroundControl(styling) &&
+          showsHeaderUnderlineColorControl(styling),
+        sectionHeaderStyle,
+      ).toBe(false);
+    }
+  });
+
+  it("shows the underline swatch for exactly one member, and it is TEXT_ONLY", () => {
+    // Derived from `SECTION_HEADER_STYLES` rather than hand-listed, the same
+    // shape feature 95 used for the band: a member added later defaults to
+    // HIDDEN, which is the safe direction — a new style that paints no rule
+    // would otherwise ship with a live colour picker for a rule it lacks.
+    const showing = SECTION_HEADER_STYLES.filter((sectionHeaderStyle) =>
+      showsHeaderUnderlineColorControl({
+        ...DEFAULT_STYLING_VALUES,
+        sectionHeaderStyle,
+      }),
+    );
+
+    expect(showing).toEqual(["TEXT_ONLY"]);
+  });
+
+  it("ignores collapsing — one predicate covers both markup shapes", () => {
+    // Feature 87's composition hazard inverted into a guarantee. The
+    // collapsible `<summary>` is a SIBLING of the section table carrying its own
+    // copy of every header declaration, so a member styled in only one shape
+    // hands the look back the moment a merchant toggles Collapsible. Because
+    // `spec-table.css` mirrors the underlined rule onto both, the rail needs no
+    // `sectionsCollapsible` clause — asserted across every member × both shapes
+    // so it stops reading as obvious if a future member lands in one shape only.
+    for (const sectionHeaderStyle of SECTION_HEADER_STYLES) {
+      const flat = {
+        ...DEFAULT_STYLING_VALUES,
+        sectionHeaderStyle,
+        sectionsCollapsible: false,
+      };
+      const collapsible = { ...flat, sectionsCollapsible: true };
+      expect(
+        showsHeaderUnderlineColorControl(flat),
+        `${sectionHeaderStyle} flat`,
+      ).toBe(showsHeaderUnderlineColorControl(collapsible));
+    }
   });
 });
 

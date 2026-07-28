@@ -69,6 +69,7 @@ type TableStylingColumns = {
   outerBorderWidthPx: number | null;
   outerBorderRadiusPx: number | null;
   headerBgColor: string | null;
+  headerUnderlineColor: string | null;
   headerTextColor: string | null;
   labelBgColor: string | null;
   valueBgColor: string | null;
@@ -141,6 +142,7 @@ export function stylingToDbColumns(values: StylingValues): TableStylingColumns {
     outerBorderWidthPx: values.outerBorderWidthPx,
     outerBorderRadiusPx: values.outerBorderRadiusPx,
     headerBgColor: values.headerBgColor,
+    headerUnderlineColor: values.headerUnderlineColor,
     headerTextColor: values.headerTextColor,
     labelBgColor: values.labelBgColor,
     valueBgColor: values.valueBgColor,

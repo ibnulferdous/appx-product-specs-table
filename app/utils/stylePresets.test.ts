@@ -28,12 +28,18 @@ const COLOR_FIELDS: readonly StylingFieldName[] = STYLING_FIELD_NAMES.filter(
 );
 
 describe("style presets — the constants", () => {
-  it("probe found the nine color fields (guards the probe itself)", () => {
+  it("probe found the ten color fields (guards the probe itself)", () => {
     // If the parser ever stopped accepting `#abc` shorthand, the probe above
     // would silently return an empty list and the "no bundle sets a color"
     // test below would pass vacuously. Pin the count so the guard fails loudly
     // instead of going quiet.
-    expect(COLOR_FIELDS).toHaveLength(9);
+    //
+    // 9 -> 10 for feature 96's `headerUnderlineColor`. Moving this number is the
+    // ONLY edit that colour cost this file, which is the probe paying off: the
+    // "no bundle sets a color" law below picked the new field up untouched, so
+    // the preset cards keep their zero-colour promise by construction rather
+    // than by anyone remembering to re-check.
+    expect(COLOR_FIELDS).toHaveLength(10);
   });
 
   it("ids are unique, non-empty and URL-safe", () => {

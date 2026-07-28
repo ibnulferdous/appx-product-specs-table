@@ -202,7 +202,11 @@
   text-transform: var(--appx-spec-header-transform, none);
   color: var(--appx-spec-header-color, inherit);
   background: var(--appx-spec-header-bg, transparent);
-  border-block-end: 2px solid var(--appx-spec-border-color, currentColor);
+  border-block-end: 2px solid
+    var(
+      --appx-spec-header-underline-color,
+      var(--appx-spec-border-color, currentColor)
+    );
 }
 
 /* --- Section header style ------------------------------------------------- */
@@ -219,10 +223,30 @@
    the merchant-facing label says so (feature 87). Same declarations as the
    base rule; stated explicitly so all three members read as one rule set per
    member at equal specificity, rather than one member meaning "whatever the
-   base rule happens to do". */
+   base rule happens to do".
+
+   This is the ONLY member that paints the rule, so it is the only one the
+   underline colour reaches (feature 96). The chain is nested rather than flat,
+   and each link is load-bearing:
+
+   - --appx-spec-header-underline-color is the dedicated knob, emitted only when
+     a merchant sets it, so an untouched table never sees this link at all;
+   - --appx-spec-border-color is the Divider color swatch, which dressed this
+     rule outright before feature 96 — keeping it as the inner fallback is what
+     makes the new knob a zero-repaint addition rather than a restyle;
+   - currentColor is the pre-Step-3 literal and resolves to the title's own
+     colour.
+
+   That two-link chain is also why this swatch is the one control in the rail
+   with no empty-state help text: no sentence short enough for the rail can
+   state both links truthfully (see ColorKnob.emptyHelpText). */
 .appx-spec-table--section-text-only .appx-spec-table__section {
   background: transparent;
-  border-block-end: 2px solid var(--appx-spec-border-color, currentColor);
+  border-block-end: 2px solid
+    var(
+      --appx-spec-header-underline-color,
+      var(--appx-spec-border-color, currentColor)
+    );
 }
 
 /* Plain (feature 87): neither the band nor the rule. The third member exists
@@ -291,7 +315,11 @@
   text-transform: var(--appx-spec-header-transform, none);
   color: var(--appx-spec-header-color, inherit);
   background: var(--appx-spec-header-bg, transparent);
-  border-block-end: 2px solid var(--appx-spec-border-color, currentColor);
+  border-block-end: 2px solid
+    var(
+      --appx-spec-header-underline-color,
+      var(--appx-spec-border-color, currentColor)
+    );
 }
 
 /* The open counterpart, so the marker actually reports state rather than
@@ -309,10 +337,20 @@
   border-block-end: none;
 }
 
+/* The underlined member's summary counterpart, carrying the same nested colour
+   chain as its flat twin above. Both shapes or neither: a merchant who set an
+   underline colour and then enabled collapsing must not watch it revert to the
+   Divider color, which is the same composition hazard feature 87 fixed for the
+   band and the rule themselves. It is also what lets ONE visibility predicate
+   cover both shapes in the rail. */
 .appx-spec-table--collapsible.appx-spec-table--section-text-only
   .appx-spec-table__section-summary {
   background: transparent;
-  border-block-end: 2px solid var(--appx-spec-border-color, currentColor);
+  border-block-end: 2px solid
+    var(
+      --appx-spec-header-underline-color,
+      var(--appx-spec-border-color, currentColor)
+    );
 }
 
 /* The summary counterpart of the plain rule above. The summary is a SIBLING of
