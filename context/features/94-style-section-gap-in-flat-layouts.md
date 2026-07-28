@@ -1,6 +1,9 @@
 # Feature 94 — Section gap in the flat block layouts (Style tab)
 
-**Status:** 📋 **SPECCED 2026-07-28** — not built.
+**Status:** ✅ **COMPLETE 2026-07-28** — built, harness-measured, and live-verified
+rail → preview → Postgres across all three row layouts. Tests 1101 → **1120**.
+⚠️ One leg owed: the real-storefront render (needs an ACTIVE template; see
+"Verification").
 **Reported:** 2026-07-28, merchant DevTools screenshot of a live storefront table
 with `margin-top: 30px` applied by hand to `tr.appx-spec-table__section-row`.
 **Depends on:** feature 80 (the `sectionGapPx` knob), feature 85 (`GRID`),
@@ -301,16 +304,70 @@ Estimated **+12–16** (from 1101; the real number gets recorded on completion).
 the predicate to `sectionsCollapsible` must fail the `STACKED`-with-collapsing-off
 case.
 
-## Verification (owed — nothing below has been run)
+## Verification — ✅ done 2026-07-28
 
-The `.harness/` CSS matrix **is** warranted here, unlike feature 87. Two real
-interactions to explore before touching the dev store:
+### The harness (`.harness/feature-94.html`, 8 cases, measured not eyeballed)
 
-1. `STACKED` margin collapsing at the section boundary, including a table whose
-   very first element is a section header.
-2. The gap against each `rowDividerStyle` — specifically whether the last row of
-   a section keeps its `LINES` rule with 30px of whitespace beneath it, and
-   whether that reads as intended or as a stranded line.
+Real `spec-table.css`, renderer-exact markup, `--appx-spec-section-gap: 30px`,
+computed styles read at 1:1.
+
+| case | result |
+| --- | --- |
+| `STACKED`, first element IS a section header | margin `0px`; **table top offset identical to the no-gap control** — the collapse-out-through-`tbody` hazard closed by measurement, not argument |
+| `STACKED`, rows BEFORE the first section header | **both** boundaries `30.0px` — the case an adjacent-sibling combinator would skip |
+| `GRID` | `30.0px`, spanning every track |
+| `TWO_COLUMN` | **`-0.0px`** — the deliberate no-op; layout scoping correct |
+| `LINES` / `STRIPES` / `NONE` | `30.0px` in all three |
+| no gap set (control) | margin `0px`, offset unchanged — the no-repaint claim |
+
+🔍 **The stranded-rule question is answered NO, and by computed style rather than
+by looking** (the feature-88 lesson about low-contrast fills in downscaled
+screenshots). The last row before a gap keeps
+`border-bottom: 0.909px solid rgba(0, 0, 0, 0.1)` under `LINES` — **identical to
+the same table with no gap** — so the gap changes spacing and nothing else. Under
+`STRIPES` and `NONE` the value is `0px none`: no rule exists to strand.
+
+### Live, on `Untitled template (copy)` (DRAFT, 0 assignments)
+
+- ✅ **Two-column + collapsing off** → the gap control is **absent** from Section
+  headers (group runs Header style → … → Title spacing → colors). The excluded
+  state, confirmed by eye.
+- ✅ **Stacked** → the control appears **inside Section headers**, between Title
+  spacing and the colour swatches, reading `0` / "No gap between sections."
+- ✅ **Set 30** → the preview separates the two sections, and the help text reads
+  **"Space between each section."** — the stale "collapsible" wording gone.
+- ✅ **Grid** → two tracks with the gap spanning both. The merchant's own case,
+  now driven by the knob instead of hand-edited DevTools CSS.
+- 🔴 **The round trip is the one that mattered.** Switching to Two-column hides
+  the control; enabling collapsing there brings it back **still reading 30**, with
+  feature 80's `<details>` rule painting the gap. Preserve-on-hide and the OR's
+  left side, both observed live rather than only unit-tested.
+- ✅ **Postgres after save:** `sectionGapPx = 30`. **Restored afterwards** —
+  `rowLayout` and `sectionGapPx` both back to `null`, every other `TableStyling`
+  column byte-identical to before.
+- ⚠️ **Left in place:** the content rows added to that throwaway scaffold to give
+  it a second section (`Basic Information` / Weight / `Physical Description` /
+  Dimensions).
+
+### ⚠️ Owed — the real-storefront leg
+
+Not run. It needs an ACTIVE template, and the dev store's ACTIVE templates are in
+merchant use. Low risk by construction — the editor preview renders through the
+same `renderSpecTablePreviewDocument` and a byte-mirrored copy of the same
+stylesheet, both guarded by tests — but it is **owed, not passed**. What it would
+add: the gap on a real product page and at 390px, resizing the real storefront tab
+rather than the admin iframe (see the `browser-verify-embedded-app` memory).
+
+### 🔴 Method note
+
+Blind `Shift+Tab` repeats in the embedded admin walk focus out of the app iframe
+unobserved. Worse: a template's DRAFT→ACTIVE change was read as self-inflicted and
+raised as an alarm when it was the merchant's own concurrent work. **Check the
+mechanism against how the app actually saves — SaveBar-gated, explicit Save;
+`Shift+Tab` cannot activate anything — before attributing a write.** Tab in small
+batches with a screenshot after each.
+
+### The original plan (kept as the record)
 
 Then live, on a DRAFT template with 0 assigned products:
 

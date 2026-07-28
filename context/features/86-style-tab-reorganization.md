@@ -23,10 +23,10 @@ The rail ships 34 controls over 33 `StylingValues` fields (the extra control is
 the Custom-size px box, which is a second shape of `fontSize`). They sit in
 six groups, and those groups are not carved the same way:
 
-| group | axis |
-| --- | --- |
-| Layout · Size & frame · Sections · Rows | **object** — the thing being styled |
-| Colors · Typography | **property** — the kind of CSS declaration |
+| group                                   | axis                                       |
+| --------------------------------------- | ------------------------------------------ |
+| Layout · Size & frame · Sections · Rows | **object** — the thing being styled        |
+| Colors · Typography                     | **property** — the kind of CSS declaration |
 
 Mixing the two axes is the whole defect, and it produces the specific
 symptoms the merchant felt:
@@ -44,7 +44,7 @@ Two secondary problems, both cheap to fix and both contributing to the
 "wall of controls" feel:
 
 - **No visual hierarchy.** The rail is one `<s-stack gap="base">`, so the space
-  *between groups* is identical to the space *between controls*. The headings
+  _between groups_ is identical to the space _between controls_. The headings
   are present but do not read as separators.
 - **Help text under every field.** All 34 carry a `details` line; a good number
   of them only restate the label (`Italic` → "Slanted text.").
@@ -53,16 +53,16 @@ Two secondary problems, both cheap to fix and both contributing to the
 
 Eight groups, ordered outermost-to-innermost, each ending with its own colors:
 
-| # | group | n | controls |
-| --- | --- | --- | --- |
-| 1 | Table layout | 4 | Row layout · Minimum column width *(Grid)* · On mobile *(2-col)* · Label column width *(2-col)* |
-| 2 | Table size & frame | 5 | Maximum width · Alignment *(when capped)* · Outline width · Outline color · Corner radius |
-| 3 | Table text | 4 | Text size · Custom size *(when Custom)* · Text style · Line height |
-| 4 | Section headers | 7 | Header style · Title size · Title weight · Title case · Title spacing · [Header background \| Title color] |
-| 5 | Collapsible sections | 3 | Enable collapsing · Sections start *(when on)* · Gap between sections *(when on)* |
-| 6 | Rows | 5 | Row dividers · Column divider · Density · [Divider color \| Stripe background] |
-| 7 | Labels | 4 | Weight · Case · [Background \| Text color] |
-| 8 | Values | 2 | [Background \| Text color] |
+| #   | group                | n   | controls                                                                                                   |
+| --- | -------------------- | --- | ---------------------------------------------------------------------------------------------------------- |
+| 1   | Table layout         | 4   | Row layout · Minimum column width _(Grid)_ · On mobile _(2-col)_ · Label column width _(2-col)_            |
+| 2   | Table size & frame   | 5   | Maximum width · Alignment _(when capped)_ · Outline width · Outline color · Corner radius                  |
+| 3   | Table text           | 4   | Text size · Custom size _(when Custom)_ · Text style · Line height                                         |
+| 4   | Section headers      | 7   | Header style · Title size · Title weight · Title case · Title spacing · [Header background \| Title color] |
+| 5   | Collapsible sections | 3   | Enable collapsing · Sections start _(when on)_ · Gap between sections _(when on)_                          |
+| 6   | Rows                 | 5   | Row dividers · Column divider · Density · [Divider color \| Stripe background]                             |
+| 7   | Labels               | 4   | Weight · Case · [Background \| Text color]                                                                 |
+| 8   | Values               | 2   | [Background \| Text color]                                                                                 |
 
 `Colors` and `Typography` cease to exist; their nine and six controls
 redistribute. **Every group ends with its colors in a 2-up row**, which makes
@@ -97,6 +97,18 @@ answer, and it matches the existing written decision for `headerBgColor`
 ("only visible while Banded, but that is a composition fact rather than a
 reason to hide"). The caveat lives in help text, where it already does.
 
+> 🔴 **REVERSED 2026-07-28 by feature 95** (doc `95-…`). `Stripe background`
+> now hides unless `rowDividerStyle === "STRIPES"` (and the row layout is not
+> Grid). This decision was made in the same breath as decision 3 and inherited
+> its reasoning without the surface count being checked — and the two fields are
+> not alike: `borderColor` dresses four surfaces, `stripeBgColor` feeds exactly
+> one CSS declaration and has no referent outside Stripes. Its help text lost
+> the caveat, since a hidden control cannot be read.
+>
+> 🚫 **Decision 3 stands unchanged** — `Divider color` stays visible always, and
+> the asymmetry inside the Rows colour grid is now the worked example of what
+> earns a hide: one field, one surface, one rule.
+
 **5. Short labels inside groups.** `Weight`, `Case`, `Title size`, `Text size`
 — the theme editor's own idiom, and what makes 300px readable: "Section title
 weight" wraps to two lines in the rail, "Title weight" does not.
@@ -111,10 +123,10 @@ this feature makes 34 knobs **navigable**; presets are what make them
 **`labelCase` goes to Labels, not Table text.** The merchant's draft listed
 "case" under table text. Verified against the real stylesheet:
 
-| var | selector | scope |
-| --- | --- | --- |
-| `--appx-spec-font-size` / `-font-style` / `-line-height` | `.appx-spec-table__table` | table-wide |
-| `--appx-spec-font-weight` / `-label-transform` | `.appx-spec-table__label` | **label only** |
+| var                                                      | selector                  | scope          |
+| -------------------------------------------------------- | ------------------------- | -------------- |
+| `--appx-spec-font-size` / `-font-style` / `-line-height` | `.appx-spec-table__table` | table-wide     |
+| `--appx-spec-font-weight` / `-label-transform`           | `.appx-spec-table__label` | **label only** |
 
 Filing case under "Table text" would be a claim a merchant can falsify in one
 click — they would set Uppercase and watch only the left column change. Weight
@@ -123,14 +135,14 @@ it for the same reason.
 
 **Short labels are safe only because the group wiring stays.** Every group
 keeps its `role="group"` + `aria-labelledby` heading. `stylingControls.ts`
-carries a written lock against renaming "Label weight" *because the control
-names its own scope*; under a Labels heading the scope is still stated, both
+carries a written lock against renaming "Label weight" _because the control
+names its own scope_; under a Labels heading the scope is still stated, both
 visually and programmatically — by a different mechanism. That comment must be
 updated in Step 6 or the next reader reads a broken invariant.
 
 **The empty-swatch note becomes per-control state text.** The Colors group
-carries one note — *"Leave a swatch empty to inherit that color from your
-theme"* — associated to the group with `aria-describedby`. Scattering the nine
+carries one note — _"Leave a swatch empty to inherit that color from your
+theme"_ — associated to the group with `aria-describedby`. Scattering the nine
 swatches across five groups leaves that sentence with no home, and repeating it
 five times is exactly the help-text noise this feature exists to cut. Instead
 each swatch reports **its own state**, the idiom six number fields in this rail
@@ -148,7 +160,7 @@ Currently 34 `details` lines. Keep one only when it does one of three jobs:
    corners. Set 1 or more to round them." — and, newly, every empty swatch.
    These are the load-bearing ones; keep all of them.
 2. **Carries a composition caveat** — "needs Row dividers set to Stripes",
-   "two-column layouts only", "needs an Outline width". These get *better*
+   "two-column layouts only", "needs an Outline width". These get _better_
    after the move, because the control each one names is now in the same group.
 3. **Describes a shopper-facing behavior change** — Enable collapsing, Row
    layout.
@@ -198,13 +210,13 @@ control was temporarily removed.
 
 Reachable means one of exactly two routes, because the rail has exactly two:
 
-| route | fields | how the test sees it |
-| --- | --- | --- |
-| a literal `setStylingField("field", …)` call | the 24 non-colors | text scan of `StyleTab.tsx` |
-| a `COLOR_KNOBS` entry the rail maps over | the 9 colors | `setStylingField(knob.field, …)`, a **variable** — invisible to a text scan |
+| route                                        | fields            | how the test sees it                                                        |
+| -------------------------------------------- | ----------------- | --------------------------------------------------------------------------- |
+| a literal `setStylingField("field", …)` call | the 24 non-colors | text scan of `StyleTab.tsx`                                                 |
+| a `COLOR_KNOBS` entry the rail maps over     | the 9 colors      | `setStylingField(knob.field, …)`, a **variable** — invisible to a text scan |
 
 The color route is why this is a two-branch test rather than a one-line grep.
-`COLOR_KNOBS` membership only proves a swatch *could* render, so a separate
+`COLOR_KNOBS` membership only proves a swatch _could_ render, so a separate
 assertion pins that `StyleTab.tsx` actually references `COLOR_KNOBS` — without
 it the second branch would be satisfied by a list nothing reads.
 
@@ -212,7 +224,7 @@ Reads the real file off disk, the same technique as
 `specTableCssContract.test.ts` and `specTableAriaContract.test.ts`: a rail is
 JSX and jsdom cannot render Polaris web components, so text is the only handle
 on it. Comments are stripped first for the same reason the ARIA contract strips
-them — this file's subject matter *is* `setStylingField` calls, and a guard
+them — this file's subject matter _is_ `setStylingField` calls, and a guard
 that counts its own documentation passes vacuously.
 
 **Not asserted, deliberately: that every scanned field name is a real field.**
@@ -313,13 +325,13 @@ group would read as tidying and would break a test several files away.
 per-swatch state text is what exposed it.** "Leave a swatch empty to inherit that
 color from your theme" is true for five. Checked against the real stylesheet:
 
-| swatch | empty falls back to | empty-state text |
-| --- | --- | --- |
-| Title color · Label/Value background · Label/Value text | `inherit` / `transparent` | "From your theme." |
-| Header background | `rgba(0, 0, 0, 0.06)` — this app's literal | "The default grey band." |
-| Stripe background | `rgba(0, 0, 0, 0.04)` | "The default grey shading." |
-| Divider color | `rgba(0, 0, 0, 0.1)` | "The default hairline grey." |
-| **Outline color** | **through `--appx-spec-border-color`** | **"Follows Divider color."** |
+| swatch                                                  | empty falls back to                        | empty-state text             |
+| ------------------------------------------------------- | ------------------------------------------ | ---------------------------- |
+| Title color · Label/Value background · Label/Value text | `inherit` / `transparent`                  | "From your theme."           |
+| Header background                                       | `rgba(0, 0, 0, 0.06)` — this app's literal | "The default grey band."     |
+| Stripe background                                       | `rgba(0, 0, 0, 0.04)`                      | "The default grey shading."  |
+| Divider color                                           | `rgba(0, 0, 0, 0.1)`                       | "The default hairline grey." |
+| **Outline color**                                       | **through `--appx-spec-border-color`**     | **"Follows Divider color."** |
 
 The last row is the one no group-level sentence could ever have said: its empty
 state is "follows another control on this screen". A test pins which five
@@ -348,7 +360,7 @@ motivated it — **`Outline color` reads "Follows Divider color."**
 🔴 **One defect found live that the character count had passed.** `Header
 background` (17 chars) **wrapped** to "Header / background" in the 2-up color
 grid and pushed its swatch a line below its neighbour's, so the two fields in
-the row no longer aligned. `Stripe background` is the *same 17 characters* and
+the row no longer aligned. `Stripe background` is the _same 17 characters_ and
 fits — "Stripe" sets narrower than "Header" — so the cell is right at the
 boundary and the real limit is nearer 15. Fixed by shortening to `Background`
 (the `Section headers` heading makes it unambiguous, and it makes the swatch
@@ -373,8 +385,8 @@ asserts the post-Step-4 grouping.
 ## Step 3 — the separation treatment (2026-07-26)
 
 Visual only. **Nothing moved between groups**, no control changed, no copy
-changed — this step answers one question in isolation, *does the separation read
-well at 300px*, so that Step 4's 34-control diff is not also litigating spacing.
+changed — this step answers one question in isolation, _does the separation read
+well at 300px_, so that Step 4's 34-control diff is not also litigating spacing.
 
 ### Two gap scales, and the divider is the second cue
 
@@ -420,7 +432,7 @@ mentions how many groups there are, so Step 4 can add two groups and move all 34
 controls without either one needing an edit:
 
 1. **`dividerCount === groupCount`.** Not the coincidence it looks like —
-   dividers sit *between* groups (N−1) plus one closing rule above Reset, so N
+   dividers sit _between_ groups (N−1) plus one closing rule above Reset, so N
    groups always want exactly N dividers. Six today, eight after the move. This
    is the one part of the treatment worth pinning: a group added later without
    its rule is invisible to every other test in the repo and reads as a
@@ -466,16 +478,16 @@ were dissolved, and all 34 controls now sit on one axis: the object being styled
 
 ### The eight groups as shipped
 
-| # | Group | n | contents |
-| --- | --- | --- | --- |
-| 1 | Table layout | 4 | Row layout · Minimum column width · On mobile · Label column width |
-| 2 | Table size & frame | 5 | Maximum width · Alignment · Outline width · Corner radius · **Outline color** |
-| 3 | Table text | 4 | Text size · Custom size · Text style · Line height |
-| 4 | Section headers | 7 | Header style · Title size/weight/case/spacing · **Background · Title color** |
-| 5 | Collapsible sections | 3 | Enable collapsing · Sections start · Gap between sections |
-| 6 | Rows | 5 | Row dividers · Column divider · Density · **Stripe background · Divider color** |
-| 7 | Labels | 4 | Weight · Case · **Background · Text color** |
-| 8 | Values | 2 | **Background · Text color** |
+| #   | Group                | n   | contents                                                                        |
+| --- | -------------------- | --- | ------------------------------------------------------------------------------- |
+| 1   | Table layout         | 4   | Row layout · Minimum column width · On mobile · Label column width              |
+| 2   | Table size & frame   | 5   | Maximum width · Alignment · Outline width · Corner radius · **Outline color**   |
+| 3   | Table text           | 4   | Text size · Custom size · Text style · Line height                              |
+| 4   | Section headers      | 7   | Header style · Title size/weight/case/spacing · **Background · Title color**    |
+| 5   | Collapsible sections | 3   | Enable collapsing · Sections start · Gap between sections                       |
+| 6   | Rows                 | 5   | Row dividers · Column divider · Density · **Stripe background · Divider color** |
+| 7   | Labels               | 4   | Weight · Case · **Background · Text color**                                     |
+| 8   | Values               | 2   | **Background · Text color**                                                     |
 
 Every group ends with its own colors, which is the one rule a merchant learns
 once: **structure knobs, then colors.**
@@ -574,15 +586,15 @@ Tests 1010 → **1012**.
 
 ### All seven predicates toggled live
 
-| predicate | exercised by | result |
-| --- | --- | --- |
-| `showsMobileLayoutControl` | Row layout → Stacked / Grid | hidden ✅ |
-| `showsLabelWidthControl` | Row layout → Stacked / Grid | hidden ✅ |
-| `showsGridMinColumnWidthControl` | Row layout → Grid | shown ✅ |
-| `showsTableAlignControl` | Maximum width → 960 | shown ✅ |
-| `showsCustomFontSizeInput` | Text size → Custom | shown, seeded 16 ✅ |
-| `showsSectionsInitialStateControl` | Enable collapsing → on | shown ✅ |
-| `showsSectionGapControl` | Enable collapsing → on | shown ✅ |
+| predicate                          | exercised by                | result              |
+| ---------------------------------- | --------------------------- | ------------------- |
+| `showsMobileLayoutControl`         | Row layout → Stacked / Grid | hidden ✅           |
+| `showsLabelWidthControl`           | Row layout → Stacked / Grid | hidden ✅           |
+| `showsGridMinColumnWidthControl`   | Row layout → Grid           | shown ✅            |
+| `showsTableAlignControl`           | Maximum width → 960         | shown ✅            |
+| `showsCustomFontSizeInput`         | Text size → Custom          | shown, seeded 16 ✅ |
+| `showsSectionsInitialStateControl` | Enable collapsing → on      | shown ✅            |
+| `showsSectionGapControl`           | Enable collapsing → on      | shown ✅            |
 
 The count stays **7** — feature 86 added no predicates, and the rail-side guard
 now cross-checks that number from the JSX as well as from the registry.

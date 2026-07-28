@@ -116,11 +116,21 @@ import type { RowEngine } from "./useRowEngine";
 // wrapper silently widens two controls' apparent scope to the whole table — see
 // the lock note in `stylingControls.ts`.
 //
-// ⚠️ NO GROUP MAY CONSIST ENTIRELY OF HIDE-GATED CONTROLS. Seven of the 34 are
+// ⚠️ NO GROUP MAY CONSIST ENTIRELY OF HIDE-GATED CONTROLS. Nine of the 34 are
 // behind a visibility predicate; a group where all of them were would render as
 // a heading and a divider fencing nothing — an empty section a merchant reads as
 // a broken screen, and a `role="group"` with no members. Pinned in
 // `styleTabContract.test.ts`.
+//
+// Seven of those nine are JSX guards — `{showsX(styling) && <control/>}`. The
+// other two (feature 95) gate COLORS, which this file never writes as JSX: the
+// nine swatches are one `.filter(…).map(…)` over `COLOR_KNOBS`, so their
+// predicates ride `ColorKnob.visibleWhen` and are applied inside `colorGrid`.
+// Same law, same registry, different attachment point — and they carry their own
+// version of the rule above: no group's swatches may ALL be gated, or
+// `colorGrid` paints an empty `<s-grid>`. Both gated swatches sit in groups
+// whose OTHER swatch is unconditional (Title color, Divider color), which is
+// what keeps that true today.
 //
 // Knobs added here already rode the pipe end to end before they had a control:
 // the previews and the live storefront both render from the same
@@ -242,9 +252,17 @@ export function StyleTab({ engine }: { engine: RowEngine }) {
   // half-width field with a gap beside it. Deliberate: a full-width lone swatch
   // would make Outline color the only differently-sized color input in the rail,
   // trading a small alignment oddity for an inconsistency the eye tracks harder.
+  // Feature 95 added the second half of the filter. A swatch may carry its own
+  // visibility rule, and it is applied HERE rather than as a `{showsX(…) && }`
+  // guard because these controls are generated, not written — there is no JSX
+  // line to wrap. The predicate itself still lives in `stylingControls.ts` with
+  // the other seven and is registered under the same preserve-on-hide law, so
+  // hiding a swatch can never clear the merchant's hex.
   const colorGrid = (group: StyleGroupId) => (
     <s-grid gridTemplateColumns="1fr 1fr" gap="base">
-      {COLOR_KNOBS.filter((knob) => knob.group === group).map((knob) => (
+      {COLOR_KNOBS.filter(
+        (knob) => knob.group === group && (knob.visibleWhen?.(styling) ?? true),
+      ).map((knob) => (
         <s-color-field
           key={knob.field}
           label={knob.label}
@@ -813,9 +831,12 @@ export function StyleTab({ engine }: { engine: RowEngine }) {
           {/* The band and the title text — two genuinely different surfaces,
               which is why this is the one swatch pair where the second keeps a
               qualifier ("Title color") instead of the bare "Text color" that
-              Labels and Values use. Neither is hidden when Header style is not
-              Banded: the merchant may legitimately set a color before switching,
-              so the caveat lives in the help text instead of in a hide rule. */}
+              Labels and Values use. The difference now shows: `Background` HIDES
+              unless Header style is Banded (feature 95 — the two non-banded
+              members hardcode `background: transparent`, so the var is read by
+              nothing), while `Title color` stays, because the base rule's
+              `color:` is never overridden and a title is coloured under all
+              three members. Same asymmetry as the Rows grid, same reason. */}
           {colorGrid("sectionHeaders")}
         </s-stack>
       </div>
@@ -889,9 +910,11 @@ export function StyleTab({ engine }: { engine: RowEngine }) {
       <s-divider></s-divider>
 
       {/* 6 · Rows. Five controls: the two divider selects, density, and the two
-          colors those dividers use. `stripeBgColor` now sits with the Row
-          dividers select that has to be set to Stripes for it to show at all,
-          and `borderColor` sits with the rules it paints. */}
+          colors those dividers use. `stripeBgColor` sits with the Row dividers
+          select it depends on, and `borderColor` sits with the rules it paints.
+          Since feature 95 the stripe swatch is also GATED on that select, so
+          this group renders four controls or five — never fewer, and never an
+          empty color grid, because Divider color is unconditional. */}
       <div role="group" aria-labelledby={headingId("rows")}>
         <s-stack direction="block" gap="base">
           <s-heading id={headingId("rows")}>
@@ -970,13 +993,15 @@ export function StyleTab({ engine }: { engine: RowEngine }) {
             ))}
           </s-select>
 
-          {/* ⚠️ `Divider color` stays VISIBLE at Row dividers = None, and that
-              is a decision rather than an oversight (feature 86). Hiding it
-              would be a functional regression: the same field also dresses the
-              column divider, the feature-80 section separator, and the table
-              outline whenever Outline color is unset — so a merchant with a
-              lines-free stripes table would lose the only control for their
-              column rule. Its help text carries the coupling instead. */}
+          {/* ⚠️ This grid holds the rail's ONE asymmetry, and both halves are
+              decisions. `Stripe background` hides unless Row dividers is
+              Stripes (feature 95) — one field, one CSS declaration, no referent
+              otherwise. `Divider color` stays VISIBLE at Row dividers = None
+              (feature 86 decision 3) — the same field also dresses the column
+              divider, the feature-80 section separator, and the table outline
+              whenever Outline color is unset, so hiding it would leave a
+              merchant with a lines-free table holding no control for two live
+              surfaces. Its help text carries the coupling instead. */}
           {colorGrid("rows")}
         </s-stack>
       </div>

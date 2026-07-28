@@ -16,13 +16,13 @@ Building the MVP.
 > `context/features/88-style-preset-gallery.md`; the build ran as four step
 > files, each with its own instructions and completion gate.
 >
-> | Step | File | Scope | Status |
-> | --- | --- | --- | --- |
-> | 13a | — | pure domain (`app/utils/stylePresets.ts`) | ✅ `3714361`, 1021 → 1044 tests |
-> | 89 | `89-style-preset-engine-persistence.md` | `basedOnPreset` state + write path | ✅ **2026-07-27**, 1044 → **1055** |
-> | 90 | `90-style-preset-card-preview.md` | canned sample + preview card | ✅ **2026-07-27**, 1055 → **1072** |
-> | 91 | `91-style-preset-gallery-route.md` | `/app/templates/choose-style`, six cards | ✅ **2026-07-27**, 1072 → **1085**, live 10/10 |
-> | 92 | `92-style-preset-create-flow.md` | repoint Create buttons, `?style=` seeding | ✅ **2026-07-27**, 1085 → **1097**, live 8/9 + storefront |
+> | Step | File                                    | Scope                                     | Status                                                    |
+> | ---- | --------------------------------------- | ----------------------------------------- | --------------------------------------------------------- |
+> | 13a  | —                                       | pure domain (`app/utils/stylePresets.ts`) | ✅ `3714361`, 1021 → 1044 tests                           |
+> | 89   | `89-style-preset-engine-persistence.md` | `basedOnPreset` state + write path        | ✅ **2026-07-27**, 1044 → **1055**                        |
+> | 90   | `90-style-preset-card-preview.md`       | canned sample + preview card              | ✅ **2026-07-27**, 1055 → **1072**                        |
+> | 91   | `91-style-preset-gallery-route.md`      | `/app/templates/choose-style`, six cards  | ✅ **2026-07-27**, 1072 → **1085**, live 10/10            |
+> | 92   | `92-style-preset-create-flow.md`        | repoint Create buttons, `?style=` seeding | ✅ **2026-07-27**, 1085 → **1097**, live 8/9 + storefront |
 >
 > **What shipped:** Create template → an unskippable gallery of six cards → a
 > scaffold already styled like the card and stamped with which card it was,
@@ -247,7 +247,8 @@ Everything upstream is done and live-verified on the dev store:
   persists to `TableStyling`, serializes to the metaobject, and renders on the storefront;
   rail a11y pass done; Reset-to-theme-defaults ships; docs reconciled.
 
-Test suite 1021 tests / 38 files; full gate (typecheck · lint · format · test · build) green.
+Test suite **1138 tests / 43 files** (was 1021 at B1 sign-off); full gate
+(typecheck · lint · format · test · build) green as of 2026-07-28.
 
 Since B1: the Style tab's width surface — the collapsible rail (feature 76). Feature 75's
 full-size preview modal shipped the same day and was **removed 2026-07-25**; see Completed.
@@ -284,7 +285,7 @@ plan: `~/.claude/plans/style-tab-phase-b-implementation-plan.md` (1–12 = B1, 1
 ### Binding rules (do not violate)
 
 - 🚫 **The Edit grid never reflects merchant styling.** It is a fixed editing surface; the
-  Desktop / Mobile previews are the *only* place Style / Settings changes appear (they are
+  Desktop / Mobile previews are the _only_ place Style / Settings changes appear (they are
   storefront-faithful). Step 11 as originally planned ("live styling on the editing grid")
   was built, rejected on review, and fully reverted — see `context/features/67-…`.
   `SpecTableEditor.module.css` + `RowGrid.tsx` are tripwired byte-clean against sign-off `a7b304c`.
@@ -301,8 +302,222 @@ plan: `~/.claude/plans/style-tab-phase-b-implementation-plan.md` (1–12 = B1, 1
 
 > One line per unit. Detail → the linked `context/features/` doc + git history.
 
+**The two dead colour swatches hide themselves (feature 95, doc `95-…`)
+— ✅ COMPLETE 2026-07-28, live-verified in the embedded admin, 10 of 10**
+
+- **Two parts, one mechanism.** (1) `Stripe background` hides unless `Row
+dividers` is Stripes — the reported item. (2) `Header background` hides unless
+  `Header style` is Banded — the open question part 1 closed with, answered by
+  the merchant the same day. Both are `ColorKnob.visibleWhen` entries; nothing
+  else in the rail changed. Predicates **7 → 9**, JSX guards unchanged at 7.
+- **Part 2's CSS check is the same shape, and the specificity is the point.**
+  `--appx-spec-header-bg` appears in FOUR rules, but the two BASE ones
+  (`__section`, and `__section-summary` under `--collapsible`) are
+  **unreachable**: `stylingToModifierClasses` emits a section-header class
+  unconditionally (defaults included, by its own stated rule), every member
+  selector outspecifies the base, and `TEXT_ONLY` / `PLAIN` both hardcode
+  `background: transparent`. Only the two `--section-banded` rules read it. So
+  the predicate is a bare `sectionHeaderStyle === "BANDED"` — **no collapsing
+  clause**, because feature 87's fix (mirror every member rule onto the
+  `<summary>`) is exactly what lets one predicate cover both shapes. Asserted
+  over every member × both shapes so it stops reading as obvious if a future
+  member is ever added to one shape only.
+- 🔴 **Part 2 reverses a comment in `stylingControls.ts` itself** ("a composition
+  fact rather than a reason to hide the swatch: the merchant may legitimately set
+  it before switching"). Weaker than it sounds, and the difference from the
+  stripe case is worth keeping: **`BANDED` is `SECTION_HEADER_STYLES[0]`, the
+  DEFAULT**, so the swatch is visible on an untouched template and only vanishes
+  once a merchant actively picks Underlined or Plain — set-before-switching is
+  not an order anyone arrives in. Pinned in a test, since the argument rests on
+  it. ✅ `Title color` stays ungated (the base rule's `color:` is never
+  overridden, so a title is coloured under all three members), which is also what
+  keeps that grid from painting empty. 🚫 NOT extended to "the template has no
+  section header rows": that is row DATA, and no rule in the file has ever read
+  it — the rail would start hiding controls in response to merchant content.
+- 🚫 **`borderColor` is now a THREE-PLACE permanent no** (feature 86 decision 3,
+  the `ColorKnob.visibleWhen` doc, and a test listing the two gated fields BY
+  NAME rather than counting them). It is a no-op under Row dividers = None too,
+  so it is the obvious next candidate and it must never join: it also dresses the
+  column divider, the feature-80 separator, and the outline whenever
+  `outerBorderColor` is unset. **The bar is a fact about the stylesheet** — the
+  field must feed exactly one live rule — not a judgement about tidiness.
+- **Report item 1 (the stripe):** should only show while `Row dividers` is
+  `Stripes`. Correct as reported, and it is the narrowest referent in the rail —
+  `stripeBgColor` feeds **exactly one declaration** in `spec-table.css` (the
+  `--dividers-stripes` even-row fill) and `--appx-spec-stripe-bg` appears nowhere
+  else. Outside Stripes the knob has no referent at all, which is the bar
+  `showsGridMinColumnWidthControl` set for earning a hide.
+- 🔴 **This REVERSES feature 86 decision 4** ("Stripe background stays visible too"),
+  and the reversal is sound: decision 4 was made in the same breath as decision 3
+  (`Divider color` stays visible) and inherited its reasoning without the surface
+  count being checked. `borderColor` dresses FOUR surfaces (row rules · column
+  divider · the f80 separator · the outline whenever `outerBorderColor` is unset),
+  so at `NONE` rows it is still the only control for two live surfaces.
+  🚫 **Decision 3 is NOT reopened** — the asymmetry inside one 2-up grid IS the
+  feature: one field / one surface / one rule is what earns a hide.
+- **An AND, and the second clause is not defensive.** `rowDividerStyle ===
+"STRIPES" && rowLayout !== "GRID"`. Grid does not OFFER Stripes (f85), but
+  `GRID` + `STRIPES` is reachable from stored data — the orphan — and the
+  stylesheet stands that fill down to `transparent`. A naive `=== "STRIPES"` would
+  put a live colour picker directly under a select reading **"Stripes — not
+  available in Grid"**. `!== "GRID"` rather than a membership test, same call as
+  feature 94: the excluded case is the one with a reason.
+- ⚠️ **The first hide rules over COLORS, so they have no JSX line to wrap.** The
+  other seven are `{showsX(styling) && <control/>}`; all nine swatches are one
+  `.filter(…).map(…)` over `COLOR_KNOBS`, so the guard rides a new optional
+  `ColorKnob.visibleWhen` and is applied inside `colorGrid`. The predicates still
+  live with the other seven and are registered in `VISIBILITY_PREDICATES`, so
+  they inherit the preserve-on-hide law unchanged — only the attachment point
+  differs. **JSX guards stay at 7** (the contract test now says why it is not 9).
+- ⚠️ **The hazard that opened, guarded:** `colorGrid` renders its `<s-grid>`
+  unconditionally, so a group whose swatches were ALL gated would paint an EMPTY
+  grid — dead space, plus a silent hole in the "no group collapses to a bare
+  heading" count, which treats `colorGrid(…)` as one always-rendering control.
+  Pinned from the data. Both gated swatches sit in groups whose OTHER swatch is
+  unconditional (`Title color`, `Divider color`), which is what keeps that true.
+- **Both help texts had to change too** — `"Alternating rows — needs Row
+dividers set to Stripes."` → `"The fill on alternating rows."`, and `"The band
+behind a section title — needs Header style Banded."` → `"The band behind a
+section title."` The caveat and the hide are two answers to one problem, and
+  shipping both leaves the weaker one on screen: a condition a merchant can only
+  read while it already holds is not information. A test pins this as a property
+  OF GATING, not a ban on caveats — `Divider color` is ungated and keeps its
+  coupling text, and must.
+- **Zero storefront diff, feature-87 cost profile.** No migration, no field, no
+  CSS/Liquid/TOML/markup — hiding is rail-only and a hidden value still
+  serializes and still renders. **Tests 1120 → 1147 (+27)**, including the two
+  domain-derived "exactly one member shows it" assertions, the frozen-input round
+  trips, and one deriving the Grid answer FROM `rowDividerOptionsFor` so the
+  select's filter and the swatch's hide cannot drift into contradicting each
+  other on screen. ✅ **Mutation-tested three ways:** dropping the `!== "GRID"`
+  clause fails 2 and the diff names the orphan; dropping the `visibleWhen` clause
+  from `colorGrid` fails exactly the guard written for it and nothing else;
+  weakening the header predicate to `!== "PLAIN"` fails the
+  `SECTION_HEADER_STYLES`-derived assertion rather than a hand-listed one.
+- ✅ **Live-verified 2026-07-28, 10 of 10**, on the DRAFT scaffold
+  `cms3avu6f000gvpf40o9t3hqd` (0 assigned, 6 rows incl. a section header).
+  **Nothing saved — every change rode the SaveBar and ended in `Discard`.**
+  Part 2: Banded shows both swatches → **Underlined** and **Plain** each hide
+  `Background` while `Title color` stays and reflows to a lone half-width cell →
+  `#E6F4EA` survives Banded → Plain → Banded → and **with collapsing ON, Plain
+  still hides it**, so one predicate really does cover both shapes (feature 87's
+  hazard, confirmed rather than assumed). Part 1: **Lines** leaves `Divider
+color` ALONE → **Stripes** brings the pair back → **None** hides the stripe
+  **while Divider color stays**, which puts feature 86 decision 3 and feature 95
+  side by side in one screenshot → `#F9B8B8` survives the round trip.
+  🔴 **The ORPHAN is the check that mattered**: Row layout → Grid with `STRIPES`
+  stored shows the select reading **"Stripes do not apply in Grid layout"** with
+  the swatch **absent** — a naive `=== "STRIPES"` would have put a live pink
+  picker directly beneath that sentence — and switching back to Two-column
+  returned the swatch still holding `#F9B8B8`.
+  **Both new help texts observed live**, and they double as proof the value
+  committed (the non-empty gloss only renders when the field is non-null).
+  ✅ **Postgres untouched, measured**: after Discard the row's `updatedAt` is
+  still `2026-07-27T14:06:40Z` and all four columns are NULL.
+- ⚠️ **NOT observed: the storefront paint** — the scaffold's data rows have empty
+  values, so there is no visible band or stripe in the preview. Acceptable here
+  in a way it was not for 87/94: this feature is **zero storefront diff by
+  construction** (it hides controls; no CSS, no Liquid, no serialization), so
+  there is no rendering claim to falsify. What needed observing was the rail.
+- 🔬 **Method correction, worth carrying:** clicking an option inside an OPEN
+  native `<select>` popup **does nothing and silently clicks the page
+  underneath** — the first attempt left Header style on Banded and moved focus to
+  the field below. Recipe that then worked ~10× without a miss: click the select
+  → `Escape` → arrow keys. And wheel-scroll DID reach the rail throughout, so the
+  older "use Tab, not scroll" note is session-dependent exactly as it says.
+- ✅ **The feature-87 open question is CLOSED** — `headerBgColor` was the "hiding
+  it would be an 8th hide predicate + a feature-86 group change" item; it cost
+  neither (the group is unchanged and the predicate rides `visibleWhen`).
+
+**Section gap in the flat block layouts (feature 94, doc `94-…`) — ✅ COMPLETE
+2026-07-28, live-verified rail → preview → Postgres across all three row layouts**
+
+- Merchant report + DevTools screenshot: `margin-top: 30px` on
+  `tr.appx-spec-table__section-row` opens a real gap on their live storefront. It does —
+  and the knob it wanted **already existed** (`sectionGapPx`, feature 80). The rail simply
+  hid it unless `sectionsCollapsible` was on. This feature moved that fence.
+- 🔴 **Root cause: one true sentence over-generalised, repeated in three places**
+  (`spec-table.css`, `stylingControls.ts`, `data-model.md`): "a flat section header is a
+  `<tr>` and a `<tr>` takes no margin." True **only under `TWO_COLUMN`**. What a `<tr>`
+  DISPLAYS as is the row-layout rules' call — `table-row` there, but `block` under
+  `STACKED` and a `block` grid item under `GRID`, and margin applies in both. The
+  merchant's screenshot was a **GRID** table, which is exactly why their CSS worked. The
+  thing that cannot express a gap is a **table formatting context**, not the flat shape.
+- **Feature-87 cost profile, as specced.** No migration, no new field, no Liquid/TOML/
+  markup, no repaint (every new declaration gated on the `--section-gap` presence class),
+  and **no new hide predicate** — `showsSectionGapControl` changed its CONDITION to
+  `sectionsCollapsible || rowLayout !== "TWO_COLUMN"`, so the pinned count stays **7** and
+  feature 86 Step 5's 2⁷ empty-group test keeps its shape.
+- **`!== "TWO_COLUMN"`, not a `STACKED`/`GRID` membership test** — inverting the call
+  `showsMobileLayoutControl` makes: the EXCLUDED case is the one with a reason, so a fourth
+  `ROW_LAYOUTS` member inherits "the gap works", which is right (`TWO_COLUMN` is the only
+  member keeping `display: table`). And an **OR, not a replacement** — `TWO_COLUMN` +
+  collapsible still works through feature 80's untouched `<details>` rule.
+- **One CSS rule, two layout-scoped selectors.** Written bare it would be a _silent no-op_
+  under `TWO_COLUMN`; naming the layouts makes the selector state its own constraint.
+  `:not(:first-child)` does double duty — no leading gap, and under `STACKED` it stops a
+  first-child top margin collapsing out through the block `tbody` and pushing the whole
+  table down. ⚠️ Two mechanisms, one result: collapsing block margin under `STACKED`, a
+  never-collapsing grid-item margin under `GRID`; they agree only because every
+  neighbouring margin is 0 today.
+- ⚠️ **The control MOVED group** — feature 86's axis deciding its own placement:
+  `Collapsible sections` (→2) → `Section headers` (→8), last structural knob before the
+  colors, so Title spacing (padding INSIDE a header) sits beside the gap (margin OUTSIDE
+  one). Neither group empties; Collapsible still leads with its ungated switch. Help text
+  dropped "collapsible". `admin-screen-plan.md` §Tab 2 amended at the head of its list.
+- 🚫 **`TWO_COLUMN` with collapsing off stays excluded**, and the rejection was already on
+  file at `stylingControls.ts` before this report: a transparent `border-block-start` loses
+  the `border-collapse: collapse` width contest and silently deletes the previous row's
+  divider. Padding grows the band instead of opening a gap; a spacer `<tr>` would put a
+  cell-less row into the `role="table"` chain. The one uncosted option
+  (`border-collapse: separate`, scoped to the knob) is an **open question**, not a gap.
+- ✅ **No mobile asymmetry, and the predicate is why.** The worrying state — a
+  `TWO_COLUMN` table gapped on a phone and flat on desktop — is unreachable: the control
+  is hidden there, so no value exists to disagree across the breakpoint.
+- **Tests 1101 → 1120 (+19).** The feature-80 guard that pinned "exactly ONE
+  `margin-block-start` in the file" was **rewritten rather than bumped to 2** — a count of
+  2 would be an arithmetic accident; it now asserts the actual law (every such declaration
+  sits in a rule gated on `--section-gap`), which is scale-free. Plus the flat rule naming
+  both layouts and never two-column, `:not(:first-child)` on both shapes, the predicate's
+  full OR matrix derived from `ROW_LAYOUTS`, the group-placement pin in
+  `styleTabContract.test.ts` (the one thing that file says it _cannot_ see, asserted for
+  the one control that moved), and a renderer pin that the two markup shapes are mutually
+  exclusive — so the no-double-gap claim is measured, not argued.
+  ✅ **Mutation-tested:** dropping the `--layout-grid` selector fails 2 tests and the diff
+  names it; reverting the predicate to `sectionsCollapsible` fails 4 including
+  `STACKED`-with-collapsing-off.
+- ✅ **`.harness/` matrix run (8 cases, measured not eyeballed).** `STACKED` first-child
+  gets `0px` with the table's top offset **identical to the no-gap control** — the
+  margin-collapse hazard closed by measurement; rows-before-first-section gaps at BOTH
+  boundaries (the case `+` would skip); `GRID` 30px; **`TWO_COLUMN` measures `-0.0px`**,
+  the deliberate no-op. 🔍 **The stranded-`LINES`-rule question is answered NO, by computed
+  style at 1:1** (the feature-88 lesson): the last row before a gap keeps
+  `0.909px solid rgba(0,0,0,0.1)` — _identical to the same table with no gap_ — so the gap
+  changes spacing only. `STRIPES`/`NONE` have no rule to strand.
+- ✅ **Live-verified** on `Untitled template (copy)` (DRAFT, 0 assignments). Two-column +
+  collapsing off → **control absent** from Section headers. Stacked → control appears
+  under Section headers reading "No gap between sections."; set 30 → preview separates and
+  help text reads **"Space between each section."** Grid → two tracks with the gap spanning
+  both, the merchant's own case driven by the knob instead of hand-edited DevTools CSS.
+  🔴 **The round trip is the one that mattered**: Two-column hides it, and switching
+  collapsing ON brings it back **still reading 30** — preserve-on-hide observed live, not
+  only unit-tested, with feature 80's `<details>` rule painting the gap.
+  Postgres after save: `sectionGapPx = 30`. **Fully restored afterwards** — `rowLayout`
+  and `sectionGapPx` both back to `null`, every other column byte-identical.
+  ⚠️ **Left in place:** the content rows added to that throwaway scaffold to give it a
+  second section (`Basic Information` / Weight / `Physical Description` / Dimensions).
+  ⚠️ **NOT run: the real-storefront leg.** It needs an ACTIVE template, and the two
+  obvious candidates are in merchant use. Owed, low risk by construction (the preview
+  renders through the same renderer and a byte-mirrored stylesheet).
+- 🔴 **Method note, learned the hard way.** Blind `Shift+Tab` repeats in the embedded admin
+  walk focus out of the iframe unobserved. Worse, I read a template's DRAFT→ACTIVE change
+  as self-inflicted and raised a false alarm; it was the merchant's own concurrent work.
+  **Check the mechanism against how the app saves (SaveBar-gated, explicit Save) before
+  attributing a write.** Tab in small batches with a screenshot after each.
+
 **Plain section header (feature 87, doc `87-…`) — ✅ COMPLETE 2026-07-27, live-verified
 rail → Postgres → metaobject → storefront (all 3 legs closed same day)**
+
 - Merchant report item 1 of 5: there is no **plain** section header, and `TEXT_ONLY`
   **is not text-only** — it drops the band but keeps `border-block-end: 2px solid`
   (`spec-table.css:218`). Both reference tables (JBL, Samsung) show a bare bold title with
@@ -339,13 +554,16 @@ rail → Postgres → metaobject → storefront (all 3 legs closed same day)**
   prettier's 80 columns and hardcoding the wrap would make reformatting a test failure.
 - ⚠️ **Two consequences accepted in writing.** (1) Collapsible + Plain + all closed is a run
   of bare titles with **no separator** — the feature-80 hairline is deliberately NOT
-  extended, since it exists because BANDED *drops* an edge and two closed bands merge into
+  extended, since it exists because BANDED _drops_ an edge and two closed bands merge into
   a slab; a plain title has no fill to merge with, and the absent edge IS the member.
   `sectionGapPx` is the answer, and a test pins the banded-only scope so a later change has
   to revisit the decision rather than drift into it. (2) **`headerBgColor` does nothing
   under Plain** — the rule hardcodes `transparent`, exactly as `TEXT_ONLY` always has.
   Pre-existing; the swatch already self-reports ("needs Header style Banded"). Hiding it
   would be an 8th hide predicate + a feature-86 group change — **open question, not done.**
+  ✅ **CLOSED 2026-07-28 by feature 95 part 2** — the swatch now hides unless Banded, and
+  the estimate above was wrong on the second half: it cost **no group change at all**,
+  because a swatch's guard rides `ColorKnob.visibleWhen` rather than a JSX wrapper.
 - ✅ **Live-verified on the DRAFT `Motorola Moto G45 5G`** (0 assigned; merchant added a
   `Phone Details` section header for the purpose). All three options walked by keyboard;
   🔴 **the reported defect reproduced en route** — `Underlined` paints the heavy 2px rule
@@ -359,13 +577,13 @@ rail → Postgres → metaobject → storefront (all 3 legs closed same day)**
   asserted. Left saved on Plain; collapsing discarded back off.
 - ✅ **All three legs closed 2026-07-27**, on the real storefront domain rather than the
   editor mirror. Set `Header style` → Plain on the already-ACTIVE `Unikyy Blade Pro
-  Turbo Fan` template (assigned to product **Motorola Edge 60 Fusion 5G**) and Saved:
+Turbo Fan` template (assigned to product **Motorola Edge 60 Fusion 5G**) and Saved:
   all 4 real section headers render bare bold, no band, no rule, live at
   `appx-dev.myshopify.com/products/motorola-edge-60-fusion-5g`. Resized that same real
   tab (not the admin iframe, which can't be measured — see `browser-verify-embedded-app`
   memory) to 390px: identical bare-header rendering holds at mobile width, GRID collapsed
   to one column. Opened `AGX TF36 Handheld Turbo Fan` (stored `sectionHeaderStyle =
-  "TEXT_ONLY"` beforehand, confirmed via Neon) and its rail read **"Underlined"** with the
+"TEXT_ONLY"` beforehand, confirmed via Neon) and its rail read **"Underlined"** with the
   correct help text on a cold load, not only after an in-session pick. Unikyy reverted to
   Banded and re-saved afterward; Postgres confirms `sectionHeaderStyle` back to `null` and
   every other `TableStyling` column byte-identical to its pre-test values.
@@ -378,6 +596,7 @@ rail → Postgres → metaobject → storefront (all 3 legs closed same day)**
 
 **Style tab reorganization (feature 86, doc `86-…`) — ✅ COMPLETE, all 6 steps
 2026-07-26**
+
 - Merchant reported the Style rail as unorganized and sent two Shopify theme-editor
   screenshots as the target. Root cause: the rail's six groups are cut on **two axes at
   once** — four by OBJECT (Layout / Size & frame / Sections / Rows), two by CSS PROPERTY
@@ -392,7 +611,7 @@ rail → Postgres → metaobject → storefront (all 3 legs closed same day)**
   proposed hide-unless-LINES is a functional regression — `borderColor` also dresses the
   column divider, the feature-80 separator, and the outline whenever `outerBorderColor` is
   unset); Stripe background likewise; **short labels inside groups** (`Weight`, `Title
-  size`); and it lands **before B2**.
+size`); and it lands **before B2**.
 - **Three structural calls, not preferences.** (1) `labelCase` goes to Labels, NOT the
   merchant's "Table text" — verified against the stylesheet, `--appx-spec-label-transform`
   and `-font-weight` sit on `.appx-spec-table__label` while size/style/line-height sit on
@@ -457,7 +676,7 @@ rail → Postgres → metaobject → storefront (all 3 legs closed same day)**
   have said. A test pins which five may say "theme".
 - 🔴 **One defect found LIVE that the character count had passed.** `Header background`
   (17 chars) wrapped in the 2-up color grid and pushed its swatch below its neighbour's,
-  misaligning the row — while `Stripe background`, the *same 17 characters*, fits, because
+  misaligning the row — while `Stripe background`, the _same 17 characters_, fits, because
   "Stripe" sets narrower than "Header". The usable cell is right at the boundary and the
   real limit is nearer 15. Shortened to `Background` and re-verified. **Method note:
   measuring labels analytically filters but does not substitute for looking at the rail.**
@@ -475,8 +694,8 @@ rail → Postgres → metaobject → storefront (all 3 legs closed same day)**
   `Background`s and two `Text color`s in one run. Consequence of the step order, not a
   defect; the per-group uniqueness test already asserts the post-Step-4 grouping.
 - ✅ **Step 3 — the separation treatment** (1004 → 1006 tests). Visual only: nothing moved
-  between groups, no control and no copy changed, so the step answers *does the separation
-  read well at 300px* on its own rather than inside Step 4's 34-control diff. Outer stack
+  between groups, no control and no copy changed, so the step answers _does the separation
+  read well at 300px_ on its own rather than inside Step 4's 34-control diff. Outer stack
   `gap="base"` → **`large-200`**, inner per-group stacks stay **`base`**, and an
   `<s-divider>` between each pair of groups plus one above Reset. The pair is the point:
   proximity alone already reads as groups **before a rule is drawn**, and the dividers
@@ -542,7 +761,7 @@ rail → Postgres → metaobject → storefront (all 3 legs closed same day)**
   resolved** — the three `Background` and two `Text color` swatches now each sit under
   their own announced heading, and Labels' pair vs Values' pair reads cleanly across a
   heading plus a rule, which is exactly the bet the short-label decision made. ✅ `Outline
-  color` sits under Outline width reading **"Follows Divider color."**
+color` sits under Outline width reading **"Follows Divider color."**
   ⚠️ **`Collapsible sections` collapses to a heading + one switch** while collapsing is
   off, and the heading nearly restates the switch label. It earns itself at three controls
   when on. **Step 5 decides** — recorded as a live observation, not acted on.
@@ -560,7 +779,7 @@ rail → Postgres → metaobject → storefront (all 3 legs closed same day)**
   registry): Stacked/Grid hide On mobile + Label column width · Grid shows Minimum column
   width · Maximum width 960 shows Alignment · Text size Custom shows Custom size seeded 16
   · Enable collapsing shows Sections start + Gap. Thinnest state seen live is `Table
-  layout` under Stacked — heading + `Row layout` alone — and it reads as a group, not an
+layout` under Stacked — heading + `Row layout` alone — and it reads as a group, not an
   empty section. **All changes discarded; nothing saved.**
 - ✅ **`Collapsible sections` KEPT** (the Step 4 open question). At three controls it is
   unambiguously a group; at one it is a heading plus a switch that nearly restates it. Kept
@@ -595,6 +814,7 @@ rail → Postgres → metaobject → storefront (all 3 legs closed same day)**
   sits ABOVE all eight groups** when B2 lands — the reason 86 deliberately preceded B2.
 
 **Style tab — Reshell Phase B1 (feature 57, steps 1–12; docs `57-…`–`69-…`)**
+
 - Step 1 (`57-…`): pure styling domain `app/utils/tableStyling.ts` — allowed-value arrays,
   `StylingValues`, `DEFAULT_STYLING_VALUES`, tolerant `parseStylingValues` (never throws),
   overrides-only `serializeStylingOverrides`, `stylingEquals`.
@@ -602,8 +822,8 @@ rail → Postgres → metaobject → storefront (all 3 legs closed same day)**
   `stylingToCssVars` (nullable→CSS var) / `stylingToModifierClasses` (knob→BEM modifier) /
   `formatCssVarDeclarations` / frozen `SPEC_TABLE_CSS_VARS`; one translation layer, no drift.
 - Step 3 (`59-…`): storefront `spec-table.css` rewritten to `var(--appx-spec-*, <literal>)`
-  + one dormant rule set per modifier + the `--mobile-stacked` @media default; byte-exact
-  drift guard (`specTableCssContract.test.ts`, `previewStyles.ts` copy).
+  - one dormant rule set per modifier + the `--mobile-stacked` @media default; byte-exact
+    drift guard (`specTableCssContract.test.ts`, `previewStyles.ts` copy).
 - Step 4 (`60-…`): `add_table_styling` migration + server persistence — `TableStyling`
   (override columns, NULL=default), `stylingToDbColumns`, nested shop-scoped upsert, lazy row.
 - Step 5 (`61-…`): engine styling state + Row-dividers control + Save round-trip;
@@ -618,7 +838,7 @@ rail → Postgres → metaobject → storefront (all 3 legs closed same day)**
 - Step 10 (`66-…`): Colors + Typography — the last knob-adding step; nullable "inherit"
   vocabulary; `FONT_SIZE_PX_MAX` raised 40→184; every `STYLING_FIELD_NAMES` field now has a control.
 - Step 11 (`68-…`): reveal a preview when the merchant opens the Style / Settings tab
-  (per-tab view memory, `tabViewMemory.ts`). *(NOT the withdrawn "style the grid" step — `67-…`.)*
+  (per-tab view memory, `tabViewMemory.ts`). _(NOT the withdrawn "style the grid" step — `67-…`.)_
 - Step 12 (`69-…`): Reset-to-theme-defaults + rail a11y (help text on `details`, real group
   headings, named landmark) + docs reconciliation. **Phase B1 complete.**
 - Resolved en route: the section-header BANDED band is the intended default becoming
@@ -626,6 +846,7 @@ rail → Postgres → metaobject → storefront (all 3 legs closed same day)**
 
 **Multi-column row flow (feature 85, doc `85-…`) — 🛠️ BUILT & live-verified
 2026-07-26, ⚠️ NOT SIGNED OFF (feature-70 screen-reader pass still owed)**
+
 - Merchant sent five competitor spec tables laying rows out in 2–3 side-by-side tracks.
   Ships "Type A" only (the unit laid out is one label/value pair); section-level flow is
   out of scope with a recorded reason. `GRID` joins `ROW_LAYOUTS` (appended, never
@@ -643,7 +864,7 @@ rail → Postgres → metaobject → storefront (all 3 legs closed same day)**
   That is not the same as a screen reader ANNOUNCING the pairs, which is what feature 70
   actually owes.
 - **A minimum column width, never a column count** — `repeat(auto-fit, minmax(min(var(…,
-  240px), 100%), 1fr))`. Responsiveness with no media query, no unreadable 3-tracks-in-a-
+240px), 100%), 1fr))`. Responsiveness with no media query, no unreadable 3-tracks-in-a-
   600px-theme case, and it is what keeps the ~640px editor preview honest (a count knob
   would render "3 columns" there and on a 1400px storefront while looking nothing alike).
 - 🔴 **Three plan corrections, all found by the CSS harness and all invisible when
@@ -722,6 +943,7 @@ rail → Postgres → metaobject → storefront (all 3 legs closed same day)**
 
 **Section header typography & spacing (feature 81, doc `81-…`) — ✅ shipped & fully
 live-verified 2026-07-26**
+
 - Merchant sent five competitor spec tables (Best Buy, Amazon, Trek, AppleGadgets, a fifth
   blue-band sample) and asked which section-header treatments the app can reproduce. Five
   were missing; all five ship here as **nullable `TableStyling` columns** — `headerTextColor`,
@@ -743,7 +965,7 @@ live-verified 2026-07-26**
   both. This also collapsed the control from a five-option tri-state to a plain number box.
 - **`headerPaddingBlockPx` is the ONE integer knob with a 0 floor** (merchant's call). Feature
   78's minimum-of-1 law governs knobs where null already means off; here null means the
-  `0.75rem` literal, so 0 is a *first* spelling of a genuinely different render, nothing keys
+  `0.75rem` literal, so 0 is a _first_ spelling of a genuinely different render, nothing keys
   a presence flag on it, and the mapping guard is `!== null` rather than falsiness so a stored
   0 emits `0px` instead of falling through to the fallback. **Block axis only** — the inline
   padding stays welded to the row cells' `0.75rem`, or a 24px title would indent past its own
@@ -752,7 +974,7 @@ live-verified 2026-07-26**
 - **Live-verified end to end** on the ACTIVE DJI template: rail → Save → Postgres → metaobject
   → rendered Horizon storefront, all 9 sections at `22px / 700 / uppercase / 18px block`, with
   **`padding-inline` still `12px`** (the block-only decision in production) and `font-weight:
-  700` coming from the *literal fallback* since `headerFontWeight` is null. Features 79/80
+700` coming from the _literal fallback_ since `headerFontWeight` is null. Features 79/80
   undisturbed (`margin-block-start` 0/25px, every `border-block-start` 0px). Row labels stay
   `text-transform: none` — `headerCase` never touches `labelCase`'s surface. Mobile checked at
   a genuinely reflowed `innerWidth: 502` (`labelDisplay: block` proves the @media fired): all
@@ -770,8 +992,8 @@ live-verified 2026-07-26**
   still having rewritten the types and client JS, so typecheck/build pass on a "failed"
   generate — the engine binary is version-, not schema-specific. Don't loop on it.
 - **Left saved with** Section title size 22 · case Uppercase · padding 18 (revert = two boxes
-  + one select). `headerFontWeight` / `headerTextColor` deliberately left null, which is what
-  made "absent from the wire when null" a real check.
+  - one select). `headerFontWeight` / `headerTextColor` deliberately left null, which is what
+    made "absent from the wire when null" a real check.
 - Numbering: this takes **81**. ⚠️ **Superseded by feature 88 (2026-07-27):** these five
   do **not** join any preset bundle — header typography is tuning within a pattern, not a
   pattern. They remain what lets the reference tables be reproduced rather than
@@ -779,6 +1001,7 @@ live-verified 2026-07-26**
 
 **Section separation + section gap (feature 80, doc `80-…`) — ✅ shipped & fully
 live-verified 2026-07-26**
+
 - Merchant collapsed every section on the ACTIVE DJI template and the banded headers
   rendered as **one unbroken grey slab** — no edge between adjacent bands. Root cause is
   one Step 8 rule doing exactly what it says: `--section-banded` drops the summary's
@@ -838,7 +1061,7 @@ live-verified 2026-07-26**
   help text and SaveBar untouched until focus leaves. Pre-existing (all three px boxes do
   it); knowing it saves a false "the knob is dead" diagnosis.
   **The DJI template is left saved with `Banded` + `Gap = 12`** (it had been on `Text
-  only`, which was the workaround for this bug). Revert = two controls.
+only`, which was the workaround for this bug). Revert = two controls.
 - Numbering: this takes **80**. `sectionGapPx` is the ONE tuning value feature 88 keeps in
   a bundle (`Accordion`, at 12px) — a Trek-style accordion needs whitespace between
   disclosures to read as separate blocks. ⚠️ **Corrected 2026-07-27:** the Accordion preset
@@ -846,6 +1069,7 @@ live-verified 2026-07-26**
   rule, and banded is its own card.
 
 **Column divider (feature 79, doc `79-…`) — ✅ shipped & fully live-verified 2026-07-26**
+
 - Merchant sent two competitor spec tables (techlandbd, AppleGadgets) rendering a full
   **grid** and asked for a column border. Only ONE edge was actually missing: rows already
   had `LINES` (57 Step 5) and the frame shipped in 78, so the vertical rule between label
@@ -872,7 +1096,7 @@ live-verified 2026-07-26**
 - ⚠️ **The one hazard is SOURCE ORDER, not specificity.** Both stacked shapes must drop the
   rule (a block label has no seam; a survivor paints as a stray vertical stub), and all three
   selectors are two classes — a **tie**, so order alone decides. The ON rule sits with the
-  dividers block *before* the layout block, making the file's existing documented ordering
+  dividers block _before_ the layout block, making the file's existing documented ordering
   rule load-bearing for one more knob. Breaking it is invisible: previews and storefront
   regain the stub together and it reads as a design choice. Three tests pin it (the 1px
   literal, both `none` rules, and the ordering). No `!important` anywhere. Tests 879 → 887.
@@ -882,7 +1106,7 @@ live-verified 2026-07-26**
   custom property) → rendered Horizon storefront, rule stopping at every section band. The
   "matches the row rules by construction" claim is **measured, not argued**: the label's
   computed `border-inline-end` and `border-block-end` are both `0.727273px solid
-  rgba(0,0,0,0.1)`. The source-order hazard was verified **observably** — swapping the layout
+rgba(0,0,0,0.1)`. The source-order hazard was verified **observably** — swapping the layout
   class on the live page dropped the border `0.727273px → 0px` with the divider class still
   present, and restored it. Mobile ≤749px checked in the editor's Mobile preview (a real
   ~375px iframe): stacked, no rule, **no stray right-edge stub**. Migration confirmed
@@ -894,10 +1118,11 @@ live-verified 2026-07-26**
   `columnDividerStyle` lands in **no** bundle, and the "Bordered / Grid" preset it was
   meant to enable was **withdrawn**. The two banded references (startech, techlandbd)
   differ only on the frame and column-rule axes, which is evidence those are tuning
-  *within* Banded rather than a look a merchant starts from. The knob is unaffected —
+  _within_ Banded rather than a look a merchant starts from. The knob is unaffected —
   it is two clicks from the Banded card.
 
 **Table width + outer border (features 77–78, docs `77-…` / `78-…`) — ✅ shipped 2026-07-25**
+
 - **77 — the block now fills its container (CSS-only bug fix, live-verified).** Merchant
   report: the storefront table's width followed its CONTENT, so opening a collapsible
   section resized the whole table. Measured on the dev store: **206px closed ↔ 1264px open**
@@ -911,7 +1136,7 @@ live-verified 2026-07-26**
   the CROSS axis, so in a row-flex theme it touches the height and leaves the width alone
   (verified — no overflow). Base rule, not a knob: a table that resizes when a shopper opens
   a section is wrong in every theme. Live-verified on the storefront — **jitter 0px**.
-  *Note the previews never showed this and never could:* the preview document has no
+  _Note the previews never showed this and never could:_ the preview document has no
   `.shopify-app-block` ancestor, so "storefront-faithful" has a hole exactly where the
   surrounding theme wraps the block.
 - **78 — five Style-tab knobs**, new **Size & frame** rail group: `tableMaxWidthPx`
@@ -932,7 +1157,7 @@ live-verified 2026-07-26**
   inherited the preserve-on-hide law by adding one row to `VISIBILITY_PREDICATES`.
   **Round-trip live-verified end to end** on the ACTIVE DJI template: rail → Save → all five
   Postgres columns → metaobject `styling_css` (classes `--align-center --outer-border
-  --outer-radius`, vars with px units + hex) → rendered storefront (900px, centred 203/203,
+--outer-radius`, vars with px units + hex) → rendered storefront (900px, centred 203/203,
   `2px solid rgb(192,38,211)`, 12px radius, last-row rule dropped, jitter still 0). The cap
   shrinks rather than overflows — measured 900/700/360 in 1438/700/360px containers.
   ⚠️ **A migration mid-`shopify app dev` needs the dev server restarted:** the first save
@@ -945,14 +1170,14 @@ live-verified 2026-07-26**
   frame is the one axis that can collide with the merchant's theme (startech's apparent
   "frame" is the theme's own section card, not the table's).
 - **Follow-up 2026-07-26 — Outline width and Corner radius show `0` for off; neither box is
-  ever blank.** Merchant report: reaching "no outline" meant *removing the text*, which is a
+  ever blank.** Merchant report: reaching "no outline" meant _removing the text_, which is a
   poor gesture on a knob whose whole vocabulary is a px number. So for these two knobs
   **display and storage disagree, in one direction only**: the box always shows a number,
   `null` renders as `0` (`toZeroMeansOffControlValue`), and anything rounding to ≤ 0 reads back
-  as `null` (`fromZeroMeansOffControlValue` — so `0`, `0.4`, `-5` *and* an emptied box all mean
+  as `null` (`fromZeroMeansOffControlValue` — so `0`, `0.4`, `-5` _and_ an emptied box all mean
   off, while `0.6` still clamps up to the minimum). Both fields take the shared
   `ZERO_MEANS_OFF_CONTROL_MIN = 0` so the **stepper can walk down to off**; the domain
-  minimums stay 1 as the smallest *stored* values. Off-state help text now reads "No outline.
+  minimums stay 1 as the smallest _stored_ values. Off-state help text now reads "No outline.
   Set 1 or more to frame the table." / "Square corners. Set 1 or more to round them."
   ⚠️ **The minimum-of-1 lock above is NOT relaxed — it is what makes this safe.** 0 is never
   stored, so `serializeStylingOverrides` still has nothing to write, and the reason is
@@ -971,6 +1196,7 @@ live-verified 2026-07-26**
 
 **Collapsible Style / Settings rail (feature 76, doc `76-…`) — ✅ shipped & verified 2026-07-25**
 **— and, since the modal below was removed, the ONLY answer to the Style tab's width problem.**
+
 - The **other** option the same merchant offered for the same report that produced feature
   75, built at their request. One toggle in the control row
   collapses the 18.75rem Style/Settings rail to **zero width**, handing the stage the full
@@ -998,12 +1224,12 @@ live-verified 2026-07-26**
   Shipping a sighted-users-only toggle state into the one rail that spent feature 57 Step 12
   closing that gap was not acceptable.
 - **One defect the plan did not predict:** collapse/expand drifted the rail's scroll offset
-  ~36px *per cycle*. Not the zero-rect `getBoundingClientRect()` hazard the plan named (that
+  ~36px _per cycle_. Not the zero-rect `getBoundingClientRect()` hazard the plan named (that
   is real, is now guarded in `useScrollRegionHeight`, and did **not** move the drift) — it is
   Chrome **scroll anchoring** re-compensating a re-laid-out hidden subtree. `overflow-anchor:
-  none` on `.railScroller` fixes it; pixel-identical across six cycles.
+none` on `.railScroller` fixes it; pixel-identical across six cycles.
 - **The honest limit stands, and is now the whole story:** under ~1420px the
-  Style tab still cannot show a truthful desktop table *and* the knobs at once. Collapse
+  Style tab still cannot show a truthful desktop table _and_ the knobs at once. Collapse
   trades the knobs for width; it is look-then-adjust, not adjust-and-watch. If the friction
   is reported again the answer is a
   fixed-1100px `transform: scale()` preview, **not** a second panel and **not** a re-added
@@ -1013,6 +1239,7 @@ live-verified 2026-07-26**
 
 **Full-size preview modal (feature 75, doc `75-…`) — 🗑️ REMOVED 2026-07-25 (shipped &
 verified earlier the same day)**
+
 - **Removed at the merchant's request** after they used both surfaces: the collapsible rail
   (feature 76) answered the width problem on its own, so the modal was carrying a second
   way to do one thing — a second surface to explain, keep truthful, and re-verify on every
@@ -1037,6 +1264,7 @@ verified earlier the same day)**
   content) are recorded in `75-…` should a dialog-hosted preview ever be revisited.
 
 **Content-free tables render nothing (feature 74, doc `74-…`) — ✅ shipped & verified 2026-07-23**
+
 - Merchant report: a brand-new template's Style/Settings preview showed a bare grey box.
   Root cause was **not** the preview — the starter scaffold's blank SECTION_HEADER had no
   emptiness gate at all, so it rendered as a content-free `__section` band (BANDED default =
@@ -1061,6 +1289,7 @@ verified earlier the same day)**
   sections of the 44-row DJI template are kept). Details + two plan corrections in `74-…`.
 
 **Desktop preview inner scroll (feature 73, doc `73-…`) — ✅ shipped & verified 2026-07-23**
+
 - The Desktop browser mockup no longer grows without bound: the shim-measured content
   height is **clamped** to the available viewport (pure `browserScreenHeight` in
   `deviceView.ts`), so a long table scrolls INSIDE the window like a real browser while a
@@ -1073,6 +1302,7 @@ verified earlier the same day)**
   untouched.
 
 **Editor device-preview mockups (feature 72, doc `72-…`) — ✅ shipped & verified 2026-07-22**
+
 - The Desktop/Mobile previews now render inside a device mockup: Desktop = a browser
   window (traffic-light dots + faux address pill, fills the column; auto-height until
   feature 73 clamped it to the viewport); Mobile =
@@ -1087,6 +1317,7 @@ verified earlier the same day)**
   `SpecTableEditor.module.css` are untouched. Live-verified on the dev store.
 
 **Editor sidebar inner-scroll (feature 71, doc `71-…`) — ✅ shipped & verified 2026-07-22**
+
 - Style/Settings rail now scrolls internally (bounded to the iframe viewport via the
   reused `useScrollRegionHeight` + a new `EditorShell.module.css` `.railScroller`) so the
   long Style rail no longer scrolls the preview off-screen. **Only the rail scrolls**
@@ -1094,7 +1325,7 @@ verified earlier the same day)**
   / `RowGrid.tsx` untouched. Full gate green; live-verified on the dev store (Style rail
   scrolls to "Reset to theme defaults" with preview anchored; Settings same; Content unchanged).
 - **Follow-up 2026-07-23 — rail scrollbar rides the panel edge.** A scrollbar paints on its
-  scrolling element's *border* edge, so while the wrapping `s-box` owned `padding="base"` on
+  scrolling element's _border_ edge, so while the wrapping `s-box` owned `padding="base"` on
   all four sides the rail's scrollbar floated ~1rem inside the grey panel with a dead strip to
   its right. The box now sets `paddingInlineEnd="none"` and `.railScroller` owns that one
   gutter itself (`padding-inline-end: var(--s-space-base, 1rem)`), so the scrollbar hugs the
@@ -1103,14 +1334,15 @@ verified earlier the same day)**
   18.75rem rail; same standard property, same no-`::-webkit-scrollbar`-fork call as the device
   previews' `PREVIEW_AMBIENT` (feature 73). Landmark, `useScrollRegionHeight`,
   and the tripwired files unchanged. Full gate green; live-verified on the dev store.
-  *(The editor's OTHER visible gutter — the empty ~16px right of the app's own document
+  _(The editor's OTHER visible gutter — the empty ~16px right of the app's own document
   scrollbar — is Shopify's, not ours: admin's `.Polaris-Scroll` sets `scrollbar-gutter: stable`
-  and lays the app iframe inside `_ScrollbarSafeArea_`, 16px narrower. Not removable from
-  inside the iframe; it only stops being visible if the app document itself stops scrolling —
-  today it overflows by roughly the `.tipsFooter` height, which `useScrollRegionHeight`'s flat
-  `BOTTOM_PAD_REM = 3` does not budget for. Unfixed; see Next Up.)*
+  and lays the app iframe inside `\_ScrollbarSafeArea_`, 16px narrower. Not removable from
+inside the iframe; it only stops being visible if the app document itself stops scrolling —
+today it overflows by roughly the `.tipsFooter`height, which`useScrollRegionHeight`'s flat
+`BOTTOM*PAD_REM = 3` does not budget for. Unfixed; see Next Up.)*
 
 **Device previews — Reshell Phase D (feature 49, steps 1–8; docs `49-…`–`56-…`)**
+
 - Read-only Desktop / Mobile storefront previews in the editor: toggle swaps the stage (1),
   pure storefront-markup renderer (2), sandboxed iframe (3), shared `spec-table.css` via a
   drift-guarded string copy (4), device-width sizing (5), content-driven auto-height via
@@ -1118,6 +1350,7 @@ verified earlier the same day)**
   docs + sign-off (8). **Tablet removed 2026-07-22.**
 
 **Product assignment engine — features 37–48 (merchant-complete)**
+
 - 37 (`37-…`): data foundation — `add-assignment` migration, `ProductAssignment(Index)`,
   `assignmentScope.ts`, shop-scoped `assignment.server.ts`.
 - 38 (`38-…`): pure scope-overlap resolver (`assignmentOverlap.ts`, set-algebra).
@@ -1142,12 +1375,14 @@ only for bounded overrides. Materialization (`ProductAssignmentIndex`) deferred 
 Multi-value applies to PRODUCT + COLLECTION only. No migrations needed for the 45–48 series.
 
 **Storefront (features 34–35)**
+
 - 34 (`34-…`): Theme App Extension first pixel — `extensions/product-specs-table/`, declarative
   TOML metaobject + `metaobject_reference` product metafield (both `public_read`), semantic `<table>`.
 - 35 (`35-…`): value-part resolution — `spec-table-value.liquid` resolves
   `SHOPIFY_FIELD` / `METAFIELD` / `TEXT` / `LINE_BREAK`; whole-cell `hideWhenEmpty`; 50-row chunking.
 
 **Editor build — 13-step order + Step 9.5 (features 02–15)**
+
 - Step 1 (`02-…`): `app/utils/rows.ts` reducer + static rows + add/delete/duplicate + 200-row cap (`MAX_TEMPLATE_ROWS`).
 - Step 2 (`03-…`): segmented value cell + pills + toolbar + row gutter; `afterId` insert; `ADD_SECTION`.
 - Step 3 (`04-…`): review & harden Steps 1–2 (comment-only fixes; not-fixed items → "Step 3 Follow-ups").
@@ -1164,11 +1399,13 @@ Multi-value applies to PRODUCT + COLLECTION only. No migrations needed for the 4
 - Step 13 (`15-…`): bulk-insert rows from paste (`gridToPastedRows` + `PASTE_ROWS`, cap-truncated). Closes clipboard paste.
 
 **Reshell to the mockup — Phase A (features 16–18)**
+
 - A2 (`16-…`): presentational `EditorShell` chrome (segmented tabs + device toggle + sidebar slots).
 - A3 (`17-…`): bounded inner-scroll — only the rows list scrolls (`useScrollRegionHeight` + sticky header).
 - A1 (`18-…`): extracted `useRowEngine` + presentational `ContentTab`/`RowGrid`/`RowActionsToolbar`/`InsertFieldModal`; `SpecTableEditor` now a thin wrapper. Behavior-preserving. **Closes Phase A.**
 
 **Template lifecycle + templates-list (features 19–28 + trims)**
+
 - Create-on-first-save (`19-…`): "Create template" opens the editor seeded with a starter scaffold; Postgres row created on first Save.
 - Lifecycle actions (`20-…`): header ⋯ Rename/Duplicate/Delete + status badge; `duplicate`/`delete` server fns; metaobject deleted before Postgres.
 - Paste refinements 1–4 (`21-…`–`24-…`): content-first intent, insert-after-active, replace-pristine-scaffold, confirm-before-cap.
@@ -1177,25 +1414,31 @@ Multi-value applies to PRODUCT + COLLECTION only. No migrations needed for the 4
 - Duplicate in-flight feedback (App Bridge global loading), shared-fetcher `busy` race gate, SaveBar-hide before Delete redirect.
 
 **Editor bulk delete (`29-…`, `33-…`)**
+
 - Per-row select checkbox + contextual bulk bar + count-gated confirm modal; pure `DELETE_ROWS`; tristate "select all" header checkbox; selected-row highlight.
 - Undo toast (`33-…`): pure `RESTORE_ROWS` restores the exact pre-delete snapshot; 10s "Undo"; `savingRef` guard so Undo can't mutate during a save.
 
 **Keyboard cell navigation (`30-…`–`32-…`)**
+
 - Pure vertical-nav resolver `gridNav.ts` → keyboard/DOM wiring `useGridKeyboardNav.ts` (`Ctrl/Cmd + Arrow`) → manual-advance editor tips footer (WCAG-safe, no auto-rotate).
 
 **Template status change (`36-…`)**
+
 - Status (DRAFT/ACTIVE/ARCHIVED) changeable from two surfaces (list ⋯ modal + editor Settings tab); both re-sync the storefront metaobject. Shared `validateTemplateStatus`, `setTemplateStatusForShop`, extracted `templateSync.server.ts`.
 
 **MVP UI trims (2026-07-11/12, UI-only projections)**
+
 - Scope picker offers only No products / All products / A specific product (`HIDDEN_SCOPE_KINDS` + `VISIBLE_SCOPE_OPTIONS`; full source of truth unchanged).
 - Status picker + list filter offer only Draft / Active (`HIDDEN_STATUS_VALUES`, `STATUS_FILTER_OPTIONS`); `ARCHIVED` re-enable is a one-line removal; badge tone kept.
 - Editor page width → `inlineSize="large"` to match the templates list.
 
 **Foundation**
+
 - Shopify app template (React Router / TS) + PostgreSQL (Neon) + Prisma; app installed on the dev store; session + shop record in Neon.
 - Shop-scoped `app/models/template.server.ts` (`shopId` in every where/data); `/app/templates` read-only list; single dynamic editor route `app.templates_.$id`.
 
 **Testing & tooling**
+
 - Phase 1 unit tests (Vitest, standalone `vitest.config.ts`); Phase 2 shop-isolation tests (mocked Prisma).
 - CI gate (`.github/workflows/ci.yml`: typecheck → lint → format:check → test → build), Dependabot, `context/app-store-review-checklist.md`.
 - Dependency security pass (`npm audit` → 0); CodeRabbit review fixes (shop-scoped writes, `:focus-visible` ring, `updateMany`→`update`).
@@ -1210,7 +1453,7 @@ Multi-value applies to PRODUCT + COLLECTION only. No migrations needed for the 4
    **The plan is derived from SEVEN merchant-supplied reference tables**, not invented:
    four axes define a pattern (pair layout · section headers · row separation · frame)
    plus one behavioural axis (collapsible); everything else in `STYLING_FIELD_NAMES` is
-   tuning *within* a pattern.
+   tuning _within_ a pattern.
    ⚠️ **This overturns the "must land in the preset bundles" note repeated across 78–85.**
    A bundle sets **structure only** — no colour, no typography, no density, no width — so
    bundles are 0–3 fields, all nine swatches stay null after a pick, and the zero-config
@@ -1233,34 +1476,7 @@ Multi-value applies to PRODUCT + COLLECTION only. No migrations needed for the 4
    separation + gap, 81 = section header typography, 85 = multi-column row flow — a
    retired number is still spent.) Then C (Settings display rules) → E (assignment into
    the reshell) → F (top-bar status/save + cleanup).
-2. **Section gap in the flat block layouts — specced 2026-07-28 as feature 94, doc `94-…`.**
-   Merchant report + DevTools screenshot: `margin-top: 30px` on
-   `tr.appx-spec-table__section-row` opens a real gap between sections on their live
-   storefront. It does, and the knob it wants **already exists** — `sectionGapPx`
-   (feature 80) — but the rail hides it unless `sectionsCollapsible` is on.
-   🔴 **Root cause is an over-general claim repeated in three places** (`spec-table.css:389`,
-   `stylingControls.ts:461`, `data-model.md:411`): "a flat section header is a `<tr>` and a
-   `<tr>` takes no margin" is true **only in `TWO_COLUMN`**. In `STACKED` and `GRID` the
-   section row is `display: block` (a grid item in Grid), so margin applies — the merchant's
-   screenshot is a `GRID` table, which is why their CSS worked.
-   **Feature-87 cost profile:** no migration, no new field, **no new hide predicate**
-   (`showsSectionGapControl` changes its condition, count stays 7), no Liquid/TOML/markup,
-   no repaint. One CSS rule with two layout-scoped selectors + a predicate widened to
-   `sectionsCollapsible || rowLayout !== "TWO_COLUMN"` (an OR — `TWO_COLUMN` + collapsible
-   still works via the existing `<details>` rule).
-   ⚠️ **The control MOVES group** — feature 86's one axis means a gap that no longer needs
-   collapsing is not a property of collapsing: `Collapsible sections` (→2 controls) →
-   `Section headers` (→8). Neither group empties, so the Step 5 invariant holds. Help text
-   must drop the word "collapsible".
-   🚫 **`TWO_COLUMN` stays excluded**, and the rejection is already on file at
-   `stylingControls.ts:463` — a transparent `border-block-start` loses the collapsed-border
-   width contest and silently deletes the previous row's divider. Padding grows the band;
-   a spacer `<tr>` lies to the ARIA chain. See the open question below for the one option
-   nobody has costed. ✅ **No mobile asymmetry** — the excluded state is unreachable, since
-   the control is hidden in `TWO_COLUMN` so no value exists to disagree across the
-   breakpoint. `.harness/` matrix **is** warranted here (unlike 87): `STACKED` margin
-   collapsing, and the `LINES` divider on a section's last row above 30px of whitespace.
-3. **Section band radius / chevron position / animated open-close (proposed 82 / 83 / 84).**
+2. **Section band radius / chevron position / animated open-close (proposed 82 / 83 / 84).**
    The rest of the same merchant report feature 81 answered. Each is its own unit for a
    recorded reason — see "Deliberately out of scope" in `81-…`: a radius behaves differently
    on a `th` under `border-collapse` than on a `<summary>` and needs a gap to look right; a
@@ -1269,13 +1485,13 @@ Multi-value applies to PRODUCT + COLLECTION only. No migrations needed for the 4
    needs `::details-content` + `interpolate-size`, so it is progressive-enhancement only and
    must be reduced-motion guarded. 🚫 Not the JS `grid-template-rows` trick — that breaks the
    zero-JS `<details>` invariant.
-4. **Storefront table semantics in stacked layouts (feature 70)** — code shipped;
+3. **Storefront table semantics in stacked layouts (feature 70)** — code shipped;
    screen-reader pass still owed (see Open Questions). ⚠️ **Now blocking feature 85**
    (below), which would be the third `display`-departure riding on the same unverified
    ARIA chain. Run the pass before building it.
-5. **Feature 85 sign-off — one blocker left.** The build is done and fully live-verified
+4. **Feature 85 sign-off — one blocker left.** The build is done and fully live-verified
    (see Completed; both deferred checks closed 2026-07-26), but it is deliberately NOT
-   marked shipped: ⚠️ the **feature-70 screen-reader pass** (item 4) was its stated
+   marked shipped: ⚠️ the **feature-70 screen-reader pass** (item 3) was its stated
    blocker and was skipped at the merchant's instruction. Run it — and if the roles are
    wrong, feature 70's own instruction is "revert, do not patch", which now costs three
    consumers rather than two. One data point in its favour: Chrome's accessibility tree
@@ -1283,14 +1499,14 @@ Multi-value applies to PRODUCT + COLLECTION only. No migrations needed for the 4
    storefront, but that is not the same as a screen reader ANNOUNCING the pairs.
    Also decide whether to clear the DJI template's saved minimum of 400: **240 measured
    511px shorter** on that table.
-6. **Editor page should not scroll at the document level** — the app document overflows the
+5. **Editor page should not scroll at the document level** — the app document overflows the
    iframe by roughly the `.tipsFooter` height (it renders BELOW the card, outside
    `useScrollRegionHeight`'s flat `BOTTOM_PAD_REM = 3` budget), producing a stray outer
    scrollbar stranded beside admin's reserved 16px scrollbar gutter. Fix = measure the actual
    footer/card bottom instead of the hardcoded 3rem. Touches the measurer both scrollers share,
    so it is its own unit.
-7. **Templates-list Phase 2** — search / sort / pagination (server-side, with pagination) when the list can grow large; multi-select bulk actions later.
-8. **Pre-submission** — mandatory privacy webhooks (`customers/data_request`, `customers/redact`, `shop/redact`) + Billing (`prd.md`, `context/app-store-review-checklist.md`).
+6. **Templates-list Phase 2** — search / sort / pagination (server-side, with pagination) when the list can grow large; multi-select bulk actions later.
+7. **Pre-submission** — mandatory privacy webhooks (`customers/data_request`, `customers/redact`, `shop/redact`) + Billing (`prd.md`, `context/app-store-review-checklist.md`).
 
 **Deferred:** editor bulk-delete range-select (Shift+click) + Delete/Backspace shortcut; per-product overflow materialization + a bulk apply-to-all styling route.
 
@@ -1328,7 +1544,7 @@ Multi-value applies to PRODUCT + COLLECTION only. No migrations needed for the 4
   titles and leaves collapsible ones untouched. Closing it means adding the three vars to the
   summary rule, which repaints every live collapsible table with a non-null `fontSize` — a
   no-repaint-law decision of its own, not a rider on 81. (Feature 81 is unaffected either way:
-  `headerFontSizePx` is absolute px on the summary's own rule, which is precisely *why* it is
+  `headerFontSizePx` is absolute px on the summary's own rule, which is precisely _why_ it is
   px and not an em-scale keyword — an em multiplier would resolve against two different bases
   depending on the shape.)
 - 🔴 **Stacked-mode `<table>` semantics — screen-reader pass NOT run (feature 70).**
@@ -1338,7 +1554,7 @@ Multi-value applies to PRODUCT + COLLECTION only. No migrations needed for the 4
   which parses `spec-table.css` for `display: block` rules and fails if any such class lacks a role.
   Attributes are present and inert live (zero visual change by construction). **Done-when #4 of
   `70-…` is unmet:** no assistive tech has confirmed the pairs are announced, and the spec's
-  **falsifier** is unchecked — explicit ARIA can *suppress* native table affordances, so the
+  **falsifier** is unchecked — explicit ARIA can _suppress_ native table affordances, so the
   two-column control case must be compared before/after. Needs NVDA or VoiceOver at desktop **and**
   ≤749px. **If it regresses, revert (`<dl>` back on the table) — do not patch.**
 - **R3 — orphan titled sections (feature 74, deferred).** A section header with a REAL label
@@ -1349,7 +1565,7 @@ Multi-value applies to PRODUCT + COLLECTION only. No migrations needed for the 4
   A test in `specTablePreviewHtml.test.ts` currently pins the render-it behavior.
 - **Should activation warn on a content-free template?** Since feature 74 a merchant can set
   an empty template ACTIVE and assign it, and it renders nothing, silently. A DRAFT→ACTIVE
-  advisory would be friendlier, but today's activation gate is a hard *block* mechanism for
+  advisory would be friendlier, but today's activation gate is a hard _block_ mechanism for
   conflicts; adding a soft warning lane is its own unit.
 - **Settings-tab "Display rules"** (mockup's `hide rows with empty values` / `show section dividers` / `show on mobile`) are dummy — each needs a real definition + reconciliation with the per-row `hideWhenEmpty` flag before building (Phase C).
 - **Style tab B2/B3 build-time details to lock:** the knob-value bundles for the five built-in presets (Classic / Striped / Banded / Stacked / Accordion); the `density` padding-scale values; save-as-preset overwrite UX + copy; whether the creation gallery gets a "don't show again" escape.
@@ -1365,11 +1581,11 @@ Multi-value applies to PRODUCT + COLLECTION only. No migrations needed for the 4
 
 - **Custom React editor — no AG Grid** (2-column, ≤200 rows, `valueParts` token editor). DnD via `@dnd-kit`. Pill model is **pick-then-insert** (modal outside the contenteditable; never an empty placeholder pill). Row cap is the single shared `MAX_TEMPLATE_ROWS` (UI + server).
 - **Value model:** `LINE_BREAK` value part for hard breaks (no inline rich formatting/links in MVP). `hideWhenEmpty` is whole-row, never per-line.
-- **View toggle:** Edit is the only editable segment; Desktop/Mobile are **read-only storefront previews** (Phase D), no separate WYSIWYG panel. **Tablet removed 2026-07-22.** **Shared preview device (2026-07-22):** the chosen device (Desktop/Mobile) is one value shared across all three tabs; edit-vs-preview is per-tab (`tabViewMemory.ts` `ViewMemory = { device, modes }`) — Content opens on the grid, Style/Settings auto-open a preview, picking a device on any tab moves every *previewing* tab to it; dropping a tab to Edit affects only that tab and retains the shared device. **Collapsible rail (2026-07-25, feature 76) is the ONE answer to the width problem:** because the inline Desktop preview is narrower than the storefront's 749px breakpoint on a laptop, a toggle beside the tab group collapses the Style/Settings rail to zero width, handing the stage the full card (never an icon stub: the tight case clears 749 by only 18px). ONE boolean shared by Style and Settings, in-memory, resets on reload; hidden not unmounted so the rail's scroll position survives; absent on Content. A **full-size preview modal** (feature 75) shipped as a second answer the same day and was **REMOVED 2026-07-25** — the merchant kept only the rail, so `PreviewModal`, `PREVIEW_MODAL_ID`, `modalPreviewHeight`, and `setPreviewDevice` are gone and the `preview` render prop is back to one argument. Under ~1420px the Style tab still cannot show a truthful desktop table and the knobs simultaneously; the only fix for that is a fixed-1100px `transform: scale()` preview, which is deliberately NOT built and is NOT a re-added modal (see `76-…`).
-- **Color policy:** the app *uses* color via CSS variables as one source of truth (admin mirrors Polaris; storefront inherits theme but is merchant-overridable). The "no hardcoded hex literal" rule is CSS hygiene — use Polaris tokens / `currentColor` / custom properties (e.g. runtime-captured `--appx-token-color` for the pill blue). This rule does **not** encode the Edit-grid-never-styled binding rule (see Binding rules above).
+- **View toggle:** Edit is the only editable segment; Desktop/Mobile are **read-only storefront previews** (Phase D), no separate WYSIWYG panel. **Tablet removed 2026-07-22.** **Shared preview device (2026-07-22):** the chosen device (Desktop/Mobile) is one value shared across all three tabs; edit-vs-preview is per-tab (`tabViewMemory.ts` `ViewMemory = { device, modes }`) — Content opens on the grid, Style/Settings auto-open a preview, picking a device on any tab moves every _previewing_ tab to it; dropping a tab to Edit affects only that tab and retains the shared device. **Collapsible rail (2026-07-25, feature 76) is the ONE answer to the width problem:** because the inline Desktop preview is narrower than the storefront's 749px breakpoint on a laptop, a toggle beside the tab group collapses the Style/Settings rail to zero width, handing the stage the full card (never an icon stub: the tight case clears 749 by only 18px). ONE boolean shared by Style and Settings, in-memory, resets on reload; hidden not unmounted so the rail's scroll position survives; absent on Content. A **full-size preview modal** (feature 75) shipped as a second answer the same day and was **REMOVED 2026-07-25** — the merchant kept only the rail, so `PreviewModal`, `PREVIEW_MODAL_ID`, `modalPreviewHeight`, and `setPreviewDevice` are gone and the `preview` render prop is back to one argument. Under ~1420px the Style tab still cannot show a truthful desktop table and the knobs simultaneously; the only fix for that is a fixed-1100px `transform: scale()` preview, which is deliberately NOT built and is NOT a re-added modal (see `76-…`).
+- **Color policy:** the app _uses_ color via CSS variables as one source of truth (admin mirrors Polaris; storefront inherits theme but is merchant-overridable). The "no hardcoded hex literal" rule is CSS hygiene — use Polaris tokens / `currentColor` / custom properties (e.g. runtime-captured `--appx-token-color` for the pill blue). This rule does **not** encode the Edit-grid-never-styled binding rule (see Binding rules above).
 - **Save/status model (mockup):** App Bridge contextual SaveBar (Save/Discard) + header status dropdown + ⋯ menu; no separate "Save as draft". Save freezes the editor (`inert`) in-flight; baseline reset uses the **submitted** snapshot (data-safety race fix).
-- **Persistence/keys:** key finalization is **server-authoritative** ("is this row id already persisted?"), never re-derived. Metaobject is **app-reserved** (`$app:appx_spec_table`); deleted *before* Postgres on delete so a storefront-readable entry can't outlive its template.
-- **App-owned definitions are declarative TOML** (slice 1): the `$app:appx_spec_table` metaobject and the `$app:spec_table` product `metaobject_reference` are declared in `shopify.app.toml`, distributed on deploy/install. Runtime `metaobjectDefinitionCreate` removed; `Shop.metaobjectDefinitionGid` vestigial. Metaobject *entries* are still written at runtime via `metaobjectUpsert`.
+- **Persistence/keys:** key finalization is **server-authoritative** ("is this row id already persisted?"), never re-derived. Metaobject is **app-reserved** (`$app:appx_spec_table`); deleted _before_ Postgres on delete so a storefront-readable entry can't outlive its template.
+- **App-owned definitions are declarative TOML** (slice 1): the `$app:appx_spec_table` metaobject and the `$app:spec_table` product `metaobject_reference` are declared in `shopify.app.toml`, distributed on deploy/install. Runtime `metaobjectDefinitionCreate` removed; `Shop.metaobjectDefinitionGid` vestigial. Metaobject _entries_ are still written at runtime via `metaobjectUpsert`.
 - **Assignment model — rigid block-on-conflict + shop-level routing (2026-07-07, `data-model.md` §5/§9).** One scope per template (`scope`+`scopeValue`+`mode`); overlaps between ACTIVE templates are **blocked at DRAFT→ACTIVE** (merchant decides — no silent precedence, no priority knob; `priority` column dormant). Overlap check is O(rules) Postgres set-algebra + `products(query,first:1)` existence tests, never a catalog scan. Broad rules deliver as O(1) entries in one `[shop.metafields.app.routing]` json metafield, resolved in Liquid via `metaobjects["$app:appx_spec_table"][handle]`. Per-product `metaobject_reference` survives only for bounded overrides; `ProductAssignmentIndex` is sparse.
 - **Style tab design (2026-07-18 — `admin-screen-plan.md` §Tab 2, `data-model.md` §5/§10, PRD, code-standards).** One spec-table primitive with **orthogonal style knobs** (row layout, mobile behavior, section headers, collapsible sections via native `<details>` zero-JS, row dividers incl. zebra `stripeBgColor`, density). Modal/drawer containers + multi-column flow rejected. **Presets = COPY semantics** (built-ins as code constants; phase-2 merchant-saved `StylePreset`) copy values into per-template `TableStyling` **real columns**, not `extraStyles`; `basedOnPreset` is provenance only. **No shop-level default styling record** (copy keeps edits side-effect-free on live storefronts). Storefront delivery via the metaobject `styling` json field (no TOML change): layout knobs → wrapper modifier classes, colors/typography → CSS variables. **Typography:** `fontSize` = S/M/L theme-relative presets or bounded Custom px (10–184, clamped; JSON number on the wire, digit-string in the DB); `lineHeight` (TIGHT/NORMAL/LOOSE) + `labelCase` (DEFAULT/UPPERCASE, labels only) + `fontStyle` kept; font-family/letter-spacing/wrap/per-side padding rejected.
 - **Testing strategy:** Vitest; Phases 1–2 done (unit + shop-isolation, mocked Prisma); reach Phase 4 (route loaders/actions + GDPR webhooks) before App Store submission, E2E (Playwright) fast-follow. Polaris web components don't render in jsdom → editor UI is browser-verified, pure logic unit-tested. Full doc: `~/.claude/plans/there-is-no-automated-encapsulated-yeti.md`.

@@ -254,14 +254,32 @@ describe("feature 86 — the Style rail renders all eight groups", () => {
     expect(thin).toEqual([]);
   });
 
-  it("wraps exactly one control per hide rule", () => {
-    // What makes the count above sound. Seven guards for seven predicates
-    // (`stylingControls.test.ts` pins the registry at 7): if a guard ever
-    // wrapped two controls, `controls > guards` would stop implying that an
-    // unguarded control exists, and the assertion above would silently weaken
-    // from a real check to an arithmetic accident.
+  it("wraps exactly one control per JSX hide rule", () => {
+    // What makes the count above sound: if a guard ever wrapped two controls,
+    // `controls > guards` would stop implying that an unguarded control exists,
+    // and the assertion above would silently weaken from a real check to an
+    // arithmetic accident.
+    //
+    // SEVEN, not nine. `stylingControls.test.ts` pins the predicate registry at
+    // 9 since feature 95, and the difference is the point: the other two guard
+    // COLORS, which this rail does not write as JSX at all — the nine swatches
+    // are one `.filter(…).map(…)` over `COLOR_KNOBS`, so their predicates are
+    // carried on the knobs and applied inside `colorGrid`. That is why the
+    // counting test above is still sound at 9 predicates: a `visibleWhen` knob
+    // cannot empty a group (pinned in `stylingControls.test.ts`), so
+    // `colorGrid(…)` still always renders a control.
     const guards = body.match(/\{shows[A-Za-z]+\(/g) ?? [];
     expect(guards.length).toBe(7);
+  });
+
+  it("applies each swatch's own visibility rule inside colorGrid", () => {
+    // The other half of feature 95, and the failure it exists to catch: the
+    // predicate stays exported, registered and unit-tested while the rail drops
+    // the filter clause and renders all nine swatches unconditionally. Every
+    // test in `stylingControls.ts` still passes — the knob is correct, the
+    // renderer is not — and the drop guard above is blind here, since
+    // `COLOR_KNOBS` is still mapped and the field is still reachable.
+    expect(body).toContain("knob.visibleWhen");
   });
 
   it("files the section gap under Section headers, not Collapsible sections", () => {

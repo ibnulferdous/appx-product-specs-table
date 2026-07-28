@@ -536,6 +536,91 @@ export function showsGridMinColumnWidthControl(
   return styling.rowLayout === "GRID";
 }
 
+/**
+ * Whether the rail shows the Section headers "Background" swatch (feature 95).
+ *
+ * The NINTH hide rule, the second over a color, and the closing of an open
+ * question that had been on file since feature 87's sign-off. `headerBgColor`
+ * reads through `--appx-spec-header-bg`, which `spec-table.css` mentions in
+ * exactly four rules:
+ *
+ *   - two BASE rules (`__section` and, under `--collapsible`,
+ *     `__section-summary`) that read it with a `transparent` fallback;
+ *   - two `--section-banded` rules, one per shape, that read it with the
+ *     `rgba(0, 0, 0, 0.06)` band fallback.
+ *
+ * ⚠️ The two base rules are UNREACHABLE for this var, and that is what makes
+ * the hide safe rather than merely tidy. `stylingToModifierClasses` emits a
+ * section-header class unconditionally — defaults included, by that function's
+ * own stated rule — and every member selector outspecifies the base one (2
+ * classes vs 1 flat, 3 vs 2 collapsible). `TEXT_ONLY` and `PLAIN` both hardcode
+ * `background: transparent`, so they win and the var is never consulted. One
+ * knob, one class, one live rule per shape.
+ *
+ * Both shapes agree, which is why this needs no second clause: feature 87's
+ * composition hazard was that a member styling only the flat `th` hands the
+ * band back the moment collapsing is enabled, and the fix was to mirror every
+ * member rule onto the `<summary>`. That mirroring is exactly what lets one
+ * predicate cover both.
+ *
+ * 🔴 Reverses this file's own previous comment ("a composition fact rather than
+ * a reason to hide the swatch: the merchant may legitimately set it before
+ * switching"), on the merchant's call 2026-07-28. That objection is weaker here
+ * than it looks: `BANDED` is `SECTION_HEADER_STYLES[0]`, so the swatch is
+ * visible by DEFAULT and only disappears once a merchant actively picks
+ * Underlined or Plain — set-before-switching is not the order anyone arrives in.
+ * And the value is preserved regardless, so the order still works: pick Banded,
+ * set the colour, and it survives a trip through Plain and back.
+ *
+ * 🚫 Deliberately NOT extended to "the template has no section header rows".
+ * That is row DATA, not styling state, and no rule in this file has ever read
+ * it — the rail would start hiding controls in response to the merchant's
+ * content, which is a different and much larger claim.
+ */
+export function showsHeaderBackgroundControl(styling: StylingValues): boolean {
+  return styling.sectionHeaderStyle === "BANDED";
+}
+
+/**
+ * Whether the rail shows the "Stripe background" swatch (feature 95).
+ *
+ * The EIGHTH instance of hide-when-irrelevant, the FIRST one over a color, and
+ * a deliberate reversal of feature 86's decision 4 ("Stripe background stays
+ * visible too") on the merchant's own 2026-07-28 report. What changed is not
+ * the principle but the fact it was applied to: `stripeBgColor` feeds exactly
+ * ONE declaration in `spec-table.css` — the `--dividers-stripes` even-row fill
+ * — so outside Stripes it is not a knob whose effect is merely hard to see, it
+ * is a knob with no referent, which is the bar `showsGridMinColumnWidthControl`
+ * already set.
+ *
+ * 🚫 This does NOT reopen decision 3. `Divider color` stays visible always, and
+ * the asymmetry is the point: `borderColor` dresses four surfaces (row rules,
+ * the column divider, the feature-80 section separator, and the outline
+ * whenever `outerBorderColor` is unset), so at Row dividers = None it is still
+ * the only control for two live surfaces. One field, one surface, one rule —
+ * that is what earns a hide, and only the stripe has it.
+ *
+ * `rowLayout !== "GRID"` is the second half, and it is not defensive: Grid does
+ * not offer Stripes (`rowDividerOptionsFor`), but the ORPHAN case reaches here
+ * — a merchant who chose Stripes on a two-column table and then switched to
+ * Grid still has `STRIPES` stored, and `spec-table.css` stands the fill down to
+ * `transparent` in Grid. Without this clause the swatch would reappear in
+ * exactly the state the select is simultaneously labelling "not available in
+ * Grid", painting nothing. Written `!== "GRID"` rather than a TWO_COLUMN /
+ * STACKED membership test for the same reason `showsSectionGapControl` is: the
+ * EXCLUDED case is the one with a reason, so a fourth `ROW_LAYOUTS` member
+ * inherits "stripes paint".
+ *
+ * A pure READ like the other seven, so a merchant's hex survives a trip through
+ * Lines and back — registered in `VISIBILITY_PREDICATES` so the shared
+ * preserve-on-hide law test covers it automatically. Consumed through
+ * `ColorKnob.visibleWhen` rather than as a JSX guard, because the swatch is
+ * rendered by a `.filter` over `COLOR_KNOBS` and not by a hand-written control.
+ */
+export function showsStripeBackgroundControl(styling: StylingValues): boolean {
+  return styling.rowDividerStyle === "STRIPES" && styling.rowLayout !== "GRID";
+}
+
 // --- Step 10 · the `null` vocabulary ----------------------------------------
 //
 // Thirteen fields in `StylingValues` are NULLABLE, and null is semantic there:
@@ -676,6 +761,34 @@ export interface ColorKnob {
    */
   emptyHelpText: string;
   alpha: boolean;
+  /**
+   * When present, the swatch renders only while this returns true (feature 95).
+   *
+   * The rail's other seven hide rules are JSX guards — `{showsX(styling) && …}`
+   * around a hand-written control. A swatch has no such line to wrap: all nine
+   * are produced by one `.filter(…).map(…)` over this array, so the guard has
+   * to be a property of the knob and be applied inside that filter.
+   *
+   * OPTIONAL, and it must stay the exception. Seven of the nine swatches are
+   * always visible. The bar for gating one is narrow and it is a fact about the
+   * STYLESHEET, not a judgement about tidiness: the field must feed exactly one
+   * live rule, and the state that hides it must be one where that rule cannot
+   * fire at all — a var that is emitted, inherited, and read by nothing.
+   *
+   * 🚫 `borderColor` fails that bar and must stay ungated: it dresses the row
+   * rules, the column divider, the feature-80 section separator, AND the table
+   * outline whenever `outerBorderColor` is unset, so at Row dividers = None it
+   * is still the only control for two live surfaces. Check the stylesheet
+   * before adding a third entry here — the swatches that survived are the ones
+   * whose var appears in more than one place.
+   *
+   * ⚠️ A group must never end up with ALL of its swatches conditional: the
+   * group would render an empty `<s-grid>` — visible dead space, and a hole in
+   * the "no group collapses to a bare heading" count in
+   * `styleTabContract.test.ts`, which treats `colorGrid(…)` as one control that
+   * always renders. Pinned in `stylingControls.test.ts`.
+   */
+  visibleWhen?: (styling: StylingValues) => boolean;
 }
 
 export const COLOR_KNOBS: ReadonlyArray<ColorKnob> = [
@@ -695,16 +808,17 @@ export const COLOR_KNOBS: ReadonlyArray<ColorKnob> = [
     // Only the TITLE keeps a qualifier, because the band and the title text are
     // genuinely different surfaces.
     label: "Background",
-    // Only visible while section headers are Banded, but that is a composition
-    // fact rather than a reason to hide the swatch: unlike the visibility
-    // rules elsewhere in this file, the merchant may legitimately set it before
-    // switching. Feature 86 moved the caveat INTO the text — the control it
-    // names now sits five rows above, so the reference is followable.
-    helpText: "The band behind a section title — needs Header style Banded.",
+    // Feature 86 kept this swatch visible under every header style and moved
+    // the caveat INTO the text ("needs Header style Banded"). Feature 95 hides
+    // it instead — `--appx-spec-header-bg` is read by the Banded rules alone,
+    // in both shapes — so the caveat went with it: a condition a merchant can
+    // only read while it already holds is not information.
+    helpText: "The band behind a section title.",
     // Not "From your theme": the banded default is this app's own
     // `rgba(0, 0, 0, 0.06)`, not a value the theme supplies.
     emptyHelpText: "The default grey band.",
     alpha: true,
+    visibleWhen: showsHeaderBackgroundControl,
   },
   {
     field: "headerTextColor",
@@ -737,12 +851,16 @@ export const COLOR_KNOBS: ReadonlyArray<ColorKnob> = [
     field: "stripeBgColor",
     group: "rows",
     label: "Stripe background",
-    // The composition trap worth naming in the UI itself, so a merchant who
-    // sets it on a lines table does not read the no-op as a broken control.
-    // Feature 86 put this swatch in the same group as the control it names.
-    helpText: "Alternating rows — needs Row dividers set to Stripes.",
+    // Feature 86 put this swatch in the same group as the control it names and
+    // stated the caveat in prose — "needs Row dividers set to Stripes" — so a
+    // merchant who set it on a lines table would not read the no-op as a broken
+    // control. Feature 95 removes the no-op instead: the swatch is now only on
+    // screen while that condition already holds, so restating it here would be
+    // help text describing a state the merchant cannot be in.
+    helpText: "The fill on alternating rows.",
     emptyHelpText: "The default grey shading.",
     alpha: true,
+    visibleWhen: showsStripeBackgroundControl,
   },
   {
     field: "borderColor",

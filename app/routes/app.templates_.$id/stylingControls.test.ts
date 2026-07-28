@@ -36,10 +36,12 @@ import {
   rowDividerOptionsFor,
   showsCustomFontSizeInput,
   showsGridMinColumnWidthControl,
+  showsHeaderBackgroundControl,
   showsLabelWidthControl,
   showsMobileLayoutControl,
   showsSectionGapControl,
   showsSectionsInitialStateControl,
+  showsStripeBackgroundControl,
   showsTableAlignControl,
   toColorControlValue,
   toControlValue,
@@ -575,6 +577,42 @@ describe("COLOR_KNOBS (feature 57 Step 10a)", () => {
       "labelTextColor",
       "valueTextColor",
     ]);
+  });
+
+  it("leaves every group at least one unconditional swatch (feature 95)", () => {
+    // ⚠️ THE HAZARD `visibleWhen` INTRODUCED. `colorGrid(group)` renders an
+    // `<s-grid>` unconditionally and fills it by filter, so a group whose every
+    // swatch were gated would paint an EMPTY grid: dead space in the rail, and
+    // a silent hole in `styleTabContract.test.ts`'s "no group collapses to a
+    // bare heading" count, which treats `colorGrid(…)` as one control that
+    // always renders and cannot see inside it.
+    //
+    // Derived from the data: gating a second swatch is fine, gating the last
+    // one in its group fails here and names the group.
+    const groups = [...new Set(COLOR_KNOBS.map((knob) => knob.group))];
+    const allGated = groups.filter((group) =>
+      COLOR_KNOBS.filter((knob) => knob.group === group).every(
+        (knob) => knob.visibleWhen,
+      ),
+    );
+
+    expect(allGated).toEqual([]);
+    expect(groups.length).toBeGreaterThan(1); // guards the guard
+  });
+
+  it("keeps a gated swatch's help text free of the condition it is gated on", () => {
+    // Feature 95's copy rule. A hidden control cannot be read, so prose telling
+    // the merchant what to switch on describes a state they are never in while
+    // looking at it — the caveat and the hide are two answers to one problem,
+    // and shipping both leaves the weaker one visible. `Divider color`, which
+    // is NOT gated, keeps its coupling text and must: that is what this asserts
+    // is a property of gating rather than a blanket ban on caveats.
+    for (const knob of COLOR_KNOBS.filter((k) => k.visibleWhen)) {
+      expect(knob.helpText.toLowerCase(), knob.field).not.toContain("needs ");
+    }
+    expect(
+      COLOR_KNOBS.find((knob) => knob.field === "borderColor")?.helpText,
+    ).toContain("unless");
   });
 
   it("starts every swatch in the Theme state, since colors default to inherit", () => {
@@ -1250,10 +1288,43 @@ const VISIBILITY_PREDICATES: ReadonlyArray<{
     hide: (styling) => ({ ...styling, rowLayout: "TWO_COLUMN" }),
     preservedField: "gridMinColumnWidthPx",
   },
+  {
+    // The eighth (feature 95), and the FIRST over a color — so it is also the
+    // first entry in this registry whose control is not a hand-written line of
+    // JSX but one row of a `.filter(…).map(…)`. It inherits the law here
+    // regardless, which is the point of the law living over PREDICATES rather
+    // than over markup.
+    name: "showsStripeBackgroundControl",
+    predicate: showsStripeBackgroundControl,
+    visible: {
+      ...DEFAULT_STYLING_VALUES,
+      rowLayout: "TWO_COLUMN",
+      rowDividerStyle: "STRIPES",
+      stripeBgColor: "#f9b8b8",
+    },
+    hide: (styling) => ({ ...styling, rowDividerStyle: "LINES" }),
+    preservedField: "stripeBgColor",
+  },
+  {
+    // The ninth (feature 95), and the one that closes an open question standing
+    // since feature 87's sign-off. Note the hiding edit is to `PLAIN` — the
+    // member that landed LAST — so this fixture also stands as the check that a
+    // newly-added header style inherits "no band" rather than only `TEXT_ONLY`
+    // being handled.
+    name: "showsHeaderBackgroundControl",
+    predicate: showsHeaderBackgroundControl,
+    visible: {
+      ...DEFAULT_STYLING_VALUES,
+      sectionHeaderStyle: "BANDED",
+      headerBgColor: "#e6f4ea",
+    },
+    hide: (styling) => ({ ...styling, sectionHeaderStyle: "PLAIN" }),
+    preservedField: "headerBgColor",
+  },
 ];
 
-describe("the hide-rule count (feature 85 took it from six to seven)", () => {
-  it("guards exactly seven controls", () => {
+describe("the hide-rule count (feature 95 took it from seven to nine)", () => {
+  it("guards exactly nine controls", () => {
     // The five section-header knobs are visible in EVERY shape — they dress the
     // flat `th` and the collapsible `<summary>` alike — so unlike the section
     // gap none of them earns a predicate. Pinning the count is what turns "we
@@ -1261,18 +1332,53 @@ describe("the hide-rule count (feature 85 took it from six to seven)", () => {
     // an eighth entry here means a new control gained a hide rule, and it must
     // inherit the preserve-on-hide law below rather than reimplement it.
     //
-    // 6 -> 7 for feature 85's `showsGridMinColumnWidthControl`. Note what did
-    // NOT land here: the same feature hides the Stripes OPTION in Grid mode,
-    // and that is deliberately absent. This registry enforces preserve-on-hide
-    // over whole CONTROLS — a hidden control cannot lie because it is not
-    // rendered. The Row-dividers select stays on screen, so the option filter is
-    // a different mechanism with a different failure mode (the orphan value)
-    // and carries its own tests instead. Registering it would assert a law it
-    // does not obey.
-    expect(VISIBILITY_PREDICATES).toHaveLength(7);
+    // 6 -> 7 for feature 85's `showsGridMinColumnWidthControl`; 7 -> 9 for
+    // feature 95's two COLOR gates, which also REVERSED written decisions
+    // (feature 86 decision 4 kept the stripe swatch always visible, and
+    // `headerBgColor` carried its own "a composition fact rather than a reason
+    // to hide" comment), so the count moving is the trace of those reversals.
+    //
+    // Note what did NOT land here: feature 85 hides the Stripes OPTION in Grid
+    // mode, and that is deliberately absent. This registry enforces
+    // preserve-on-hide over whole CONTROLS — a hidden control cannot lie
+    // because it is not rendered. The Row-dividers select stays on screen, so
+    // the option filter is a different mechanism with a different failure mode
+    // (the orphan value) and carries its own tests instead. Registering it
+    // would assert a law it does not obey.
+    expect(VISIBILITY_PREDICATES).toHaveLength(9);
     expect(VISIBILITY_PREDICATES.map((entry) => entry.name)).not.toContain(
       "rowDividerOptionsFor",
     );
+  });
+
+  it("routes every swatch predicate through COLOR_KNOBS.visibleWhen", () => {
+    // The half of the count that is NOT a JSX guard. A predicate exported,
+    // documented and registered here but never wired to a knob would pass every
+    // assertion in this file while the swatch rendered unconditionally in the
+    // rail — the failure mode that has no other detector, since
+    // `styleTabContract.test.ts` counts `colorGrid(…)` as one control and
+    // cannot see inside it.
+    const wired = COLOR_KNOBS.filter((knob) => knob.visibleWhen).map(
+      (knob) => knob.visibleWhen,
+    );
+
+    expect(wired).toContain(showsStripeBackgroundControl);
+    expect(wired).toContain(showsHeaderBackgroundControl);
+    expect(wired).toHaveLength(2);
+  });
+
+  it("gates exactly the two colors whose var has ONE live rule", () => {
+    // The bar, asserted rather than left in prose, because "this control looks
+    // useless right now" is a much lower bar than the one actually used and the
+    // next swatch to be proposed for hiding will be argued on it.
+    //
+    // 🚫 `borderColor` is the standing counter-example and the reason this is a
+    // list and not a count: it is a no-op under Row dividers = None too, and it
+    // must NEVER join — it also dresses the column divider, the feature-80
+    // section separator, and the outline whenever `outerBorderColor` is unset.
+    expect(
+      COLOR_KNOBS.filter((knob) => knob.visibleWhen).map((k) => k.field),
+    ).toEqual(["headerBgColor", "stripeBgColor"]);
   });
 });
 
@@ -1371,5 +1477,142 @@ describe("showsSectionGapControl — the OR (feature 94)", () => {
     expect(showsSectionGapControl(inTwoColumn)).toBe(false);
     expect(inTwoColumn.sectionGapPx).toBe(30);
     expect(inGrid.sectionGapPx).toBe(30);
+  });
+});
+
+describe("showsHeaderBackgroundControl — derived from the members (feature 95)", () => {
+  const at = (
+    sectionHeaderStyle: StylingValues["sectionHeaderStyle"],
+  ): StylingValues => ({ ...DEFAULT_STYLING_VALUES, sectionHeaderStyle });
+
+  it("shows for exactly one header style, and it is BANDED", () => {
+    // Derived from SECTION_HEADER_STYLES rather than hand-listed, which is the
+    // assertion feature 87 would have wanted: a FOURTH member added later
+    // defaults to hiding the swatch, and if that member paints a band it has to
+    // come here and say so. Hand-listing `TEXT_ONLY` and `PLAIN` would let a new
+    // member silently inherit whichever answer the author happened to write.
+    const shown = SECTION_HEADER_STYLES.filter((style) =>
+      showsHeaderBackgroundControl(at(style)),
+    );
+    expect(shown).toEqual(["BANDED"]);
+  });
+
+  it("is the DEFAULT state, so the swatch does not vanish unprompted", () => {
+    // Why this hide is gentler than the stripe's. `BANDED` is
+    // SECTION_HEADER_STYLES[0] and therefore the default, so a merchant sees
+    // the swatch on an untouched template and only loses it by actively
+    // choosing Underlined or Plain — the "I wanted to set the colour first"
+    // objection needs an order of work nobody arrives in. Pinned because the
+    // argument for the hide rests on it.
+    expect(DEFAULT_STYLING_VALUES.sectionHeaderStyle).toBe("BANDED");
+    expect(showsHeaderBackgroundControl(DEFAULT_STYLING_VALUES)).toBe(true);
+  });
+
+  it("ignores collapsing, because both shapes carry the same member rules", () => {
+    // Feature 87's composition hazard, inverted into a guarantee. A member that
+    // styled only the flat `th` would hand the band back the moment collapsing
+    // was enabled, and the fix was to mirror every member rule onto the
+    // `<summary>`. That mirroring is precisely what lets ONE predicate cover
+    // both shapes — so if a future member is ever added to one shape only, this
+    // is the assertion that should stop reading as obvious.
+    for (const style of SECTION_HEADER_STYLES) {
+      const flat = { ...at(style), sectionsCollapsible: false };
+      const collapsible = { ...at(style), sectionsCollapsible: true };
+      expect(showsHeaderBackgroundControl(flat), style).toBe(
+        showsHeaderBackgroundControl(collapsible),
+      );
+    }
+  });
+
+  it("leaves Title color alone — it is not gated at all", () => {
+    // The other half of the Section headers grid, and the thing that keeps the
+    // group from ever painting an empty `<s-grid>`. `color:` on the base rule is
+    // never overridden by a member, so a section title is coloured under all
+    // three — the asymmetry inside this pair is a fact about the stylesheet.
+    const titleColor = COLOR_KNOBS.find(
+      (knob) => knob.field === "headerTextColor",
+    );
+    expect(titleColor?.group).toBe("sectionHeaders");
+    expect(titleColor?.visibleWhen).toBeUndefined();
+  });
+});
+
+describe("showsStripeBackgroundControl — the AND (feature 95)", () => {
+  // The second two-knob predicate, and the interesting cases are again the
+  // combinations rather than the single hiding edit the registry walks. The
+  // one that matters is the ORPHAN: Grid + Stripes is unreachable from the
+  // select (`rowDividerOptionsFor` drops the option) but reachable from stored
+  // data, and the fill is `transparent` there — so the swatch must stay hidden
+  // in the one state the rail is simultaneously labelling "not available".
+  const at = (
+    rowLayout: StylingValues["rowLayout"],
+    rowDividerStyle: StylingValues["rowDividerStyle"],
+  ): StylingValues => ({
+    ...DEFAULT_STYLING_VALUES,
+    rowLayout,
+    rowDividerStyle,
+  });
+
+  it.each([
+    // The only two states that paint a stripe.
+    ["TWO_COLUMN", "STRIPES", true],
+    ["STACKED", "STRIPES", true],
+    // 🔴 The orphan. A naive `=== "STRIPES"` predicate would show the swatch
+    // here, for a fill `spec-table.css` stands down to transparent in Grid.
+    ["GRID", "STRIPES", false],
+    // No stripe, no swatch — at any layout.
+    ["TWO_COLUMN", "LINES", false],
+    ["TWO_COLUMN", "NONE", false],
+    ["STACKED", "LINES", false],
+    ["GRID", "NONE", false],
+  ] as const)("%s with dividers %s → %s", (rowLayout, dividers, shown) => {
+    expect(showsStripeBackgroundControl(at(rowLayout, dividers))).toBe(shown);
+  });
+
+  it("shows for exactly one of the divider styles, and it is STRIPES", () => {
+    // Derived from ROW_DIVIDER_STYLES rather than hand-listed: a fourth member
+    // added later (a dotted rule, say) defaults to NOT showing the stripe
+    // swatch, which is right — only STRIPES reads `--appx-spec-stripe-bg`.
+    const shown = ROW_DIVIDER_STYLES.filter((style) =>
+      showsStripeBackgroundControl(at("TWO_COLUMN", style)),
+    );
+    expect(shown).toEqual(["STRIPES"]);
+  });
+
+  it("agrees with the Row-dividers option list about Grid", () => {
+    // The two mechanisms have to tell one story. Wherever the select refuses to
+    // OFFER Stripes, the swatch must refuse to appear — otherwise the rail says
+    // "not available in Grid" directly above a control for the thing it just
+    // said is unavailable. Derived from `rowDividerOptionsFor` so the pair
+    // cannot drift apart.
+    const inGrid = at("GRID", "STRIPES");
+    const offered = rowDividerOptionsFor(inGrid).filter(
+      (option) =>
+        option.value === "STRIPES" &&
+        !option.helpText?.includes("do not apply"),
+    );
+
+    expect(offered).toEqual([]);
+    expect(showsStripeBackgroundControl(inGrid)).toBe(false);
+  });
+
+  it("keeps the merchant's hex through Stripes → Lines → Stripes", () => {
+    // Preserve-on-hide against feature 95's own edit, on a FROZEN input: a
+    // merchant who tries Lines and comes back must find their color, not an
+    // empty swatch that silently reset the table to the default grey.
+    const striped = Object.freeze({
+      ...DEFAULT_STYLING_VALUES,
+      rowDividerStyle: "STRIPES" as const,
+      stripeBgColor: "#f9b8b8",
+    });
+    expect(showsStripeBackgroundControl(striped)).toBe(true);
+
+    const lined = { ...striped, rowDividerStyle: "LINES" as const };
+    expect(showsStripeBackgroundControl(lined)).toBe(false);
+    expect(lined.stripeBgColor).toBe("#f9b8b8");
+
+    const back = { ...lined, rowDividerStyle: "STRIPES" as const };
+    expect(showsStripeBackgroundControl(back)).toBe(true);
+    expect(back.stripeBgColor).toBe("#f9b8b8");
   });
 });
