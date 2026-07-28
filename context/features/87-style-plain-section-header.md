@@ -1,8 +1,8 @@
 # Feature 87 — Plain section header (Style tab)
 
-**Status:** 🛠️ built 2026-07-27, ✅ **live-verified rail → Postgres → metaobject**
-on the dev store, ⚠️ **three legs still owed** (rendered storefront, mobile, and a
-template stored as `TEXT_ONLY`) — see "Verification".
+**Status:** ✅ **COMPLETE 2026-07-27** — built, live-verified rail → Postgres →
+metaobject, and all three remaining legs (rendered storefront, mobile, a
+template stored as `TEXT_ONLY`) closed the same day — see "Verification".
 **Depends on:** nothing new. Third member of a knob that has shipped since
 feature 57 Step 8.
 **Migration:** **none.** Existing `String?` column, third legal value.
@@ -201,19 +201,33 @@ with a `Phone Details` section header the merchant added for the purpose.
 - Template left saved on **Plain**, collapsing discarded back to off, the merchant's
   section header intact (20 rows).
 
-⚠️ **Still owed — three legs, none of them blocking the above:**
+✅ **All three legs closed 2026-07-27**, on the real `appx-dev.myshopify.com` storefront
+(not the editor mirror), using the already-ACTIVE `Unikyy Blade Pro Turbo Fan` template
+(`cmrrx2ocj000ivpwk8qp2ehm9`, 4 real section headers, GRID layout) assigned to product
+**Motorola Edge 60 Fusion 5G** (`motorola-edge-60-fusion-5g`):
 
-1. **Rendered storefront on an ACTIVE template.** This one is a DRAFT with 0 assigned
-   products, so it renders nothing on a storefront by design (feature 74's "silent by
-   design"). The editor preview shares the storefront stylesheet byte-for-byte via the
-   mirror guard, so this is a confirmation rather than an exploration — but feature 77
-   is the standing reminder that the preview has a hole exactly where the surrounding
-   theme wraps the block.
-2. **Mobile ≤749px via the editor's Mobile preview.** `resize_window` does not actually
-   reflow the admin iframe (feature 79's note). Low risk: PLAIN adds no media query and
-   the mobile rules never touch `border-block-end` on the header.
-3. **A template already STORED as `TEXT_ONLY`,** to confirm the relabel reads
-   "Underlined" on load rather than only after being selected in-session.
+1. **Rendered storefront on an ACTIVE template.** Set `Header style` → `Plain` on the
+   live template via the rail and Saved (`sectionHeaderStyle` confirmed `"PLAIN"` in
+   Postgres). Loaded the real product page: all four section headers (`General
+   Information`, `Power Supply`, `Physical Information`, `Warranty Information`) render
+   as bare bold titles — no band, no rule — exactly the flat-shape rule from this doc,
+   live on the storefront rather than only in the editor's mirrored preview.
+2. **Mobile ≤749px.** Rather than the editor's Mobile preview (cross-origin, can't be
+   measured — see `browser-verify-embedded-app` memory), resized the **real storefront
+   tab** to 390px width — a plain public page, so `resize_window` reflows it correctly
+   (unlike the admin iframe). All four PLAIN headers still render bare with no band or
+   rule at mobile width, GRID collapsed to one column as expected.
+3. **A template already STORED as `TEXT_ONLY`** — opened `AGX TF36 Handheld Turbo Fan`
+   (`cmrqfhmz1000lvpjsltte4s77`, DRAFT, `sectionHeaderStyle` confirmed `"TEXT_ONLY"` in
+   Postgres beforehand). On load, before touching anything, the rail's `Header style`
+   read **"Underlined"** with help text "Bold title with a rule beneath it." — the
+   relabel reads correctly from a cold load, not only after an in-session pick.
+
+**Cleanup:** the Unikyy template was reverted — `Header style` set back to `Banded` and
+Saved; Postgres confirms `sectionHeaderStyle` is `null` again with every other
+`TableStyling` column (`rowDividerStyle`, `rowLayout`, `gridMinColumnWidthPx`,
+`tableAlign`, `tableMaxWidthPx`, `sectionGapPx`, `headerPaddingBlockPx`) byte-identical
+to before the test. No lasting change to the live storefront.
 
 🚫 **The `.harness/` CSS matrix was NOT run** — the live pass was done directly
 instead. Justified here because the feature is two declarations with no specificity

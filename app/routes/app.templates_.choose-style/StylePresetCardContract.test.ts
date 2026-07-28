@@ -50,6 +50,48 @@ describe("the card is a control, not a decoration", () => {
   });
 });
 
+describe("the action line", () => {
+  // Added when the card grew a stated call to action. The card was always a
+  // link, but nothing on it SAID so — the only signal was a hover border, which
+  // is invisible until the pointer arrives and absent on a touch admin. These
+  // guard the two ways that fix can be undone: the line quietly disappearing
+  // again, or someone "improving" it into a real button.
+
+  it("states the action on the card, not only on hover", () => {
+    expect(body).toContain("styles.action");
+    expect(body).toContain("{action}");
+  });
+
+  it("renders no interactive element inside the card link", () => {
+    // 🔴 The regression this exists for. A `<button>` or a second `<Link>` in
+    // here is invalid HTML (interactive content inside an anchor), announces as
+    // a broken nested control, and — the reason it would be chosen — replaces
+    // the whole-card target with a ~110×36 one, leaving the preview a merchant
+    // aims at inert. The affordance must stay TEXT.
+    expect(body).not.toMatch(/<button/i);
+    // One `<Link` only: the single anchor `CardFrame` opens.
+    expect(body.match(/<Link\b/g)).toHaveLength(1);
+  });
+
+  it("hides the action line from assistive tech", () => {
+    // The anchor already announces as a link named "Modern"; the role IS the
+    // action. Exposing this would add six identical strings to the page. Safe
+    // only because the accessible name comes from `aria-labelledby`.
+    expect(body).toMatch(/className=\{styles\.action\}\s+aria-hidden="true"/);
+  });
+
+  it("gives every card shape its own action text", () => {
+    // Not one shared string: "Use this style" is false on Blank, which is the
+    // ABSENCE of a style. Both call sites must pass their own.
+    expect(body).toContain('action="Use this style"');
+    const blankCard = body.slice(
+      body.indexOf("export function BlankStyleCard"),
+    );
+    expect(blankCard).toContain('action="Start blank"');
+    expect(blankCard).not.toContain("Use this style");
+  });
+});
+
 describe("the preview is hidden from assistive tech", () => {
   it("marks the preview wrapper aria-hidden and takes the frame out of tab order", () => {
     expect(body).toMatch(/className=\{styles\.preview\}\s+aria-hidden="true"/);

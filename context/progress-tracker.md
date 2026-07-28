@@ -184,6 +184,45 @@ Building the MVP.
 >
 > ⚠️ **The accent/colour-theme feature renumbered 89 → 93** when the step files
 > took 89–92. Doc 88 and `stylePresets.ts` were updated; the design is unchanged.
+>
+> 🔴 **Card follow-up 2026-07-28 — the cards now STATE their action, and they are
+> still one link each.** The merchant compared the gallery to Kaching's, which
+> puts a **Choose** button on every card, and asked whether ours should too. The
+> observation was right (nothing on the card said it was clickable — the only
+> signal was a hover border, invisible until the pointer arrives and **absent on
+> a touch admin**); the proposed fix was not. 🚫 **A button was rejected**: their
+> preview is interactive (radios, dropdowns) so they have no choice, ours is a
+> `pointer-events: none` iframe so the whole card can be the target. A button
+> means dropping the whole-card link — interactive content inside an anchor is
+> invalid HTML — shrinking the target ~36× and leaving the preview a merchant
+> aims at **inert**. Shipped instead: an admin-blue action line inside the same
+> anchor (`Use this style →`, `Start blank` on Blank — ⚠️ per-card, since "use
+> this style" is false on the absence of a style), `aria-hidden` because the link
+> role already announces the action, arrow nudge guarded by
+> `prefers-reduced-motion`. Full reasoning + the trade table: doc `88-…`
+> §"A card is ONE LINK". Tests 1097 → **1101**; ✅ **mutation-tested** — swapping
+> the line for a `<button>` fails two guards. Gate green (typecheck · lint ·
+> format · 1101 tests · build).
+>
+> ✅ **Live-verified in the embedded admin 2026-07-28** — all six cards carry the
+> line, the blue reads as interactive against the white card, and the rhythm
+> (title → muted description → gap → action) does **not** crowd the description
+> at 0.55 scale. Blank reads **"Start blank →"**, visibly different from its five
+> neighbours, so the per-card copy decision is confirmed by eye and not only by
+> the test. The hover nudge fires (arrow gap visibly wider than an un-hovered
+> card). 🔴 **The click test is the one that mattered**: clicking the ACTION LINE
+> on Accordion navigated to `/app/templates/new?style=accordion` — correct card,
+> correct param — proving the line is inside the anchor rather than dead text
+> beside it. Nothing saved; no DB write (create-on-save).
+> ⚠️ **NOT re-checked: the narrow-admin one-column state.** `resize_window`
+> reports success on this window and the viewport never changes, so the pass
+> could not be run — it is **owed**, not passed. Low risk by construction (the
+> line adds no width and the grid's 948px `@container` breakpoint is untouched),
+> but the step-91 overflow bug was also invisible until the window was squeezed.
+> ⚠️ The accessible name still cannot be read live — the app's cross-origin
+> iframe is absent from the top frame's a11y tree, as in step 91. Unchanged by
+> this work regardless: the new span is `aria-hidden` and outside the
+> `aria-labelledby` target.
 
 ## Current Goal
 
@@ -213,13 +252,15 @@ Test suite 1021 tests / 38 files; full gate (typecheck · lint · format · test
 Since B1: the Style tab's width surface — the collapsible rail (feature 76). Feature 75's
 full-size preview modal shipped the same day and was **removed 2026-07-25**; see Completed.
 
-**Next:** ⚠️ **feature 87 (plain section header) is BUILT + live-verified rail → Postgres
-→ metaobject 2026-07-27; three legs owed** (rendered storefront on an ACTIVE template,
-mobile ≤749px, and a template stored as `TEXT_ONLY`) — a third `SECTION_HEADER_STYLES`
-member plus a relabel; doc `87-…`. It is item 1
-of a five-item merchant report and blocks two of the five reference tables; items 2–5 are
-unscoped. Zero-cost by construction (no migration, no new field, no hide predicate, no
-`StyleTab.tsx` edit), so it does not move B2.
+**Next:** ✅ **feature 87 (plain section header) is COMPLETE 2026-07-27** — built,
+live-verified rail → Postgres → metaobject, and all three remaining legs (rendered
+storefront on the ACTIVE `Unikyy Blade Pro Turbo Fan` template / product `Motorola Edge
+60 Fusion 5G`, mobile ≤749px on the real storefront tab, and `AGX TF36 Handheld Turbo
+Fan` loading with `TEXT_ONLY` correctly read as "Underlined") closed the same day — a
+third `SECTION_HEADER_STYLES` member plus a relabel; doc `87-…`. It was item 1 of a
+five-item merchant report and blocked two of the five reference tables; items 2–5 are
+still unscoped. Zero-cost by construction (no migration, no new field, no hide
+predicate, no `StyleTab.tsx` edit), so it never moved B2.
 
 Then: ✅ **feature 86 (Style tab reorganization) is COMPLETE** — all six steps, shipped
 2026-07-26, and it landed BEFORE B2 by merchant decision so presets arrive onto an
@@ -260,8 +301,8 @@ plan: `~/.claude/plans/style-tab-phase-b-implementation-plan.md` (1–12 = B1, 1
 
 > One line per unit. Detail → the linked `context/features/` doc + git history.
 
-**Plain section header (feature 87, doc `87-…`) — 🛠️ BUILT 2026-07-27, ✅ live-verified
-rail → Postgres → metaobject, ⚠️ 3 legs owed**
+**Plain section header (feature 87, doc `87-…`) — ✅ COMPLETE 2026-07-27, live-verified
+rail → Postgres → metaobject → storefront (all 3 legs closed same day)**
 - Merchant report item 1 of 5: there is no **plain** section header, and `TEXT_ONLY`
   **is not text-only** — it drops the band but keeps `border-block-end: 2px solid`
   (`spec-table.css:218`). Both reference tables (JBL, Samsung) show a bare bold title with
@@ -316,9 +357,18 @@ rail → Postgres → metaobject, ⚠️ 3 legs owed**
   `styling_css.classes` carries `--section-plain` in field order with the **count
   unchanged at 7**, and **`vars` is EMPTY** — the no-custom-property claim measured, not
   asserted. Left saved on Plain; collapsing discarded back off.
-- ⚠️ **Three legs owed:** rendered storefront on an ACTIVE template (this one is DRAFT
-  with 0 assigned, so it renders nothing by design), mobile ≤749px in the Mobile preview,
-  and a template already STORED as `TEXT_ONLY` to confirm the relabel reads on load.
+- ✅ **All three legs closed 2026-07-27**, on the real storefront domain rather than the
+  editor mirror. Set `Header style` → Plain on the already-ACTIVE `Unikyy Blade Pro
+  Turbo Fan` template (assigned to product **Motorola Edge 60 Fusion 5G**) and Saved:
+  all 4 real section headers render bare bold, no band, no rule, live at
+  `appx-dev.myshopify.com/products/motorola-edge-60-fusion-5g`. Resized that same real
+  tab (not the admin iframe, which can't be measured — see `browser-verify-embedded-app`
+  memory) to 390px: identical bare-header rendering holds at mobile width, GRID collapsed
+  to one column. Opened `AGX TF36 Handheld Turbo Fan` (stored `sectionHeaderStyle =
+  "TEXT_ONLY"` beforehand, confirmed via Neon) and its rail read **"Underlined"** with the
+  correct help text on a cold load, not only after an in-session pick. Unikyy reverted to
+  Banded and re-saved afterward; Postgres confirms `sectionHeaderStyle` back to `null` and
+  every other `TableStyling` column byte-identical to its pre-test values.
   🚫 The `.harness/` CSS matrix was **skipped** (recorded as a deviation): two
   declarations with no specificity or source-order interaction to explore, unlike
   79/80/85 where the harness caught real plan errors first.

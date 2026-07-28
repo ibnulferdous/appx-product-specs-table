@@ -49,11 +49,18 @@ function CardFrame({
   to,
   label,
   description,
+  action,
   visual,
 }: {
   to: string;
   label: string;
   description: string;
+  /**
+   * The call-to-action line — what happens when this card is activated, in the
+   * merchant's words. Per-card rather than one shared string because Blank is
+   * not a style, so "Use this style" would be false on it.
+   */
+  action: string;
   /** The thumbnail or its stand-in. Decorative — the caller hides it from AT. */
   visual: React.ReactNode;
 }) {
@@ -80,6 +87,31 @@ function CardFrame({
         <span className={styles.description} id={descriptionId}>
           {description}
         </span>
+      </span>
+      {/* The affordance, and 🔴 it is TEXT INSIDE THE ANCHOR — never a nested
+          `<button>` or second `<Link>`. Interactive content inside a link is
+          invalid HTML and announces as a broken nested control; it would also
+          mean giving up the whole-card target, which is the one thing this
+          gallery cannot afford. The preview is the thing being judged, so the
+          preview has to be what you click (see `pointer-events: none` on the
+          frame) — a real button would shrink the target from the full card to
+          ~110×36 and leave the table inert under the pointer.
+
+          What the line buys over the pre-existing hover treatment: hover is
+          invisible until you are already on the card, and absent entirely on a
+          touch admin. Six cards that look like pictures give a merchant nothing
+          saying a click starts a template. This says it, always, on every
+          device.
+
+          ⚠️ `aria-hidden` deliberately. The anchor already announces as a link
+          named "Modern" — the role IS "this activates" — so exposing the line
+          would add six identical "Use this style" strings to the page for no
+          information. It is a VISUAL restatement of the role, which is exactly
+          what `aria-hidden` is for. Safe here only because the accessible name
+          comes from `aria-labelledby` above and never from this subtree. */}
+      <span className={styles.action} aria-hidden="true">
+        {action}
+        <span className={styles.actionArrow}>&rarr;</span>
       </span>
     </Link>
   );
@@ -111,6 +143,7 @@ export function StylePresetCard({ preset }: { preset: StylePreset }) {
       to={`/app/templates/new?style=${encodeURIComponent(preset.id)}`}
       label={preset.label}
       description={preset.description}
+      action="Use this style"
       visual={
         // ⚠️ The preview is DECORATIVE and hidden from assistive tech. The
         // merchant is choosing a look; a screen-reader user must hear
@@ -158,6 +191,9 @@ export function BlankStyleCard() {
       to="/app/templates/new"
       label="Blank"
       description="Start with your theme's own styles — nothing added."
+      // ⚠️ NOT "Use this style". Blank is the absence of a preset, so there is
+      // no style to use; the line has to name what actually happens.
+      action="Start blank"
       visual={
         <span className={styles.blankPlate} aria-hidden="true">
           +

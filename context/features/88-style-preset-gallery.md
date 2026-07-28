@@ -293,6 +293,73 @@ section headers at all**. That is the content axis, handled below.
 
 ---
 
+## 🔴 A card is ONE LINK, never a card plus a Choose button (2026-07-28)
+
+Raised by the merchant after looking at Kaching's gallery, where every card
+carries its own **Choose** button: *"our preset card does not have a button — a
+button expressly informs the user to choose and proceed."*
+
+**The diagnosis was right and the proposed fix was not.** Two different things
+were bundled into one observation, and they separate cleanly:
+
+| the observation | verdict |
+| --- | --- |
+| the card never SAYS it is clickable | ✅ **true and worth fixing** — the only signal was a hover border |
+| therefore it needs a button | 🚫 **no** — a button costs more than it buys, here |
+
+### Why Kaching's button does not transfer
+
+**Their preview is interactive; ours is dead pixels.** Kaching's card contains
+radio buttons, colour dropdowns and its own inner Choose control, so a click in
+the middle of it is genuinely ambiguous and they have no option but a dedicated
+commit button. Their button is a **consequence of their preview being live**,
+not an independent UX call — so "Kaching has one" is not evidence for us.
+
+Our preview is a `pointer-events: none` iframe precisely so the whole card
+activates the link (`StylePresetCard.module.css`, `.frame`). Adding a button
+would mean **removing the whole-card link**, because interactive content inside
+an anchor is invalid HTML and announces as a broken nested control. The real
+trade:
+
+| | whole-card link | card + Choose button |
+| --- | --- | --- |
+| target | the entire card, preview included (~440 × 340) | the button (~110 × 36), **36× smaller** |
+| clicking the thing being judged | works | **inert** |
+| markup | one anchor, one accessible name | container + button; the preview needs its own handling |
+| says "this is an action" | ✅ now, in words | ✅ |
+
+A gallery whose entire content is *look at this picture and pick it* cannot
+afford to make the picture unclickable. Merchants aim at the thing they are
+choosing — verified live in step 91 ("a click in the MIDDLE of a preview
+activates the card").
+
+### What shipped instead: a stated action line
+
+One line of admin-blue text at the bottom of the card body, **inside the same
+anchor** — `Use this style →` on the five patterns, `Start blank` on Blank
+(⚠️ not one shared string: "use this style" is false on the card that is the
+absence of a style). The arrow nudges 2px on `:hover`, guarded by
+`prefers-reduced-motion: reduce`.
+
+This answers the actual complaint. Hover is invisible until the pointer has
+already arrived and **absent entirely on a touch admin**, so the pre-existing
+border-and-shadow told a merchant nothing while they were scanning. The line
+says it always, on every device, and costs neither the target nor the markup.
+
+⚠️ **`aria-hidden` on the line, deliberately.** The anchor already announces as
+a link named "Modern" — the role *is* "this activates" — so exposing it would
+add six identical "Use this style" strings for no information. Safe only
+because the accessible name comes from `aria-labelledby` and never from this
+subtree.
+
+🔴 **The guard that matters is `no <button> in the file`**, plus `<Link` appearing
+exactly once. This decision is re-proposable at any time by anyone comparing
+against Kaching again, and the failure mode is silent: a button version looks
+*better* in a screenshot while quietly making the preview inert. The test names
+the reason, not just the rule.
+
+---
+
 ## Content shape: cards seed styling only
 
 **Merchant decision 2026-07-27.** Two references (#3, #6) are flat lists with no

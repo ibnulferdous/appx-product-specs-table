@@ -25,6 +25,13 @@
   --appx-preset-shadow: color-mix(in srgb, currentColor 12%, transparent);
   --appx-preset-muted: color-mix(in srgb, currentColor 65%, transparent);
   --appx-preset-blank-fill: color-mix(in srgb, currentColor 3%, #ffffff);
+  /* The action line's ink. A fixed literal, NOT derived from `currentColor`:
+     every other colour here is a neutral that only has to stay legible, while
+     this one carries a meaning — "this is interactive" — and a mixed-down grey
+     would say the opposite. #005bd3 is the admin's own interactive blue; it is
+     a literal for the same reason the surface is (Polaris colour tokens are
+     sealed in shadow DOM, [[polaris-web-component-gotchas]]). */
+  --appx-preset-action: #005bd3;
 
   /* --- The scale geometry ------------------------------------------------
      "Scale, don't shrink": the preview is the REAL table rendered at a real
@@ -172,4 +179,42 @@
 .description {
   font-size: 0.8125rem;
   color: var(--appx-preset-muted);
+}
+
+/* The action line. It is text inside the anchor, not a control — see the note
+   in `StylePresetCard.tsx` for why a real button would be a downgrade here.
+   It sits OUTSIDE `.body` so the card's `gap` separates it from the name and
+   description as its own beat, rather than crowding the help text. */
+.action {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  /* The only non-neutral ink on the card, and the entire point of the line:
+     admin blue is what a merchant already reads as "this does something". */
+  color: var(--appx-preset-action);
+}
+
+/* Split from the label purely so the hover nudge moves the arrow alone — the
+   words must not slide, or the line reads as jitter rather than direction. */
+.actionArrow {
+  transition: transform 120ms ease-out;
+}
+
+.card:hover .actionArrow {
+  transform: translateX(0.125rem);
+}
+
+/* The card is legible and complete without the nudge — it is decoration on top
+   of an affordance that is already stated in words, so it costs nothing to
+   drop. The COLOUR and the text stay; only the movement goes. */
+@media (prefers-reduced-motion: reduce) {
+  .actionArrow {
+    transition: none;
+  }
+
+  .card:hover .actionArrow {
+    transform: none;
+  }
 }
