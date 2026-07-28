@@ -155,41 +155,99 @@ describe("spec-table.css ↔ styling vocabulary contract (feature 57 Step 3)", (
   });
 
   describe("section gap", () => {
-    const GAP_RULE =
+    // ONE knob, TWO rules, because the two markup shapes have nothing in
+    // common to hang a margin on: the collapsible shape has a <details> per
+    // section, the flat shape has a <tr>. Feature 80 shipped the first;
+    // feature 94 shipped the second once it was established that a flat
+    // section header only refuses margin under TWO_COLUMN.
+    const GAP_RULE_COLLAPSIBLE =
       ".appx-spec-table--section-gap\n" +
       "  .appx-spec-table__section-group:not(:first-child) {";
 
-    it("spaces every section but the first, from the presence-flagged var", () => {
-      const start = css.indexOf(GAP_RULE);
-      expect(start, "the feature 80 gap rule is missing").toBeGreaterThan(-1);
-      const block = css.slice(start, css.indexOf("}", start));
-      expect(block).toContain(
-        "margin-block-start: var(--appx-spec-section-gap, 0);",
-      );
-    });
+    const GAP_RULE_FLAT =
+      ".appx-spec-table--section-gap.appx-spec-table--layout-stacked\n" +
+      "  .appx-spec-table__section-row:not(:first-child),\n" +
+      ".appx-spec-table--section-gap.appx-spec-table--layout-grid\n" +
+      "  .appx-spec-table__section-row:not(:first-child) {";
+
+    it.each([
+      ["collapsible", GAP_RULE_COLLAPSIBLE],
+      ["flat", GAP_RULE_FLAT],
+    ])(
+      "%s shape: spaces every section but the first, from the presence-flagged var",
+      (_shape, rule) => {
+        const start = css.indexOf(rule);
+        expect(start, "the gap rule is missing").toBeGreaterThan(-1);
+        const block = css.slice(start, css.indexOf("}", start));
+        expect(block).toContain(
+          "margin-block-start: var(--appx-spec-section-gap, 0);",
+        );
+      },
+    );
 
     it("is gated on the presence class, never declared for every table", () => {
       // An unconditional `margin-block-start: var(--…, 0)` would beat a theme's
-      // own element-level `details` margin from a two-class selector, silently
-      // restyling tables whose merchant never touched this knob. So the whole
-      // file may declare this property EXACTLY ONCE, inside the flagged rule.
-      // (Anchored on the declaration form — two-space indent plus colon — so
-      // the prose above the rule is not mistaken for a second one.)
-      const declarations = css.match(/\n {2}margin-block-start:/g) ?? [];
-      expect(declarations).toHaveLength(1);
-      const start = css.indexOf(GAP_RULE);
-      const declaredAt = css.indexOf("\n  margin-block-start:");
-      expect(declaredAt).toBeGreaterThan(start);
-      expect(declaredAt).toBeLessThan(css.indexOf("}", start));
+      // own element-level margin from a two-class selector, silently restyling
+      // tables whose merchant never touched this knob.
+      //
+      // ⚠️ Feature 80 pinned this by COUNTING — the file could declare the
+      // property exactly once. Feature 94 needed a second declaration, and a
+      // count of 2 would be an arithmetic accident rather than the invariant.
+      // So the check now states the actual law: wherever this property is
+      // declared, the rule declaring it is gated on the presence class. That
+      // is scale-free — a third shape inherits the guard for free, and it
+      // catches the failure the count was really aiming at (an ungated
+      // declaration) even when the total happens to be right.
+      const declarations = [...css.matchAll(/\n {2}margin-block-start:/g)];
+      expect(declarations.length).toBeGreaterThan(0);
+
+      for (const match of declarations) {
+        const at = match.index;
+        // The selector of the block this declaration sits in: from whatever
+        // closed the previous rule (or its comment) to the brace that opens
+        // this one.
+        const braceAt = css.lastIndexOf("{", at);
+        const selector = css.slice(
+          Math.max(
+            css.lastIndexOf("}", braceAt),
+            css.lastIndexOf("*/", braceAt),
+          ) + 1,
+          braceAt,
+        );
+        expect(
+          selector,
+          `an ungated margin-block-start in: ${selector.trim()}`,
+        ).toContain("appx-spec-table--section-gap");
+      }
     });
 
-    it("uses :not(:first-child), not the adjacent-sibling combinator", () => {
-      // Rows before the first section header render in a leading bare table,
-      // and `details + details` would skip that one boundary while still
-      // never adding a leading gap. This form covers both.
+    it("the flat rule names both block layouts and never two-column", () => {
+      // The layout modifier is what makes the flat rule honest. Without it the
+      // selector would read as though it worked everywhere and quietly do
+      // nothing under TWO_COLUMN, where the section row is a table-row and
+      // margin does not apply to internal table boxes. Naming two-column here
+      // would be worse than useless: a rule that cannot fire.
+      expect(GAP_RULE_FLAT).toContain("appx-spec-table--layout-stacked");
+      expect(GAP_RULE_FLAT).toContain("appx-spec-table--layout-grid");
+      expect(css).toContain(GAP_RULE_FLAT);
+
+      const start = css.indexOf(GAP_RULE_FLAT);
+      const selector = css.slice(start, css.indexOf("{", start));
+      expect(selector).not.toContain("layout-two-column");
+    });
+
+    it("both shapes use :not(:first-child), not adjacent-sibling", () => {
+      // Rows before the first section header render ahead of the first
+      // section, and an adjacent-sibling form would skip that one boundary
+      // while still never adding a leading gap. This form covers both.
+      //
+      // Under STACKED it does a second job: the tbody is a block there, so a
+      // first-child top margin would collapse out THROUGH it and push the
+      // whole table down rather than separate anything.
       expect(css).toContain(
         ".appx-spec-table__section-group:not(:first-child)",
       );
+      expect(css).toContain(".appx-spec-table__section-row:not(:first-child)");
     });
   });
 

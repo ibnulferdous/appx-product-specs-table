@@ -264,6 +264,27 @@ describe("feature 86 — the Style rail renders all eight groups", () => {
     expect(guards.length).toBe(7);
   });
 
+  it("files the section gap under Section headers, not Collapsible sections", () => {
+    // ⚠️ The one thing the header of this file says it CANNOT see — "a control
+    // landed in the wrong group" — asserted for exactly one control, because
+    // feature 94 MOVES one and a move is otherwise invisible to every guard
+    // here. The reachability check passes either way: `sectionGapPx` stays
+    // reachable from exactly one control no matter which group renders it.
+    //
+    // Why it belongs here and not with the collapsible switch: feature 86's
+    // axis is the OBJECT being styled, and once the gap no longer requires
+    // disclosures (it works in the STACKED and GRID flat layouts too) it is a
+    // property of the section headers it separates, not of collapsing.
+    const blocks = body.split(/<div\s+role="group"/).slice(1);
+    const owner = blocks.find((block) =>
+      block.includes("showsSectionGapControl"),
+    );
+
+    expect(owner, "no group renders the section-gap control").toBeDefined();
+    expect(owner).toContain('headingId("sectionHeaders")');
+    expect(owner).not.toContain('headingId("collapsibleSections")');
+  });
+
   it("has retired the Colors group's note", () => {
     // The note ("Leave a swatch empty to inherit that color from your theme")
     // described a group that no longer exists, and was WRONG for four of the

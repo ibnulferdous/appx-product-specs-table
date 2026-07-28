@@ -863,6 +863,88 @@ describe("collapsible sections (feature 57 · Step 9a)", () => {
   });
 });
 
+// Feature 94 — the section gap reaches the flat shape, which means the knob now
+// has TWO css rules: one hanging a margin on the collapsible shape's
+// `<details class="…__section-group">`, one on the flat shape's
+// `<tr class="…__section-row">`. Both are gated on the same presence class, so
+// the obvious hazard is a state where both fire and a merchant's 30px renders
+// as 60px.
+//
+// It is unreachable, and this is where that is MEASURED rather than argued: the
+// renderer emits one shape or the other, never both, so the two selectors are
+// mutually exclusive by construction. Feature 94's CSS comment claims exactly
+// this; without these tests the claim would be re-derived by reading the
+// renderer every time someone edits either rule.
+describe("section-gap shape exclusivity (feature 94)", () => {
+  // Every row layout, because the gap's flat rule is layout-scoped and the
+  // shape switch is not — a reader could reasonably wonder whether GRID, which
+  // re-displays the section row as a grid item, changes what gets emitted.
+  // It does not: `rowLayout` selects CSS, `sectionsCollapsible` selects markup.
+  const twoSections: EditorRow[] = [
+    sectionRow({ id: "s1", label: "Aircraft" }),
+    dataRow([text("249 g")], { id: "d1", label: "Weight" }),
+    sectionRow({ id: "s2", label: "Camera" }),
+    dataRow([text("48 MP")], { id: "d2", label: "Photo" }),
+  ];
+
+  const render = (
+    sectionsCollapsible: boolean,
+    rowLayout: StylingValues["rowLayout"],
+  ) =>
+    renderSpecTableHtmlStyled(twoSections, {
+      ...DEFAULT_STYLING_VALUES,
+      sectionsCollapsible,
+      rowLayout,
+      sectionGapPx: 30,
+    });
+
+  it.each(["TWO_COLUMN", "STACKED", "GRID"] as const)(
+    "%s flat: section rows, and no section group for the other rule to catch",
+    (rowLayout) => {
+      const html = render(false, rowLayout);
+      expect(html).toContain('class="appx-spec-table__section-row"');
+      expect(html).not.toContain("appx-spec-table__section-group");
+    },
+  );
+
+  it.each(["TWO_COLUMN", "STACKED", "GRID"] as const)(
+    "%s collapsible: section groups, and no section row for the other rule to catch",
+    (rowLayout) => {
+      const html = render(true, rowLayout);
+      expect(html).toContain("appx-spec-table__section-group");
+      expect(html).not.toContain('class="appx-spec-table__section-row"');
+    },
+  );
+
+  it("carries the presence class in both shapes", () => {
+    // The gating both rules share. If the class stopped being emitted the gap
+    // would silently stop working in BOTH shapes at once, which no assertion
+    // about markup exclusivity above would notice.
+    //
+    // The class rides the FRAGMENT wrapper; the custom property it pairs with
+    // is a document-level declaration (asserted below), which is the split that
+    // makes this knob a presence-class-plus-var rather than a pure modifier
+    // like feature 87's.
+    for (const sectionsCollapsible of [false, true]) {
+      expect(render(sectionsCollapsible, "STACKED")).toContain(
+        "appx-spec-table--section-gap",
+      );
+    }
+  });
+
+  it("declares the var on the preview document, in both shapes", () => {
+    for (const sectionsCollapsible of [false, true]) {
+      const doc = renderSpecTablePreviewDocumentStyled(twoSections, {
+        ...DEFAULT_STYLING_VALUES,
+        sectionsCollapsible,
+        rowLayout: "STACKED",
+        sectionGapPx: 30,
+      });
+      expect(doc).toContain("--appx-spec-section-gap: 30px");
+    }
+  });
+});
+
 // Feature 74 — content-free tables render NOTHING. Two gates:
 //   R1  a SECTION_HEADER with a blank label is skipped;
 //   R2  if no row survives its gate, the fragment is "" (no wrapper at all).

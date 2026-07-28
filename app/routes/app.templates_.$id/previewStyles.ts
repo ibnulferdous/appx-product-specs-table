@@ -404,12 +404,51 @@ export const SPEC_TABLE_CSS = `/* Appx — Product Specs Table storefront styles
    disclosure around it, and the sibling form would skip that one boundary.
    This form covers it and still never adds a leading gap inside the frame.
 
-   Only the collapsible shape has section-group elements. In the flat shape a
-   section header is a table row, which takes no margin at all — which is why
-   the rail hides this control while collapsing is off rather than shipping a
-   knob that does nothing. */
+   Only the collapsible shape has section-group elements. The flat shape gets
+   the same gap from the rule directly below, which targets its section ROW
+   instead. The two can never both fire: the collapsible renderer emits no
+   section-row and the flat renderer emits no section-group. */
 .appx-spec-table--section-gap
   .appx-spec-table__section-group:not(:first-child) {
+  margin-block-start: var(--appx-spec-section-gap, 0);
+}
+
+/* --- Section gap, flat shape (feature 94) -----------------------------------
+   The same knob reaching the shape that has no disclosures. A flat section
+   header is a tr, and what a tr DISPLAYS as is decided by the row-layout rules
+   further down this file: table-row under two-column, but block under stacked
+   and block-plus-grid-item under grid. Margin applies in the last two, so the
+   gap is expressible there — feature 80 fenced this knob to the collapsible
+   shape when the thing that actually cannot express a gap is the TABLE
+   FORMATTING CONTEXT, which only two-column keeps.
+
+   Layout-scoped rather than written bare. The unscoped form would be a silent
+   no-op under two-column: a declaration that reads as though it works
+   everywhere and quietly does nothing in the default layout. Naming the two
+   layouts makes the selector state the constraint it is subject to.
+
+   Two-column is deliberately absent and has no rule of its own. Padding on the
+   section cell grows the band rather than opening a gap; a transparent
+   border-block-start loses the collapsed-border width contest and silently
+   deletes the preceding row's own divider; a spacer row would put a cell-less
+   row into the role=table chain. Whether border-collapse: separate, scoped to
+   this knob, can do it is an open question recorded in progress-tracker.md.
+
+   not(:first-child) for the same two reasons as the rule above: rows can
+   appear BEFORE the first section header, so a leading gap inside the frame is
+   never wanted; and under stacked the tbody is a block, so a first-child top
+   margin would collapse out through it and push the whole table down instead
+   of separating anything.
+
+   One visible result, two mechanisms. Under stacked this is a collapsing block
+   margin (the max of the adjoining margins); under grid it is a grid item
+   margin, which never collapses. They agree today only because every
+   neighbouring margin is 0 — a future rule giving a row a bottom margin would
+   change stacked and not grid. */
+.appx-spec-table--section-gap.appx-spec-table--layout-stacked
+  .appx-spec-table__section-row:not(:first-child),
+.appx-spec-table--section-gap.appx-spec-table--layout-grid
+  .appx-spec-table__section-row:not(:first-child) {
   margin-block-start: var(--appx-spec-section-gap, 0);
 }
 

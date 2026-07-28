@@ -201,11 +201,13 @@ Rendered in the **left controls panel** beside the stage (see Layout). Design mo
 > | 1 | Table layout | `rowLayout` · `gridMinColumnWidthPx` · `mobileLayout` · `labelWidthPct` |
 > | 2 | Table size & frame | `tableMaxWidthPx` · `tableAlign` · `outerBorderWidthPx` · `outerBorderRadiusPx` · `outerBorderColor` |
 > | 3 | Table text | `fontSize` (+ Custom px) · `fontStyle` · `lineHeight` |
-> | 4 | Section headers | `sectionHeaderStyle` · `headerFontSizePx` · `headerFontWeight` · `headerCase` · `headerPaddingBlockPx` · `headerBgColor` · `headerTextColor` |
-> | 5 | Collapsible sections | `sectionsCollapsible` · `sectionsInitialState` · `sectionGapPx` |
+> | 4 | Section headers | `sectionHeaderStyle` · `headerFontSizePx` · `headerFontWeight` · `headerCase` · `headerPaddingBlockPx` · **`sectionGapPx`** · `headerBgColor` · `headerTextColor` |
+> | 5 | Collapsible sections | `sectionsCollapsible` · `sectionsInitialState` |
 > | 6 | Rows | `rowDividerStyle` · `columnDividerStyle` · `density` · `stripeBgColor` · `borderColor` |
 > | 7 | Labels | `fontWeight` · `labelCase` · `labelBgColor` · `labelTextColor` |
 > | 8 | Values | `valueBgColor` · `valueTextColor` |
+>
+> ⚠️ **Amended 2026-07-28 by feature 94 (`context/features/94-…`): `sectionGapPx` moved 5 → 4**, so Section headers is 8 knobs and Collapsible sections is 2. The gap sat with the collapsible switch while it was reachable only with disclosures on; feature 94 made it work in the STACKED and GRID flat layouts too, at which point it stopped being a property of collapsing and became a property of the section headers it separates — the object axis deciding its own placement. Collapsible sections still leads with an ungated switch, so it cannot render as a heading fencing nothing.
 >
 > Placement is decided by **where the CSS var lands**, not by what the control sounds like — `font-size`/`font-style`/`line-height` sit on `.appx-spec-table__table` (Table text) while `font-weight`/`text-transform` sit on `.appx-spec-table__label` (Labels). Verify against `spec-table.css` before filing a new knob.
 >

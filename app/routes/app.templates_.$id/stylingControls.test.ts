@@ -1220,14 +1220,16 @@ const VISIBILITY_PREDICATES: ReadonlyArray<{
     preservedField: "tableAlign",
   },
   {
-    // The sixth (feature 80), and the second gated on `sectionsCollapsible` —
-    // for a harder reason than the initial-state control above. That one is
-    // merely meaningless without disclosures; a gap is UNEXPRESSIBLE, because
-    // a flat section header is a table row and a table row takes no margin.
+    // The sixth (feature 80), and the only one gated on TWO knobs (feature 94).
+    // A gap is genuinely UNEXPRESSIBLE in a table formatting context — but that
+    // is TWO_COLUMN alone, not the flat shape, which is what feature 80
+    // assumed. `rowLayout` is pinned explicitly rather than left to the default
+    // so this fixture keeps testing what it says even if the default moves.
     name: "showsSectionGapControl",
     predicate: showsSectionGapControl,
     visible: {
       ...DEFAULT_STYLING_VALUES,
+      rowLayout: "TWO_COLUMN",
       sectionsCollapsible: true,
       sectionGapPx: 12,
     },
@@ -1306,3 +1308,68 @@ describe.each(VISIBILITY_PREDICATES)(
     });
   },
 );
+
+describe("showsSectionGapControl — the OR (feature 94)", () => {
+  // The registry above walks ONE hiding edit per predicate, which is all the
+  // preserve-on-hide law needs. This predicate reads two knobs, so the
+  // interesting cases are the combinations, and one of them is the whole
+  // feature: a flat table in a block layout, with collapsing OFF.
+  const at = (
+    rowLayout: StylingValues["rowLayout"],
+    sectionsCollapsible: boolean,
+  ): StylingValues => ({
+    ...DEFAULT_STYLING_VALUES,
+    rowLayout,
+    sectionsCollapsible,
+  });
+
+  it.each([
+    // The feature. Both would fail against feature 80's `sectionsCollapsible`.
+    ["STACKED", false, true],
+    ["GRID", false, true],
+    // Unchanged by feature 94 — the collapsible shape has a <details> per
+    // section at ANY row layout, so this is the OR's left side carrying it.
+    ["TWO_COLUMN", true, true],
+    ["STACKED", true, true],
+    ["GRID", true, true],
+    // The one excluded state: a table formatting context with no disclosures.
+    // A `!== "TWO_COLUMN"`-only predicate would fail HERE, which is what makes
+    // this an OR rather than a replacement.
+    ["TWO_COLUMN", false, false],
+  ] as const)(
+    "%s with collapsing %s → %s",
+    (rowLayout, sectionsCollapsible, shown) => {
+      expect(showsSectionGapControl(at(rowLayout, sectionsCollapsible))).toBe(
+        shown,
+      );
+    },
+  );
+
+  it("excludes exactly one of the row layouts, and it is TWO_COLUMN", () => {
+    // Derived from ROW_LAYOUTS rather than hand-listed, so a fourth member
+    // added later has to confront this: the predicate says `!== "TWO_COLUMN"`
+    // precisely so a new (necessarily block-ish) layout inherits the gap, and
+    // if that is ever wrong this is where it surfaces.
+    const excluded = ROW_LAYOUTS.filter(
+      (rowLayout) => !showsSectionGapControl(at(rowLayout, false)),
+    );
+    expect(excluded).toEqual(["TWO_COLUMN"]);
+  });
+
+  it("survives the round trip through the newly-hiding edit", () => {
+    // The preserve-on-hide law against feature 94's OWN hiding edit — the
+    // registry above only walks the collapsible one. Switching to Two-column
+    // must not clear the px value the merchant typed in Grid.
+    const inGrid = Object.freeze({
+      ...DEFAULT_STYLING_VALUES,
+      rowLayout: "GRID" as const,
+      sectionGapPx: 30,
+    });
+    expect(showsSectionGapControl(inGrid)).toBe(true);
+
+    const inTwoColumn = { ...inGrid, rowLayout: "TWO_COLUMN" as const };
+    expect(showsSectionGapControl(inTwoColumn)).toBe(false);
+    expect(inTwoColumn.sectionGapPx).toBe(30);
+    expect(inGrid.sectionGapPx).toBe(30);
+  });
+});

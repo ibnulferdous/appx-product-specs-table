@@ -1233,7 +1233,34 @@ Multi-value applies to PRODUCT + COLLECTION only. No migrations needed for the 4
    separation + gap, 81 = section header typography, 85 = multi-column row flow — a
    retired number is still spent.) Then C (Settings display rules) → E (assignment into
    the reshell) → F (top-bar status/save + cleanup).
-2. **Section band radius / chevron position / animated open-close (proposed 82 / 83 / 84).**
+2. **Section gap in the flat block layouts — specced 2026-07-28 as feature 94, doc `94-…`.**
+   Merchant report + DevTools screenshot: `margin-top: 30px` on
+   `tr.appx-spec-table__section-row` opens a real gap between sections on their live
+   storefront. It does, and the knob it wants **already exists** — `sectionGapPx`
+   (feature 80) — but the rail hides it unless `sectionsCollapsible` is on.
+   🔴 **Root cause is an over-general claim repeated in three places** (`spec-table.css:389`,
+   `stylingControls.ts:461`, `data-model.md:411`): "a flat section header is a `<tr>` and a
+   `<tr>` takes no margin" is true **only in `TWO_COLUMN`**. In `STACKED` and `GRID` the
+   section row is `display: block` (a grid item in Grid), so margin applies — the merchant's
+   screenshot is a `GRID` table, which is why their CSS worked.
+   **Feature-87 cost profile:** no migration, no new field, **no new hide predicate**
+   (`showsSectionGapControl` changes its condition, count stays 7), no Liquid/TOML/markup,
+   no repaint. One CSS rule with two layout-scoped selectors + a predicate widened to
+   `sectionsCollapsible || rowLayout !== "TWO_COLUMN"` (an OR — `TWO_COLUMN` + collapsible
+   still works via the existing `<details>` rule).
+   ⚠️ **The control MOVES group** — feature 86's one axis means a gap that no longer needs
+   collapsing is not a property of collapsing: `Collapsible sections` (→2 controls) →
+   `Section headers` (→8). Neither group empties, so the Step 5 invariant holds. Help text
+   must drop the word "collapsible".
+   🚫 **`TWO_COLUMN` stays excluded**, and the rejection is already on file at
+   `stylingControls.ts:463` — a transparent `border-block-start` loses the collapsed-border
+   width contest and silently deletes the previous row's divider. Padding grows the band;
+   a spacer `<tr>` lies to the ARIA chain. See the open question below for the one option
+   nobody has costed. ✅ **No mobile asymmetry** — the excluded state is unreachable, since
+   the control is hidden in `TWO_COLUMN` so no value exists to disagree across the
+   breakpoint. `.harness/` matrix **is** warranted here (unlike 87): `STACKED` margin
+   collapsing, and the `LINES` divider on a section's last row above 30px of whitespace.
+3. **Section band radius / chevron position / animated open-close (proposed 82 / 83 / 84).**
    The rest of the same merchant report feature 81 answered. Each is its own unit for a
    recorded reason — see "Deliberately out of scope" in `81-…`: a radius behaves differently
    on a `th` under `border-collapse` than on a `<summary>` and needs a gap to look right; a
@@ -1242,13 +1269,13 @@ Multi-value applies to PRODUCT + COLLECTION only. No migrations needed for the 4
    needs `::details-content` + `interpolate-size`, so it is progressive-enhancement only and
    must be reduced-motion guarded. 🚫 Not the JS `grid-template-rows` trick — that breaks the
    zero-JS `<details>` invariant.
-3. **Storefront table semantics in stacked layouts (feature 70)** — code shipped;
+4. **Storefront table semantics in stacked layouts (feature 70)** — code shipped;
    screen-reader pass still owed (see Open Questions). ⚠️ **Now blocking feature 85**
    (below), which would be the third `display`-departure riding on the same unverified
    ARIA chain. Run the pass before building it.
-4. **Feature 85 sign-off — one blocker left.** The build is done and fully live-verified
+5. **Feature 85 sign-off — one blocker left.** The build is done and fully live-verified
    (see Completed; both deferred checks closed 2026-07-26), but it is deliberately NOT
-   marked shipped: ⚠️ the **feature-70 screen-reader pass** (item 3) was its stated
+   marked shipped: ⚠️ the **feature-70 screen-reader pass** (item 4) was its stated
    blocker and was skipped at the merchant's instruction. Run it — and if the roles are
    wrong, feature 70's own instruction is "revert, do not patch", which now costs three
    consumers rather than two. One data point in its favour: Chrome's accessibility tree
@@ -1256,14 +1283,14 @@ Multi-value applies to PRODUCT + COLLECTION only. No migrations needed for the 4
    storefront, but that is not the same as a screen reader ANNOUNCING the pairs.
    Also decide whether to clear the DJI template's saved minimum of 400: **240 measured
    511px shorter** on that table.
-5. **Editor page should not scroll at the document level** — the app document overflows the
+6. **Editor page should not scroll at the document level** — the app document overflows the
    iframe by roughly the `.tipsFooter` height (it renders BELOW the card, outside
    `useScrollRegionHeight`'s flat `BOTTOM_PAD_REM = 3` budget), producing a stray outer
    scrollbar stranded beside admin's reserved 16px scrollbar gutter. Fix = measure the actual
    footer/card bottom instead of the hardcoded 3rem. Touches the measurer both scrollers share,
    so it is its own unit.
-6. **Templates-list Phase 2** — search / sort / pagination (server-side, with pagination) when the list can grow large; multi-select bulk actions later.
-7. **Pre-submission** — mandatory privacy webhooks (`customers/data_request`, `customers/redact`, `shop/redact`) + Billing (`prd.md`, `context/app-store-review-checklist.md`).
+7. **Templates-list Phase 2** — search / sort / pagination (server-side, with pagination) when the list can grow large; multi-select bulk actions later.
+8. **Pre-submission** — mandatory privacy webhooks (`customers/data_request`, `customers/redact`, `shop/redact`) + Billing (`prd.md`, `context/app-store-review-checklist.md`).
 
 **Deferred:** editor bulk-delete range-select (Shift+click) + Delete/Backspace shortcut; per-product overflow materialization + a bulk apply-to-all styling route.
 
@@ -1277,6 +1304,22 @@ Multi-value applies to PRODUCT + COLLECTION only. No migrations needed for the 4
 
 ## Open Questions
 
+- **Can `TWO_COLUMN` express a section gap via `border-collapse: separate`? (raised
+  2026-07-28 while speccing feature 94 — the one option nobody has costed.)** The existing
+  in-repo rejection at `stylingControls.ts:463` rules out a transparent
+  `border-block-start` on the section `th` because collapsed-border width resolution eats
+  the previous row's 1px divider — sound, but it assumes `border-collapse: collapse`, which
+  `spec-table.css:151` sets unconditionally. Under `separate` there is no shared edge to
+  contest, so a transparent top border plus `background-clip: padding-box` would open a
+  real gap with the band intact; scoping it to
+  `.appx-spec-table--section-gap.appx-spec-table--layout-two-column` means **no existing
+  table changes border model**, so the no-repaint law survives. Deliberately NOT in
+  feature 94: switching border models re-resolves every row divider, the column rule and
+  feature 78's outer border at once (a different system boundary, and feature 86's lesson
+  was not to bundle them), and it needs a real `.harness/` matrix first —
+  `border-spacing: 0`, the `LINES` rule on a section's last row, the label/value seam, and
+  the outer border, across all three header styles. Feature 94 ships `STACKED` + `GRID`
+  without it; this decides whether the default layout ever gets the knob.
 - **Collapsible section titles do not inherit the table's typography (found 2026-07-26 while
   specing feature 81; pre-existing since Step 9a).** `--appx-spec-font-size` / `-font-style` /
   `-line-height` are declared on `.appx-spec-table__table` (`spec-table.css:141–143`), and the

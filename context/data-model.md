@@ -401,14 +401,28 @@ model TableStyling {
   // Section-header typography + spacing (feature 81). All four nullable, null =
   // inherit the stylesheet's own literal, so an untouched table is byte-identical.
   // They dress BOTH shapes (the flat th[colspan=2] and the collapsible summary),
-  // so unlike sectionGapPx none of them is hidden in any state.
+  // so unlike sectionGapPx none of them is hidden in any state. (sectionGapPx is
+  // still the group's one hidden control after feature 94 — it is hidden in fewer
+  // states, not in none. See its note below.)
   headerFontSizePx     Int?     // 10–184 (shares the fontSize bounds); null = the size the title already renders at. ABSOLUTE px, never an em keyword: the collapsible <summary> is a SIBLING of the <table> that carries --appx-spec-font-size, so an em would resolve against a different base per shape and resize silently when Collapsible is toggled
   headerFontWeight     String?  // "REGULAR" | "MEDIUM" | "BOLD"; null = the literal 700
   headerCase           String?  // "DEFAULT" | "UPPERCASE"; null = as typed. Section titles ONLY — labelCase below is the label column's own knob
   headerPaddingBlockPx Int?     // 0–48; null = the literal 0.75rem. BLOCK AXIS ONLY (the inline padding stays welded to the row cells' 0.75rem, or a large title would indent past its own labels). The ONE integer knob with a 0 floor — see the container-knob law below for why it does not apply here
   sectionsCollapsible  Boolean  @default(false)
   sectionsInitialState String?  // "ALL_OPEN" (null default) | "FIRST_OPEN" | "ALL_CLOSED" — only meaningful when sectionsCollapsible
-  sectionGapPx         Int?     // 1–48; null = no gap (feature 80). Space between collapsible sections — only expressible when sectionsCollapsible, since a flat section header is a <tr> and a <tr> takes no margin. Takes the container knobs' law below: null = the DEFAULT, minimum 1
+  sectionGapPx         Int?     // 1–48; null = no gap (feature 80). Space between sections. Takes the container knobs' law below: null = the DEFAULT, minimum 1
+  // ⚠️ Feature 94 widened where this is REACHABLE, not what it stores. Feature 80
+  // fenced it to sectionsCollapsible on the reasoning that a flat section header
+  // is a <tr> and a <tr> takes no margin — true only under TWO_COLUMN. What a <tr>
+  // DISPLAYS as is the row-layout rules' call: table-row there, but block under
+  // STACKED and a block grid item under GRID, and margin applies in both. So the
+  // knob has TWO CSS rules (one per markup shape) and the rail shows it whenever
+  // sectionsCollapsible OR rowLayout !== TWO_COLUMN. The shapes are mutually
+  // exclusive in the renderer, so the two rules can never both fire.
+  // Two-column with collapsing off remains the one excluded state: padding grows
+  // the band, and a transparent border-block-start loses the border-collapse width
+  // contest and deletes the previous row's divider. See progress-tracker.md for the
+  // border-collapse: separate option, still uncosted.
   rowDividerStyle      String?  // "LINES" (null default) | "STRIPES" | "NONE"
   columnDividerStyle   String?  // "NONE" (null default) | "LINE" (feature 79) — the vertical rule at the label/value seam; fixed 1px, colored by borderColor. Suppressed in stacked layouts (no seam)
   density              String?  // "DEFAULT" (null default) | "COMPACT" | "SPACIOUS"

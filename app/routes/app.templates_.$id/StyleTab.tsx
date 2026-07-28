@@ -639,11 +639,12 @@ export function StyleTab({ engine }: { engine: RowEngine }) {
 
       <s-divider></s-divider>
 
-      {/* 4 · Section headers. Seven controls — the style select, the four
-          feature-81 typography knobs that refine the band it turns on, and the
-          band's own two colors. `headerBgColor` used to sit ~20 controls away
-          from the select that makes it visible; that distance was the single
-          clearest symptom of the old cut. */}
+      {/* 4 · Section headers. Eight controls — the style select, the four
+          feature-81 typography knobs that refine the band it turns on, the
+          gap that separates one header's section from the next (feature 94),
+          and the band's own two colors. `headerBgColor` used to sit ~20
+          controls away from the select that makes it visible; that distance
+          was the single clearest symptom of the old cut. */}
       <div role="group" aria-labelledby={headingId("sectionHeaders")}>
         <s-stack direction="block" gap="base">
           <s-heading id={headingId("sectionHeaders")}>
@@ -772,6 +773,43 @@ export function StyleTab({ engine }: { engine: RowEngine }) {
             }}
           />
 
+          {/* Feature 80, moved here by feature 94. It sat in Collapsible
+            sections while it was reachable only with disclosures on; now that
+            it works in the flat block layouts too, a gap is not a property of
+            collapsing but of the section headers it separates — the feature-86
+            axis deciding its own placement, as it is meant to.
+
+            The LAST structural knob before the colors, which keeps the group
+            reading "structure knobs, then colors" and puts the two whitespace
+            controls next to each other: Title spacing is the padding INSIDE a
+            header, this is the margin OUTSIDE one.
+
+            Still hidden rather than disabled, and still a pure read, so the px
+            value survives a trip through Two-column and back. Zero-means-off
+            box, like Outline width and Corner radius: 0 is exactly what "no
+            gap" looks like on a px control. */}
+          {showsSectionGapControl(styling) && (
+            <s-number-field
+              label="Gap between sections"
+              suffix="px"
+              details={
+                styling.sectionGapPx === null
+                  ? "No gap between sections."
+                  : "Space between each section."
+              }
+              min={ZERO_MEANS_OFF_CONTROL_MIN}
+              max={SECTION_GAP_PX_MAX}
+              step={1}
+              value={toZeroMeansOffControlValue(styling.sectionGapPx)}
+              onChange={(event: Event) => {
+                setStylingField(
+                  "sectionGapPx",
+                  fromSectionGapControlValue(readValue(event)),
+                );
+              }}
+            />
+          )}
+
           {/* The band and the title text — two genuinely different surfaces,
               which is why this is the one swatch pair where the second keeps a
               qualifier ("Title color") instead of the bare "Text color" that
@@ -790,10 +828,16 @@ export function StyleTab({ engine }: { engine: RowEngine }) {
           section title looks like" with "can a shopper collapse it", so a
           merchant hunting one had to read past the other.
 
-          Small on purpose: the switch plus the two controls that only mean
-          anything once it is on. Both of those are HIDDEN rather than disabled
-          while it is off, so the group collapses to a single switch — which is
-          the thin-group case Step 5 re-examines live. */}
+          Small on purpose: the switch plus the ONE control that only means
+          anything once it is on. Hidden rather than disabled while it is off,
+          so the group collapses to a single switch — the thin-group case
+          Step 5 re-examined live and kept.
+
+          ⚠️ Two controls until feature 94, which moved the section gap to
+          Section headers once it stopped depending on disclosures. The group
+          still leads with an UNGATED switch, so it can never render as a
+          heading fencing nothing — the Step 5 invariant that a group may not
+          consist entirely of hide-gated controls. */}
       <div role="group" aria-labelledby={headingId("collapsibleSections")}>
         <s-stack direction="block" gap="base">
           <s-heading id={headingId("collapsibleSections")}>
@@ -838,34 +882,6 @@ export function StyleTab({ engine }: { engine: RowEngine }) {
                 </s-option>
               ))}
             </s-select>
-          )}
-
-          {/* Feature 80. Hidden alongside the control above, and for a harder
-            reason: a gap is not merely meaningless without disclosures, it is
-            unexpressible — a flat section header is a table row, and a table
-            row takes no margin. Also a pure read, so the px value survives the
-            round trip. Zero-means-off box, like Outline width and Corner
-            radius: 0 is exactly what "no gap" looks like on a px control. */}
-          {showsSectionGapControl(styling) && (
-            <s-number-field
-              label="Gap between sections"
-              suffix="px"
-              details={
-                styling.sectionGapPx === null
-                  ? "No gap between sections."
-                  : "Space between each collapsible section."
-              }
-              min={ZERO_MEANS_OFF_CONTROL_MIN}
-              max={SECTION_GAP_PX_MAX}
-              step={1}
-              value={toZeroMeansOffControlValue(styling.sectionGapPx)}
-              onChange={(event: Event) => {
-                setStylingField(
-                  "sectionGapPx",
-                  fromSectionGapControlValue(readValue(event)),
-                );
-              }}
-            />
           )}
         </s-stack>
       </div>

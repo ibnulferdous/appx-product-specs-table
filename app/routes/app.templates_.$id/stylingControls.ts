@@ -453,23 +453,41 @@ export function showsSectionsInitialStateControl(
 /**
  * Whether the rail shows the "Gap between sections" control.
  *
- * The SIXTH instance of hide-when-irrelevant, and the second gated on
- * `sectionsCollapsible` — for a harder reason than the initial-state control
- * above, which is merely meaningless without disclosures. This one is
- * *unexpressible*: only the collapsible shape gives each section its own
- * element to push away from its neighbour. In the flat shape a section header
- * is a table row, and a table row takes no margin at all.
+ * The SIXTH instance of hide-when-irrelevant, and the only one gated on two
+ * knobs at once. The reason is harder than the initial-state control above:
+ * that one is merely meaningless without disclosures, whereas a gap can be
+ * *unexpressible* — but the thing that cannot express it is a TABLE FORMATTING
+ * CONTEXT, not the flat shape (feature 94).
  *
- * (🚫 The tempting flat-shape approximation — a transparent `border-block-start`
- * on the section cell — does not work either: under `border-collapse: collapse`
- * the wider border wins the shared edge, so anything past 1px would silently
- * delete the previous row's own divider. Rejected before it was built.)
+ * Feature 80 fenced this to `sectionsCollapsible` on the reasoning that a flat
+ * section header is a `<tr>` and a `<tr>` takes no margin. True only under
+ * `TWO_COLUMN`. What a `<tr>` displays as is decided by the row-layout rules:
+ * `table-row` there, but `block` under `STACKED` and a `block` grid item under
+ * `GRID`, and margin applies in both — so the flat shape gets the same gap from
+ * its own rule in `spec-table.css`.
+ *
+ * `!== "TWO_COLUMN"` rather than a `STACKED`/`GRID` membership test, inverting
+ * the call `showsMobileLayoutControl` makes below: the EXCLUDED case is the one
+ * with a reason, so a fourth `ROW_LAYOUTS` member inherits "the gap works",
+ * which is right — `TWO_COLUMN` is the only member that keeps `display: table`.
+ *
+ * An OR, not a replacement: `TWO_COLUMN` + collapsible still shows the control
+ * and still works, because disclosures exist at any row layout. Every table
+ * that has a gap today keeps it.
+ *
+ * (🚫 Two-column with collapsing off stays excluded, and the approximations are
+ * on file. `padding-block-start` on the section cell grows the band rather than
+ * opening a gap; a transparent `border-block-start` loses the
+ * `border-collapse: collapse` width contest and silently deletes the previous
+ * row's own divider. Whether `border-collapse: separate` scoped to this knob
+ * can do it is an open question in `progress-tracker.md`, not a gap in this
+ * reasoning.)
  *
  * A pure READ like the other five, so the merchant's px value survives a trip
- * through Collapsible-off and back on.
+ * through Two-column and back.
  */
 export function showsSectionGapControl(styling: StylingValues): boolean {
-  return styling.sectionsCollapsible;
+  return styling.sectionsCollapsible || styling.rowLayout !== "TWO_COLUMN";
 }
 
 /**
