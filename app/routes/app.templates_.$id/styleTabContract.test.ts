@@ -236,22 +236,76 @@ describe("feature 86 — the Style rail renders all eight groups", () => {
     // Counted rather than parsed. Each guard in this file wraps exactly one
     // control — pinned globally by the next assertion — so a group with more
     // controls than guards must have at least one that always renders.
+    //
+    // ⚠️ A `colorGrid(…)` CALL IS NO LONGER ALWAYS A CONTROL (2026-07-29). It
+    // returns null when every swatch in its group is filtered out, which
+    // `tableFrame` can now do — it holds one swatch and that swatch is gated. So
+    // a grid counts here only for a group with an unconditional swatch;
+    // otherwise it is dropped from the tally, exactly as if it were guarded.
+    // Left un-adjusted, this test would have kept passing on a premise that had
+    // become false — the failure mode it is least able to notice about itself.
+    const emptiableGroups = new Set(
+      [...new Set(COLOR_KNOBS.map((knob) => knob.group))].filter((group) =>
+        COLOR_KNOBS.filter((knob) => knob.group === group).every(
+          (knob) => knob.visibleWhen,
+        ),
+      ),
+    );
+    const alwaysRenders = (call: string) => {
+      const group = call.slice('colorGrid("'.length, -'")'.length);
+      return !emptiableGroups.has(group as StyleGroupId);
+    };
+
     const blocks = body.split(/<div\s+role="group"/).slice(1);
     expect(blocks.length).toBe(8);
 
     const thin = blocks
       .map((block, index) => {
         const controls = (
-          block.match(
-            /<s-select\b|<s-number-field\b|<s-switch\b|colorGrid\(/g,
-          ) ?? []
+          block.match(/<s-select\b|<s-number-field\b|<s-switch\b/g) ?? []
+        ).length;
+        const grids = (block.match(/colorGrid\("[a-zA-Z]+"\)/g) ?? []).filter(
+          alwaysRenders,
         ).length;
         const guards = (block.match(/\{shows[A-Za-z]+\(/g) ?? []).length;
-        return { index, controls, guards };
+        return { index, controls: controls + grids, guards };
       })
       .filter((group) => group.controls <= group.guards);
 
     expect(thin).toEqual([]);
+  });
+
+  it("keeps the swatch-less group alive on unguarded number fields", () => {
+    // The other half of `stylingControls.test.ts`'s "empties exactly one group",
+    // and the half only this file can see. `tableFrame` is the group whose
+    // colors can all vanish, so what stops it collapsing to a heading and a
+    // divider is that its OTHER controls are unconditional. The count above
+    // proves some control survives; this names them, because "which ones" is
+    // the thing a later edit would change without noticing.
+    //
+    // Three, and the third is the point: Corner radius is NOT gated on the
+    // outline. `.appx-spec-table--outer-radius` sets `overflow: hidden`, so a
+    // radius clips the section band and the stripe fills with no frame drawn at
+    // all — and BANDED is the default header style, so that is the untouched
+    // template. Gating it would delete the only control for a live effect.
+    const owner = body
+      .split(/<div\s+role="group"/)
+      .slice(1)
+      .find((block) => block.includes('headingId("tableFrame")'));
+
+    expect(owner, "no group renders the table frame controls").toBeDefined();
+    for (const label of [
+      "Maximum width",
+      "Outline thickness",
+      "Corner radius",
+    ]) {
+      expect(owner).toContain(`label="${label}"`);
+    }
+    // Exactly one guard in the group, and it is the alignment select — so none
+    // of the three above is behind a predicate.
+    expect(owner?.match(/\{shows[A-Za-z]+\(/g)).toEqual([
+      "{showsTableAlignControl(",
+    ]);
   });
 
   it("wraps exactly one control per JSX hide rule", () => {
@@ -280,6 +334,22 @@ describe("feature 86 — the Style rail renders all eight groups", () => {
     // renderer is not — and the drop guard above is blind here, since
     // `COLOR_KNOBS` is still mapped and the field is still reachable.
     expect(body).toContain("knob.visibleWhen");
+  });
+
+  it("renders no grid at all for a group whose swatches all hid", () => {
+    // ⚠️ THE ONE CLAIM WITH NO OTHER DETECTOR (2026-07-29). `colorGrid` must
+    // return null when its filter empties, or `tableFrame` at Outline thickness
+    // 0 paints a bare `<s-grid>`: a blank strip carrying the stack's gap, which
+    // reads as a half-loaded rail. Every other test here would stay green —
+    // the swatch is still gated, still wired, still preserved on hide, and the
+    // grid still renders for the eight groups that cannot empty.
+    //
+    // Asserted as source text, like the visibility rule above, because jsdom
+    // cannot render Polaris web components and `colorGrid` is a closure over
+    // `styling` that no test can call. Anchored on the LENGTH CHECK rather than
+    // on `return null`, so the guard names the condition it is protecting.
+    expect(body).toMatch(/visible\.length === 0/);
+    expect(body).toMatch(/if\s*\(visible\.length === 0\)\s*return null;/);
   });
 
   it("files the section gap under Section headers, not Collapsible sections", () => {

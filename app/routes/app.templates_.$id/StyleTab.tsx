@@ -259,43 +259,57 @@ export function StyleTab({ engine }: { engine: RowEngine }) {
   // line to wrap. The predicate itself still lives in `stylingControls.ts` with
   // the other seven and is registered under the same preserve-on-hide law, so
   // hiding a swatch can never clear the merchant's hex.
-  const colorGrid = (group: StyleGroupId) => (
-    <s-grid gridTemplateColumns="1fr 1fr" gap="base">
-      {COLOR_KNOBS.filter(
-        (knob) => knob.group === group && (knob.visibleWhen?.(styling) ?? true),
-      ).map((knob) => (
-        <s-color-field
-          key={knob.field}
-          label={knob.label}
-          // State-reporting, like the rail's six number fields (feature 86). An
-          // empty swatch says what it currently falls back to; a set one says
-          // which surface it paints. This is what replaced the old Colors group
-          // note — see `ColorKnob.emptyHelpText`, and note the note was WRONG
-          // about four of the nine.
-          //
-          // ⚠️ `emptyHelpText` is OPTIONAL since feature 96, so this can be
-          // `undefined` — which renders no `details` line at all, and that is
-          // the intended result rather than a hole to patch. Exactly one swatch
-          // (`Underline color`) omits it, because its fallback chain is two
-          // links deep and no true sentence about it fits the rail. Do not
-          // substitute `knob.helpText` here as a "safe" default: it describes
-          // the surface a SET colour paints, so an empty swatch would claim to
-          // be painting something.
-          details={
-            styling[knob.field] === null ? knob.emptyHelpText : knob.helpText
-          }
-          alpha={knob.alpha}
-          value={toColorControlValue(styling[knob.field])}
-          onChange={(event: Event) => {
-            setStylingField(
-              knob.field,
-              fromColorControlValue(readValue(event)),
-            );
-          }}
-        />
-      ))}
-    </s-grid>
-  );
+  //
+  // ⚠️ THE EARLY RETURN IS LOAD-BEARING (2026-07-29). The `<s-grid>` used to be
+  // built outside the filter, so a group with no surviving swatch painted an
+  // EMPTY grid — a blank strip carrying the stack's gap, which reads as a
+  // half-loaded screen. Unreachable until `outerBorderColor` was gated, because
+  // `tableFrame` is the only group with a single swatch. Returning null also
+  // keeps `styleTabContract.test.ts`'s bare-heading count honest: it credits
+  // `colorGrid(…)` as an always-rendering control only for groups that still
+  // have an unconditional swatch.
+  const colorGrid = (group: StyleGroupId) => {
+    const visible = COLOR_KNOBS.filter(
+      (knob) => knob.group === group && (knob.visibleWhen?.(styling) ?? true),
+    );
+    if (visible.length === 0) return null;
+
+    return (
+      <s-grid gridTemplateColumns="1fr 1fr" gap="base">
+        {visible.map((knob) => (
+          <s-color-field
+            key={knob.field}
+            label={knob.label}
+            // State-reporting, like the rail's six number fields (feature 86).
+            // An empty swatch says what it currently falls back to; a set one
+            // says which surface it paints. This is what replaced the old Colors
+            // group note — see `ColorKnob.emptyHelpText`, and note the note was
+            // WRONG about four of the nine.
+            //
+            // ⚠️ `emptyHelpText` is OPTIONAL since feature 96, so this can be
+            // `undefined` — which renders no `details` line at all, and that is
+            // the intended result rather than a hole to patch. Exactly one
+            // swatch (`Underline color`) omits it, because its fallback chain is
+            // two links deep and no true sentence about it fits the rail. Do not
+            // substitute `knob.helpText` here as a "safe" default: it describes
+            // the surface a SET colour paints, so an empty swatch would claim to
+            // be painting something.
+            details={
+              styling[knob.field] === null ? knob.emptyHelpText : knob.helpText
+            }
+            alpha={knob.alpha}
+            value={toColorControlValue(styling[knob.field])}
+            onChange={(event: Event) => {
+              setStylingField(
+                knob.field,
+                fromColorControlValue(readValue(event)),
+              );
+            }}
+          />
+        ))}
+      </s-grid>
+    );
+  };
 
   return (
     // Two gap scales, and the difference between them is the whole separation
@@ -351,7 +365,7 @@ export function StyleTab({ engine }: { engine: RowEngine }) {
             there as on a 1400px storefront while looking nothing like it.
 
             Clearing the box is the way back to the stylesheet's 240px; 0 is
-            not a spelling of anything here (contrast Outline width), so it
+            not a spelling of anything here (contrast Outline thickness), so it
             clamps up to the floor. */}
           {showsGridMinColumnWidthControl(styling) && (
             <s-number-field
@@ -448,8 +462,9 @@ export function StyleTab({ engine }: { engine: RowEngine }) {
           point of feature 86. The old comment in this spot argued it belonged
           with the other swatches "the same way row-divider style sits in Layout
           while its color sits in Colors" — which is exactly the two-axis cut
-          that made the rail hard to use. Outline width and Outline color are one
-          decision; they are now one group. */}
+          that made the rail hard to use. Outline thickness and Outline color are
+          one decision; they are now one group — and since 2026-07-29 the colour
+          only appears once the thickness has turned the outline on. */}
       <div role="group" aria-labelledby={headingId("tableFrame")}>
         <s-stack direction="block" gap="base">
           <s-heading id={headingId("tableFrame")}>
@@ -505,8 +520,16 @@ export function StyleTab({ engine }: { engine: RowEngine }) {
             </s-select>
           )}
 
+          {/* "Outline THICKNESS", not width, since 2026-07-29 — and the reason
+              is two fields above this one. `Maximum width` caps the table's
+              horizontal size; this is a stroke weight. Two controls in one group
+              whose labels shared a word that meant different axes, ~40px apart
+              on screen. The noun `Outline` is the part that stays: feature 86
+              split the rail's vocabulary into Divider (the row and column rules)
+              and Outline (the frame) precisely so "border" never names two
+              things, and both swatches' help texts now name each other. */}
           <s-number-field
-            label="Outline width"
+            label="Outline thickness"
             suffix="px"
             details={
               styling.outerBorderWidthPx === null
@@ -551,9 +574,14 @@ export function StyleTab({ engine }: { engine: RowEngine }) {
             }}
           />
 
-          {/* Outline color. Directly under the width that turns the outline on,
-              and the one swatch in the rail whose empty state points at ANOTHER
-              control rather than at the theme — it falls back through
+          {/* Outline color, and since 2026-07-29 this renders NOTHING until the
+              thickness above is 1 or more: at 0 the stylesheet's one consumer is
+              `border: 0 solid <color>`, so the swatch had no referent at all.
+              `tableFrame` is the only group with a single swatch, which is why
+              this is also the first call that can return null — see `colorGrid`.
+
+              It stays the one swatch in the rail whose empty state points at
+              ANOTHER control rather than at the theme: it falls back through
               `borderColor`, which is why its `emptyHelpText` reads "Follows
               Divider color." That sentence only became sayable once the two
               swatches stopped sharing one undifferentiated list. */}
@@ -814,7 +842,7 @@ export function StyleTab({ engine }: { engine: RowEngine }) {
 
             Still hidden rather than disabled, and still a pure read, so the px
             value survives a trip through Two-column and back. Zero-means-off
-            box, like Outline width and Corner radius: 0 is exactly what "no
+            box, like Outline thickness and Corner radius: 0 is exactly what "no
             gap" looks like on a px control. */}
           {showsSectionGapControl(styling) && (
             <s-number-field
@@ -968,7 +996,7 @@ export function StyleTab({ engine }: { engine: RowEngine }) {
           </s-select>
 
           {/* Directly under Row dividers — its vertical partner, and together
-              with an Outline width the three make a full grid. Always shown,
+              with an Outline thickness the three make a full grid. Always shown,
               including on stacked layouts where it has no seam to sit on: the
               merchant's choice has to survive a trip through Stacked, and the
               option's own help text carries the caveat. */}

@@ -658,6 +658,48 @@ export function showsStripeBackgroundControl(styling: StylingValues): boolean {
   return styling.rowDividerStyle === "STRIPES" && styling.rowLayout !== "GRID";
 }
 
+/**
+ * Whether the rail shows the Table size & frame "Outline color" swatch
+ * (2026-07-29).
+ *
+ * The ELEVENTH hide rule and the fourth over a color, and it clears the
+ * `visibleWhen` bar the most cleanly of the four:
+ * `--appx-spec-outer-border-color` is read by exactly ONE declaration in
+ * `spec-table.css`, the `border:` shorthand on `.appx-spec-table`, and with
+ * `--appx-spec-outer-border-width` at its `0` fallback that shorthand resolves
+ * to `border: 0 solid <color>` — emitted, inherited, and painting nothing.
+ * There is no second markup shape to mirror (unlike the two header gates) and
+ * no orphan combination to guard (unlike the stripe): the width is the only
+ * thing that can switch this surface on or off.
+ *
+ * 🚫 `outerBorderRadiusPx` deliberately does NOT get the same treatment, and it
+ * is the near miss worth stating. A radius is independent of the outline:
+ * `.appx-spec-table--outer-radius` sets `overflow: hidden`, so the curve clips
+ * the section band and the stripe fills whether or not a frame is drawn — and
+ * `BANDED` is `SECTION_HEADER_STYLES[0]`, so that is the UNTOUCHED template, not
+ * an edge case. Gating Corner radius on the width would remove the only control
+ * for a live effect, which is the `borderColor` mistake in a different place.
+ *
+ * `!== null` rather than `>= 1`, and the two are the same test:
+ * `fromZeroMeansOffControlValue` never stores a 0, so a null width and a `0` in
+ * the box are one state. Reading the STORED vocabulary rather than the
+ * displayed one keeps the predicate right if that display convention changes.
+ *
+ * ⚠️ THE FIRST PREDICATE THAT CAN EMPTY A GROUP. `tableFrame` holds exactly one
+ * swatch, so this makes `colorGrid("tableFrame")` render nothing — which is why
+ * `colorGrid` now returns null on an empty filter instead of painting a bare
+ * `<s-grid>`. The old law ("every group keeps one unconditional swatch") was
+ * REPLACED rather than dropped; see `visibleWhen` below for the one that
+ * succeeded it.
+ *
+ * A pure READ like the other ten, registered in `VISIBILITY_PREDICATES` so the
+ * shared preserve-on-hide law test covers it: a hex survives an outline walked
+ * down to 0 and back up. Consumed through `ColorKnob.visibleWhen`.
+ */
+export function showsOuterBorderColorControl(styling: StylingValues): boolean {
+  return styling.outerBorderWidthPx !== null;
+}
+
 // --- Step 10 · the `null` vocabulary ----------------------------------------
 //
 // Thirteen fields in `StylingValues` are NULLABLE, and null is semantic there:
@@ -821,7 +863,7 @@ export interface ColorKnob {
    * are produced by one `.filter(…).map(…)` over this array, so the guard has
    * to be a property of the knob and be applied inside that filter.
    *
-   * OPTIONAL, and it must stay the exception. Seven of the ten swatches are
+   * OPTIONAL, and it must stay the exception. Six of the ten swatches are
    * always visible. The bar for gating one is narrow and it is a fact about the
    * STYLESHEET, not a judgement about tidiness: the field must dress exactly one
    * SURFACE, and the state that hides it must be one where that surface's rules
@@ -841,11 +883,22 @@ export interface ColorKnob {
    * before adding a fourth entry here — the swatches that survived are the ones
    * whose var dresses more than one thing.
    *
-   * ⚠️ A group must never end up with ALL of its swatches conditional: the
-   * group would render an empty `<s-grid>` — visible dead space, and a hole in
-   * the "no group collapses to a bare heading" count in
-   * `styleTabContract.test.ts`, which treats `colorGrid(…)` as one control that
-   * always renders. Pinned in `stylingControls.test.ts`.
+   * ⚠️ A FULLY GATED GROUP IS NOW LEGAL, and it was not before 2026-07-29.
+   * `tableFrame` holds one swatch, so gating `outerBorderColor` made the
+   * all-filtered-out case reachable for the first time. The hazard it used to be
+   * fenced away from is real and unchanged — `colorGrid` built its `<s-grid>`
+   * outside the filter, so an empty group painted a bare grid: dead space in the
+   * rail, and a silent hole in the "no group collapses to a bare heading" count
+   * in `styleTabContract.test.ts`, which treats `colorGrid(…)` as one control
+   * that always renders. Both are closed at the renderer instead: `colorGrid`
+   * returns null when nothing survives its filter, and that count now credits a
+   * grid only for a group with an unconditional swatch.
+   *
+   * So the law that replaced "every group keeps one unconditional swatch" is:
+   * a group whose swatches can ALL vanish must still hold a non-swatch control
+   * that always renders, or the heading and its divider fence nothing. Both
+   * halves are pinned — the group list in `stylingControls.test.ts`, the
+   * surviving controls in `styleTabContract.test.ts`.
    */
   visibleWhen?: (styling: StylingValues) => boolean;
 }
@@ -972,13 +1025,19 @@ export const COLOR_KNOBS: ReadonlyArray<ColorKnob> = [
     field: "outerBorderColor",
     group: "tableFrame",
     label: "Outline color",
-    helpText: "The table's outer frame. Needs an Outline width.",
+    // The "Needs an Outline width." caveat was DELETED 2026-07-29 when the
+    // swatch gained its gate, on feature 95's copy rule: the sentence could only
+    // ever be read while the condition already held, so it told a merchant
+    // nothing they were not already looking at. Pinned by the "free of the
+    // condition it is gated on" test, which now covers four swatches.
+    helpText: "The table's outer frame.",
     // The one swatch whose empty state is NOT an inherit: `spec-table.css`
     // falls back through `--appx-spec-border-color` before reaching a literal
     // (feature 78), so an untouched outline tracks the Rows swatch. The single
     // group note this replaced could not have expressed that.
     emptyHelpText: "Follows Divider color.",
     alpha: true,
+    visibleWhen: showsOuterBorderColorControl,
   },
   {
     field: "labelTextColor",
@@ -1410,7 +1469,7 @@ export function fromTableMaxWidthControlValue(raw: string): number | null {
 
 // --- The three "0 is what off LOOKS like" boxes ------------------------------
 //
-// Outline width, Corner radius and Section gap break the blank-box convention
+// Outline thickness, Corner radius and Section gap break the blank-box convention
 // above, and deliberately. Their off state is `null` like every other knob, but
 // a blank box is a poor way to say "none" on a control whose entire vocabulary
 // is a px number — a merchant who wants no frame reaches for 0, and one reading

@@ -40,6 +40,7 @@ import {
   showsHeaderUnderlineColorControl,
   showsLabelWidthControl,
   showsMobileLayoutControl,
+  showsOuterBorderColorControl,
   showsSectionGapControl,
   showsSectionsInitialStateControl,
   showsStripeBackgroundControl,
@@ -623,24 +624,42 @@ describe("COLOR_KNOBS (feature 57 Step 10a)", () => {
     ]);
   });
 
-  it("leaves every group at least one unconditional swatch (feature 95)", () => {
-    // ⚠️ THE HAZARD `visibleWhen` INTRODUCED. `colorGrid(group)` renders an
-    // `<s-grid>` unconditionally and fills it by filter, so a group whose every
-    // swatch were gated would paint an EMPTY grid: dead space in the rail, and
-    // a silent hole in `styleTabContract.test.ts`'s "no group collapses to a
-    // bare heading" count, which treats `colorGrid(…)` as one control that
-    // always renders and cannot see inside it.
+  it("empties exactly one group, and that group survives on non-swatch controls", () => {
+    // 🔴 THIS REPLACES feature 95's "every group keeps one unconditional
+    // swatch", which was FALSIFIED on 2026-07-29 by gating `outerBorderColor`:
+    // `tableFrame` holds one swatch, so there was no unconditional one left to
+    // keep. The hazard that law fenced off is unchanged and real — `colorGrid`
+    // built its `<s-grid>` outside the filter, so an all-gated group painted an
+    // EMPTY grid: dead space in the rail, and a silent hole in
+    // `styleTabContract.test.ts`'s "no group collapses to a bare heading" count,
+    // which credits `colorGrid(…)` as one control that always renders.
     //
-    // Derived from the data: gating a second swatch is fine, gating the last
-    // one in its group fails here and names the group.
+    // Both are closed at the renderer instead (`colorGrid` returns null on an
+    // empty filter, and that count now credits a grid only for a group with an
+    // unconditional swatch), so what is left to assert here is the part no
+    // renderer change can cover: WHICH groups can go swatch-less, and that each
+    // of them has something else to render.
+    //
+    // Derived from the data. Gating a second swatch in a shared group stays
+    // free; gating the last one in a group appears here and has to be
+    // justified against the list below rather than slipping in.
     const groups = [...new Set(COLOR_KNOBS.map((knob) => knob.group))];
-    const allGated = groups.filter((group) =>
+    const canEmpty = groups.filter((group) =>
       COLOR_KNOBS.filter((knob) => knob.group === group).every(
         (knob) => knob.visibleWhen,
       ),
     );
 
-    expect(allGated).toEqual([]);
+    // A LIST, not a count, and the same call the `emptyHelpText` exception makes
+    // further down: a count would let a second group go swatch-less silently
+    // while this stayed green.
+    //
+    // ⚠️ What makes an empty grid survivable is OUTSIDE this file —
+    // `tableFrame` still renders Maximum width, Outline thickness and Corner
+    // radius, none of them behind a predicate, so its heading and divider never
+    // fence nothing. That half is asserted against the rail's own source in
+    // `styleTabContract.test.ts`, which is the only place it is visible.
+    expect(canEmpty).toEqual(["tableFrame"]);
     expect(groups.length).toBeGreaterThan(1); // guards the guard
   });
 
@@ -897,7 +916,7 @@ describe("the bounded numeric inputs (feature 57 Step 10b)", () => {
     expect(toLabelWidthControlValue(35)).toBe("35");
   });
 
-  // Outline width, Corner radius and Section gap share one contract, so they
+  // Outline thickness, Corner radius and Section gap share one contract, so they
   // are tested as one table rather than three times over: each shows `0` for
   // off, each reads anything at or below zero back as null, and NONE of them
   // may ever hand a 0 to the model.
@@ -1040,7 +1059,7 @@ describe("the minimum-column-width box (feature 85)", () => {
     // Clearing it is the way back to the stylesheet's own 240px. `0` is not a
     // spelling of anything here — it would mean an unbounded track count, the
     // unreadable case the floor exists to prevent — so it clamps UP to the
-    // floor rather than reading as "off". Contrast Outline width / Corner
+    // floor rather than reading as "off". Contrast Outline thickness / Corner
     // radius, where null already means off and 0 is its display form.
     expect(toGridMinColumnWidthControlValue(null)).toBe(INHERIT_CONTROL_VALUE);
     expect(toGridMinColumnWidthControlValue(320)).toBe("320");
@@ -1382,10 +1401,27 @@ const VISIBILITY_PREDICATES: ReadonlyArray<{
     hide: (styling) => ({ ...styling, sectionHeaderStyle: "BANDED" }),
     preservedField: "headerUnderlineColor",
   },
+  {
+    // The hide-edit is a write to a NUMBER rather than a keyword, and that is
+    // the trip a merchant actually makes here: walking the thickness stepper
+    // down to 0 to see the table without a frame, then back up. `null` is what
+    // `fromOuterBorderWidthControlValue` stores for that 0, so this is the same
+    // state the box displays as `0` — the predicate reads the stored vocabulary,
+    // not the displayed one.
+    name: "showsOuterBorderColorControl",
+    predicate: showsOuterBorderColorControl,
+    visible: {
+      ...DEFAULT_STYLING_VALUES,
+      outerBorderWidthPx: 2,
+      outerBorderColor: "#5a5a5a",
+    },
+    hide: (styling) => ({ ...styling, outerBorderWidthPx: null }),
+    preservedField: "outerBorderColor",
+  },
 ];
 
-describe("the hide-rule count (feature 96 took it from nine to ten)", () => {
-  it("guards exactly ten controls", () => {
+describe("the hide-rule count (2026-07-29 took it from ten to eleven)", () => {
+  it("guards exactly eleven controls", () => {
     // The five section-header knobs are visible in EVERY shape — they dress the
     // flat `th` and the collapsible `<summary>` alike — so unlike the section
     // gap none of them earns a predicate. Pinning the count is what turns "we
@@ -1400,7 +1436,10 @@ describe("the hide-rule count (feature 96 took it from nine to ten)", () => {
     // to hide" comment), so the count moving is the trace of those reversals.
     // 9 -> 10 for feature 96's `showsHeaderUnderlineColorControl`, which
     // reverses nothing — it arrived WITH its field, so the swatch has never
-    // been visible under a header style that paints no rule.
+    // been visible under a header style that paints no rule. 10 -> 11 for
+    // `showsOuterBorderColorControl` (2026-07-29), the first gate whose
+    // condition is a NUMBER rather than a keyword, and the first that can leave
+    // its group with no swatch at all.
     //
     // Note what did NOT land here: feature 85 hides the Stripes OPTION in Grid
     // mode, and that is deliberately absent. This registry enforces
@@ -1409,7 +1448,7 @@ describe("the hide-rule count (feature 96 took it from nine to ten)", () => {
     // the option filter is a different mechanism with a different failure mode
     // (the orphan value) and carries its own tests instead. Registering it
     // would assert a law it does not obey.
-    expect(VISIBILITY_PREDICATES).toHaveLength(10);
+    expect(VISIBILITY_PREDICATES).toHaveLength(11);
     expect(VISIBILITY_PREDICATES.map((entry) => entry.name)).not.toContain(
       "rowDividerOptionsFor",
     );
@@ -1429,10 +1468,11 @@ describe("the hide-rule count (feature 96 took it from nine to ten)", () => {
     expect(wired).toContain(showsStripeBackgroundControl);
     expect(wired).toContain(showsHeaderBackgroundControl);
     expect(wired).toContain(showsHeaderUnderlineColorControl);
-    expect(wired).toHaveLength(3);
+    expect(wired).toContain(showsOuterBorderColorControl);
+    expect(wired).toHaveLength(4);
   });
 
-  it("gates exactly the three colors that dress ONE surface", () => {
+  it("gates exactly the four colors that dress ONE surface", () => {
     // The bar, asserted rather than left in prose, because "this control looks
     // useless right now" is a much lower bar than the one actually used and the
     // next swatch to be proposed for hiding will be argued on it.
@@ -1446,9 +1486,18 @@ describe("the hide-rule count (feature 96 took it from nine to ten)", () => {
     // list and not a count: it is a no-op under Row dividers = None too, and it
     // must NEVER join — it also dresses the column divider, the feature-80
     // section separator, and the outline whenever `outerBorderColor` is unset.
+    //
+    // `outerBorderColor` joined 2026-07-29 and it is the cleanest member of the
+    // four: one declaration, one surface, and the gate is the control that
+    // creates the surface rather than a neighbouring style choice.
     expect(
       COLOR_KNOBS.filter((knob) => knob.visibleWhen).map((k) => k.field),
-    ).toEqual(["headerBgColor", "headerUnderlineColor", "stripeBgColor"]);
+    ).toEqual([
+      "headerBgColor",
+      "headerUnderlineColor",
+      "stripeBgColor",
+      "outerBorderColor",
+    ]);
   });
 
   it("gates the two section-header surfaces to MUTUALLY EXCLUSIVE members", () => {

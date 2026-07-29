@@ -355,6 +355,62 @@ plan: `~/.claude/plans/style-tab-phase-b-implementation-plan.md` (1–12 = B1, 1
 
 > One line per unit. Detail → the linked `context/features/` doc + git history.
 
+**Outline thickness relabel + Outline color hides itself — ✅ BUILT 2026-07-29,
+gate green, ⚠️ LIVE VERIFICATION OWED. No feature doc (merchant call: "a small
+correction"), so this entry IS the record.**
+
+- **Two merchant questions, and they got different answers.** (1) Is "Outline
+  width" the right label? The noun is — feature 86 split the rail's vocabulary
+  into **Divider** (row/column rules) and **Outline** (the frame) so "border"
+  never names two things. The second word is not: **`Maximum width` sits two
+  fields above it in the same group**, so one group had two labels sharing a word
+  that meant different axes ~40px apart. → **`Outline thickness`.** Label string
+  only; no field, no migration.
+- 🔴 **(2) "Hide Corner radius and Outline color when the outline is off" — half
+  right, and the wrong half would have been a regression.** `Outline color`
+  earns the hide exactly on feature 95's bar: `--appx-spec-outer-border-color`
+  is read by **one** declaration (the `border:` shorthand on `.appx-spec-table`),
+  and at width 0 that is `border: 0 solid <color>` — no referent at all. 🚫
+  **`Corner radius` must NOT be gated**: `.appx-spec-table--outer-radius` sets
+  `overflow: hidden`, so the curve clips the **section band and the stripe
+  fills** with no frame drawn — and `BANDED` is `SECTION_HEADER_STYLES[0]`, the
+  DEFAULT, so that is the untouched template, not an edge case. Gating it would
+  delete the only control for a live effect: the `borderColor` mistake relocated.
+  Pinned by a named test so it has to be re-argued, not drifted into.
+- ⚠️ **The cost was not the predicate, it was the group.** `tableFrame` is the
+  only group with **one** swatch, so this is the first gate that can leave a
+  group with no swatch at all — the hazard feature 95 wrote a law against.
+  `colorGrid` built its `<s-grid>` OUTSIDE the filter, so an empty group painted
+  a bare grid (dead space) and `styleTabContract.test.ts`'s bare-heading count
+  kept crediting `colorGrid(…)` as a control that always renders. Both closed at
+  the renderer: an **early return on an empty filter**, and the count now credits
+  a grid only for a group with an unconditional swatch.
+- 🔴 **Feature 95's "every group keeps one unconditional swatch" is REPLACED, not
+  deleted.** The successor: a group whose swatches can all vanish must still hold
+  a non-swatch control that always renders. Both halves pinned — the group **list**
+  (not count) in `stylingControls.test.ts`, the three surviving `tableFrame`
+  number fields in `styleTabContract.test.ts`. Help text lost `"Needs an Outline
+width."` on the same copy rule that deleted two caveats in 95.
+- Predicates **10 → 11** (first one whose condition is a NUMBER; `!== null`, since
+  `fromZeroMeansOffControlValue` never stores a 0). JSX guards still **7** — the
+  gate rides `ColorKnob.visibleWhen`. Zero storefront diff, no migration, no
+  Liquid/TOML/CSS. **Tests 1158 → 1164 (+6)**; gate green (typecheck · lint ·
+  format · 1164 · build). ✅ **Mutation-tested three ways:** unwiring
+  `visibleWhen` fails 3; dropping the early return fails **exactly** the guard
+  written for it and nothing else; gating Corner radius fails the new
+  swatch-less-group test plus the 7-guard count.
+- ⚠️ **NOT verified live** — nothing observed in the embedded admin: the swatch
+  appearing/vanishing as the thickness crosses 1, the hex surviving 2 → 0 → 2,
+  the absence of a blank strip where the grid used to be, and the new label in
+  place. All four are unit- and mutation-tested only.
+- 🔬 **Method note (self-inflicted, worth carrying):** `git checkout -- <file>`
+  during mutation testing **destroyed both source files' uncommitted edits** —
+  it restores from the index, and nothing was staged. The `git stash push` +
+  `pop` that preceded it was a no-op round trip, so there was no copy to recover
+  from; both files had to be rewritten from scratch. **Back up with
+  `Copy-Item` before a mutation, never `git checkout`,** unless the work is
+  committed first.
+
 **The two dead colour swatches hide themselves (feature 95, doc `95-…`)
 — ✅ COMPLETE 2026-07-28, live-verified in the embedded admin, 10 of 10**
 
