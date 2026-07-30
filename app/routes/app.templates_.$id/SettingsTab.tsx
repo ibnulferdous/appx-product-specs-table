@@ -295,10 +295,6 @@ export function SettingsTab({ engine }: { engine: RowEngine }) {
             ) : (
               <s-paragraph>{conflicts[0]?.reason}</s-paragraph>
             )}
-            <s-paragraph>
-              To resolve: narrow this template’s scope, set it to “No products”,
-              or set the other template back to Draft.
-            </s-paragraph>
           </s-stack>
         </s-banner>
       ) : null}
@@ -407,8 +403,8 @@ export function SettingsTab({ engine }: { engine: RowEngine }) {
             <s-text type="strong">Except these products</s-text>
             <s-text color="subdued">
               These products won’t show this table, even though they match the
-              assignment above. Assign them their own table, or leave them with
-              nothing.
+              assignment above. Give them their own table, or leave them
+              without one.
             </s-text>
             <CollapsibleChipList
               items={excludes.map((gid) => ({

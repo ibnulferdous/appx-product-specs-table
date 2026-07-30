@@ -38,14 +38,14 @@ export type ScopeSelectionValue = typeof SCOPE_NONE | AssignmentScopeValue;
 export const SCOPE_OPTIONS: { value: ScopeSelectionValue; label: string }[] = [
   { value: SCOPE_NONE, label: "No products (not assigned)" },
   { value: "ALL_PRODUCTS", label: "All products" },
-  { value: "PRODUCT", label: "A specific product" },
+  { value: "PRODUCT", label: "Selected products" },
   { value: "PRODUCT_TYPE", label: "Product type" },
   { value: "VENDOR", label: "Vendor" },
-  { value: "COLLECTION", label: "A specific collection" },
+  { value: "COLLECTION", label: "Selected collections" },
 ];
 
 // Scope kinds intentionally hidden from the merchant-facing picker for now: the
-// MVP exposes only "No products", "All products", and "A specific product".
+// MVP exposes only "No products", "All products", and "Selected products".
 // Product type / vendor / collection scoping stays fully implemented server-side
 // (validation, gate, routing, engine) — it's just not offered in the UI until a
 // merchant asks for it, at which point re-enabling is a one-line removal here.

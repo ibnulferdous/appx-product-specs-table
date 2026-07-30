@@ -847,6 +847,27 @@ plan: `~/.claude/plans/style-tab-phase-b-implementation-plan.md` (1–12 = B1, 1
 
 > One line per unit. Detail → the linked `context/features/` doc + git history.
 
+**Settings-tab copy pass — ✅ COMPLETE 2026-07-30, `npm run build` green. No feature
+doc (a wording correction), so this entry IS the record.**
+
+- `"A specific product"` → **`"Selected products"`** (the picker is multi-select,
+  feature 47; the old singular noun undersold that). Same fix applied to the
+  currently-hidden `"A specific collection"` → `"Selected collections"` option so
+  the two stay consistent whenever collection scoping is re-enabled
+  (`app/utils/assignmentScope.ts`).
+- Tightened the EXCLUDE carve-out help text under "Except these products" —
+  "Assign them their own table, or leave them with nothing" → "Give them their
+  own table, or leave them without one" (`app/routes/app.templates_.$id/SettingsTab.tsx`).
+- Reviewed the rest of the Settings tab's copy (Status help text, scope help
+  text, conflict banner, active-but-unassigned banner) — no other grammar,
+  spelling, or redundancy issues found; left as-is.
+- **Follow-up:** dropped the conflict banner's "To resolve: ..." sentence
+  entirely (merchant call: it padded an already-clear banner, and "set it to
+  'No products'" was a wrong suggestion — that clears the assignment rather
+  than resolving the overlap, unlike narrowing to `Selected products`, which
+  the first sentence already implies). The banner now ends at the reason /
+  conflicting-template links.
+
 **Outline thickness relabel + Outline color hides itself — ✅ COMPLETE 2026-07-29,
 gate green, live-verified 7 of 7 rail → preview, Postgres untouched. No feature
 doc (merchant call: "a small correction"), so this entry IS the record.**
