@@ -167,29 +167,46 @@ export const STYLE_PRESETS: readonly StylePreset[] = Object.freeze([
     bundle: Object.freeze({}),
   },
   {
-    // The full spec-table grid: outer frame, the label/value column rule, and
-    // striped rows. Derived from the ACEFAST YF4 reference table supplied
-    // 2026-07-27 — the look a merchant means by "a proper specs table", and the
-    // only card that turns every separation knob ON at once.
+    // The full spec-table grid: outer frame, the label/value column rule, and a
+    // rule under every row. Derived from the ACEFAST YF4 reference table
+    // supplied 2026-07-27 — the look a merchant means by "a proper specs table",
+    // and the only card that turns every separation knob ON at once.
     //
     // It is the reason `PRESET_SCOPED_FIELDS` gained the frame and column-rule
     // fields: before this card, no bundle had ever used pattern axes 3b and 4,
     // so the comparison scope had never needed them.
     //
-    // ⚠️ STRIPES, not LINES — the two are alternatives, not a stack. With
-    // stripes on, the storefront CSS drops the row rules and the alternating
-    // fill does the separating; asking for both would just be the striped look
-    // with dead declarations under it.
+    // 🔴 **Revised 2026-07-30 (merchant decision): UNDERLINED headers, and row
+    // LINES instead of stripes.** It shipped as `PLAIN` + `STRIPES`. Two changes,
+    // and the second is the load-bearing one:
+    //
+    //   · `TEXT_ONLY` — labelled "Underlined" in the rail (feature 87), and the
+    //     name is the reason: it drops the band and keeps a 2px rule. In a table
+    //     that is already full of horizontal rules, a PLAIN title is just a wider
+    //     row; the header's own rule is what makes it read as a heading again.
+    //     It is now the second card on `TEXT_ONLY` — Accordion is the other, and
+    //     the two are still far apart on four other scoped fields.
+    //
+    //   · Rules instead of stripes, because ⚠️ **the two are ALTERNATIVES, not a
+    //     stack**: `--dividers-stripes` sets `border-block-end: none` on every
+    //     label and value (`spec-table.css`), so the striped build of this card
+    //     had no interior horizontal edges at all — a "grid" missing half its
+    //     grid. The stripes moved to the Accordion card, where nothing else was
+    //     separating the rows.
+    //
+    // ⚠️ `rowDividerStyle` is therefore ABSENT rather than set to `"LINES"`.
+    // LINES is `ROW_DIVIDER_STYLES[0]`, so an explicit write serializes away to
+    // nothing and fails the fixed-point guard in `stylePresets.test.ts`. A bundle
+    // is overrides-only; inheriting the default IS how it says LINES.
     //
     // No `outerBorderRadiusPx`: square corners. The reference reads as very
     // slightly rounded, but a radius is a taste knob a merchant can add in one
     // click, and a curved frame is not what makes this pattern legible.
     id: "classic",
     label: "Classic",
-    description: "A bordered grid with alternating row shading.",
+    description: "A bordered grid with a line between every row.",
     bundle: Object.freeze({
-      sectionHeaderStyle: "PLAIN",
-      rowDividerStyle: "STRIPES",
+      sectionHeaderStyle: "TEXT_ONLY",
       columnDividerStyle: "LINE",
       outerBorderWidthPx: 1,
     }),
@@ -240,6 +257,18 @@ export const STYLE_PRESETS: readonly StylePreset[] = Object.freeze([
     // bends the structure-only rule — a stack of disclosures needs whitespace
     // to read as separate blocks rather than one list. Recorded as a decision,
     // not a leak; strike it if the rule is ever wanted absolutely clean.
+    //
+    // 📌 **`STRIPES` added 2026-07-30 (merchant decision), the same one that took
+    // them off Classic.** They belong here rather than there: inside a disclosure
+    // the alternating fill is a within-section reading aid, and the storefront
+    // restarts the parity at every `<tbody>` for exactly that reason
+    // (`spec-table.css` — locked Step 9a), so a closed section never leaves a
+    // stale checkerboard behind it. The stand-down `--dividers-stripes` performs
+    // (row rules off) costs this card nothing, since a stack of separated
+    // disclosures was never relying on interior rules to group anything.
+    //
+    // ✅ Not the GRID + STRIPES combination the stylesheet refuses to paint —
+    // this card leaves `rowLayout` at its default, and a test asserts it.
     id: "accordion",
     label: "Accordion",
     description: "Shoppers open one section at a time.",
@@ -247,6 +276,7 @@ export const STYLE_PRESETS: readonly StylePreset[] = Object.freeze([
       sectionsCollapsible: true,
       sectionHeaderStyle: "TEXT_ONLY",
       sectionGapPx: 12,
+      rowDividerStyle: "STRIPES",
     }),
   },
 ]);

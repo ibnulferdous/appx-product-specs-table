@@ -124,10 +124,16 @@ describe("Theme is the absence of an accent, in the UI too", () => {
   });
 
   it("hardcodes Theme FIRST, before the mapped accents", () => {
-    // Merchant decision (doc 93 §D5): "Theme" is first and pre-selected. Its
-    // position is the decision, so a later refactor that appended it would be a
-    // silent behaviour change.
-    const themeAt = body.indexOf('label: "Theme"');
+    // Merchant decision (doc 93 §D5): the "no accent" option is first and
+    // pre-selected. Its POSITION is the decision, so a later refactor that
+    // appended it would be a silent behaviour change.
+    //
+    // ⚠️ Anchored on `id: null`, not on the label. The label was "Theme" until
+    // 2026-07-30 and is now "Your theme's colors" — merchant-facing copy, which is
+    // exactly the kind of string that gets reworded again. A position guard has no
+    // business failing over wording, and `id: null` is the thing that actually
+    // makes this option the absence of an accent.
+    const themeAt = body.indexOf("id: null");
     const mapAt = body.indexOf("ACCENT_PRESETS.map(");
     expect(themeAt).toBeGreaterThanOrEqual(0);
     expect(mapAt).toBeGreaterThanOrEqual(0);

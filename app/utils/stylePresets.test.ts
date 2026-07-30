@@ -164,9 +164,13 @@ describe("style presets — the constants", () => {
     // that can produce the combination the rail hides; the CSS stand-down means
     // the stripes would simply not paint and the card would lie.
     //
-    // It now also falls out of the structure-only rule (no bundle names a
-    // divider style other than NONE), but it is asserted by name because that
-    // is the form the requirement was recorded in.
+    // 🔴 **This guard is LIVE again and must not be read as redundant.** It
+    // carried a note claiming it "falls out of the structure-only rule, since no
+    // bundle names a divider style other than NONE" — untrue when written
+    // (Classic shipped STRIPES) and doubly untrue since 2026-07-30, when the
+    // stripes moved to Accordion. Two bundles now set `rowLayout` and
+    // `rowDividerStyle` independently, so nothing but this test stands between a
+    // future bundle and the combination the stylesheet refuses to paint.
     for (const preset of STYLE_PRESETS) {
       const values = stylePresetValues(preset);
       expect(
@@ -212,9 +216,16 @@ describe("style presets — the five patterns", () => {
     expect(values("banded").sectionHeaderStyle).toBe("BANDED");
     expect(values("banded").rowDividerStyle).toBe("LINES");
 
-    // The full grid, all four claims its description makes.
-    expect(values("classic").sectionHeaderStyle).toBe("PLAIN");
-    expect(values("classic").rowDividerStyle).toBe("STRIPES");
+    // The full grid, every claim its description makes. Revised 2026-07-30:
+    // UNDERLINED headers, and row LINES where it used to ship STRIPES.
+    expect(values("classic").sectionHeaderStyle).toBe("TEXT_ONLY");
+    // 🔴 LINES is what makes this card a GRID, and it is asserted on the RESOLVED
+    // values rather than on the bundle for a reason: LINES is the default, so the
+    // bundle must NOT name it (the fixed-point guard above would fail), and the
+    // only place the claim is checkable is after `parseStylingValues` fills it in.
+    // STRIPES here would mean `border-block-end: none` on every row — the striped
+    // build had no interior horizontal edges at all.
+    expect(values("classic").rowDividerStyle).toBe("LINES");
     expect(values("classic").columnDividerStyle).toBe("LINE");
     expect(values("classic").outerBorderWidthPx).toBe(1);
     // Square corners — the radius is a taste knob, not part of the pattern.
@@ -236,6 +247,10 @@ describe("style presets — the five patterns", () => {
     // TEXT_ONLY, not PLAIN: a clickable header wants the 2px rule.
     expect(values("accordion").sectionHeaderStyle).toBe("TEXT_ONLY");
     expect(values("accordion").sectionGapPx).toBe(12);
+    // Moved here from Classic 2026-07-30. Inside a disclosure the alternating
+    // fill is a within-section reading aid, and the storefront restarts the
+    // parity at every <tbody>, so a closed section leaves no stale checkerboard.
+    expect(values("accordion").rowDividerStyle).toBe("STRIPES");
   });
 });
 

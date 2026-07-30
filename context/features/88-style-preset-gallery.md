@@ -163,10 +163,14 @@ new serialization path.
 | Card | `id` | Bundle | References |
 | --- | --- | --- | --- |
 | **Modern** | `banded` | `{}` | #1 startech, #2 techlandbd |
-| **Classic** | `classic` | `{ sectionHeaderStyle: "PLAIN", rowDividerStyle: "STRIPES", columnDividerStyle: "LINE", outerBorderWidthPx: 1 }` | ACEFAST YF4 |
+| **Classic** | `classic` | `{ sectionHeaderStyle: "TEXT_ONLY", columnDividerStyle: "LINE", outerBorderWidthPx: 1 }` | ACEFAST YF4 |
 | **Minimal** | `minimal` | `{ sectionHeaderStyle: "PLAIN", rowDividerStyle: "NONE" }` | #4 |
 | **Multi-column** | `multi-column` | `{ rowLayout: "GRID", rowDividerStyle: "NONE" }` | #5 Samsung, #6 Lazada |
-| **Accordion** | `accordion` | `{ sectionsCollapsible: true, sectionHeaderStyle: "TEXT_ONLY", sectionGapPx: 12 }` | #7 Trek |
+| **Accordion** | `accordion` | `{ sectionsCollapsible: true, sectionHeaderStyle: "TEXT_ONLY", sectionGapPx: 12, rowDividerStyle: "STRIPES" }` | #7 Trek |
+
+> ⚠️ Classic and Accordion were **revised 2026-07-30** — see the second revision
+> section below. The table above is current; the row a reader is most likely to
+> misremember is Classic's, which shipped as `PLAIN` + `STRIPES` for three days.
 
 Every card differs from every other on at least one axis a merchant can see at a
 glance.
@@ -199,6 +203,50 @@ them were spotted:
    (`grid-column: 1 / -1`), so a plain one is a bare line of text floating across
    a wide flow with nothing tying it to the items beneath.
 4. Minimal, Accordion and Blank untouched.
+
+### 🔴 Revision, merchant decisions 2026-07-30 (after the accent row shipped)
+
+Three changes, again made **after looking at the rendered cards** — this time with
+feature 93's accents live on them. Two cards move, and the stripes move between
+them:
+
+1. **Classic: `PLAIN` → `TEXT_ONLY` section headers** ("Underlined" in the rail).
+   Classic is the one card where every horizontal edge is already drawn, so a
+   bare bold title reads as nothing more than a wider row. `TEXT_ONLY` keeps the
+   2px rule, which is what makes a heading look like a heading inside a full grid.
+   ⚠️ Classic is now the **second** card on `TEXT_ONLY` (Accordion is the other).
+   They stay far apart — Accordion is collapsible, gapped and striped; Classic is
+   framed and column-ruled — and the "every pattern differs on a scoped field"
+   guard covers it.
+
+2. **Classic: `STRIPES` → row LINES.** 🔴 This is the one that was a real defect,
+   not a taste change. `--dividers-stripes` sets `border-block-end: none` on every
+   label and value (`spec-table.css`), so the striped build of Classic had **no
+   interior horizontal edges at all** — the "full grid" card was a frame, a column
+   rule and a checkerboard, with the row rules its own description implied
+   silently switched off. LINES is the `ROW_DIVIDER_STYLES` default, so ⚠️ the
+   bundle **omits the field** rather than naming it: an explicit `"LINES"`
+   serializes away to nothing and fails the fixed-point guard.
+
+3. **Accordion gains `STRIPES`**, the ones Classic gave up. They read better here
+   anyway: inside a disclosure the alternating fill is a within-section reading
+   aid, and the storefront restarts the parity at every `<tbody>` (locked Step
+   9a), so a closed section never leaves a stale checkerboard behind it. The
+   stand-down stripes perform on row rules costs this card nothing — a stack of
+   gapped disclosures was never grouping anything with interior rules.
+
+**Descriptions moved with the bundles.** Classic now reads *"A bordered grid with
+a line between every row."* Accordion's is unchanged (*"Shoppers open one section
+at a time."*) — the disclosure is still what the card is *for*, and the stripes
+are a detail inside it.
+
+📌 **Knock-on for feature 93's reach table, no code change.** An accent's reach is
+derived from the resolved bundle, so it followed automatically, but the table in
+doc 93 is now describing different cards: `stripeBgColor` went dead on Classic and
+live on Accordion, and `headerUnderlineColor` went live on Classic. Classic is
+therefore no longer the preset that carries §Open question 2's dark-theme stripe
+collision — **Accordion is**. Nothing about the open question changes except which
+card it names.
 
 ⚠️ **Consequence: `PRESET_SCOPED_FIELDS` gained three fields** —
 `columnDividerStyle`, `outerBorderWidthPx`, `outerBorderRadiusPx`. This is the

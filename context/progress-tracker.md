@@ -595,6 +595,77 @@ Building the MVP.
 > rendering exactly. Faithful to the mechanism, ⚠️ **but it is not a real merchant's
 > dark theme and the write-up says so.**
 
+> ✅ **Gallery polish pass 2026-07-30 — three merchant asks, one of them a real
+> defect.** Gate green (typecheck · lint · format · **1227** · build); ⚠️ **the test
+> count did not move and should not have** — every change was to a value an existing
+> guard already pinned, so a moved number would have meant a new claim went
+> unguarded. Live-verified on `appx-dev`.
+>
+> 🔴 **The Classic card had no interior row rules, and nobody had noticed.** It
+> shipped `PLAIN` + `STRIPES`; `--dividers-stripes` sets `border-block-end: none`
+> on every label and value, so the "full grid" card was a frame, a column rule and
+> a checkerboard — the row rules its own description implied were silently off.
+> Now `TEXT_ONLY` (a bare bold title reads as a wider row when every other edge is
+> already drawn) + LINES, and the stripes moved to **Accordion**, where the
+> alternating fill is a within-section reading aid and the storefront restarts the
+> parity at every `<tbody>`. ⚠️ **LINES is the default, so the bundle OMITS the
+> field** — an explicit `"LINES"` serializes away to nothing and fails the
+> fixed-point guard. Classic's description followed the bundle; Accordion's did
+> not, because the disclosure is still what that card is *for*.
+> 📌 **Two knock-ons, neither needing code.** Classic is now the second card on
+> `TEXT_ONLY` (Accordion is the other) and the pairwise-difference guard still
+> passes on four other scoped fields. And feature 93's reach table now describes
+> different cards — `stripeBgColor` went dead on Classic and live on Accordion,
+> `headerUnderlineColor` went live on Classic — so **doc 93 §Open question 2's
+> dark-theme stripe collision is Accordion's now, not Classic's.** Same numbers,
+> same mechanism, different card; both docs corrected rather than left to be
+> re-derived.
+>
+> 🔴 **The double-ring bug on the accent swatches was not a bug in either ring.**
+> Arrowing along the row drew two concentric circles round one chip. A
+> roving-tabindex radiogroup moves focus and selection with the SAME keypress, so
+> the focused chip is always the checked chip — there is no keyboard-reachable
+> state where one ring appears without the other. Two rings that can never separate
+> are one state drawn twice. ⚠️ **The fix suppresses the INNER (selected) ring, not
+> the focus ring**: deleting the focus ring instead would leave a keyboard merchant
+> unable to tell the row has focus (WCAG 2.4.7) and would fail *silently*, since
+> the selected ring is still there to look at. Keeping the outer one also makes
+> Tab-in a visible event — the ring travels outward rather than merely thickening.
+> ✅ Both states observed live: focused+checked → one near-black ring at the button;
+> checked-only → one tighter ring at the chip.
+> 🔬 **A comment correction fell out of looking at it:** the selected outline's
+> `currentColor` is the ACCENT's ink, not the row's (`.chip` sets
+> `color: var(--appx-chip-ink)` above it), where the stylesheet had claimed "in the
+> row's ink" since step 100. Harmless — the ring lands on the white card where all
+> six dark tones read — and it is what makes the two rings differ in hue as well as
+> position, but the file said something false about its own rendering.
+>
+> ✅ **"Colour theme" → "Color theme".** It was the ONLY merchant-facing British
+> spelling in the app: every Style-rail label already reads `Title color`,
+> `Divider color`, `Outline color`, `Text color`, `Underline color`, and Shopify's
+> admin, Polaris and the Admin API are US English throughout. ⚠️ Prose comments
+> still say "colour" and were deliberately left — not merchant-facing, and a sweep
+> would churn hundreds of lines to change nothing anyone sees.
+>
+> ✅ **The default swatch's tooltip: "Theme" → "Your theme's colors"** (merchant
+> ask, same day). The old label was **circular against the caption beside it** —
+> the group reads "Color theme" and the first chip read "Theme", so the tooltip
+> restated the question instead of answering it, and never said what picking it
+> would do. The new string states the outcome and says WHOSE theme, which neither
+> "Theme" nor the proposed "Theme's default" settles (the app's? the store's?), and
+> it reuses the app's existing voice for this exact idea — the Blank card's "Start
+> with your theme's own styles" and the rail's "inherit that color from your theme".
+> 📌 **It is the accessible name too** (`aria-label` takes the same string), so a
+> screen reader now announces "Your theme's colors, selected" rather than "Theme,
+> selected" inside a group named "Color theme".
+> 🔬 **One test got BETTER by being made to stop caring.** `hardcodes Theme FIRST`
+> anchored on `label: "Theme"`, so merchant-facing copy could turn a **position**
+> guard red. Re-anchored on `id: null` — the thing that actually makes that option
+> the absence of an accent — and checked non-vacuous (one occurrence in the file,
+> and `id: string | null` in the type does not contain it). ✅ The lowercase
+> `"theme"` sentinel count is untouched: it matches the literal WITH its quotes,
+> which the new label has none of.
+
 ## Current Goal
 
 **Reshell Phase B2 — the built-in preset gallery (Style tab feature 57, steps 13–14).**

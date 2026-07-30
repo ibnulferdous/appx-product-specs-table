@@ -62,7 +62,11 @@
    of the palette's own tones — a ring drawn in the accent's colour is invisible on
    the chip it surrounds. `currentColor` at the row's ink, offset outside the chip.
    `:focus-visible` only, so a pointer click leaves no ring behind. Same treatment
-   as `.card:focus-visible` next door. */
+   as `.card:focus-visible` next door.
+
+   📌 This is the ring that SURVIVES when a chip is both focused and checked — the
+   selected ring stands down for it. See the double-ring note further down before
+   changing either. */
 .swatch:focus-visible {
   outline: 0.125rem solid currentColor;
   outline-offset: 0.125rem;
@@ -109,8 +113,18 @@
 /* 🔴 The non-colour half of the selected state (WCAG 1.4.1), and the reason it is
    an OUTLINE rather than a heavier border: the border is already the accent's own
    ink tone, so thickening it says "selected" in colour only — exactly what this
-   rule exists to avoid. An outline sits outside the chip, in the row's ink, and
+   rule exists to avoid. An outline sits OUTSIDE the chip, on the white card, and
    reads at a glance across seven items.
+
+   ⚠️ Its `currentColor` is the ACCENT's ink, not the row's — `.chip` sets
+   `color: var(--appx-chip-ink)` a few rules up, so this outline inherits from the
+   chip it surrounds. (This comment used to say "in the row's ink"; corrected
+   2026-07-30 after looking at a live render.) That is harmless and arguably right:
+   the ring lands on the white card, where every one of the six dark ink tones is
+   plainly visible, and it is what makes the selected ring read differently from
+   the focus ring below, which really is the row's ink. It is NOT a contradiction
+   of the focus rule's "never a palette tone" — that rule is about a ring drawn
+   ON the chip, where the accent's own tone would vanish.
 
    It pairs with the checkmark glyph the component renders. Either alone would be
    weaker: the outline can be mistaken for the focus ring on a mouse-free admin,
@@ -119,6 +133,35 @@
 .swatch[aria-checked="true"] .chipTheme {
   outline: 0.125rem solid currentColor;
   outline-offset: 0.125rem;
+}
+
+/* 🔴 **The DOUBLE-RING fix (reported 2026-07-30).** Arrowing along the row drew
+   two concentric circles around one chip, which reads as a rendering fault rather
+   than as a state.
+
+   It was not a bug in either ring — it is what the two rules above necessarily do
+   TOGETHER on this control. A roving-tabindex radiogroup moves focus and selection
+   with the same keypress (`moveTo` calls `onChange` and then `.focus()`), so the
+   focused chip is ALWAYS the checked chip: there is no keyboard-reachable state
+   where one ring appears without the other. Two rings that can never separate are
+   not two states, they are one state drawn twice — the selected outline sits
+   0.125rem off the chip, the focus outline a further 0.1875rem out past the
+   button's padding, and the gap between them is what shows up as the second circle.
+
+   ⚠️ The fix is to suppress the INNER one, not the focus ring. Deleting the focus
+   ring instead would leave a keyboard merchant with no way to tell the row has
+   focus at all (WCAG 2.4.7) — and it would fail silently, since the selected ring
+   is still there to look at. Keeping the outer one also makes Tab-in a visible
+   EVENT: the ring travels outward rather than merely thickening.
+
+   Specificity (0,4,0) beats the checked rule's (0,3,0), so this wins wherever it
+   sits; it is placed after it anyway, so the pair reads in the order it applies.
+   `[aria-checked="true"]` is deliberately part of the selector — a focused chip
+   that is somehow NOT checked (programmatic focus; no keyboard path reaches it)
+   still gets both rings, which is honest about a state that should not exist. */
+.swatch:focus-visible[aria-checked="true"] .chip,
+.swatch:focus-visible[aria-checked="true"] .chipTheme {
+  outline: none;
 }
 
 /* The glyph. Sized against the chip so it stays inside the 1.5rem circle, and

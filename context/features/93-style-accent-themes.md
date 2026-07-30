@@ -376,23 +376,36 @@ outline's **colour resolves to the accent hex while its width stays `0px`** — 
 "dead" means zero width, not colour-not-applied. A merchant who later turns on an
 outer border gets the accent's tone already there.
 
-| Preset       | Header      | Dividers  | Frame | Live accent fields                         |
-| ------------ | ----------- | --------- | ----- | ------------------------------------------ |
-| Modern       | `BANDED`    | `LINES`   | —     | band · title · **row rules**               |
-| Classic      | `PLAIN`     | `STRIPES` | 1px   | title · stripe · **column rule + outline** |
-| Minimal      | `PLAIN`     | `NONE`    | —     | **title only**                             |
-| Multi-column | `BANDED`    | `NONE`    | —     | band · title                               |
-| Accordion    | `TEXT_ONLY` | `LINES`   | —     | title · underline · **row rules**          |
+🔴 **The table below was MEASURED against the step-98 bundles, and two of those
+bundles changed on 2026-07-30** (doc 88's second revision: Classic went `PLAIN` +
+`STRIPES` → `TEXT_ONLY` + LINES, and the stripes moved to Accordion). The reach is
+derived from the resolved bundle, so it followed with no code change — but the
+measured column is now historical for those two rows and the **Now** column below
+is reasoned from the same mechanism rather than re-measured.
+
+| Preset       | Header (now) | Dividers (now) | Frame | Live accent fields — as measured (step 98)  | Now                                            |
+| ------------ | ------------ | -------------- | ----- | ------------------------------------------- | ---------------------------------------------- |
+| Modern       | `BANDED`     | `LINES`        | —     | band · title · **row rules**                | unchanged                                       |
+| Classic      | `TEXT_ONLY`  | `LINES`        | 1px   | title · stripe · **column rule + outline**  | title · **underline** · row rules · column rule + outline; **stripe now dead** |
+| Minimal      | `PLAIN`      | `NONE`         | —     | **title only**                              | unchanged                                       |
+| Multi-column | `BANDED`     | `NONE`         | —     | band · title                                | unchanged                                       |
+| Accordion    | `TEXT_ONLY`  | `STRIPES`      | —     | title · underline · **row rules**           | title · underline · **stripe**; row rules now dead (stripes suppress them) |
 
 ⚠️ **Minimal showing title-only is expected, not a defect** — it is precisely why
 D3 had to be answered before anything was built. If D3 had gone the other way,
 Minimal would show nothing at all.
 
-⚠️ **Accordion inherits `LINES`** — its bundle sets `sectionsCollapsible`,
-`sectionHeaderStyle` and `sectionGapPx` but not `rowDividerStyle`, so the default
-applies and `borderColor` tints its row rules. Its `sectionGapPx: 12` disables
-the feature-80 separator rule (`:not(--section-gap)`), so that surface is **not**
-live here.
+⚠️ **Accordion's `sectionGapPx: 12` disables the feature-80 separator rule**
+(`:not(--section-gap)`), so that surface is **not** live here. (It used to also
+inherit `LINES`; since 2026-07-30 it sets `STRIPES` explicitly, and `STRIPES` sets
+`border-block-end: none` on every label and value, so its row rules are gone.)
+
+🔴 **Which card carries §Open question 2's stripe collision has MOVED.** The
+dark-theme measurement below names Classic as the preset whose `stripeBgColor`
+falls to 1.02–1.07 contrast. That is now **Accordion** — the numbers and the
+mechanism are unchanged (an opaque near-white replacing a translucent black), only
+the card is different. Classic keeps the title half of the risk, along with
+Minimal and Accordion.
 
 ---
 

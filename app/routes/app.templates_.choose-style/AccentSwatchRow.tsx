@@ -64,7 +64,25 @@ export function AccentSwatchRow({
     fill?: string;
     ink?: string;
   }> = [
-    { id: null, label: "Theme" },
+    // 🔴 **"Your theme's colors", not "Theme" (2026-07-30).** The original label
+    // was circular against the caption beside it — the group reads "Color theme"
+    // and the first chip read "Theme", so the tooltip restated the question
+    // instead of answering it, and never said what picking it would DO.
+    //
+    // This label states the outcome and says WHOSE theme, which "Theme" and
+    // "Theme's default" both leave open (the app's? the store's?). It is also the
+    // app's existing voice for this exact idea: the Blank card next door says
+    // "Start with your theme's own styles — nothing added", and the Style rail's
+    // empty swatches say "inherit that color from your theme".
+    //
+    // ⚠️ It is the accessible name as well as the tooltip (`aria-label` below
+    // takes the same string), so the improvement is not only for sighted users —
+    // a screen reader now announces "Your theme's colors, selected" rather than
+    // "Theme, selected" inside a group named "Color theme".
+    //
+    // 📌 The lowercase `"theme"` sentinel count in the contract test is unaffected:
+    // it matches the literal `"theme"` WITH its quotes, and this string has none.
+    { id: null, label: "Your theme's colors" },
     ...ACCENT_PRESETS.map((accent) => ({
       id: accent.id,
       label: accent.label,
@@ -115,12 +133,22 @@ export function AccentSwatchRow({
 
   return (
     // The visible caption doubles as the group's accessible name, so a screen
-    // reader announces "Colour theme, radio group" rather than an unnamed group of
+    // reader announces "Color theme, radio group" rather than an unnamed group of
     // seven. `useId` over a hardcoded id because nothing stops a second row
     // existing on a page later.
+    //
+    // 🔴 **"Color", not "Colour" (2026-07-30).** This string shipped in the
+    // British spelling and was the ONLY merchant-facing one in the app that did:
+    // every label in the Style rail already reads `Title color`, `Divider color`,
+    // `Outline color`, `Text color`, `Underline color`. Shopify's admin, Polaris
+    // and the Admin API are US English throughout (`color` is the field name on
+    // the platform side too), so a lone "Colour" beside them read as a typo rather
+    // than as a house style. ⚠️ Prose comments across the codebase still say
+    // "colour" — deliberately left alone, since they are not merchant-facing and a
+    // sweep would churn hundreds of lines to change nothing anyone sees.
     <div className={styles.row}>
       <span className={styles.caption} id={`${tooltipBase}-caption`}>
-        Colour theme
+        Color theme
       </span>
       {/* A radiogroup container is intentionally NOT focusable — focus is managed
           by roving tabindex on the radios (WAI-ARIA APG), so the key handler lives
