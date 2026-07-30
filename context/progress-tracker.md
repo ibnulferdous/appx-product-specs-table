@@ -224,8 +224,12 @@ Building the MVP.
 > this work regardless: the new span is `aria-hidden` and outside the
 > `aria-labelledby` target.
 
-> 🟢 **STARTED 2026-07-30 — feature 93 (accent themes), the gallery's
-> colour-theme swatch row.** Design: `context/features/93-style-accent-themes.md`
+> ✅ **COMPLETE 2026-07-30 — feature 93 (accent themes), the gallery's
+> colour-theme swatch row.** Six steps, all shipped and live-verified end to end.
+> 🔴 **One open decision, the merchant's:** step 102 measured §D3's dark-theme risk
+> and it is real on two surfaces — doc 93 §Open question 2. Nothing regressed and
+> nothing is broken on a light theme.
+> Design: `context/features/93-style-accent-themes.md`
 > (binding; seven merchant decisions recorded verbatim). Six step files, each with
 > its own gate:
 >
@@ -236,7 +240,7 @@ Building the MVP.
 > | 99   | `99-accent-seed-path.md`          | `&accent=` → resolved styling                  | ✅ **2026-07-30**, → 1184 |
 > | 100  | `100-accent-swatch-row.md`        | the swatch row component                       | ✅ **2026-07-30**, → 1209 |
 > | 101  | `101-accent-gallery-wiring.md`    | gallery state + live restyle + hrefs           | ✅ **2026-07-30**, → 1227 |
-> | 102  | `102-accent-live-verification.md` | admin → Postgres → metaobject → storefront     | 🔲                        |
+> | 102  | `102-accent-live-verification.md` | admin → Postgres → metaobject → storefront     | ✅ **2026-07-30**, 1227 unmoved |
 >
 > 🔴 **The finding that reshaped the feature: an accent CANNOT be one field.**
 > Kaching tints the band behind a title and every one of their cards has one; ours
@@ -265,6 +269,10 @@ Building the MVP.
 > construction today and an accent opts one string out of that. The 2026-07-20
 > no-contrast-checking rule holds, so it goes **silently**. Mitigation is palette
 > choice, not code; step 102 is the first time it is observed.
+> 🔴 **OBSERVED, and it is real — see the step 102 entry below.** Illegible on two
+> surfaces (title **1.21–2.35**, stripe **1.02–1.07**), the stripe being a collision
+> §D3 never named; banded presets are safe on any theme. The response is an **open
+> merchant decision** (doc 93 §Open question 2), not a change already made.
 >
 > 🔴 **D7 REVERSES a forward-reference that was stated in THREE places** —
 > `stylePresets.ts:60`, doc 88, and `stylePresets.test.ts:83`. Colours never join
@@ -525,6 +533,67 @@ Building the MVP.
 > confirmation that splitting 100 from 101 was the right cut. 📌 No `aria-live` for the
 > restyle, asserted as a negative: the previews are `aria-hidden`, so no accessible
 > content changes, and the `role="radio"` already announces the choice.
+>
+> **Step 102 — ✅ COMPLETE 2026-07-30, tests 1227 / 45 files UNMOVED, `npm run build`
+> green. Feature 93 is 6 of 6 and shipped.** The only step in the feature that wrote
+> **no code** — its deliverable was evidence and one decision, and an unmoved test
+> count is the result it wanted. One accent watched end to end:
+> `?style=classic&accent=plum` → template `cms76k2s5…` → Postgres → metaobject →
+> a real product page on `appx-dev`.
+> ✅ **Five of six items came back clean.** All five hexes exact in `TableStyling`
+> with the four body colours + `outerBorderColor` still NULL (D2 holding at the data
+> layer); `basedOnPreset` = `"classic"`, the bare pattern id (D7); the metaobject
+> carries **both** `styling` and `styling_css.vars`, and the storefront's inline
+> `style` attribute is **byte-identical** to `vars`, so the whole chain is one copy
+> with no transformation; four live surfaces read exact by `getComputedStyle`; and
+> D1's never-verified "no capability is lost" is **true** — the rail shows the
+> accent's values and accepts an edit (typing `#008000` into Title colour repainted
+> the preview's title green while the underline stayed plum). ⚠️ **One qualifier D1
+> needs:** the band and underline controls are **gated by Header style**, so under
+> `Plain` two of the five are off-screen until you switch to `Banded` / `Underlined`
+> — reachable, not always visible.
+> 🔴 **V5 — the dark-theme risk doc 93 §D3 deferred since the feature was specced is
+> REAL, and it is BIGGER than §D3 said.** Verdict: **illegible**, on **two**
+> surfaces. (1) The title fails as predicted — **1.21–2.35** across the six accents
+> where AA wants 4.5. (2) 🔴 **`stripeBgColor` is a second collision §D3 never named
+> and it is worse: 1.02–1.07, the row's text vanishes** — in the capture two striped
+> rows are blank while the unstriped row between them reads normally.
+> ✅ **And one finding that shrinks the blast radius: banded presets are SAFE on any
+> theme.** Modern and Multi-column put the title on the accent's **own** band, so
+> both colours are absolute and travel together — **6.98–13.15**. The risk is not
+> uniform across the gallery; it is the three presets whose title sits on the theme's
+> ground (Classic, Minimal, Accordion) plus Classic's stripe.
+> 🔬 **The mechanism, and why the stripe is not a hue problem.** The stylesheet's
+> default is `var(--appx-spec-stripe-bg, rgba(0, 0, 0, 0.04))` — a **translucent**
+> black, theme-agnostic *by construction* because it darkens whatever ground it lands
+> on. An accent replaces it with an **opaque** hex, and every stripe value is
+> near-white because it must be on a light theme. **The failure is the opacity, not
+> the hue**, so no re-tuning of an opaque value fixes it. The band has the same
+> `rgba(0,0,0,0.06)` default and does **not** fail — the only text on a band is the
+> accent's own absolute title.
+> ⚠️ **Nothing regressed and nothing was changed.** On a light theme the same
+> measurements are **12.86** and **19.24**. The response is a palette-or-scope
+> decision that belongs to the merchant, now recorded as doc 93 §Open question 2 with
+> three options and what each costs — 🚫 **not** contrast-checking code, which the
+> 2026-07-20 rule still bars (the ratios above were computed off-line by the verifier
+> against a ground *we* chose, which is not a capability the app has). 🔴 **It must
+> not be closed by silence** — that is the precise failure mode §D3 warned about.
+> 🔬 **The instrument rules earned their place: rule 4 fired TWICE in one step, on
+> the same mistake, and both times the code was fine.** "No stripe" — I read
+> `backgroundColor` off each `<tr>`; the stripe is on the **cells**. "No column
+> divider" — I read `borderInlineStart` off `__value`; the divider is `border-right`
+> on **`__label`**. Both died the moment I enumerated every descendant instead of the
+> element I expected. 📌 Third: `document.styleSheets[].cssRules` returned `[]` — the
+> stylesheet is cross-origin from `cdn.shopify.com`, so an empty result there is an
+> **instrument limit, not evidence**.
+> 📌 **Two environment facts worth carrying.** The dev store runs **Horizon, not
+> Dawn**, and Horizon has no shared named palette — every section carries its own
+> `color-custom-<id>` class and **all nine resolve to white/black**, so there was no
+> dark scheme to borrow and none could be made without editing the merchant's live
+> theme. The dark ground was produced by overriding Horizon's **own** scheme
+> variables on the product section, client-side; a reload restored the light
+> rendering exactly. Faithful to the mechanism, ⚠️ **but it is not a real merchant's
+> dark theme and the write-up says so.**
 
 ## Current Goal
 

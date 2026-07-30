@@ -1,7 +1,12 @@
 # Feature 93 — Accent themes (the gallery's colour-theme swatch row)
 
-**Status:** 🟢 **IN PROGRESS — 5 of 6 steps done; the feature is LIVE and working in
-the admin.** Specced 2026-07-30; all seven
+**Status:** ✅ **COMPLETE — 6 of 6 steps done 2026-07-30; the feature is LIVE and
+verified end to end, admin → Postgres → metaobject → storefront.**
+🔴 **One decision is open and it is the merchant's:** step 102 observed §D3's
+dark-theme risk and it came back **illegible**, with a second failure §D3 never
+named. Nothing is broken on a light theme and nothing regressed; see §Open
+questions 2 for what it costs to fix and what it costs to accept.
+Specced 2026-07-30; all seven
 open decisions were answered by the merchant the same day and are recorded
 verbatim below. **This file is the binding design; it is not an implementation
 plan.** Each step file carries its own instructions and completion gate:
@@ -13,7 +18,7 @@ plan.** Each step file carries its own instructions and completion gate:
 | 99   | `99-accent-seed-path.md`          | `&accent=` → resolved styling                  | ✅ **2026-07-30**, → 1184    |
 | 100  | `100-accent-swatch-row.md`        | the swatch row component                       | ✅ **2026-07-30**, → 1209    |
 | 101  | `101-accent-gallery-wiring.md`    | gallery state + live restyle + hrefs           | ✅ **2026-07-30**, → 1227, live-verified |
-| 102  | `102-accent-live-verification.md` | admin → Postgres → metaobject → storefront     | 🔲                           |
+| 102  | `102-accent-live-verification.md` | admin → Postgres → metaobject → storefront     | ✅ **2026-07-30**, 1227 unmoved, 6/6 items |
 
 ✅ **Nothing in the design has needed revision.** Step 98 confirmed the reach
 table 5 of 5 and the provisional underline value, and measured `borderColor`'s
@@ -176,6 +181,41 @@ dark title on a dark ground. Accepted because the alternative (no title tint)
 makes Minimal show nothing at all, which is the defect this feature exists to
 avoid. Step 98 measures the actual numbers; step 102 observes it on a real
 storefront.
+
+#### 🔴 OBSERVED 2026-07-30 (step 102) — the risk is REAL, and it is bigger than this section said
+
+The prediction was right and incomplete. Full numbers, capture and method:
+`102-accent-live-verification.md` §V5. Three findings, in order of how much they
+change the picture:
+
+1. ✅ **Banded presets are SAFE, which this section never claimed.** Modern and
+   Multi-column put the title on the accent's **own** band — both colours
+   absolute, so the pair travels together and lands at **6.98–13.15** on any
+   theme. The risk is **not uniform across the gallery**: it is confined to the
+   three presets whose title sits on the theme's own ground (Classic, Minimal,
+   Accordion), plus Classic's stripe.
+2. 🔴 **The title fails as predicted: 1.21–2.35** on a dark ground across the six
+   accents (AA wants 4.5). Graphite is worst at 1.21, Blue best at 2.35 — none is
+   close, so this is not a "tune the worst one" problem.
+3. 🔴 **`stripeBgColor` is a SECOND collision, worse than the title, and this
+   section did not name it.** The theme's now-light body ink lands on an opaque
+   near-white fill: **1.02–1.07 — the row's text vanishes.** In the capture, two
+   striped rows are blank while the unstriped row between them reads normally.
+
+🔬 **Why the stripe cannot be fixed by re-tuning the hex.** The stylesheet's
+default is `background: var(--appx-spec-stripe-bg, rgba(0, 0, 0, 0.04))`
+(`spec-table.css:510`) — a **translucent black**, which darkens whatever ground it
+lands on and is therefore theme-agnostic _by construction_. An accent replaces it
+with an **opaque** hex. Every stripe value in the palette is near-white because it
+must be on a light theme, so the failure is **the opacity, not the hue**. The band
+has the same default shape (`rgba(0, 0, 0, 0.06)`) and does **not** fail, because
+the only text on a band is the accent's own absolute title — which is finding 1.
+
+⚠️ **What this does NOT mean.** Nothing regressed and nothing is broken on a light
+theme: the same measurements on white are **12.86** (title) and **19.24** (ink on
+stripe). The feature works as designed for the case it was designed for. What
+changed is that "accepted risk, unobserved" became "accepted risk, measured" — and
+the measurement is what §Open question 2 now has to be decided against.
 
 ### D4 · Blank ignores the accent
 
@@ -379,6 +419,33 @@ step 102.
 
 ---
 
+## ✅ Observed live 2026-07-30 (step 102) — the rest of the chain
+
+Both debts above are now paid. One accent watched end to end: a template created
+from `?style=classic&accent=plum`, saved, activated, assigned to a real product,
+and read at every stage. Full evidence: `102-accent-live-verification.md`
+§Results.
+
+| Claim                                                          | Result                                                                         |
+| -------------------------------------------------------------- | -------------------------------------------------------------------------------- |
+| The five colours survive Save → Postgres                        | ✅ all five hexes exact; the four body colours + `outerBorderColor` stay NULL (D2) |
+| `basedOnPreset` holds the pattern only (D7)                     | ✅ `"classic"`                                                                     |
+| The metaobject carries `styling` **and** `styling_css.vars`     | ✅ both; the storefront's inline `style` is byte-identical to `vars`               |
+| A real product page renders the accent                          | ✅ title, stripe, column rule and outline read exact by `getComputedStyle`         |
+| The dead surfaces are dead in the way step 98 predicted         | ✅ band transparent under `PLAIN`; underline **0px but coloured `#501760`**         |
+| The five values are in the Style rail and editable (D1)         | ✅ shown and edit-accepting — ⚠️ two are gated behind Header style, see below       |
+| §D3's dark-theme risk                                           | 🔴 **illegible** — see §D3's own observation block                                  |
+
+⚠️ **D1's sentence needs one qualifier.** "Five real colour columns the merchant
+can already edit individually in the rail" is true, but the band and underline
+controls only **appear** under the header style that has that surface: `Plain`
+(what Classic seeds) shows neither; `Banded` reveals Background `#F4E8F8` already
+holding the accent's value, `Underlined` reveals Underline colour `#501760`. That
+is the feature-96 gating behaving correctly — nothing is unreachable — but the
+claim reads as though all five are always on screen, and they are not.
+
+---
+
 ## Cost profile
 
 **No migration. No new field in `STYLING_FIELD_NAMES`. No Liquid, no TOML, no
@@ -413,8 +480,31 @@ and step 101 owes it.
 
 ## Open questions
 
-1. **`headerUnderlineColor`'s value** — assumption recorded in D5, owed to step 98. The only open item that blocks a shipped constant.
-2. **Does an accent read acceptably on a dark storefront theme?** D3 accepts the
-   risk with mitigation; step 102 is the first time it is _observed_ rather than
-   reasoned about. If it reads badly, the fallback is not a code change but a
-   palette revision — the six hexes are data, not logic.
+1. ✅ **CLOSED — `headerUnderlineColor`'s value.** Confirmed as each accent's Title
+   hex by measurement (step 98); see D5.
+
+2. 🔴 **OPEN, and now a decision rather than a question — what do we do about the
+   dark-theme result?** Step 102 answered the observation half: **illegible**, on
+   two surfaces, with numbers in §D3. Nobody has decided the response, and
+   ⚠️ **it must not be closed by silence** — that is the exact failure mode D3
+   warned about ("whichever way this goes, it goes silently").
+
+   The two failures need **different** answers, and only the first is a palette
+   revision in the sense this file originally meant:
+
+   | Failure                              | Options                                                                                                                                    | Cost                                                                                                                        |
+   | ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------- |
+   | **Title on the theme's ground** (1.21–2.35) | (a) accept and document · (b) revise the six Title hexes toward mid-tones legible on both grounds                                    | (b) is six edited literals + the pinned test — but it **degrades the light-theme look the merchant approved from a render study**, and no single opaque hue is good on both. |
+   | **Stripe under light ink** (1.02–1.07)      | (a) accept and document · (b) **drop `stripeBgColor` from `ACCENT_SCOPED_FIELDS`** · (c) make the six stripe values **translucent** (`rgba` over the theme's ground, matching the stylesheet's own `rgba(0,0,0,0.04)` default) | (b) costs Classic its stripe tint and is the remedy shape D5 already prescribes for a dead field. (c) keeps the tint AND theme-agnosticism — still data, not logic — but is unmeasured and would need its own render study. |
+
+   🚫 **Contrast-checking code is not on this list** and does not become an option
+   because the risk was confirmed. The 2026-07-20 binding rule stands: the app
+   cannot see a merchant's theme colour at runtime. (Step 102's ratios were
+   computed off-line by the verifier against a ground *we* chose — that is not a
+   capability the app has.)
+
+   📌 **Not urgent, and worth saying so.** On a light theme every value measures
+   12.86–19.24, and banded presets are safe on **any** theme. This is a bounded
+   defect on a specific combination, not a shipping blocker — but it is now a
+   known one, with a date and a measurement, which is what step 102 existed to
+   produce.
