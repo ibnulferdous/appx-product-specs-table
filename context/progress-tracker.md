@@ -235,7 +235,7 @@ Building the MVP.
 > | 98   | `98-accent-render-harness.md`     | 5 × 6 render matrix at 1:1, lock the underline | ✅ **2026-07-30**, 35 renders |
 > | 99   | `99-accent-seed-path.md`          | `&accent=` → resolved styling                  | ✅ **2026-07-30**, → 1184 |
 > | 100  | `100-accent-swatch-row.md`        | the swatch row component                       | ✅ **2026-07-30**, → 1209 |
-> | 101  | `101-accent-gallery-wiring.md`    | gallery state + live restyle + hrefs           | 🔲                        |
+> | 101  | `101-accent-gallery-wiring.md`    | gallery state + live restyle + hrefs           | ✅ **2026-07-30**, → 1227 |
 > | 102  | `102-accent-live-verification.md` | admin → Postgres → metaobject → storefront     | 🔲                        |
 >
 > 🔴 **The finding that reshaped the feature: an accent CANNOT be one field.**
@@ -440,6 +440,91 @@ Building the MVP.
 > step 101**, which must include a keyboard-only pass. 📌 `git grep` is useless for
 > the "nothing imports it" gate on untracked files — it returns nothing and looks
 > like a pass; use a plain content search.
+>
+> **Step 101 — ✅ COMPLETE 2026-07-30, tests 1209 → 1227 (+18), LIVE-VERIFIED on the
+> dev store. The feature works: clicking a colour restyles all five cards.** The page
+> holds one `useState<string | null>` and one `findAccent`, and each card takes the
+> resolved accent. All ten gate items closed, including **four debts other steps left
+> owed**: the keyboard-only pass (step 100 could only test arithmetic), the focus ring
+> on a tinted chip, the five-iframe flicker question doc 93's cost profile deferred
+> here, and the **narrow-admin one-column pass open since step 92**.
+> 🔴 **D5's header placement FAILED live, and the pre-decided fallback shipped.**
+> `<div slot="primary-action">` inside `<s-page>` was **silently discarded** — absent
+> from the DOM *and* the accessibility tree, not clipped or hidden, with no console
+> error. Same family as `<s-button-group>` rendering no slot: these elements accept
+> specific children in named slots and drop the rest without warning. The row moved
+> into the gallery body above the paragraph — one JSX move, no logic change, no test
+> affected. 🔬 **Deciding the fallback before looking is what made it cheap:** the live
+> pass became a yes/no instead of a redesign with the dev server running.
+> ✅ **Keyboard, live:** arrows move AND check; `Home` → first; **`Home` then `Left`
+> wraps to Plum**, i.e. `nextRovingIndex`'s negative-modulo path (`-1 → 6`) executing
+> in a real browser; and **Tab LEAVES the row** onto the Modern card — one tab stop,
+> which the contract test could only infer from a `tabIndex` expression. Tooltips fire
+> on focus, not just hover.
+> ✅ **Flicker: none visible**, including five rapid keyboard changes in one burst — no
+> blank, partial or torn frames, never a mix of two accents across the five cards. ⚠️
+> Stated limit: a screenshot cannot catch a sub-frame flash, so this is "no visible
+> flicker", not a frame-level measurement. Consistent with the hypothesis recorded up
+> front (card surface and preview background are both white, so a reload flash is
+> white-on-white). **No mitigation needed** — `sandbox=""` keeps its no-capabilities
+> posture and `postMessage` stays unused.
+> 🔴 **I GOT A LIVE READING WRONG and corrected it.** I first concluded the title tint
+> was **imperceptible on Minimal** — which, since the title is Minimal's only live
+> field, would have collapsed doc 93 §D3's entire justification. It was an artifact of
+> **my own zoom crop**: a coarser region is upsampled harder and the hue in antialiased
+> 8.8px glyphs washes out. Re-run with a tighter crop and a baseline captured through
+> the same instrument, all three are plainly distinct (Theme near-black, Terracotta
+> reddish-brown, Plum purple). ⚠️ **Same class of error as step 98's stripe probe** —
+> both times my *instrument* produced a false negative about working code.
+> 🔬 **The rule: when a visual check says "no change", suspect the instrument before
+> the code, and always capture the baseline through the same instrument at the same
+> settings in the same session.** Doc 93's reach table, D3 and the palette all stand
+> unchanged; nothing was altered.
+> 🔍 **One observation left for the merchant, not a defect:** the chips read as pale
+> circles with coloured rings rather than saturated dots — D2 working as specified (every
+> band tone is above 0.85 luminance) and legible, but less immediate than a conventional
+> picker. If a change is wanted, a diagonal two-tone fill shows both approved colours at
+> full strength and adds no data. Not changed unilaterally.
+> ⚠️ **Not discharged:** §D3's dark-theme risk (the admin content area stays light
+> whatever the chrome does, so a dark ground was never rendered) and anything reaching
+> Postgres or a metaobject. Both are step 102.
+> ✅ **The zero-drift line is the most valuable change:** the card now resolves its
+> preview through `seedStylingFromPreset(preset.id, accent?.bundle)` — **the same
+> function `resolveGalleryParams` calls** — so a card cannot promise a look the seeded
+> template does not produce. Two independent merges of the same pair could have
+> disagreed with **nothing failing**, since no test compares a rendered preview
+> against a real scaffold. A test pins that this is provably a no-op at `accent = null`
+> (`stylePresetValues(preset)` deep-equals `seedStylingFromPreset(preset.id)` for all
+> five), so the switch is not a silent restyle of today's gallery.
+> ✅ **The centrepiece test composes the encoder with the decoder:**
+> `resolveGalleryParams(new URL(galleryHref({...})).searchParams)` over all 30 pairs.
+> Step 99 built the decode, 101 built the encode, and neither can drift without the
+> other failing — the whole wire checked with no browser.
+> 🔴 **A mutation passed, and the fix was a TYPE rather than an assertion.**
+> `galleryHref` shipped first as two positional strings; transposing them **at the
+> call site** left **all 119 tests green** while every merchant would have landed on
+> `?style=blue&accent=classic` — neither id resolving in the other's lookup, so **every
+> card would silently create a blank, unstamped, uncoloured template.** Total failure,
+> green suite. 🔬 **The round-trip test cannot reach it, and that is the lesson:** a
+> composition test covers the seam between two FUNCTIONS, never the seam between a
+> function and its CALLER. I had recorded the round-trip as the guard for this, which
+> was wrong. Fixed by (1) changing the signature to one named object
+> `galleryHref({ preset, accent })`, so the swap cannot happen by accident — ⚠️ **not
+> compiler-enforced, and the comment says so: both fields are `string | null`, so the
+> swap still typechecks (verified, not assumed)** — and (2) a textual call-site
+> backstop in the card's contract test, brittle by nature and the right trade at one
+> call site for a failure this total. Re-verified: the mutation now fails.
+> 🔬 **General rule worth carrying: a positional signature whose params share a type
+> is a defect waiting for a call site.** Prefer named arguments the moment two params
+> could be swapped without a type error.
+> ✅ **The other four mutations all failed loudly.** The stale-`useMemo` one landing on
+> **exactly one** test is the useful result rather than a thin one: it confirms that a
+> gallery whose swatches highlight correctly and whose cards never restyle — the exact
+> symptom this feature exists to prevent — is invisible to the other 118 guards. 🚫
+> `AccentSwatchRow` and its stylesheet are **byte-unchanged**, which is the small
+> confirmation that splitting 100 from 101 was the right cut. 📌 No `aria-live` for the
+> restyle, asserted as a negative: the previews are `aria-hidden`, so no accessible
+> content changes, and the `role="radio"` already announces the choice.
 
 ## Current Goal
 

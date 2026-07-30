@@ -1,7 +1,7 @@
 import { useId, useMemo } from "react";
 import { Link } from "react-router";
-import type { StylePreset } from "../../utils/stylePresets";
-import { stylePresetValues } from "../../utils/stylePresets";
+import type { AccentPreset, StylePreset } from "../../utils/stylePresets";
+import { galleryHref, seedStylingFromPreset } from "../../utils/stylePresets";
 import { renderSpecTablePreviewDocument } from "../app.templates_.$id/specTablePreviewHtml";
 import { STYLE_PREVIEW_SAMPLE_ROWS } from "./sampleRows";
 import styles from "./StylePresetCard.module.css";
@@ -118,29 +118,57 @@ function CardFrame({
 }
 
 /**
- * One of the five built-in patterns, previewed live.
+ * One of the five built-in patterns, previewed live in the merchant's chosen
+ * accent.
  *
- * Targets `/app/templates/new?style=<id>`; step 92 makes that param seed the
- * scaffold and stamp `basedOnPreset`. Until then the param is inert and the card
- * creates an ordinary blank template — a deliberately harmless intermediate
- * state, not a broken one.
+ * Targets `/app/templates/new?style=<id>&accent=<id>`, and step 92 + step 99 make
+ * both params seed the scaffold and stamp `basedOnPreset`. The accent half is
+ * `null` until the gallery's swatch row is touched (feature 93 · step 101).
  */
-export function StylePresetCard({ preset }: { preset: StylePreset }) {
-  // A pure function of the preset, so the document is built once per card rather
-  // than on every parent render. Five `srcDoc` strings is the page's whole
-  // rendering cost; recomputing them would also reload all five frames.
+export function StylePresetCard({
+  preset,
+  accent,
+}: {
+  preset: StylePreset;
+  // The RESOLVED accent, not an id — the gallery already looked it up, and passing
+  // the id would make all five cards repeat the lookup. `null` is "Theme".
+  accent: AccentPreset | null;
+}) {
+  // 🔴 Resolved through `seedStylingFromPreset` — THE SAME FUNCTION THE LOADER USES
+  // (`resolveGalleryParams`). This is the gallery's zero-drift promise in one line:
+  // the card exists to show what the template will look like, and if the card
+  // merged bundle-and-accent its own way while the loader merged them another, the
+  // two could disagree and NOTHING WOULD FAIL — no test compares a rendered preview
+  // against a seeded template. One function makes the disagreement
+  // unrepresentable. Same argument step 92 made for deriving both of its outputs
+  // from one lookup.
+  //
+  // ⚠️ It replaced `stylePresetValues(preset)`, which is provably the same value at
+  // `accent = null` (both reduce to `parseStylingValues(preset.bundle)`) — pinned by
+  // a test, so the switch is not a silent restyle of today's gallery.
+  //
+  // Memoized so the document is built once per (pattern, accent) rather than on
+  // every parent render — five `srcDoc` strings are this page's whole rendering
+  // cost, and recomputing them reloads all five frames.
+  //
+  // 🔴 `accent` MUST be in the dependency array. Without it the swatches would
+  // highlight correctly and the cards would never change — the exact symptom this
+  // feature exists to prevent, and invisible to every guard that does not name the
+  // deps. Referentially stable by construction: `ACCENT_PRESETS` holds frozen
+  // module-level objects, so `findAccent` returns the same reference for the same
+  // id and the memo does not thrash.
   const document = useMemo(
     () =>
       renderSpecTablePreviewDocument(
         STYLE_PREVIEW_SAMPLE_ROWS,
-        stylePresetValues(preset),
+        seedStylingFromPreset(preset.id, accent?.bundle),
       ),
-    [preset],
+    [preset, accent],
   );
 
   return (
     <CardFrame
-      to={`/app/templates/new?style=${encodeURIComponent(preset.id)}`}
+      to={galleryHref({ preset: preset.id, accent: accent?.id ?? null })}
       label={preset.label}
       description={preset.description}
       action="Use this style"
@@ -184,6 +212,17 @@ export function StylePresetCard({ preset }: { preset: StylePreset }) {
  * in one grid read as a bug, and the card is not offering a sixth LOOK — it is
  * offering a different KIND of choice, which is what the plain dashed plate
  * says.
+ *
+ * 🔴 **It takes no `accent` prop, and its href is a LITERAL rather than a
+ * `galleryHref` call. That is the only place doc 93 §D4 is enforced.** The Blank
+ * card's copy is "start with your theme's own styles — nothing added", and an
+ * accent would add five colours and make that sentence false — where the merchant
+ * could not see it coming, because this is the one card that renders no preview.
+ * Step 99 deliberately left `resolveGalleryParams` TOTAL (it honours a hand-typed
+ * `?accent=` with no `?style=`), so the decision lives here in the href and
+ * nowhere else. `galleryHref({ preset: null, accent: null })` returns exactly this
+ * string; the literal is kept so no accent can be threaded in by a later edit to one
+ * call site.
  */
 export function BlankStyleCard() {
   return (

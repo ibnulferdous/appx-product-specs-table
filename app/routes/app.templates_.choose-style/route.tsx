@@ -1,4 +1,6 @@
-import { STYLE_PRESETS } from "../../utils/stylePresets";
+import { useState } from "react";
+import { STYLE_PRESETS, findAccent } from "../../utils/stylePresets";
+import { AccentSwatchRow } from "./AccentSwatchRow";
 import { BlankStyleCard, StylePresetCard } from "./StylePresetCard";
 import styles from "./route.module.css";
 
@@ -32,16 +34,31 @@ import styles from "./route.module.css";
 // the directory step 90 created is what turns it from a folder of components
 // into a route.
 //
-// --- `?style=` is inert here (D9) --------------------------------------------
+// --- The accent state (feature 93 · step 101) --------------------------------
 //
-// The cards link to `/app/templates/new?style=<id>`, and the editor's `new`
-// sentinel ignores unknown search params, so today every card lands on an
-// ordinary blank scaffold. Step 92 makes the param seed the styling and stamp
-// `basedOnPreset`, and repoints the two Create buttons at this route. Until then
-// this page is reachable by typed URL only — deliberately, so the half of the
-// feature that can persist a wrong stamp lands on its own.
+// The ONE seam feature 88 did not pre-cut: until now this page held no client
+// state at all, being a pure function of frozen constants. It holds exactly one
+// thing — the selected accent id — and stays LOADERLESS, so the "no shop data
+// here" property above is untouched.
+//
+// 🚫 The accent is deliberately NOT kept in this page's own `?accent=` via
+// `useSearchParams`. That would survive refresh and the back button, at the cost of
+// a navigation on EVERY swatch click — on a page that already reloads five iframes
+// per click — plus either seven history entries or a `replace: true` that makes the
+// back button behave differently here than on every other link.
+//
+// ⚠️ The accepted cost: a merchant who picks Blue, clicks Classic, then presses
+// BACK returns to a gallery showing Theme, with the cards neutral again. Small (the
+// accent is create-time-only by design, doc 93 §D1) but real; the fix, if merchants
+// hit it, is the `useSearchParams` version above.
 
 export default function ChooseStylePage() {
+  const [accentId, setAccentId] = useState<string | null>(null);
+  // Resolved once for all five cards rather than per card. Cheap (six frozen
+  // entries) and referentially stable, which is what keeps each card's `useMemo`
+  // from thrashing: `findAccent` returns the same object for the same id.
+  const accent = findAccent(accentId);
+
   return (
     // `inlineSize="base"` is not cosmetic: the card's whole scale geometry is
     // arithmetic against a MEASURED base content width of 966px (two 466px
@@ -54,13 +71,37 @@ export default function ChooseStylePage() {
           route uses this same breadcrumb idiom; a "Cancel" button would be
           wrong, since nothing has been started here that could be discarded.
 
-          ⚠️ Nothing goes in `slot="primary-action"`: feature 93's accent swatch
-          row is specced into the page header's right side, and the six cards are
-          this page's actions. */}
+          🔴 `slot="primary-action"` is EMPTY and stays empty. Feature 88 reserved
+          it for feature 93's swatch row (seam 5, "so the swatch row drops in
+          without reflowing the page") and step 101 tried exactly that first:
+          `<div slot="primary-action">` around the row. **`<s-page>` silently
+          dropped it** — not clipped, not hidden, absent from the DOM and from the
+          accessibility tree entirely. Observed live 2026-07-30 on the dev store.
+          Same family of surprise as `<s-button-group>` rendering no slot
+          ([[polaris-web-component-gotchas]]): these elements accept specific
+          children in their named slots and discard the rest without warning.
+          The row therefore lives in the gallery body below. */}
       <s-link slot="breadcrumb-actions" href="/app/templates">
         Templates
       </s-link>
       <div className={styles.gallery}>
+        {/* The colour half of the choice. Feature 93 · step 101 — see doc 93 for
+            the palette and the seven merchant decisions.
+
+            📌 It sits ABOVE the paragraph, which is the placement doc 101 §D5
+            pre-decided as the fallback when the header slot did not cooperate. It
+            reads in the order the merchant works: pick a colour, then pick a
+            pattern.
+
+            🔴 No `aria-live` announces the restyle, and the silence is correct
+            rather than an omission: the previews are `aria-hidden` (step 90 — a
+            screen-reader user must hear "Minimal — no bands and no rules", not a
+            fake sample's nine rows read five times), so no accessible content
+            changes. The `role="radio"` announces "Blue, selected", which is the
+            complete information a non-visual user needs — the accent's EFFECT is
+            something they were never being shown. A live region would announce a
+            change to deliberately hidden content. */}
+        <AccentSwatchRow value={accentId} onChange={setAccentId} />
         {/* The gallery is UNSKIPPABLE, which is exactly why this line is here.
             A merchant who likes none of the six needs to know BEFORE choosing
             that nothing is being locked in, or a forced choice reads as a
@@ -78,7 +119,7 @@ export default function ChooseStylePage() {
               Enumerating five cards here would copy the decision into a second
               place nothing keeps in agreement. */}
           {STYLE_PRESETS.map((preset) => (
-            <StylePresetCard key={preset.id} preset={preset} />
+            <StylePresetCard key={preset.id} preset={preset} accent={accent} />
           ))}
           {/* Appended, not mapped: Blank is the ABSENCE of a preset, not a sixth
               member of the array (doc 88). Last is its position and its meaning

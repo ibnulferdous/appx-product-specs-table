@@ -6,6 +6,7 @@ import {
   STYLE_PRESETS,
   findAccent,
   findStylePreset,
+  galleryHref,
   isCustomizedFromPreset,
   isThemeDefault,
   normalizeStylePresetStamp,
@@ -338,6 +339,25 @@ describe("seedStylingFromPreset", () => {
     expect(seeded.rowDividerStyle).toBe("NONE");
   });
 
+  it("🔴 equals stylePresetValues when no accent is given (step 101)", () => {
+    // The no-op proof for step 101's resolver switch. `StylePresetCard` used to
+    // build its preview from `stylePresetValues(preset)` and now builds it from
+    // `seedStylingFromPreset(preset.id, accent?.bundle)` — the SAME function the
+    // loader uses, so a card can never promise a look the seeded template does not
+    // produce.
+    //
+    // That switch is only safe if the two agree at `accent = null`, which is what
+    // this pins. Without it, "the change is behaviour-neutral for Theme" would be a
+    // claim about two expressions nobody had compared — and a silent restyle of
+    // every card in today's gallery is exactly the kind of regression a preset
+    // gallery cannot afford.
+    for (const preset of STYLE_PRESETS) {
+      expect(seedStylingFromPreset(preset.id), preset.id).toEqual(
+        stylePresetValues(preset),
+      );
+    }
+  });
+
   it("writes no color when no accent is given", () => {
     // The zero-config theme-inherit promise, stated as a test: picking any card
     // must leave all nine swatches null.
@@ -603,6 +623,124 @@ describe("resolveGalleryParams — the create flow's one decode (steps 92 + 99)"
     // `URLSearchParams` signature safe to rely on, and because a future id with
     // a hyphen-encoded character would otherwise fail silently.
     expect(resolve("style=multi%2Dcolumn").basedOnPreset).toBe("multi-column");
+  });
+});
+
+describe("galleryHref — the decoder's inverse (step 101)", () => {
+  // Resolve a href the way the editor's loader does, so the two halves of the wire
+  // are composed rather than each checked against a hand-written string. The base
+  // is arbitrary — `galleryHref` returns an app-relative path and only its query
+  // survives the round trip.
+  const decode = (href: string) =>
+    resolveGalleryParams(new URL(href, "https://example.test").searchParams);
+
+  it("🔴 round-trips every preset × every accent through the real decoder", () => {
+    // THE test this step is arranged around, and the reason `galleryHref` is a pure
+    // function in this file rather than a template string inside the card.
+    //
+    // Step 99 built the decode; this builds the encode. Composing them proves they
+    // agree about the wire format for all 30 pairs — neither can drift without the
+    // other failing — and it does so with no browser, where a card that concatenated
+    // its own href would be checkable only by clicking it.
+    //
+    // ⚠️ The expectation is derived from the BUNDLES, not from
+    // `seedStylingFromPreset` — routing it through the same helper the decoder calls
+    // would make the test agree with a broken merge.
+    for (const preset of STYLE_PRESETS) {
+      for (const accent of ACCENT_PRESETS) {
+        const where = `${preset.id} + ${accent.id}`;
+        const { styling, basedOnPreset } = decode(
+          galleryHref({ preset: preset.id, accent: accent.id }),
+        );
+
+        expect(basedOnPreset, where).toBe(preset.id);
+        for (const [field, value] of Object.entries(preset.bundle)) {
+          expect(
+            styling[field as StylingFieldName],
+            `${where} lost the bundle's ${field}`,
+          ).toBe(value);
+        }
+        for (const [field, value] of Object.entries(accent.bundle)) {
+          expect(
+            styling[field as StylingFieldName],
+            `${where} lost the accent's ${field}`,
+          ).toBe(value);
+        }
+      }
+    }
+  });
+
+  it("round-trips a preset with no accent, and an accent with no preset", () => {
+    for (const preset of STYLE_PRESETS) {
+      const resolved = decode(galleryHref({ preset: preset.id, accent: null }));
+      expect(resolved.basedOnPreset, preset.id).toBe(preset.id);
+      for (const field of COLOR_FIELDS) {
+        expect(resolved.styling[field], `${preset.id} / ${field}`).toBeNull();
+      }
+    }
+    // The hand-typed shape doc 93 §D4 leaves legal: colours, no stamp.
+    for (const accent of ACCENT_PRESETS) {
+      const resolved = decode(galleryHref({ preset: null, accent: accent.id }));
+      expect(resolved.basedOnPreset, accent.id).toBeNull();
+      expect(resolved.styling.headerBgColor, accent.id).toBe(
+        accent.bundle.headerBgColor,
+      );
+    }
+  });
+
+  it("🚫 emits the BARE path when neither is given — Blank's exact literal", () => {
+    // No trailing `?`, no `&`. `BlankStyleCard` keeps this as a hardcoded string
+    // (doc 93 §D4 is enforced in that href and nowhere else), so this pins that the
+    // two forms are byte-identical and the literal is not quietly diverging.
+    expect(galleryHref({ preset: null, accent: null })).toBe(
+      "/app/templates/new",
+    );
+    // Empty strings mean absent too — an empty id would otherwise emit `?style=`,
+    // which decodes to the same place but is a URL no card should produce.
+    expect(galleryHref({ preset: "", accent: "" })).toBe("/app/templates/new");
+  });
+
+  it("omits each param independently", () => {
+    expect(galleryHref({ preset: "classic", accent: null })).toBe(
+      "/app/templates/new?style=classic",
+    );
+    expect(galleryHref({ preset: null, accent: "blue" })).toBe(
+      "/app/templates/new?accent=blue",
+    );
+    expect(galleryHref({ preset: "classic", accent: "blue" })).toBe(
+      "/app/templates/new?style=classic&accent=blue",
+    );
+  });
+
+  it("percent-encodes both values", () => {
+    // The real ids are URL-safe (a test above pins that), so this is about the
+    // encoding being present at all rather than about any shipping id needing it.
+    const href = galleryHref({ preset: "a b&c=d", accent: "e/f?g" });
+    expect(href).not.toContain("a b");
+    // Survives the round trip as the same string it went in as, which is the
+    // property that matters — not which escaping scheme was used.
+    const params = new URL(href, "https://example.test").searchParams;
+    expect(params.get("style")).toBe("a b&c=d");
+    expect(params.get("accent")).toBe("e/f?g");
+  });
+
+  it("🔴 maps `preset` to `style=` and `accent` to `accent=`", () => {
+    // The two are the same type, so a transposition INSIDE the function is a
+    // silent, total feature failure: `?style=blue&accent=classic` resolves in
+    // neither lookup, so every card would create a blank, unstamped, uncoloured
+    // template.
+    //
+    // 🔬 The mutation that motivated the named-object signature transposed the CALL
+    // SITE instead, and this test could not see it — nor could any of the other 118.
+    // That is why the fix was a type change rather than another assertion: with
+    // named keys the transposition has to be spelled out and reads as wrong. This
+    // test covers the half that IS reachable from here.
+    const params = new URL(
+      galleryHref({ preset: "classic", accent: "blue" }),
+      "https://example.test",
+    ).searchParams;
+    expect(params.get("style")).toBe("classic");
+    expect(params.get("accent")).toBe("blue");
   });
 });
 

@@ -162,6 +162,50 @@ describe("the cards come from the data, not from the page", () => {
   });
 });
 
+describe("the accent swatch row is wired in (feature 93 · step 101)", () => {
+  it("mounts the row from step 100 rather than its own markup", () => {
+    // A second, inline radiogroup here would fork the accessibility work — the
+    // roving tabindex, the accessible names and the non-colour selected state all
+    // live in that component. Same argument as the card guard above.
+    expect(body).toMatch(
+      /import\s*\{[^}]*AccentSwatchRow[^}]*\}\s*from\s*"\.\/AccentSwatchRow"/,
+    );
+    expect(body).toContain("<AccentSwatchRow");
+    expect(body).not.toContain('role="radiogroup"');
+  });
+
+  it("holds the selection in client state and threads it to every card", () => {
+    // The one seam feature 88 did not pre-cut: this page held no state at all,
+    // being a pure function of frozen constants.
+    expect(body).toMatch(/useState<string \| null>\(null\)/);
+    expect(body).toMatch(/<StylePresetCard[^>]*accent=\{accent\}/s);
+  });
+
+  it("🔴 resolves the accent ONCE for all five cards", () => {
+    // Not per card. Five lookups would be five chances to disagree with the row
+    // about what is selected, and the object is referentially stable — which is what
+    // keeps each card's `useMemo` from thrashing on every parent render.
+    expect(body.match(/findAccent\(/g) ?? []).toHaveLength(1);
+  });
+
+  it("🚫 passes no accent to the Blank card (doc 93 §D4)", () => {
+    // Blank ignores the accent. Asserted on the page as well as on the component,
+    // because either end could reintroduce it: the card could grow an optional prop,
+    // or the page could start passing one.
+    expect(body).toMatch(/<BlankStyleCard\s*\/>/);
+  });
+
+  it("🔴 announces nothing about the restyle", () => {
+    // The previews are `aria-hidden` (step 90), so no accessible content changes
+    // when five documents are rebuilt — and the `role="radio"` already announces
+    // "Blue, selected", which is the whole of what a non-visual user needs. A live
+    // region here would announce a change to deliberately hidden content.
+    // "Live region on a live update" is the reflexive answer and it is wrong here,
+    // so the negative is pinned rather than left to a comment.
+    expect(body).not.toContain("aria-live");
+  });
+});
+
 describe("the merchant can leave", () => {
   it("carries a breadcrumb link back to the template list", () => {
     // "No skip" (doc 88) means the merchant cannot PROCEED without choosing. It

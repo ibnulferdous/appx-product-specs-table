@@ -405,6 +405,72 @@ export function resolveGalleryParams(params: URLSearchParams): {
   };
 }
 
+/**
+ * The gallery's link into creation — `resolveGalleryParams`' INVERSE (feature 93 ·
+ * step 101).
+ *
+ * 🔴 **It lives here, beside the decoder, on purpose.** Encoder and decoder of one
+ * wire format belong in one file, where a reader edits both or neither. Built as a
+ * pure function rather than inline in the card for the same reason step 100
+ * extracted `nextRovingIndex`: it makes the wire testable without a browser — and
+ * here it buys something better than coverage, because one test can COMPOSE the two
+ * and prove they agree about every preset × accent pair:
+ *
+ * ```ts
+ * resolveGalleryParams(new URL(galleryHref(p, a), "https://x").searchParams);
+ * ```
+ *
+ * Neither half can drift without the other failing. A card that built its href by
+ * string concatenation would be checkable only by clicking it.
+ *
+ * ⚠️ Both params are independently optional and `null` means absent, so
+ * `galleryHref(null, null)` is the bare `/app/templates/new` the "Blank" card uses —
+ * byte-identical, no trailing `?`. That is what lets Blank's href stay a literal
+ * while every other card goes through here (doc 93 §D4: Blank ignores the accent by
+ * never EMITTING the param).
+ *
+ * 🔬 Truthiness IS the right test for these two, unlike the `next === null` check in
+ * `AccentSwatchRow`. The only falsy string is `""`, and an empty id genuinely means
+ * "absent" — where there the falsy value was the integer `0`, a perfectly valid
+ * index. Same-looking check, opposite verdict, decided by what the type can hold.
+ *
+ * 🔴 **Takes ONE NAMED OBJECT, not two positional strings, and a mutation is why.**
+ * The first version was `galleryHref(presetId, accentId)` — two params of identical
+ * type, which is precisely the shape that invites a transposition TypeScript cannot
+ * catch. Step 101 mutated the CALL SITE to `galleryHref(accent, preset)` and **all
+ * 119 tests passed**, while every merchant would have been sent to
+ * `?style=blue&accent=classic`: neither id resolves in the other's lookup, so the
+ * gallery would silently create a blank, unstamped, uncoloured template from every
+ * card. Total feature failure, green suite.
+ *
+ * The round-trip test below does not cover it — it composes this function with the
+ * decoder, so it proves the FORMAT agrees while saying nothing about what a caller
+ * passes. Hence a shape change rather than another assertion here.
+ *
+ * ⚠️ **This is not compiler-enforced and must not be read as if it were.** Both
+ * fields are `string | null`, so `{ preset: accent.id, accent: preset.id }` still
+ * typechecks — verified. What the named keys buy is that the mistake can no longer
+ * be made by ACCIDENT: a transposition has to be spelled out with the wrong key
+ * beside the wrong value, which reads as wrong. The call site is additionally pinned
+ * textually by `StylePresetCardContract.test.ts`, because the failure mode is total
+ * (every card creating a blank, unstamped, uncoloured template) and defence in depth
+ * is cheap at one call site.
+ */
+export function galleryHref(choice: {
+  preset: string | null;
+  accent: string | null;
+}): string {
+  // `URLSearchParams` does the percent-encoding, so there is no hand-rolled
+  // `encodeURIComponent` pair to keep in agreement with the decoder — which reads
+  // the params back through the same class.
+  const params = new URLSearchParams();
+  if (choice.preset) params.set("style", choice.preset);
+  if (choice.accent) params.set("accent", choice.accent);
+
+  const query = params.toString();
+  return query === "" ? "/app/templates/new" : `/app/templates/new?${query}`;
+}
+
 // --- Pattern comparison -------------------------------------------------------
 
 /**

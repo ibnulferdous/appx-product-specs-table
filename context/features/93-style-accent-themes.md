@@ -1,6 +1,7 @@
 # Feature 93 — Accent themes (the gallery's colour-theme swatch row)
 
-**Status:** 🟢 **IN PROGRESS — 4 of 6 steps done.** Specced 2026-07-30; all seven
+**Status:** 🟢 **IN PROGRESS — 5 of 6 steps done; the feature is LIVE and working in
+the admin.** Specced 2026-07-30; all seven
 open decisions were answered by the merchant the same day and are recorded
 verbatim below. **This file is the binding design; it is not an implementation
 plan.** Each step file carries its own instructions and completion gate:
@@ -11,7 +12,7 @@ plan.** Each step file carries its own instructions and completion gate:
 | 98   | `98-accent-render-harness.md`     | 5 × 6 render matrix at 1:1, lock the underline | ✅ **2026-07-30**, 35 renders |
 | 99   | `99-accent-seed-path.md`          | `&accent=` → resolved styling                  | ✅ **2026-07-30**, → 1184    |
 | 100  | `100-accent-swatch-row.md`        | the swatch row component                       | ✅ **2026-07-30**, → 1209    |
-| 101  | `101-accent-gallery-wiring.md`    | gallery state + live restyle + hrefs           | 🔲 first merchant-visible    |
+| 101  | `101-accent-gallery-wiring.md`    | gallery state + live restyle + hrefs           | ✅ **2026-07-30**, → 1227, live-verified |
 | 102  | `102-accent-live-verification.md` | admin → Postgres → metaobject → storefront     | 🔲                           |
 
 ✅ **Nothing in the design has needed revision.** Step 98 confirmed the reach
@@ -352,6 +353,29 @@ Minimal would show nothing at all.
 applies and `borderColor` tints its row rules. Its `sectionGapPx: 12` disables
 the feature-80 separator rule (`:not(--section-gap)`), so that surface is **not**
 live here.
+
+---
+
+## ✅ Observed live 2026-07-30 (step 101)
+
+The ask is satisfied: clicking a colour restyles all five preset cards, and the card's
+link carries the choice into the scaffold. Verified on `appx-dev` in the embedded
+admin.
+
+| Claim                                                            | Result                                                                                |
+| ---------------------------------------------------------------- | ------------------------------------------------------------------------------------- |
+| All five preset cards reflect the accent; Blank does not (D4)     | ✅ both directions — selecting and returning to Theme reverts every card               |
+| The title tint is visible on **Minimal**, its only live field (D3) | ✅ Theme near-black vs Terracotta reddish-brown vs Plum purple, at 0.55 card scale     |
+| `borderColor` reaches Classic's stripes, column rule and outline  | ✅ all three plum-tinted; the band correctly stays transparent under `PLAIN`            |
+| Accordion's underline + row rules tint (D5/D6)                    | ✅                                                                                     |
+| The href carries both params in the right slots                   | ✅ `?style=banded&accent=plum`                                                          |
+| The seeded scaffold matches the card it came from                 | ✅ plum band + plum title in the editor's storefront preview                            |
+| Five-iframe flicker (the cost profile's open question)            | ✅ none visible; no mitigation needed — see `101` §gate 4 for the stated limit          |
+
+⚠️ **Two things this does NOT discharge.** §D3's dark-theme risk is untouched — the
+admin's content area stays light whatever the admin chrome does, so a dark ground was
+never rendered here. And nothing has reached Postgres or a metaobject yet. Both are
+step 102.
 
 ---
 
