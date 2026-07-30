@@ -386,11 +386,17 @@ export function SettingsTab({ engine }: { engine: RowEngine }) {
         />
       ) : null}
 
-      <s-text color="subdued">
-        {scope === SCOPE_NONE
-          ? "This table isn’t assigned to any products yet, so it won’t show on the storefront."
-          : "When active, this table shows on every product that matches this assignment. Two active templates can’t target the same products."}
-      </s-text>
+      {/* Scope help text. Suppressed under `activeButUnassigned`: that state also
+          renders the warning banner below, and the banner states the SAME fact
+          (unassigned → invisible on the storefront) plus the Active nuance and the
+          call to action — so showing both just says it twice. */}
+      {!activeButUnassigned ? (
+        <s-text color="subdued">
+          {scope === SCOPE_NONE
+            ? "This table isn’t assigned to any products yet, so it won’t show on the storefront."
+            : "When active, this table shows on every product that matches this assignment. Two active templates can’t target the same products."}
+        </s-text>
+      ) : null}
 
       {/* EXCLUDE carve-outs (feature 45). Shown only under ALL_PRODUCTS: carve
           specific products out of the catch-all so a dedicated per-product table
@@ -424,8 +430,8 @@ export function SettingsTab({ engine }: { engine: RowEngine }) {
 
       {activeButUnassigned ? (
         <s-banner tone="warning">
-          This template is set to Active but isn’t assigned to any products, so
-          it won’t appear on the storefront. Choose what to show it on above.
+          This template is Active but isn’t assigned to any products, so it
+          won’t appear on the storefront. Choose what to show it on above.
         </s-banner>
       ) : null}
     </s-stack>

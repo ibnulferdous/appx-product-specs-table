@@ -861,6 +861,12 @@ doc (a wording correction), so this entry IS the record.**
 - Reviewed the rest of the Settings tab's copy (Status help text, scope help
   text, conflict banner, active-but-unassigned banner) — no other grammar,
   spelling, or redundancy issues found; left as-is.
+- **Follow-up:** killed a duplicate message. Under **Active + "No products"**
+  the subdued scope help text and the warning banner both said "isn't assigned
+  → won't show on the storefront", stacked one on top of the other. The help
+  text now yields to the banner (`!activeButUnassigned`), which is strictly more
+  informative — it names the Active status and gives the call to action. Banner
+  trimmed: "is set to Active" → "is Active".
 - **Follow-up:** dropped the conflict banner's "To resolve: ..." sentence
   entirely (merchant call: it padded an already-clear banner, and "set it to
   'No products'" was a wrong suggestion — that clears the assignment rather
