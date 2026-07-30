@@ -316,8 +316,18 @@ describe("seedStylingFromPreset", () => {
   });
 
   it("lets an accent overlay win over the bundle (feature 93 seam)", () => {
-    // `ACCENT_PRESETS` does not exist yet; the merge order it will depend on
-    // does, and is asserted now so feature 93 is additive rather than a rewrite.
+    // Written before `ACCENT_PRESETS` existed, to assert the merge order feature
+    // 93 would depend on. It shipped in step 97, and step 99 found that this is
+    // the ONLY test protecting that order — mutation-verified: reversing the two
+    // spreads in `seedStylingFromPreset` fails this and nothing else.
+    //
+    // 🔬 The reason is the accent below being SYNTHETIC. It carries
+    // `sectionHeaderStyle`, a structure field no real accent may set (the two
+    // scopes are asserted disjoint), so the bundle and the accent collide here
+    // and nowhere in shipping data. A precedence law cannot be tested with values
+    // that never overlap — so this test fabricates the overlap on purpose.
+    // 🚫 Do not "tidy" it into using a real accent from `ACCENT_PRESETS`: it would
+    // still pass, and it would stop testing anything.
     const seeded = seedStylingFromPreset("minimal", {
       headerBgColor: "#112233",
       sectionHeaderStyle: "BANDED",
@@ -340,11 +350,12 @@ describe("seedStylingFromPreset", () => {
   });
 });
 
-describe("resolveGalleryParams — the create flow's one decode (step 92)", () => {
+describe("resolveGalleryParams — the create flow's one decode (steps 92 + 99)", () => {
   const resolve = (query: string) =>
     resolveGalleryParams(new URLSearchParams(query));
 
   const PRESET_IDS = STYLE_PRESETS.map((preset) => preset.id);
+  const ACCENT_IDS = ACCENT_PRESETS.map((accent) => accent.id);
 
   it("round-trips every preset id — styling AND stamp", () => {
     // Derived by iterating the array, so a sixth pattern is covered the day it
@@ -357,10 +368,24 @@ describe("resolveGalleryParams — the create flow's one decode (step 92)", () =
   });
 
   it("🔴 never seeds without stamping, and never stamps without seeding", () => {
-    // THE test this step is arranged around. It states "styled like Classic but
+    // THE test step 92 was arranged around. It states "styled like Classic but
     // stamped null" and "stamped classic but styled like nothing" as the same
     // forbidden thing, without naming either — so a resolver that splits its
     // two outputs across two lookups fails here however it drifts.
+    //
+    // 🔴 **RESTATED for accents (step 99), not relaxed.** It used to read "if the
+    // stamp is null the styling must equal DEFAULT_STYLING_VALUES", and `accent=blue`
+    // was already in the matrix below as an ignored param. Step 99 makes that
+    // input seed five real colours with a null stamp, so the old shortcut is
+    // false. Deleting the input would have thrown away the guard's whole point.
+    //
+    // ✅ Instead the invariant is stated in TWO HALVES, one per scope: the STAMP
+    // must explain every structure field, and the ACCENT PARAM must explain every
+    // colour field. **This is only writable because step 97 proved the two scopes
+    // disjoint** — with no overlap, "the stamp explains the structure" survives
+    // accents completely untouched. It is also strictly stronger than the original:
+    // every structure field is pinned individually, and the colour half is a claim
+    // the old form had no vocabulary for.
     const inputs = [
       "",
       "style=",
@@ -370,19 +395,123 @@ describe("resolveGalleryParams — the create flow's one decode (step 92)", () =
       "style=%20classic%20", // padded
       "style=classic&style=minimal", // repeated key
       `style=${"x".repeat(10_000)}`,
-      "accent=blue",
+      "accent=blue", // 🔴 null stamp, NON-default styling (step 99 D2)
+      "accent=",
+      "accent=zzz",
+      "accent=Blue", // wrong case
+      "accent=theme", // there is no `theme` accent — it is the absence of one
+      "accent=%20blue%20", // padded
+      `accent=${"x".repeat(10_000)}`,
+      "accent=blue&accent=plum", // repeated key
+      "style=zzz&accent=blue", // bad half, good half
+      "style=classic&accent=zzz", // good half, bad half
+      "style=classic&accent=Blue",
       ...PRESET_IDS.map((id) => `style=${encodeURIComponent(id)}`),
+      ...ACCENT_IDS.map((id) => `accent=${encodeURIComponent(id)}`),
+      ...PRESET_IDS.flatMap((styleId) =>
+        ACCENT_IDS.map((accentId) => `style=${styleId}&accent=${accentId}`),
+      ),
     ];
 
     for (const query of inputs) {
-      const { styling, basedOnPreset } = resolve(query);
-      if (basedOnPreset === null) {
-        expect(styling, query).toEqual(DEFAULT_STYLING_VALUES);
-      } else {
-        const preset = findStylePreset(basedOnPreset);
-        expect(preset, query).not.toBeNull();
-        expect(styling, query).toEqual(stylePresetValues(preset!));
+      const params = new URLSearchParams(query);
+      const { styling, basedOnPreset } = resolveGalleryParams(params);
+
+      // Half 1 — the STRUCTURE is explained by the stamp. A stamp that names
+      // nothing is itself the failure; a stamp that names a preset the styling
+      // does not match is the "stamped classic, styled like nothing" lie.
+      const preset = findStylePreset(basedOnPreset);
+      if (basedOnPreset !== null) expect(preset, query).not.toBeNull();
+      const structure = preset
+        ? stylePresetValues(preset)
+        : DEFAULT_STYLING_VALUES;
+      for (const field of PRESET_SCOPED_FIELDS) {
+        expect(styling[field], `${query} / ${field}`).toBe(structure[field]);
       }
+
+      // Half 2 — the COLOUR is explained by the accent param, and is all-null
+      // when that param names nothing. This is what stops a resolver from
+      // seeding an accent it cannot account for, in either direction.
+      const accent = findAccent(params.get("accent"));
+      for (const field of ACCENT_SCOPED_FIELDS) {
+        expect(styling[field], `${query} / ${field}`).toBe(
+          accent ? (accent.bundle[field] ?? null) : null,
+        );
+      }
+    }
+  });
+
+  it("🔴 every preset × every accent: the bundle survives and five hexes land", () => {
+    // The merge law at the route boundary — 30 combinations, derived from the two
+    // arrays so a seventh accent is covered with no edit.
+    //
+    // ⚠️ Asserted against each bundle's and each accent's OWN entries, never
+    // against `seedStylingFromPreset(...)`. Routing the expectation through the
+    // same helper the implementation calls would make this test agree with a
+    // broken merge — it would only be checking that the function equals itself.
+    for (const preset of STYLE_PRESETS) {
+      for (const accent of ACCENT_PRESETS) {
+        const where = `${preset.id} + ${accent.id}`;
+        const { styling, basedOnPreset } = resolve(
+          `style=${encodeURIComponent(preset.id)}` +
+            `&accent=${encodeURIComponent(accent.id)}`,
+        );
+
+        expect(basedOnPreset, where).toBe(preset.id);
+        for (const [field, value] of Object.entries(preset.bundle)) {
+          expect(
+            styling[field as StylingFieldName],
+            `${where} lost the bundle's ${field}`,
+          ).toBe(value);
+        }
+        for (const [field, value] of Object.entries(accent.bundle)) {
+          expect(
+            styling[field as StylingFieldName],
+            `${where} lost the accent's ${field}`,
+          ).toBe(value);
+        }
+      }
+    }
+  });
+
+  it("🔴 honours `accent` with no `style` — the parser stays TOTAL (D2)", () => {
+    // Doc 93 §D4 ("Blank ignores the accent") is a decision about the CARD'S
+    // HREF, not about this function: the Blank card never emits the param. This
+    // is the test that fails if someone later "fixes" D4 here, by ignoring the
+    // accent when no preset was given — which would also cost the one-line,
+    // no-call-site-change property the whole seam was cut for.
+    const teal = findAccent("teal")!;
+    const { styling, basedOnPreset } = resolve("accent=teal");
+
+    expect(basedOnPreset).toBeNull();
+    for (const [field, value] of Object.entries(teal.bundle)) {
+      expect(styling[field as StylingFieldName], field).toBe(value);
+    }
+    // ...and the structure is untouched: colours without a pattern.
+    for (const field of PRESET_SCOPED_FIELDS) {
+      expect(styling[field], field).toBe(DEFAULT_STYLING_VALUES[field]);
+    }
+  });
+
+  it("🔴 the stamp does not move when the accent moves", () => {
+    // `basedOnPreset` names the PATTERN. An accent has no provenance column (doc
+    // 93 §D7), so a resolver that tried to encode one — `"classic+blue"`, or the
+    // accent id when no style was given — would fill a column that is read back
+    // as a closed vocabulary with values `findStylePreset` cannot resolve.
+    const tails = [
+      "",
+      ...ACCENT_IDS.map((id) => `&accent=${id}`),
+      "&accent=zzz",
+    ];
+    for (const preset of STYLE_PRESETS) {
+      for (const tail of tails) {
+        const query = `style=${encodeURIComponent(preset.id)}${tail}`;
+        expect(resolve(query).basedOnPreset, query).toBe(preset.id);
+      }
+    }
+    // The null case too — an accent alone must not become a stamp.
+    for (const id of ACCENT_IDS) {
+      expect(resolve(`accent=${id}`).basedOnPreset, id).toBeNull();
     }
   });
 
@@ -409,12 +538,53 @@ describe("resolveGalleryParams — the create flow's one decode (step 92)", () =
     expect(resolve("foo=1&bar=2")).toEqual(blank);
   });
 
-  it("ignores unrelated params, `accent` included (feature 93 seam)", () => {
-    // `accent` is not read yet. When it is, this assertion is the one that
-    // changes — and until then it pins that an unknown second param degrades
-    // rather than throwing.
-    expect(resolve("style=classic&accent=blue&foo=1")).toEqual(
-      resolve("style=classic"),
+  it("every invalid accent token is indistinguishable from no accent at all", () => {
+    // The whole of step 99 D3 in one assertion. ⚠️ This is the descendant of
+    // step 92's `ignores unrelated params, "accent" included`, whose comment
+    // nominated itself: "accent is not read yet — when it is, this assertion is
+    // the one that changes". It changed: `accent=blue` is now honoured, and what
+    // survives is that every *invalid* token degrades exactly like an absent one.
+    const plain = resolve("style=classic");
+    const badTokens = [
+      "", // present but empty
+      "zzz", // unknown
+      "Blue", // wrong case
+      "theme", // there is no `theme` accent (step 97 D1)
+      "%20blue%20", // padded
+      "x".repeat(10_000),
+    ];
+
+    for (const token of badTokens) {
+      expect(resolve(`style=classic&accent=${token}`), token).toEqual(plain);
+    }
+    // An unrelated param is still ignored, which is the half of the old test
+    // that did NOT change.
+    expect(resolve("style=classic&accent=zzz&foo=1")).toEqual(plain);
+  });
+
+  it("with no accent, all ten colour fields stay null (theme inheritance)", () => {
+    // The zero-config promise, pinned where the URL ENTERS rather than only on
+    // `seedStylingFromPreset`. A resolver that defaulted to Graphite instead of
+    // to nothing would opt every merchant out of theme inheritance at create
+    // time, which is the one thing this module is arranged to protect.
+    for (const query of ["", "style=classic", "style=banded&accent=zzz"]) {
+      const { styling } = resolve(query);
+      for (const field of COLOR_FIELDS) {
+        expect(styling[field], `${query} / ${field}`).toBeNull();
+      }
+    }
+  });
+
+  it("takes the FIRST value of a repeated `accent` key", () => {
+    // `URLSearchParams.get` semantics, same as `style` below — pinned separately
+    // because a double-appended `&accent=` is exactly what a swatch row that
+    // built hrefs by string concatenation would produce.
+    const { styling } = resolve("accent=blue&accent=plum");
+    expect(styling.headerBgColor).toBe(
+      findAccent("blue")!.bundle.headerBgColor,
+    );
+    expect(styling.headerBgColor).not.toBe(
+      findAccent("plum")!.bundle.headerBgColor,
     );
   });
 

@@ -233,7 +233,7 @@ Building the MVP.
 > | ---- | --------------------------------- | ---------------------------------------------- | ------------------------- |
 > | 97   | `97-accent-vocabulary.md`         | `ACCENT_PRESETS` pure domain + palette         | ✅ **2026-07-30**, → 1179 |
 > | 98   | `98-accent-render-harness.md`     | 5 × 6 render matrix at 1:1, lock the underline | ✅ **2026-07-30**, 35 renders |
-> | 99   | `99-accent-seed-path.md`          | `&accent=` → resolved styling                  | 🔲                        |
+> | 99   | `99-accent-seed-path.md`          | `&accent=` → resolved styling                  | ✅ **2026-07-30**, → 1184 |
 > | 100  | `100-accent-swatch-row.md`        | the swatch row component                       | 🔲                        |
 > | 101  | `101-accent-gallery-wiring.md`    | gallery state + live restyle + hrefs           | 🔲                        |
 > | 102  | `102-accent-live-verification.md` | admin → Postgres → metaobject → storefront     | 🔲                        |
@@ -338,6 +338,53 @@ Building the MVP.
 > ⚠️ **Still owed: nothing here touched dark themes.** Every number is against
 > white, so doc 93 §D3's accepted risk is unchanged and still step 102's.
 > `.harness/` stays untracked (1.4 MB of generated `srcdoc`).
+>
+> **Step 99 landed 2026-07-30 — tests 1179 → 1184 (+5), and the whole diff is TWO
+> files, both in `app/utils/`.** ✅ **The forward-compatibility claim feature 88
+> made is collected in full:** `?accent=` arrived as **one line** inside
+> `resolveGalleryParams`, and `app/routes/app.templates_.$id/route.tsx` plus
+> `createFlowContract.test.ts` are **byte-unchanged**. Feature 88 paid for a
+> `URLSearchParams` signature nothing then needed precisely to buy that; a `string`
+> signature would have cost a route edit and a contract-test edit for identical
+> behaviour. ⚠️ **A `null` `basedOnPreset` no longer implies default styling** —
+> `?accent=blue` with no `?style=` seeds five colours and stamps nothing, because
+> D4 ("Blank ignores the accent") is a decision about the **card's href**, not the
+> parser, which stays total and honours a hand-typed URL. 🔴 **That broke step 92's
+> central guard, and it was RESTATED rather than relaxed.**
+> `never seeds without stamping` read "null stamp ⇒ styling equals the defaults",
+> and `accent=blue` was already in its input matrix as an ignored param. The lazy
+> repair was to delete that input; instead the invariant is now stated in **two
+> halves, one per scope** — the stamp must explain every `PRESET_SCOPED_FIELDS`
+> value, the accent param must explain every `ACCENT_SCOPED_FIELDS` value.
+> 🔬 **This is only writable because step 97 proved the two scopes disjoint**: with
+> no overlap, "the stamp explains the structure" survives accents untouched. The
+> disjointness guard stopped being a tidiness assertion and became the thing that
+> lets a stronger invariant exist — and the restatement pins every structure field
+> individually, where the old form accepted a whole-shape match.
+> 🔴 **A prediction of mine was WRONG and the correction is the finding.** The step
+> file predicted that swapping the merge order (`{...accent, ...bundle}`) would fail
+> **nothing**, reasoning that disjoint scopes never collide so the order is
+> unenforceable over real data. Mutation-tested: **one test fails**, and it is the
+> right one. `lets an accent overlay win over the bundle` (written in step 92) passes
+> a **synthetic** accent carrying `sectionHeaderStyle` — a structure field no real
+> accent may set — purely to manufacture the overlap. 🔬 **The lesson: a precedence
+> law cannot be tested with values that never overlap.** Disjointness makes the
+> composition safe and simultaneously makes the merge order invisible to every
+> realistic fixture, so the only test that can cover it must violate the very law
+> that guarantees the disjointness. Both comments were corrected before the gate —
+> the one I had just written claiming "no test can break that order", and that test's
+> own stale "`ACCENT_PRESETS` does not exist yet", which now carries a 🚫 against
+> tidying it to use a real accent (it would still pass and would stop testing
+> anything). ✅ **Five mutations run**; the other four all failed loudly, two
+> over-delivering benignly. 🔴 **Also corrected: step 97's `AccentBundle` comment
+> overclaimed.** It said a separate type name stops a `StyleBundle` from passing as
+> the `accent` argument. It does not — TypeScript is structural and both are
+> `Readonly<Partial<StylingValues>>`, so they are mutually assignable (checked under
+> `tsc --strict`). The name is worth keeping as documentation and as what the
+> exact-set test is stated about, but the guard at that seam is the suite, not the
+> compiler. Found because this was the first non-test caller of the two-argument
+> form. ⚠️ **Nothing merchant-visible yet** — no code generates `&accent=`; step 101
+> does. No live verification owed or claimed.
 
 ## Current Goal
 

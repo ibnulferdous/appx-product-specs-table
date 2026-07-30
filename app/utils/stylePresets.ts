@@ -296,14 +296,25 @@ export function normalizeStylePresetStamp(value: unknown): string | null {
 }
 
 /**
- * Resolve a preset (plus, later, an accent) to the full working shape the engine
- * holds.
+ * Resolve a preset plus an accent to the full working shape the engine holds.
  *
- * The `accent` parameter is feature 93's seam and is doing real work today by
- * being absent-able: the merge order fixes that an accent's colors win over a
- * bundle's, and the signature does not change when `ACCENT_PRESETS` lands. Built
- * now because retrofitting a second overrides source through the rail, the
- * route, and the seed would touch every one of them.
+ * **The merge order is the law both vocabularies compose through** (feature 93):
+ * an accent's colors win over a bundle's. It was built one feature early, as a
+ * seam, because retrofitting a second overrides source through the rail, the
+ * route, and the seed would have touched every one of them — and step 99
+ * collected on that: `resolveGalleryParams` gained the accent in ONE line with no
+ * call-site change anywhere.
+ *
+ * 🔬 **The order is guarded by a test that FABRICATES a collision, and it has to
+ * be.** `PRESET_SCOPED_FIELDS` and `ACCENT_SCOPED_FIELDS` are asserted disjoint,
+ * so no real bundle and real accent have ever overlapped on a field — swapping
+ * the two spreads is a no-op on all 30 shipping combinations. A precedence law
+ * cannot be tested with data that never collides, so
+ * `lets an accent overlay win over the bundle` passes a SYNTHETIC accent carrying
+ * `sectionHeaderStyle` — a structure field no real accent may set — purely to
+ * create the overlap. Verified by mutation (step 99): reversing the spread fails
+ * that test and nothing else. Do not "clean it up" to use a real accent; that
+ * would delete the only coverage this line has.
  *
  * A null/unknown preset resolves to `DEFAULT_STYLING_VALUES` — the theme-inherit
  * state — so the "Blank" card and an invalid param share one code path with the
@@ -311,7 +322,11 @@ export function normalizeStylePresetStamp(value: unknown): string | null {
  */
 export function seedStylingFromPreset(
   presetId: string | null | undefined,
-  accent: StyleBundle = {},
+  // `AccentBundle`, not `StyleBundle`, because `accent` is what every caller
+  // passes. ⚠️ Documentation, NOT enforcement — the two are structurally
+  // identical aliases and TypeScript is structural, so a bundle still passes here
+  // with no error. See the note on `AccentBundle` itself.
+  accent: AccentBundle = {},
 ): StylingValues {
   const preset = findStylePreset(presetId);
   return parseStylingValues({ ...(preset?.bundle ?? {}), ...accent });
@@ -340,31 +355,52 @@ export function stylePresetValues(preset: StylePreset): StylingValues {
  * single `findStylePreset` makes disagreement unrepresentable rather than
  * merely tested.
  *
- * Everything invalid degrades to the same place: an absent param, `""`, an
+ * Every invalid `style` degrades to the same place: an absent param, `""`, an
  * unknown id, a wrong-cased id, a withdrawn card's id and a 10KB string all
  * produce `DEFAULT_STYLING_VALUES` + a `null` stamp — byte-identical to the
  * "Blank" card's landing, and to bare `/app/templates/new`. **No throw, no 404,
  * no redirect, no toast**: the param is not merchant-authored (it comes from a
  * card), so a bad one means a stale bookmark or an id dropped in a later
- * release, and the right answer to both is a working blank scaffold.
+ * release, and the right answer to both is a working blank scaffold. Every
+ * invalid `accent` degrades the same way, to no colours at all.
  *
- * ⚠️ Takes `URLSearchParams`, not a `string`, on purpose: feature 93's route
- * contract is `?style=<id>&accent=<token>` with the two independently optional.
- * The accent read is one line INSIDE this function when it lands, and no call
- * site changes. Parsing the URL itself stays the loader's job so this module
- * stays framework-free and client-safe.
+ * ✅ Takes `URLSearchParams`, not a `string`, because feature 93's route contract
+ * is `?style=<id>&accent=<token>` with the two independently optional — and step
+ * 99 collected on it: the accent read below is ONE line inside this function and
+ * **no call site changed**, not the editor loader and not its contract test.
+ * Parsing the URL itself stays the loader's job so this module stays
+ * framework-free and client-safe.
+ *
+ * 🔴 **A `null` stamp no longer implies default styling** (feature 93 step 99).
+ * `?accent=blue` with no `?style=` resolves to five real colours with a `null`
+ * `basedOnPreset`, so "unstamped" and "untouched" have come apart. That is doc 93
+ * §D4 working as decided — Blank ignores the accent by never EMITTING the param,
+ * which is a fact about the card's href; this function stays TOTAL and honours a
+ * hand-typed one. Rejecting the combination would add a validation branch to buy
+ * nothing, since the gallery never generates that URL. The step-92 guard that
+ * relied on the old shortcut is restated in two halves, one per scope, rather
+ * than relaxed — see `stylePresets.test.ts`.
  */
 export function resolveGalleryParams(params: URLSearchParams): {
   styling: StylingValues;
   basedOnPreset: string | null;
 } {
   const preset = findStylePreset(params.get("style"));
+  const accent = findAccent(params.get("accent"));
   return {
     // Routed through `seedStylingFromPreset` rather than `parseStylingValues`
     // directly, because that function is where the bundle/accent merge ORDER
-    // lives. Feature 93 passes its accent there; bypassing it would mean
-    // retrofitting the merge in two places.
-    styling: seedStylingFromPreset(preset?.id),
+    // lives. Bypassing it would mean retrofitting the merge in two places.
+    //
+    // ⚠️ `accent?.bundle` is `undefined` on a miss ON PURPOSE — it lands on that
+    // function's `= {}` default. `?? {}` here would duplicate a default the
+    // signature already owns, giving two places to keep in agreement about what
+    // "no accent" means.
+    styling: seedStylingFromPreset(preset?.id, accent?.bundle),
+    // The PATTERN only. An accent gets no provenance column (doc 93 §D7), so
+    // there is nothing here for it to carry — and this must not start varying
+    // with the accent, or a column read back as a closed vocabulary across
+    // releases would fill with values no `findStylePreset` recognizes.
     basedOnPreset: preset?.id ?? null,
   };
 }
@@ -451,11 +487,20 @@ export function isThemeDefault(values: StylingValues): boolean {
 /**
  * An overrides-only wire shape, structurally identical to `StyleBundle`.
  *
- * ⚠️ **Deliberately a separate type name.** The two vocabularies obey different
- * laws — a bundle may set a subset and must set no colour; an accent must set
- * all five colours and no structure — and a shared alias would let a bundle pass
- * as the `accent` argument to `seedStylingFromPreset` with no type error. That is
- * the one seam where confusing them yields a silently wrong table.
+ * ⚠️ **Deliberately a separate type name, for READERS — it enforces nothing.**
+ * The two vocabularies obey different laws (a bundle may set a subset and must
+ * set no colour; an accent must set all five colours and no structure), and the
+ * name is what the exact-set test is stated about.
+ *
+ * 🔴 **Step 97's comment here claimed more than that and was wrong**: it said a
+ * shared alias "would let a bundle pass as the `accent` argument to
+ * `seedStylingFromPreset` with no type error", implying two names prevent it.
+ * They do not. TypeScript is structural, both aliases are
+ * `Readonly<Partial<StylingValues>>`, so they are MUTUALLY ASSIGNABLE and a
+ * `StyleBundle` passes as an `accent` with no diagnostic (checked under
+ * `tsc --strict`, step 99 — the first non-test caller of the two-argument form).
+ * The guard at that seam is the test suite, not the type checker. Only a branded
+ * type would close it, and it is not worth a cast at every literal.
  */
 export type AccentBundle = Readonly<Partial<StylingValues>>;
 

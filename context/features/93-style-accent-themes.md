@@ -1,6 +1,6 @@
 # Feature 93 — Accent themes (the gallery's colour-theme swatch row)
 
-**Status:** 🟢 **IN PROGRESS — 2 of 6 steps done.** Specced 2026-07-30; all seven
+**Status:** 🟢 **IN PROGRESS — 3 of 6 steps done.** Specced 2026-07-30; all seven
 open decisions were answered by the merchant the same day and are recorded
 verbatim below. **This file is the binding design; it is not an implementation
 plan.** Each step file carries its own instructions and completion gate:
@@ -9,14 +9,23 @@ plan.** Each step file carries its own instructions and completion gate:
 | ---- | --------------------------------- | ---------------------------------------------- | ---------------------------- |
 | 97   | `97-accent-vocabulary.md`         | `ACCENT_PRESETS` pure domain + palette         | ✅ **2026-07-30**, → 1179    |
 | 98   | `98-accent-render-harness.md`     | 5 × 6 render matrix at 1:1, lock the underline | ✅ **2026-07-30**, 35 renders |
-| 99   | `99-accent-seed-path.md`          | `&accent=` → resolved styling                  | 🔲                           |
+| 99   | `99-accent-seed-path.md`          | `&accent=` → resolved styling                  | ✅ **2026-07-30**, → 1184    |
 | 100  | `100-accent-swatch-row.md`        | the swatch row component                       | 🔲                           |
 | 101  | `101-accent-gallery-wiring.md`    | gallery state + live restyle + hrefs           | 🔲 first merchant-visible    |
 | 102  | `102-accent-live-verification.md` | admin → Postgres → metaobject → storefront     | 🔲                           |
 
 ✅ **Nothing in the design has needed revision.** Step 98 confirmed the reach
 table 5 of 5 and the provisional underline value, and measured `borderColor`'s
-reach as a contrast *improvement*. The palette is unchanged from approval.
+reach as a contrast *improvement*. The palette is unchanged from approval. Step 99
+closed the seed path in **one line with no call-site change**, which is the
+forward-compatibility claim feature 88 made, collected.
+
+⚠️ **One consequence of D4 landed and is worth knowing before step 101:** a `null`
+`basedOnPreset` no longer implies default styling. `?accent=blue` with no `?style=`
+seeds five colours and stamps nothing. That is the parser staying total as decided
+— the Blank card never emits the param — but step 92's central guard was written on
+the old shortcut and had to be restated in two halves, one per scope. See
+`99-accent-seed-path.md` §D5.
 
 **Parent feature:** `88-style-preset-gallery.md` §"Feature 93 — accent themes
 (forward compatibility)" — read it first. This file does not restate the
@@ -42,12 +51,17 @@ so this feature would be additive rather than a rewrite.
 
 **Four of those six seams landed in code and are load-bearing today:**
 
-| Seam                                                                       | Where                       |
-| -------------------------------------------------------------------------- | --------------------------- |
-| `seedStylingFromPreset(presetId, accent = {})` — merge order already fixed | `stylePresets.ts:301`       |
-| `resolveGalleryParams(URLSearchParams)` — takes params, not a string       | `stylePresets.ts:346`       |
-| Card previews built in the browser from resolved values, not from an id    | `StylePresetCard.tsx:132`   |
-| The gallery header-right slot left deliberately empty                      | `choose-style/route.tsx:57` |
+| Seam                                                                       | Where                       | Collected  |
+| -------------------------------------------------------------------------- | --------------------------- | ---------- |
+| `seedStylingFromPreset(presetId, accent = {})` — merge order already fixed | `stylePresets.ts:301`       | ✅ step 99 |
+| `resolveGalleryParams(URLSearchParams)` — takes params, not a string       | `stylePresets.ts:346`       | ✅ step 99 |
+| Card previews built in the browser from resolved values, not from an id    | `StylePresetCard.tsx:132`   | step 101   |
+| The gallery header-right slot left deliberately empty                      | `choose-style/route.tsx:57` | step 101   |
+
+✅ **The first two paid off exactly as designed.** Step 99's entire diff is
+`stylePresets.ts` + its test; the editor loader and its contract test are
+byte-unchanged. A `string` signature there would have cost a route edit and a
+contract-test edit to reach the same behaviour.
 
 The two that did not: the gallery holds **no client state** (it is a pure
 function of frozen constants), and `ACCENT_PRESETS` does not exist. Those are
