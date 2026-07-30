@@ -26,8 +26,8 @@ export function ContentTab({ engine }: { engine: RowEngine }) {
 
           {atCap ? (
             <s-banner tone="warning">
-              You have reached the {MAX_TEMPLATE_ROWS} row limit. Delete a row
-              before adding, duplicating, or adding a section.
+              You’ve reached the {MAX_TEMPLATE_ROWS} row limit. Delete a row to
+              make space.
             </s-banner>
           ) : null}
 

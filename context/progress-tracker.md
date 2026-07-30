@@ -861,6 +861,29 @@ doc (a wording correction), so this entry IS the record.**
 - Reviewed the rest of the Settings tab's copy (Status help text, scope help
   text, conflict banner, active-but-unassigned banner) — no other grammar,
   spelling, or redundancy issues found; left as-is.
+- **Follow-up — swept the other editor tabs for the same defect.** The
+  "say it twice" pattern turned out to be a habit, not a one-off; three more
+  instances, all fixed the same way (one voice states the fact, the others stop
+  repeating it):
+  - **Content tab, at-cap banner** — "Delete a row before adding, duplicating,
+    or **adding** a section" repeated its own verb, and the three disabled
+    buttons already say what's blocked → "You've reached the 200 row limit.
+    Delete a row to make space."
+  - **Paste-over-cap modal** — heading ("Some rows won't fit") + a warning
+    banner (the cap) + "only N will fit. The remaining M won't be added" (the
+    same sentence inverted) = the one fact, three times. Collapsed to the
+    heading plus a single sentence that folds the cap in as the reason; the
+    banner and the `droppedWord` plural are gone.
+  - **Delete-template modal** — the warning banner says "This action cannot be
+    undone" and the paragraph said "**permanently** removes", plus an "Any
+    unsaved edits will be lost" that is moot when the template itself is going
+    away. Banner keeps the warning; paragraph just names what's removed. Fixed
+    in **both** copies (`TemplateHeaderActions` and the list route
+    `app.templates.tsx`) so they can't drift.
+  - Reviewed and left alone: the Style rail's `helpText` strings
+    (`stylingControls.ts`, `StyleTab.tsx`), the editor tips, the bulk-delete and
+    Insert-field modals, the toolbar/bulk-action bar — all already terse and
+    non-repeating.
 - **Follow-up:** killed a duplicate message. Under **Active + "No products"**
   the subdued scope help text and the warning banner both said "isn't assigned
   → won't show on the storefront", stacked one on top of the other. The help

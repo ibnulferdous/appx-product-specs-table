@@ -205,10 +205,14 @@ export function TemplateHeaderActions({
       {isNew ? null : (
         <s-modal id={DELETE_MODAL_ID} heading="Delete template">
           <s-stack direction="block" gap="base">
+            {/* The banner carries the "permanent" warning, so the paragraph
+                below must not repeat it ("permanently removes"), and the old
+                "Any unsaved edits will be lost" was moot — the template itself
+                is going away. */}
             <s-banner tone="warning">This action cannot be undone.</s-banner>
             <s-paragraph>
-              Deleting “{engine.name}” permanently removes the template and its
-              storefront data. Any unsaved edits will be lost.
+              Deleting “{engine.name}” removes the template and its storefront
+              data.
             </s-paragraph>
           </s-stack>
           <s-button

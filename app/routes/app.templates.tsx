@@ -680,10 +680,13 @@ export default function TemplatesPage() {
           Cancel / Esc / outside-click hide + clear and delete nothing. */}
       <s-modal id={DELETE_MODAL_ID} heading="Delete template">
         <s-stack direction="block" gap="base">
+          {/* The banner carries the "permanent" warning; the paragraph must not
+              repeat it ("permanently removes"). Kept in step with the editor's
+              copy of this modal in `TemplateHeaderActions`. */}
           <s-banner tone="warning">This action cannot be undone.</s-banner>
           <s-paragraph>
-            Delete “{pendingDelete?.name ?? ""}”? This permanently removes the
-            template and its storefront data.
+            Delete “{pendingDelete?.name ?? ""}”? This removes the template and
+            its storefront data.
           </s-paragraph>
         </s-stack>
         <s-button

@@ -20,19 +20,17 @@ export function PasteCapModal({ engine }: { engine: RowEngine }) {
   const dropped = pendingPaste?.dropped ?? 0;
   const total = added + dropped;
   const addedWord = added === 1 ? "row" : "rows";
-  const droppedWord = dropped === 1 ? "row" : "rows";
 
   return (
     <s-modal id={PASTE_CAP_MODAL_ID} heading="Some rows won’t fit">
-      <s-stack direction="block" gap="base">
-        <s-banner tone="warning">
-          A spec table can hold up to {MAX_TEMPLATE_ROWS} rows.
-        </s-banner>
-        <s-paragraph>
-          You’re pasting {total} rows, but only {added} {addedWord} will fit.
-          The remaining {dropped} {droppedWord} won’t be added.
-        </s-paragraph>
-      </s-stack>
+      {/* One sentence, not three: the heading already raises the alarm, so a
+          warning banner restating the cap and a closing "the remaining N won't
+          be added" (the inverse of "only N will fit") were the same fact told
+          over and over. The cap is folded in here as the reason. */}
+      <s-paragraph>
+        A spec table can hold up to {MAX_TEMPLATE_ROWS} rows. You’re pasting{" "}
+        {total}, so only {added} {addedWord} will fit.
+      </s-paragraph>
       <s-button
         slot="primary-action"
         variant="primary"
