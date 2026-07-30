@@ -776,6 +776,114 @@ Building the MVP.
 > **when a control "does nothing", suspect the instrument before the code.** I
 > nearly recorded a working accent row as broken.
 
+> 🔴 **`sectionsInitialState` default ALL_OPEN → FIRST_OPEN, merchant ask
+> 2026-07-30 — and it is a change with an EXPIRY DATE, which is why it happened
+> now.** Gate green (typecheck · lint · format · **1245** · build). ⚠️ Not
+> now.** Gate green (typecheck · lint · format · **1245** · build).
+> ✅ **STOREFRONT LIVE-VERIFIED 2026-07-30, and it is the half no test could
+> reach.** Template `Accordion - Graphite` (`cms7i4alx0024vposvoqn96rj`, ACTIVE,
+> 5 sections) stores `sectionsInitialState = NULL`, so the Liquid `| default:` is
+> the only thing deciding. On `appx-dev`, product Motorola Moto G45 5G:
+> `Phone Details` **open**, `Display` / `Processor` / `Camera` / `Others`
+> **closed**. Under the old default that identical stored data rendered all five
+> open. 🔬 **No write of any kind was involved** — the metaobject's `styling` JSON
+> omits the key either way, so the rendering flipped purely from the template
+> file. That is the cleanest possible demonstration that the default *is* the
+> storage format, which is the whole argument for doing this pre-launch.
+> ✅ **The feature-80 hairline knock-on is confirmed too**, by `matches()` +
+> `getComputedStyle` rather than by eye. ⚠️ **No template in the dev store can
+> fire that rule** — every collapsible one sets a gap, and the one without a gap
+> has 0 sections — so it was exercised by removing `--section-gap` from the
+> wrapper client-side and restoring it (no DB, no theme edit, reload-safe; the
+> step-102 technique). With the gap: nothing matches, all `0px none`. Without it:
+> `Processor` / `Camera` / `Others` match and paint `0.909px solid`.
+> 🔴 **A correction to what I wrote earlier: it is sections 3..n, not 2..n.**
+> Section 2's predecessor is the OPEN first section, so it gets no hairline — the
+> rule needs a *closed* predecessor, which under FIRST_OPEN starts at section 3.
+> 📌 **A near-miss worth recording: my first probe looked like a false negative
+> and was merely TRUNCATED.** It returned `0px` for the two rows I could see —
+> both correct, one with no predecessor and one with an open predecessor — while
+> the three rows that mattered were cut off. I nearly logged "the rule does not
+> fire". [[testing-strategy]]'s suspect-the-instrument rule applies to **output
+> limits** too, not just to zoom and probes: confirm you are looking at the whole
+> result before concluding a negative.
+> ⚠️ **The ADMIN half is NOT verified and is owed** — the editor's device preview
+> and the rail's "Sections start" select. Blocked by the instrument, not the
+> code: `document.activeElement` stayed `BODY` after clicks and Tabs, so no
+> keystroke ever reached the app; the iframe is cross-origin so its DOM cannot be
+> read; and App Bridge bounces a direct tunnel load back into the admin. Both
+> claims run entirely through unit-tested paths (`DEFAULT_STYLING_VALUES`, the
+> open-matrix tests, the option-list tests), so residual risk is low — but it is
+> **unobserved**, and this file does not get to call that verified. Instrument
+> findings folded into [[embedded-admin-iframe-automation]].
+> that reaches them. A merchant enables collapsing because the table is long, so
+> `ALL_OPEN` hands back the disclosure markup and **none of the benefit** — the
+> page is exactly as tall as before and the only visible change is that headings
+> became clickable — while `ALL_CLOSED` opens on a wall of headings with no
+> content, which reads as an empty block. `FIRST_OPEN` is the only member that
+> shows real content **and** shows that the headings beneath it open.
+> 🔴 **The default IS the storage format, so this was a one-time window.** The
+> wire is overrides-only: a template storing the default stores **nothing**, so
+> there is no "unset" state and no way to scope a default change to new templates
+> only. Changing it repaints every stored table that never set the field. Today
+> that is dev-store data and the blast radius is zero; post-launch the same edit
+> is a silent storefront change for every merchant who left it alone. Same
+> reasoning as step 90's `simple` → `classic` rename — free now, closed later.
+> 🚫 **The literal merchant ask — default it FROM the Enable-collapsing toggle —
+> was rejected, and the reason is not style.** It breaks the pure-read law
+> `showsSectionsInitialStateControl` is built on (toggle collapsing off and back
+> on, and the merchant's own choice must return; unit-tested since feature 65).
+> And it cannot be repaired by writing only when the field "looks untouched":
+> storage **cannot distinguish an explicit `ALL_OPEN` from a field nobody ever
+> set**, so the smart version silently overwrites a real choice. One global
+> default is the only mechanism this wire shape supports. There is no such thing
+> as "the default while collapsing is on".
+> 🔬 **A shared five-list law was RESTATED, not relaxed** (step 99's move again).
+> `SECTIONS_INITIAL_STATES` keeps its open→closed rail order, so its default is
+> now at index 1 and `options[0] === default` no longer holds. What that law
+> actually protected was the arrays being **append-only** — a reorder repaints
+> every stored table — and nothing in the UI ever read `options[0]` (checked:
+> every list renders through a `.map` into a select bound to the styling value).
+> So the table pins a `defaultIndex` per list: any reorder of any array still
+> fails, and the position half is split from the "the default is offered at all"
+> half, which is now its own test. 🚫 Reordering the domain to restore
+> `options[0]` was refused — the dropdown would read First open / All open / All
+> closed, a scrambled spectrum on a merchant-facing control.
+> ✅ **The Liquid duplicate is now GUARDED, which it never was.**
+> `spec_table.liquid` carries `| default: "…"` because the two markup knobs are
+> the only ones read from raw `styling` rather than precomputed `styling_css` —
+> so the default literal lives twice, and the second copy is in a file the module
+> graph cannot see. New `specTableLiquidDefaultsContract.test.ts` reads the
+> extension file off disk (the `specTableAriaContract` pattern) and compares.
+> ⚠️ **Comment-stripping is load-bearing there, not tidy**: the block being
+> guarded names both keywords in prose, so a scan over the raw file would pass on
+> the documentation while the code said something else. The failure it prevents
+> is silent and merchant-facing — admin preview and storefront disagreeing about
+> which sections start open, on exactly the templates that store no value.
+> ✅ **Both mutations caught precisely.** Reverting the Liquid literal alone fails
+> the new parity test; reordering `SECTIONS_INITIAL_STATES` fails
+> `holds the default at its pinned index` and **nothing else**.
+> ⚠️ **One knock-on, and it is the rule working rather than a regression.**
+> Feature 80's band separator is scoped `:not([open])`, and its comment cited the
+> ALL_OPEN default as a second justification ("keeps the rule off every table
+> already live"). **That half has expired**: sections 2..n now start closed, so a
+> default banded collapsible table paints those hairlines on arrival — which is
+> precisely the unbroken-slab bug feature 80 was reported for. The selector is
+> unchanged and still correct on its own terms (an open section is followed by
+> its rows, which already draw the edge). Corrected in all three places that said
+> it: `spec-table.css`, `previewStyles.ts`, and doc 80 (struck, not deleted).
+> 📌 **The Accordion preset needed no edit** and must not get one — it omits the
+> field, so it inherits FIRST_OPEN, which is what "Shoppers open one section at a
+> time" always described. Naming `"FIRST_OPEN"` explicitly would now serialize
+> away to nothing and fail the fixed-point guard — the fourth card to meet that
+> rule.
+> 🔍 **The one accepted cost, recorded rather than discovered later:** text inside
+> a closed `<details>` is not matched by find-in-page in older browsers. Current
+> Chrome, Safari and Firefox all auto-expand for it, so the exposure is small and
+> shrinking, but a shopper searching a spec table is a real use case and this is
+> the only genuine argument for `ALL_OPEN`. 🚫 **Not** an SEO cost: closed
+> `<details>` content is in the DOM and indexed at full weight.
+
 ## Current Goal
 
 **Reshell Phase B2 — the built-in preset gallery (Style tab feature 57, steps 13–14).**

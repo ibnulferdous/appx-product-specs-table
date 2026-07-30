@@ -95,6 +95,17 @@
   the lookup is nil, so it is falsy — the correct default (false) with zero code.
   Same for the initial state via `| default:`.
 
+  ⚠️ THAT `| default:` MUST TRACK `DEFAULT_SECTIONS_INITIAL_STATE` in
+  app/utils/tableStyling.ts. A mismatch is SILENT — the admin preview and the
+  storefront would simply disagree about which sections start open, on exactly
+  the templates that store no value (i.e. most of them). Changed ALL_OPEN →
+  FIRST_OPEN with the domain default on 2026-07-30.
+
+  It is enforced, despite Liquid being outside the module graph:
+  `specTableLiquidDefaultsContract.test.ts` reads this file off disk and
+  compares the literal below to the domain constant. Change one, and the suite
+  names the other.
+
   Collapsible degrades to the flat shape when the template has no section
   headers (nothing to collapse), matching the admin preview renderer exactly —
   see app/routes/app.templates_.$id/specTablePreviewHtml.ts.
@@ -105,7 +116,7 @@
   if styling.sectionsCollapsible and section_rows.size > 0
     assign collapsible = true
   endif
-  assign initial_state = styling.sectionsInitialState | default: "ALL_OPEN"
+  assign initial_state = styling.sectionsInitialState | default: "FIRST_OPEN"
 -%}
 
 {%- comment -%}

@@ -400,12 +400,19 @@ export const SPEC_TABLE_CSS = `/* Appx — Product Specs Table storefront styles
    claiming the opposite side means the two rules never contest a property:
    no specificity tie, no source-order dependency, no importance override.
 
-   Scoped to a CLOSED preceding section, which is what keeps the rule from
-   repainting tables that already exist. ALL_OPEN is the default initial state,
-   so an unconditional rule would add a second hairline above every band on
-   every collapsible banded table already live. The open attribute is live, so
-   the separator also appears and disappears as a shopper toggles a section —
-   no JavaScript involved.
+   Scoped to a CLOSED preceding section — the state the rule exists to fix, and
+   nothing wider: an OPEN section is followed by its rows, which already draw
+   the edge, so an unconditional rule would add a second hairline above every
+   band. ⚠️ This scope used to carry a SECOND justification — ALL_OPEN was the
+   default, so it also kept the rule off every collapsible banded table already
+   live. That half EXPIRED 2026-07-30 when the default became FIRST_OPEN:
+   sections 2..n now start closed, so a default banded collapsible table paints
+   these hairlines on arrival — on sections 3..n, measured, since section 2's
+   predecessor is the open first one and this rule needs a CLOSED predecessor.
+   That is the rule working rather than a regression: a closed band under a
+   closed band is precisely the unbroken slab feature 80 was reported for. The open attribute is live, so the
+   separator also appears and disappears as a shopper toggles a section — no
+   JavaScript involved.
 
    It stands down when a gap is set (below): whitespace already separates the
    bands there, and the hairline would paint as a stray line across the top of

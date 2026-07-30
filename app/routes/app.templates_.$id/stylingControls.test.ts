@@ -175,35 +175,60 @@ describe("COLUMN_DIVIDER_OPTIONS (feature 79 — the Column divider control)", (
 // DOMAIN CONSTANT, never a hard-coded count or list: the failure this guards is
 // someone adding a value to `tableStyling.ts` and the control quietly continuing
 // to offer the old set.
+// 🔴 `defaultIndex` REPLACED a flat "the default leads the list" law on
+// 2026-07-30, and it is a restatement rather than a relaxation.
+//
+// What that law was actually protecting is the ARRAYS being append-only: the
+// domain order is the option order (asserted below), the first member was the
+// default everywhere, so "options[0] is the default" caught a reorder — and a
+// reorder silently repaints every stored table, because the wire is
+// overrides-only. Nothing in the UI ever depended on position: every one of
+// these lists renders through a `.map` into a select bound to the styling
+// value, so `options[0]` is not a fallback anywhere (checked, not assumed).
+//
+// `SECTIONS_INITIAL_STATES` is the one array whose default is not its first
+// member — its rail order is the open→closed spectrum a merchant reads, and
+// FIRST_OPEN sits in the middle of it. Pinning the INDEX keeps the real guard
+// at full strength (any reorder of any array still fails here) while admitting
+// the one list where position and default legitimately part company.
+//
+// 🚫 Do not "simplify" this back to `options[0]` by reordering the domain — the
+// dropdown would read First open / All open / All closed, and the array
+// comment in `tableStyling.ts` explains why that trade was refused.
 const KEYWORD_KNOB_LISTS: ReadonlyArray<{
   name: string;
   options: ReadonlyArray<StylingOption<string>>;
   domain: ReadonlyArray<string>;
   defaultValue: string;
+  defaultIndex: number;
 }> = [
   {
     name: "ROW_LAYOUT_OPTIONS",
     options: ROW_LAYOUT_OPTIONS,
     domain: ROW_LAYOUTS,
     defaultValue: DEFAULT_STYLING_VALUES.rowLayout,
+    defaultIndex: 0,
   },
   {
     name: "MOBILE_LAYOUT_OPTIONS",
     options: MOBILE_LAYOUT_OPTIONS,
     domain: MOBILE_LAYOUTS,
     defaultValue: DEFAULT_STYLING_VALUES.mobileLayout,
+    defaultIndex: 0,
   },
   {
     name: "SECTION_HEADER_OPTIONS",
     options: SECTION_HEADER_OPTIONS,
     domain: SECTION_HEADER_STYLES,
     defaultValue: DEFAULT_STYLING_VALUES.sectionHeaderStyle,
+    defaultIndex: 0,
   },
   {
     name: "DENSITY_OPTIONS",
     options: DENSITY_OPTIONS,
     domain: DENSITIES,
     defaultValue: DEFAULT_STYLING_VALUES.density,
+    defaultIndex: 0,
   },
   // Step 9b — the same five assertions apply unchanged, which is the point:
   // a new option list satisfies the existing contract or it is shaped wrong.
@@ -212,12 +237,16 @@ const KEYWORD_KNOB_LISTS: ReadonlyArray<{
     options: SECTIONS_INITIAL_STATE_OPTIONS,
     domain: SECTIONS_INITIAL_STATES,
     defaultValue: DEFAULT_STYLING_VALUES.sectionsInitialState,
+    // The only non-zero entry. See the block comment above before adding a
+    // second one — four of five is a rule with an exception, three of five
+    // would mean the rule is something else.
+    defaultIndex: 1,
   },
 ];
 
 describe.each(KEYWORD_KNOB_LISTS)(
   "$name (feature 57 Steps 8/9b — the keyword-knob option lists)",
-  ({ options, domain, defaultValue }) => {
+  ({ options, domain, defaultValue, defaultIndex }) => {
     it("offers exactly the domain's values, in domain order", () => {
       expect(options.map((option) => option.value)).toEqual([...domain]);
     });
@@ -228,8 +257,15 @@ describe.each(KEYWORD_KNOB_LISTS)(
       expect(options.length).toBe(domain.length);
     });
 
-    it("leads with the default, so the control opens on the current look", () => {
-      expect(options[0].value).toBe(defaultValue);
+    it("holds the default at its pinned index, so no array can be reordered", () => {
+      expect(options[defaultIndex].value).toBe(defaultValue);
+    });
+
+    it("offers the default at all — a default outside its own list is unreachable", () => {
+      // The half of the old law that never depended on position, stated on its
+      // own so it survives any future index change: a merchant must be able to
+      // pick the value the app falls back to.
+      expect(domain).toContain(defaultValue);
     });
 
     it("gives every option a merchant-facing label", () => {

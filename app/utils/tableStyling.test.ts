@@ -92,7 +92,12 @@ describe("DEFAULT_STYLING_VALUES", () => {
     expect(DEFAULT_STYLING_VALUES.mobileLayout).toBe("STACKED");
     expect(DEFAULT_STYLING_VALUES.sectionHeaderStyle).toBe("BANDED");
     expect(DEFAULT_STYLING_VALUES.sectionsCollapsible).toBe(false);
-    expect(DEFAULT_STYLING_VALUES.sectionsInitialState).toBe("ALL_OPEN");
+    // 🔴 FIRST_OPEN, not ALL_OPEN (merchant decision 2026-07-30). Changing this
+    // literal repaints live storefronts — the wire is overrides-only, so a
+    // template storing the default stores nothing and the default IS the
+    // storage format. The move was made while the only data in existence was
+    // the dev store's; see `DEFAULT_SECTIONS_INITIAL_STATE`.
+    expect(DEFAULT_STYLING_VALUES.sectionsInitialState).toBe("FIRST_OPEN");
     expect(DEFAULT_STYLING_VALUES.rowDividerStyle).toBe("LINES");
     expect(DEFAULT_STYLING_VALUES.density).toBe("DEFAULT");
   });

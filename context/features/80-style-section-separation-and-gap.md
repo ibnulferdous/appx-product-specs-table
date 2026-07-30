@@ -92,11 +92,27 @@ feature 79, where a same-property tie made source order load-bearing.)
 
 **2. `:not([open]) +` — only when the preceding section is CLOSED.** This is what
 keeps the **no-repaint law** (feature 79: "adding this must not repaint any table
-that exists today"). The default `sectionsInitialState` is `ALL_OPEN`, so an
+that exists today"). ~~The default `sectionsInitialState` is `ALL_OPEN`, so an
 unconditional rule would add a second hairline above every band on every
-collapsible+banded table already live — 1px row rule + 1px band border = a 2px
+collapsible+banded table already live~~ — 1px row rule + 1px band border = a 2px
 boundary where a 1px one ships today. Scoped this way, **only the broken state
 changes**.
+
+> ⚠️ **Struck 2026-07-30: the default is now `FIRST_OPEN`.** The scope is
+> unchanged and still correct — an OPEN section is followed by its rows, which
+> already draw the edge — but its *second* justification has expired. Sections
+> 2..n now start closed, so a **default** banded collapsible table paints these
+> hairlines on arrival rather than only after a shopper closes something. That
+> is this rule doing its job (a closed band under a closed band is exactly the
+> unbroken slab this feature was reported for), not a regression, and it is why
+> the no-repaint argument above can no longer be cited for this selector.
+>
+> ✅ **Measured live 2026-07-30**, by `matches()` + `getComputedStyle` on the real
+> storefront: with `--section-gap` present nothing matches and every summary is
+> `0px none`; with it removed, the hairline lands on **sections 3..n** at
+> `0.909px solid`. Section **2** gets none — its predecessor is the *open* first
+> section, and the rule needs a **closed** predecessor. So "sections 2..n start
+> closed" is about the disclosures; the hairline itself begins one section later.
 
 Bonus property, free: `[open]` is a live attribute, so the separator appears and
 disappears as a shopper toggles a section. Zero JS, correct by construction.

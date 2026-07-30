@@ -409,7 +409,7 @@ model TableStyling {
   headerCase           String?  // "DEFAULT" | "UPPERCASE"; null = as typed. Section titles ONLY — labelCase below is the label column's own knob
   headerPaddingBlockPx Int?     // 0–48; null = the literal 0.75rem. BLOCK AXIS ONLY (the inline padding stays welded to the row cells' 0.75rem, or a large title would indent past its own labels). The ONE integer knob with a 0 floor — see the container-knob law below for why it does not apply here
   sectionsCollapsible  Boolean  @default(false)
-  sectionsInitialState String?  // "ALL_OPEN" (null default) | "FIRST_OPEN" | "ALL_CLOSED" — only meaningful when sectionsCollapsible
+  sectionsInitialState String?  // "FIRST_OPEN" (null default, changed from ALL_OPEN 2026-07-30) | "ALL_OPEN" | "ALL_CLOSED" — only meaningful when sectionsCollapsible. 🔴 The ONE keyword knob whose default is not its domain array's first member: the rail order is the open→closed spectrum a merchant reads, so the default is named in DEFAULT_SECTIONS_INITIAL_STATE instead. Because the wire is overrides-only the default IS the storage format, so this literal cannot move again after launch without repainting live storefronts
   sectionGapPx         Int?     // 1–48; null = no gap (feature 80). Space between sections. Takes the container knobs' law below: null = the DEFAULT, minimum 1
   // ⚠️ Feature 94 widened where this is REACHABLE, not what it stores. Feature 80
   // fenced it to sectionsCollapsible on the reasoning that a flat section header

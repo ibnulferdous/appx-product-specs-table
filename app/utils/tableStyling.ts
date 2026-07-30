@@ -12,7 +12,13 @@
 // and the CSS-var mapping all consume it, so it must stay client-safe and
 // Node-testable. It is imported by nothing yet — later steps do the wiring.
 
-// --- Allowed values (first member is always the default) ---------------------
+// --- Allowed values (first member is the default, with ONE exception) --------
+//
+// The exception is `SECTIONS_INITIAL_STATES`, which names its default in
+// `DEFAULT_SECTIONS_INITIAL_STATE` instead; the reason is on that array. The
+// convention is what makes a reorder a repaint, so every array below still says
+// "appended, never inserted" — the exception moved where the default is
+// DECLARED, not whether the order is frozen.
 
 // How one label/value PAIR renders. Three answers to one question, which is why
 // GRID is a third member here rather than a separate boolean (feature 85): a
@@ -31,11 +37,47 @@ export const MOBILE_LAYOUTS = ["STACKED", "SAME_AS_DESKTOP"] as const;
 //
 // Appended, never inserted — the first member is the default.
 export const SECTION_HEADER_STYLES = ["BANDED", "TEXT_ONLY", "PLAIN"] as const;
+// 🔴 THE ONE KEYWORD ARRAY WHOSE FIRST MEMBER IS NOT THE DEFAULT. Every other
+// array in this file follows "appended, never inserted — the first member is
+// the default"; this one keeps its natural open→closed reading order for the
+// rail while `DEFAULT_SECTIONS_INITIAL_STATE` below names the default
+// explicitly. Reordering to put the default first would have made the three
+// options read as a scrambled spectrum in the Style tab, which is
+// merchant-facing; a named constant costs one line and nothing else.
 export const SECTIONS_INITIAL_STATES = [
   "ALL_OPEN",
   "FIRST_OPEN",
   "ALL_CLOSED",
 ] as const;
+
+/**
+ * Which disclosures are open when a collapsible table first paints.
+ *
+ * `FIRST_OPEN` (merchant decision 2026-07-30), and the reasoning is that the
+ * other two both contradict the knob that reaches them. A merchant enables
+ * collapsing because the table is LONG: `ALL_OPEN` then hands back the
+ * disclosure markup and none of the benefit — the page is exactly as tall as
+ * before and the only change is that headings became clickable — while
+ * `ALL_CLOSED` opens on a wall of headings with no content, which reads as an
+ * empty block. `FIRST_OPEN` is the only member that shows real content AND
+ * shows that the headings beneath it open.
+ *
+ * ⚠️ Changing this value REPAINTS live storefronts, because the wire shape is
+ * overrides-only: a template that stores the default stores NOTHING, so the
+ * default IS the storage format and there is no "unset" state to scope a
+ * change to new templates only. It moved ALL_OPEN → FIRST_OPEN while the only
+ * data in existence was the dev store's. Post-launch that door is closed.
+ *
+ * 🚫 And this is why the initial state must NOT be defaulted from the
+ * `sectionsCollapsible` toggle instead. Writing a value when collapsing flips
+ * on breaks the pure-read law `showsSectionsInitialStateControl` is built on
+ * (`stylingControls.ts`) — toggle off and back on, and the merchant's own
+ * choice must return. It cannot be repaired by writing only when the field
+ * "looks untouched" either: storage cannot tell an explicit `ALL_OPEN` from a
+ * field nobody ever set, so the smart version silently overwrites a real
+ * choice. One global default is the only mechanism this wire shape supports.
+ */
+export const DEFAULT_SECTIONS_INITIAL_STATE = "FIRST_OPEN" as const;
 export const ROW_DIVIDER_STYLES = ["LINES", "STRIPES", "NONE"] as const;
 // The one interior VERTICAL edge a two-column table has: the rule between the
 // label and the value. Singular "LINE" rather than the row knob's plural
@@ -352,7 +394,7 @@ export const DEFAULT_STYLING_VALUES: StylingValues = Object.freeze({
   headerCase: null,
   headerPaddingBlockPx: null,
   sectionsCollapsible: false,
-  sectionsInitialState: SECTIONS_INITIAL_STATES[0],
+  sectionsInitialState: DEFAULT_SECTIONS_INITIAL_STATE,
   sectionGapPx: null,
   rowDividerStyle: ROW_DIVIDER_STYLES[0],
   columnDividerStyle: COLUMN_DIVIDER_STYLES[0],

@@ -132,7 +132,7 @@ model TableStyling {
   headerCase           String? // "DEFAULT" | "UPPERCASE"; null = as typed
   headerPaddingBlockPx Int? // 0–48; null = the literal 0.75rem. The ONE integer knob with a 0 floor — null means the default rather than "off", so 0 is a first spelling, not a second (contrast the container knobs)
   sectionsCollapsible  Boolean @default(false)
-  sectionsInitialState String? // "ALL_OPEN" (null default) | "FIRST_OPEN" | "ALL_CLOSED" — only meaningful when sectionsCollapsible
+  sectionsInitialState String? // "FIRST_OPEN" (null default, changed from ALL_OPEN 2026-07-30) | "ALL_OPEN" | "ALL_CLOSED" — only meaningful when sectionsCollapsible
   sectionGapPx         Int? // 1–48; null = no gap. Space between collapsible sections — only meaningful when sectionsCollapsible (a flat section header is a table row, which takes no margin)
   rowDividerStyle      String? // "LINES" (null default) | "STRIPES" | "NONE"
   columnDividerStyle   String? // "NONE" (null default) | "LINE" — the vertical rule at the label/value seam; fixed 1px, colored by borderColor. Suppressed in stacked layouts (no seam).
