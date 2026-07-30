@@ -166,11 +166,13 @@ new serialization path.
 | **Classic** | `classic` | `{ sectionHeaderStyle: "TEXT_ONLY", columnDividerStyle: "LINE", outerBorderWidthPx: 1 }` | ACEFAST YF4 |
 | **Minimal** | `minimal` | `{ sectionHeaderStyle: "PLAIN", rowDividerStyle: "NONE" }` | #4 |
 | **Multi-column** | `multi-column` | `{ rowLayout: "GRID", rowDividerStyle: "NONE" }` | #5 Samsung, #6 Lazada |
-| **Accordion** | `accordion` | `{ sectionsCollapsible: true, sectionHeaderStyle: "TEXT_ONLY", sectionGapPx: 12, rowDividerStyle: "STRIPES" }` | #7 Trek |
+| **Accordion** | `accordion` | `{ sectionsCollapsible: true, sectionGapPx: 12, rowDividerStyle: "STRIPES" }` | #7 Trek |
 
 > ⚠️ Classic and Accordion were **revised 2026-07-30** — see the second revision
-> section below. The table above is current; the row a reader is most likely to
-> misremember is Classic's, which shipped as `PLAIN` + `STRIPES` for three days.
+> section below, and the third for Accordion's header. The table above is current;
+> the row a reader is most likely to misremember is Classic's, which shipped as
+> `PLAIN` + `STRIPES` for three days. **Accordion's bundle no longer names
+> `sectionHeaderStyle` at all** — absent means BANDED, the default.
 
 Every card differs from every other on at least one axis a merchant can see at a
 glance.
@@ -214,10 +216,9 @@ them:
    Classic is the one card where every horizontal edge is already drawn, so a
    bare bold title reads as nothing more than a wider row. `TEXT_ONLY` keeps the
    2px rule, which is what makes a heading look like a heading inside a full grid.
-   ⚠️ Classic is now the **second** card on `TEXT_ONLY` (Accordion is the other).
-   They stay far apart — Accordion is collapsible, gapped and striped; Classic is
-   framed and column-ruled — and the "every pattern differs on a scoped field"
-   guard covers it.
+   ⚠️ Classic was briefly the **second** card on `TEXT_ONLY` (Accordion was the
+   other). Superseded within the day by the third revision below — Accordion moved
+   to BANDED, so **Classic is the only card on `TEXT_ONLY`**.
 
 2. **Classic: `STRIPES` → row LINES.** 🔴 This is the one that was a real defect,
    not a taste change. `--dividers-stripes` sets `border-block-end: none` on every
@@ -247,6 +248,41 @@ live on Accordion, and `headerUnderlineColor` went live on Classic. Classic is
 therefore no longer the preset that carries §Open question 2's dark-theme stripe
 collision — **Accordion is**. Nothing about the open question changes except which
 card it names.
+
+### 🔴 Revision, merchant decision 2026-07-30 (third) — Accordion goes BANDED
+
+One card, one axis: **Accordion's section headers move `TEXT_ONLY` → `BANDED`.**
+
+A band gives a disclosure more than a rule does. A filled strip reads as a
+**pressable target**; a 2px rule reads as a boundary between two things, which is
+the opposite of what a summary row is. And the whole banded strip is the hit area
+a shopper aims at, not just the run of text. The stylesheet already carries the
+variant this needs — `--collapsible.--section-banded .__section-summary`
+(`spec-table.css`) mirrors the flat-table band onto the `<summary>`, so the band
+is native to the disclosure shape rather than bolted onto it.
+
+⚠️ **The bundle DROPS the field rather than naming `"BANDED"`** — same mechanism
+as Multi-column's header and Classic's row LINES. BANDED is
+`SECTION_HEADER_STYLES[0]`, so an explicit write serializes away to nothing and
+fails the fixed-point guard. Verified by mutation, not assumed: adding
+`sectionHeaderStyle: "BANDED"` back fails *every bundle is a fixed point of parse
+then serialize* and nothing else.
+
+**Description unchanged** (*"Shoppers open one section at a time."*) — it names
+the behaviour, and the behaviour did not move.
+
+📌 **Knock-ons, none needing code.** Three of the five cards are now BANDED
+(Modern, Multi-column, Accordion), against one `TEXT_ONLY` (Classic) and one
+`PLAIN` (Minimal) — the pairwise-difference guard is untouched, since Accordion
+still differs from both banded cards on `sectionsCollapsible`, `sectionGapPx` and
+`rowDividerStyle`. For feature 93: `headerBgColor` goes **live** on Accordion and
+`headerUnderlineColor` goes **dead** there, leaving the underline reaching
+**exactly one card, Classic**. And §Open question 2's *title* risk shrinks — a
+banded title sits on the accent's own band, which is the case doc 93 measured at
+6.98–13.15 on any theme, so Accordion leaves that list. ⚠️ **The stripe half of
+the risk stays Accordion's** and is unchanged: `stripeBgColor` is an opaque
+near-white replacing a translucent black, and the header style has nothing to do
+with it.
 
 ⚠️ **Consequence: `PRESET_SCOPED_FIELDS` gained three fields** —
 `columnDividerStyle`, `outerBorderWidthPx`, `outerBorderRadiusPx`. This is the
@@ -314,11 +350,18 @@ needs whitespace between disclosures to read as separate blocks. Recorded as the
 single exception so a later reader sees a decision rather than a leak. Strike this
 line if the rule is ever wanted absolutely clean.
 
-### Accordion uses `TEXT_ONLY`, not `PLAIN`
+### ~~Accordion uses `TEXT_ONLY`, not `PLAIN`~~ — superseded 2026-07-30
 
-The 2px bottom rule gives a clickable header the presence a disclosure needs.
-`PLAIN` (feature 87) is right for Minimal and Multi-column, where the header is
-not interactive.
+> ~~The 2px bottom rule gives a clickable header the presence a disclosure needs.
+> `PLAIN` (feature 87) is right for Minimal and Multi-column, where the header is
+> not interactive.~~
+
+Struck rather than deleted, because the *premise* survived the decision and only
+the answer changed: a clickable header does need presence, and neither of the two
+inert-header cards needs any. **Accordion now uses `BANDED`** — the same argument
+carried one step further, since a filled strip is a stronger affordance than a
+rule and makes the whole summary row read as the target. See the third revision
+above. `PLAIN` was never in contention for this card and still is not.
 
 ### 🚫 "Bordered", withdrawn
 

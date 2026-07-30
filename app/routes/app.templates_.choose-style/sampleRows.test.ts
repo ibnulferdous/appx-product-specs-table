@@ -35,10 +35,10 @@ describe("the canned sample", () => {
   });
 
   it("carries at least TWO section headers — the axis three cards differ on", () => {
-    // Section-header treatment separates Modern / Multi-column (a band),
-    // Classic / Minimal (a plain title) and Accordion (a clickable rule). One
-    // header shows the treatment but gives nothing to compare it against; none
-    // makes the axis invisible and three of the six cards indistinguishable.
+    // Section-header treatment separates Modern / Multi-column / Accordion (a
+    // band), Classic (an underlined title) and Minimal (a plain one). One header
+    // shows the treatment but gives nothing to compare it against; none makes the
+    // axis invisible and three of the six cards indistinguishable.
     const sections = STYLE_PREVIEW_SAMPLE_ROWS.filter(
       (row) => row.rowType === "SECTION_HEADER",
     );

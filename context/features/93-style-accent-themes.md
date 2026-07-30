@@ -102,6 +102,14 @@ merchant clicks a colour on a gallery of five cards and three sit still. That is
 the feature failing on its own screen, and it is the reason the accent is a
 **set** of fields rather than one.
 
+> 📌 **The count is two as of 2026-07-30** — Classic took `TEXT_ONLY` and Accordion
+> took `BANDED`, so only Classic and Minimal have no band. The argument is
+> unchanged and is deliberately **not** re-stated on the current bundles: it is a
+> claim about `sectionHeaderStyle` having members that hardcode the band away, and
+> a merchant can select those in the rail whatever the cards happen to ship. A
+> one-field accent would still fail on two of five, and on any template a merchant
+> has since edited.
+
 ✅ **`headerTextColor` is the field that makes the set total.** None of the three
 member rules overrides `color:` — each sets `background` and `border-block-end`
 only — so the section title is tintable under every header style. It is the sole
@@ -118,7 +126,7 @@ ever set a colour (pinned by `stylePresets.test.ts` — "the comparison scope
 contains no color field").
 
 🚫 **`accentFor(preset, token)` is rejected.** An accent that varies by pattern —
-tint the band on Modern, the rule on Accordion, the frame on Classic — would work
+tint the band on Modern, the rule on Classic, the title on Minimal — would work
 and would cost exactly the composition promise above. Every later feature that
 merges the two would inherit the exception. The set below is chosen so one
 pattern-blind accent lands somewhere on every card.
@@ -194,6 +202,11 @@ change the picture:
    theme. The risk is **not uniform across the gallery**: it is confined to the
    three presets whose title sits on the theme's own ground (Classic, Minimal,
    Accordion), plus Classic's stripe.
+   ✅ **Two presets, as of later the same day.** Accordion moved to `BANDED` (doc
+   88's third revision), which puts its title on the accent's own band and moves
+   it into the safe group above — the title risk is now **Classic and Minimal**.
+   ⚠️ Its **stripe** stays exposed, and per the 2026-07-30 divider swap the stripe
+   collision in finding 3 is Accordion's rather than Classic's.
 2. 🔴 **The title fails as predicted: 1.21–2.35** on a dark ground across the six
    accents (AA wants 4.5). Graphite is worst at 1.21, Blue best at 2.35 — none is
    close, so this is not a "tune the worst one" problem.
@@ -282,9 +295,13 @@ Step 98 measured Accordion at 1:1 and confirmed it: the underline computes
 `1.81818px` at the title tone while the row rules in the same table sit at the
 border tone (contrast to white **1.657** for the rules, ≈**14** for the
 underline). Falling back to `borderColor` — which is what an absent value does —
-would have made the header underline and the row rules **the same colour**, and
-feature 88 chose `TEXT_ONLY` for this card precisely so a clickable header would
-have the presence the inert ones lack. 🚫 So it still must never equal
+would have made the header underline and the row rules **the same colour**, i.e. a
+heading indistinguishable from the boundaries around it. ⚠️ **Measured on Accordion
+because Accordion was `TEXT_ONLY` then; since 2026-07-30 it is `BANDED` and
+Classic is the only card an underline reaches.** The finding transfers intact —
+Classic ships row LINES at the border tone under the same underline — but do not
+go looking for a rule on the Accordion card to re-check it against. 🚫 So it still
+must never equal
 `borderColor`: if a revision ever wants the pale tone there, the correct change is
 to **drop the field from `ACCENT_SCOPED_FIELDS`**, not to write the value twice.
 
@@ -305,7 +322,8 @@ border: var(--appx-spec-outer-border-width, 0) solid
 
 ✅ **Two things this buys.** The dedicated `outerBorderColor` swatch stays free
 for a merchant who wants a different frame; and the same fallback logic colours
-the Accordion underline, so the chain is consistent rather than special-cased.
+the `TEXT_ONLY` underline (Accordion's when this was written, Classic's since
+2026-07-30), so the chain is consistent rather than special-cased.
 
 ⚠️ **`borderColor` reaches four surfaces, and the merchant said tint them all.**
 Per feature 95 it dresses the row rules, the column divider, the feature-80
@@ -378,10 +396,11 @@ outer border gets the accent's tone already there.
 
 🔴 **The table below was MEASURED against the step-98 bundles, and two of those
 bundles changed on 2026-07-30** (doc 88's second revision: Classic went `PLAIN` +
-`STRIPES` → `TEXT_ONLY` + LINES, and the stripes moved to Accordion). The reach is
-derived from the resolved bundle, so it followed with no code change — but the
-measured column is now historical for those two rows and the **Now** column below
-is reasoned from the same mechanism rather than re-measured.
+`STRIPES` → `TEXT_ONLY` + LINES, and the stripes moved to Accordion; then its
+third: Accordion went `TEXT_ONLY` → `BANDED`). The reach is derived from the
+resolved bundle, so it followed with no code change — but the measured column is
+now historical for those two rows and the **Now** column below is reasoned from
+the same mechanism rather than re-measured.
 
 | Preset       | Header (now) | Dividers (now) | Frame | Live accent fields — as measured (step 98)  | Now                                            |
 | ------------ | ------------ | -------------- | ----- | ------------------------------------------- | ---------------------------------------------- |
@@ -389,7 +408,13 @@ is reasoned from the same mechanism rather than re-measured.
 | Classic      | `TEXT_ONLY`  | `LINES`        | 1px   | title · stripe · **column rule + outline**  | title · **underline** · row rules · column rule + outline; **stripe now dead** |
 | Minimal      | `PLAIN`      | `NONE`         | —     | **title only**                              | unchanged                                       |
 | Multi-column | `BANDED`     | `NONE`         | —     | band · title                                | unchanged                                       |
-| Accordion    | `TEXT_ONLY`  | `STRIPES`      | —     | title · underline · **row rules**           | title · underline · **stripe**; row rules now dead (stripes suppress them) |
+| Accordion    | `BANDED`     | `STRIPES`      | —     | title · underline · **row rules**           | **band** · title · **stripe**; underline now dead (BANDED has no rule), row rules dead (stripes suppress them) |
+
+📌 **`headerUnderlineColor` now reaches EXACTLY ONE card, Classic.** Not a reason
+to drop the field — it is the only tone that keeps a heading from matching the row
+boundaries around it (§the underline, below), and the rail exposes it to every
+merchant on `TEXT_ONLY` regardless of which card they started from. But a future
+palette revision testing the underline has one card to look at, not two.
 
 ⚠️ **Minimal showing title-only is expected, not a defect** — it is precisely why
 D3 had to be answered before anything was built. If D3 had gone the other way,
@@ -404,8 +429,15 @@ inherit `LINES`; since 2026-07-30 it sets `STRIPES` explicitly, and `STRIPES` se
 dark-theme measurement below names Classic as the preset whose `stripeBgColor`
 falls to 1.02–1.07 contrast. That is now **Accordion** — the numbers and the
 mechanism are unchanged (an opaque near-white replacing a translucent black), only
-the card is different. Classic keeps the title half of the risk, along with
-Minimal and Accordion.
+the card is different.
+
+✅ **And the TITLE half of the risk shrank to two cards, later the same day.**
+Accordion went `TEXT_ONLY` → `BANDED` (doc 88's third revision), so its title now
+sits on the accent's **own** band — the case measured at **6.98–13.15** and safe on
+any theme, because both colours are absolute and travel together. The dark-theme
+title risk is therefore **Classic and Minimal only**. ⚠️ Accordion does not leave
+the open question: it still carries the stripe collision, which is the worse of the
+two and has nothing to do with the header style.
 
 ---
 
@@ -420,7 +452,7 @@ admin.
 | All five preset cards reflect the accent; Blank does not (D4)     | ✅ both directions — selecting and returning to Theme reverts every card               |
 | The title tint is visible on **Minimal**, its only live field (D3) | ✅ Theme near-black vs Terracotta reddish-brown vs Plum purple, at 0.55 card scale     |
 | `borderColor` reaches Classic's stripes, column rule and outline  | ✅ all three plum-tinted; the band correctly stays transparent under `PLAIN`            |
-| Accordion's underline + row rules tint (D5/D6)                    | ✅                                                                                     |
+| Accordion's underline + row rules tint (D5/D6)                    | ✅ — ⚠️ observed while Accordion was `TEXT_ONLY`; it is `BANDED` since 2026-07-30, so what tints there now is the band |
 | The href carries both params in the right slots                   | ✅ `?style=banded&accent=plum`                                                          |
 | The seeded scaffold matches the card it came from                 | ✅ plum band + plum title in the editor's storefront preview                            |
 | Five-iframe flicker (the cost profile's open question)            | ✅ none visible; no mitigation needed — see `101` §gate 4 for the stated limit          |

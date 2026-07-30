@@ -184,8 +184,9 @@ export const STYLE_PRESETS: readonly StylePreset[] = Object.freeze([
     //     name is the reason: it drops the band and keeps a 2px rule. In a table
     //     that is already full of horizontal rules, a PLAIN title is just a wider
     //     row; the header's own rule is what makes it read as a heading again.
-    //     It is now the second card on `TEXT_ONLY` — Accordion is the other, and
-    //     the two are still far apart on four other scoped fields.
+    //     ⚠️ It was briefly the second card on `TEXT_ONLY` — Accordion moved to
+    //     BANDED later the same day, so this is the ONLY card on it, and the only
+    //     one `headerUnderlineColor` reaches.
     //
     //   · Rules instead of stripes, because ⚠️ **the two are ALTERNATIVES, not a
     //     stack**: `--dividers-stripes` sets `border-block-end: none` on every
@@ -249,9 +250,28 @@ export const STYLE_PRESETS: readonly StylePreset[] = Object.freeze([
     }),
   },
   {
-    // Trek. `TEXT_ONLY` rather than `PLAIN` here on purpose: the 2px rule gives
-    // a CLICKABLE header the presence a disclosure needs, where the other two
-    // cards' headers are inert.
+    // Trek.
+    //
+    // 🔴 **Revised 2026-07-30 (merchant decision): BANDED headers.** It shipped
+    // `TEXT_ONLY`, on the reasoning that a 2px rule gives a CLICKABLE header the
+    // presence a disclosure needs. A band gives it more: a filled strip reads as
+    // a pressable target where a rule reads as a boundary, and the whole summary
+    // row — not just the text — is the hit area a shopper aims at. The
+    // stylesheet already carries the collapsible variant this needs
+    // (`--collapsible.--section-banded .__section-summary`, `spec-table.css`),
+    // so the band survives the disclosure shape instead of being a flat-table
+    // look bolted onto it.
+    //
+    // ⚠️ `sectionHeaderStyle` is therefore ABSENT rather than set to `"BANDED"`,
+    // exactly as Multi-column's is and for the same mechanical reason: BANDED is
+    // `SECTION_HEADER_STYLES[0]`, so an explicit write serializes away to nothing
+    // and fails the fixed-point guard in `stylePresets.test.ts`. A bundle is
+    // overrides-only; inheriting the default IS how it says BANDED.
+    //
+    // 📌 Knock-on, no code: `TEXT_ONLY` is now Classic's alone, so
+    // `headerUnderlineColor` is live on exactly one card and `headerBgColor`
+    // gains this one. Feature 93's reach table follows the resolved bundle, so it
+    // needed no change beyond describing the new cards — doc 93 §reach.
     //
     // ⚠️ `sectionGapPx` is the one tuning value in any bundle and knowingly
     // bends the structure-only rule — a stack of disclosures needs whitespace
@@ -274,7 +294,6 @@ export const STYLE_PRESETS: readonly StylePreset[] = Object.freeze([
     description: "Shoppers open one section at a time.",
     bundle: Object.freeze({
       sectionsCollapsible: true,
-      sectionHeaderStyle: "TEXT_ONLY",
       sectionGapPx: 12,
       rowDividerStyle: "STRIPES",
     }),
@@ -754,15 +773,21 @@ export const ACCENT_PRESETS: readonly AccentPreset[] = Object.freeze([
 // rows — where a header has no rule at all — and so never produced a value for
 // this field.
 //
-// It is the Title hex and not the paler border hex because the member exists to
-// give a CLICKABLE header presence (feature 88's Accordion note: "the 2px rule
-// gives a clickable header the presence a disclosure needs"). Measured on the
-// Accordion card at 1:1: the underline computes `1.81818px` at the title tone
-// while the row rules in the same table sit at the border tone — contrast to
-// white 1.66 for the rules against roughly 14 for the underline, so the header
-// reads as a header and not as one more row boundary. Falling back to the border
-// hex would have made those two tones identical, which is the one outcome the
-// member was chosen to avoid.
+// It is the Title hex and not the paler border hex because the underline is a
+// HEADING, and a heading must not tone-match the row boundaries around it.
+// Measured on the Accordion card at 1:1: the underline computes `1.81818px` at
+// the title tone while the row rules in the same table sit at the border tone —
+// contrast to white 1.66 for the rules against roughly 14 for the underline, so
+// the header reads as a header and not as one more row boundary. Falling back to
+// the border hex would have made those two tones identical, which is the one
+// outcome the member was chosen to avoid.
+//
+// ⚠️ **That measurement is HISTORICAL as to its card.** It was taken when
+// Accordion was `TEXT_ONLY`; Accordion moved to BANDED on 2026-07-30 and the only
+// card carrying an underline now is **Classic**. The finding is unchanged — it is
+// about two tones in one table, and Classic ships row LINES at the border tone
+// under the same underline — but do not go looking for a rule on the Accordion
+// card to re-check it against.
 //
 // 🚫 They must still NOT be set equal to `borderColor`. The stylesheet already
 // falls back `header-underline-color -> border-color -> currentColor`

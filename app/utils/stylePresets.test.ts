@@ -244,8 +244,13 @@ describe("style presets — the five patterns", () => {
     expect(values("multi-column").gridMinColumnWidthPx).toBeNull();
 
     expect(values("accordion").sectionsCollapsible).toBe(true);
-    // TEXT_ONLY, not PLAIN: a clickable header wants the 2px rule.
-    expect(values("accordion").sectionHeaderStyle).toBe("TEXT_ONLY");
+    // 🔴 BANDED as of 2026-07-30 (it shipped TEXT_ONLY), and inherited rather
+    // than set — BANDED is the default, so the bundle must NOT name it or the
+    // fixed-point guard above fails. A filled strip reads as a pressable target
+    // where a 2px rule reads as a boundary, and the stylesheet's
+    // `--collapsible.--section-banded` summary variant is what carries the band
+    // through the disclosure shape.
+    expect(values("accordion").sectionHeaderStyle).toBe("BANDED");
     expect(values("accordion").sectionGapPx).toBe(12);
     // Moved here from Classic 2026-07-30. Inside a disclosure the alternating
     // fill is a within-section reading aid, and the storefront restarts the
@@ -1007,12 +1012,17 @@ describe("accents — the constants", () => {
     // as provisional, because the palette study rendered banded + stripes where a
     // header has no rule.
     //
-    // The title tone rather than the paler border tone, because the member exists
-    // to give a clickable header PRESENCE (feature 88's Accordion note). Measured
-    // at 1:1 on the Accordion card: underline `1.81818px` at the title tone,
-    // row rules in the same table at the border tone (contrast to white 1.66),
-    // so the two are plainly different surfaces. The border hex would have
-    // collapsed them into one.
+    // The title tone rather than the paler border tone, because an underline is a
+    // HEADING and must not tone-match the row boundaries around it. Measured at
+    // 1:1 on the Accordion card: underline `1.81818px` at the title tone, row
+    // rules in the same table at the border tone (contrast to white 1.66), so the
+    // two are plainly different surfaces. The border hex would have collapsed
+    // them into one.
+    //
+    // ⚠️ Historical as to its CARD: Accordion moved to BANDED on 2026-07-30, so
+    // **Classic** is now the only preset an underline reaches. The finding holds
+    // there unchanged — Classic ships row LINES at the border tone under the same
+    // underline.
     for (const accent of ACCENT_PRESETS) {
       expect(
         accent.bundle.headerUnderlineColor,

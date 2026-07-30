@@ -716,6 +716,66 @@ Building the MVP.
 > products) and the row JSON was **restored** — only `updatedAt` moved, nothing
 > merchant-visible and no storefront impact.
 
+> ✅ **Accordion card → BANDED section headers, merchant ask 2026-07-30.** One
+> merchant-facing axis on one gallery card: `sectionHeaderStyle` `TEXT_ONLY` →
+> `BANDED`. Design record: doc `88-…` §"Revision, merchant decision 2026-07-30
+> (third)". ⚠️ **Tests stay at 1237 and should** — same reason as the earlier
+> polish pass: the value is one an existing guard already pins, so a moved count
+> would have meant a new claim shipped unguarded.
+> ⚠️ **The bundle DROPS the field rather than naming `"BANDED"`** — BANDED is
+> `SECTION_HEADER_STYLES[0]`, so an explicit write serializes away to nothing and
+> fails the fixed-point guard. Third card to hit this rule (Multi-column's header,
+> Classic's row LINES), and this time it was **mutation-verified rather than
+> assumed**: putting `sectionHeaderStyle: "BANDED"` back fails *every bundle is a
+> fixed point of parse then serialize* and nothing else. 📌 Absence now carries
+> BANDED on two of the five cards, so the resolved-values assertion is the only
+> place the claim is readable — the bundle literal no longer mentions the axis.
+> **Why a band beats the rule it replaced:** a filled strip reads as a *pressable
+> target* where a 2px rule reads as a *boundary between two things*, and the whole
+> summary row rather than the run of text becomes the hit area. The stylesheet
+> already carries `--collapsible.--section-banded .__section-summary`, so the band
+> is native to the disclosure shape rather than a flat-table look bolted onto it.
+> 🚫 The old rationale (feature 88 §"Accordion uses `TEXT_ONLY`, not `PLAIN`") is
+> **struck through, not deleted** — its premise survived and only the answer moved.
+> 📌 **Three knock-ons for feature 93, none needing code.** `headerBgColor` goes
+> live on Accordion; `headerUnderlineColor` goes dead there, leaving it reaching
+> **exactly one card, Classic** — worth knowing before the next palette revision
+> goes looking for two. And ✅ **doc 93 §Open question 2's title risk shrinks to
+> Classic + Minimal**: a banded title sits on the accent's own band, the case step
+> 102 measured at 6.98–13.15 on any theme. ⚠️ **The stripe half stays Accordion's
+> and is unchanged** — an opaque near-white replacing a translucent black has
+> nothing to do with the header style, so the open question is narrowed, not
+> closed.
+> ✅ **LIVE-VERIFIED on `appx-dev` 2026-07-30, 3 of 3, no DB write.** Gate green
+> (typecheck · lint · format · **1237** · build).
+> ✅ **The risk this pass existed to test did NOT materialize.** A banded Accordion
+> does not read as a third copy of Modern at the gallery's 0.55 scale: captured at
+> equal zoom, Accordion carries the **▼ disclosure markers**, a visible **section
+> gap** above the second band, and **stripes**, against Modern's markerless bands,
+> no gap and row **lines**. Three independent signals, all legible.
+> ✅ **Both feature-93 knock-ons observed under Plum.** Accordion's band is **plum**
+> and it has **no underline rule** — `headerBgColor` live, `headerUnderlineColor`
+> dead, exactly as the reach table now says. Classic in the same capture is the
+> mirror image: transparent header, **plum underline**, plum row lines, column rule
+> and outline — so the underline reaching exactly one card is observed, not inferred.
+> 📌 Verified on the gallery (frozen constants, no loader) and a throwaway
+> `?style=accordion&accent=plum` scaffold that was never saved. **Postgres
+> untouched.**
+> 🔴 **Two instrument findings, both cost real time and neither was a code fault.**
+> **(1) CLICKS NO LONGER REACH THE APP IFRAME — only keys do.** Chip clicks, the
+> editor's Content/Style/Settings tab group and a row's Label cell all no-opped at
+> coordinates verified correct by zoom; the same keypresses drove the same controls
+> fine. [[embedded-admin-iframe-automation]] said clicks DID work, so the note is
+> now wrong and was corrected. The route that works: **Tab to "Skip to content" →
+> Enter → Tab past the breadcrumb and the "…" overflow → the swatch row**, then
+> `End` / arrows. ⚠️ The `shift` modifier on `key` is also ignored — a
+> "Shift+Tab" moves focus **forward**, which reads as a wrong tab order rather than
+> a dead modifier. **(2) The window resizes between calls** (1288×925 ↔ 1308×940),
+> so any coordinate computed from an earlier screenshot is stale; zoom and click
+> must be in the same batch. 🔬 Both are the [[testing-strategy]] rule again —
+> **when a control "does nothing", suspect the instrument before the code.** I
+> nearly recorded a working accent row as broken.
+
 ## Current Goal
 
 **Reshell Phase B2 — the built-in preset gallery (Style tab feature 57, steps 13–14).**
