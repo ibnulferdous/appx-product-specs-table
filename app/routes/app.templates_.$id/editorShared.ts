@@ -127,6 +127,47 @@ export function readValue(event: Event): string {
 // embedded app). Addressed by id, shown while the editor is dirty.
 export const SAVE_BAR_ID = "template-save-bar";
 
+/**
+ * The attributes the save bar's primary (Save) button carries, derived from the
+ * engine's `saving` / `canSave` pair.
+ *
+ * 🔴 THE BUG THIS EXISTS FOR: `loading` MUST be a STRING, never a boolean.
+ * `<SaveBar>` renders `<ui-save-bar>` and hooks a plain NATIVE `<button>`, and on
+ * React 18 a boolean value for an attribute React does not know is a boolean is
+ * DROPPED from the DOM entirely (dev-only console warning, nothing else). So
+ * `loading={saving}` typechecks — `@shopify/app-bridge-types` augments
+ * `ButtonHTMLAttributes` with `loading?: boolean | string` — and then never
+ * reaches the element, so the merchant clicked Save and got no spinner at all
+ * while the whole editor froze. Verified by `renderToStaticMarkup`:
+ * `loading={true}` → `<button variant="primary">`, `loading="true"` →
+ * `<button variant="primary" loading="true">`.
+ *
+ * ⚠️ This trap is specific to native tags. Every `<s-button loading={flag}>` in
+ * the app is FINE: a dashed tag is a custom element, and React passes booleans
+ * through to those stringified. Do not "fix" those to match this.
+ *
+ * `disabled` is deliberately NOT set while a save is in flight, so the spinner is
+ * never competing with a greyed-out button for the same pixels. Nothing is at
+ * risk: `handleSave` returns early when the fetcher is non-idle, the editor card
+ * is `inert` for the duration, and App Bridge disables a loading button itself.
+ * The only thing that disables Save is the reason unrelated to saving — an
+ * incomplete assignment scope, which `canSave` folds in.
+ *
+ * Returned as a spreadable object rather than two props so the absent case is a
+ * MISSING attribute, not `loading="false"` / `disabled="false"` — both of which a
+ * presence-based attribute parser would read as true.
+ */
+export function saveBarSaveAttrs({
+  saving,
+  canSave,
+}: {
+  saving: boolean;
+  canSave: boolean;
+}): { loading?: "true"; disabled?: true } {
+  if (saving) return { loading: "true" };
+  return canSave ? {} : { disabled: true };
+}
+
 // The header "More actions" <s-menu> and its two lifecycle <s-modal>s (feature
 // 20). The menu is opened declaratively (the trigger button's `commandFor`); the
 // modals are driven imperatively via the App Bridge Modal API

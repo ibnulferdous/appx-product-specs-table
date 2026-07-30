@@ -7,7 +7,7 @@ import { StyleTab } from "./StyleTab";
 import { SpecTablePreview } from "./SpecTablePreview";
 import { ResetStylingModal } from "./ResetStylingModal";
 import { EditorTips } from "./EditorTips";
-import { SAVE_BAR_ID } from "./editorShared";
+import { SAVE_BAR_ID, saveBarSaveAttrs } from "./editorShared";
 import type { RowEngine } from "./useRowEngine";
 import styles from "./SpecTableEditor.module.css";
 
@@ -79,13 +79,21 @@ export function SpecTableEditor({ engine }: { engine: RowEngine }) {
           active tab. Save persists to Postgres + the storefront metaobject;
           Discard remounts the editor to the saved rows. Discard is disabled while
           a save is in flight so it cannot remount (and tear down the in-flight
-          fetcher) mid-save. */}
+          fetcher) mid-save.
+
+          The Save button's `loading` / `disabled` pair comes from
+          `saveBarSaveAttrs` — read its comment before touching it. These are
+          NATIVE <button>s (that is App Bridge's contract for the save bar), and a
+          boolean `loading` on a native tag is silently dropped by React 18, which
+          is exactly how this button shipped with no spinner. */}
       <SaveBar id={SAVE_BAR_ID} open={engine.isDirty}>
         <button
           variant="primary"
           onClick={engine.handleSave}
-          loading={engine.saving}
-          disabled={!engine.canSave}
+          {...saveBarSaveAttrs({
+            saving: engine.saving,
+            canSave: engine.canSave,
+          })}
         >
           Save
         </button>

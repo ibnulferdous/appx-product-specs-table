@@ -666,6 +666,56 @@ Building the MVP.
 > `"theme"` sentinel count is untouched: it matches the literal WITH its quotes,
 > which the new label has none of.
 
+> 🔴 **Save-bar spinner bug fixed 2026-07-30 — merchant report, and the cause is a
+> React 18 trap worth knowing before the next native-element attribute.** Clicking
+> Save showed NO spinner and no progress of any kind: the whole editor froze
+> (`inert`) with a greyed-out Save button and nothing to say a save was running.
+> Gate green (typecheck · lint · format · **1237** · build); live-verified on
+> `appx-dev`.
+> 🔬 **The mechanism.** `SpecTableEditor` passed `loading={engine.saving}` — a
+> BOOLEAN — to the save bar's **native `<button>`** (App Bridge's own contract for
+> `<SaveBar>` children). On React 18, a boolean value for an attribute React does
+> not recognise as a boolean is **dropped from the DOM entirely**, with only a
+> dev-console warning. So App Bridge never saw a loading state. ⚠️ **It typechecked
+> the whole time**: `@shopify/app-bridge-types` augments `ButtonHTMLAttributes` with
+> `loading?: boolean | string`, so the broken form is the one a reader would
+> naturally write. Proven by `renderToStaticMarkup`: `loading={true}` →
+> `<button variant="primary">`, `loading="true"` →
+> `<button variant="primary" loading="true">`.
+> 🔴 **And the four `<s-button loading={flag}>` call sites are FINE, which is what
+> made the bug invisible.** A dashed tag is a **custom element**, and React passes
+> booleans through to those stringified — so the modals' spinners always worked and
+> the broken form looked like house style. 🚫 Do not "fix" the `s-button` ones.
+> ✅ **Fix:** `saveBarSaveAttrs({ saving, canSave })` in `editorShared.ts`, spread
+> onto the button — returns `{ loading: "true" }` while saving, `{ disabled: true }`
+> when blocked for any OTHER reason, `{}` otherwise. A spreadable object, not two
+> props, so the idle case is a **missing** attribute rather than `loading="false"`
+> (which a presence-based parser reads as true). ⚠️ **`disabled` is deliberately
+> dropped while saving** so the spinner is not competing with a greyed button;
+> nothing is at risk, since `handleSave` returns early on a non-idle fetcher, the
+> card is `inert`, and App Bridge disables a loading button itself.
+> ✅ **Live-verified by DOM capture, not by eye** — a `MutationObserver` on the
+> admin's real Save button (it lives in the TOP frame, same origin, so it IS
+> readable unlike the app iframe) recorded the save flipping it to
+> `aria-busy="true"` and injecting
+> `<span class="_Spinner_…"><s-spinner accessibilitylabel="Loading"></s-spinner></span>`.
+> 🔬 **That instrument beats a screenshot here**: the first save took ~5 s (cold
+> Neon) but the second finished between two captures, so a still could easily have
+> missed a spinner that was really there — the [[testing-strategy]] rule about
+> suspecting the instrument, applied in advance for once. 📌 The admin exposing it as
+> `aria-busy` also means a screen reader now gets the busy state, which the old code
+> never announced.
+> ✅ **+10 tests in `saveBarButtonContract.test.ts`**, and the load-bearing ones
+> render through `react-dom/server` rather than asserting the returned shape — a
+> serialization assertion is **the only kind that can fail for the original
+> reason**. One test keeps the boolean form executable as a record of the mechanism.
+> Plus a call-site source guard, per step 101's lesson that a test over a function
+> cannot see the seam between it and its caller. ✅ **Mutation-tested**: restoring
+> `loading={engine.saving}` + a boolean return fails **5** of the 10.
+> 📌 Verified on a throwaway DRAFT template (`cms3aoedi0001vpf4hy1zr2ql`, 0 assigned
+> products) and the row JSON was **restored** — only `updatedAt` moved, nothing
+> merchant-visible and no storefront impact.
+
 ## Current Goal
 
 **Reshell Phase B2 — the built-in preset gallery (Style tab feature 57, steps 13–14).**
