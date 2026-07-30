@@ -232,7 +232,7 @@ Building the MVP.
 > | Step | File                              | Scope                                          | Status                    |
 > | ---- | --------------------------------- | ---------------------------------------------- | ------------------------- |
 > | 97   | `97-accent-vocabulary.md`         | `ACCENT_PRESETS` pure domain + palette         | ✅ **2026-07-30**, → 1179 |
-> | 98   | `98-accent-render-harness.md`     | 5 × 6 render matrix at 1:1, lock the underline | 🔲                        |
+> | 98   | `98-accent-render-harness.md`     | 5 × 6 render matrix at 1:1, lock the underline | ✅ **2026-07-30**, 35 renders |
 > | 99   | `99-accent-seed-path.md`          | `&accent=` → resolved styling                  | 🔲                        |
 > | 100  | `100-accent-swatch-row.md`        | the swatch row component                       | 🔲                        |
 > | 101  | `101-accent-gallery-wiring.md`    | gallery state + live restyle + hrefs           | 🔲                        |
@@ -288,10 +288,10 @@ Building the MVP.
 > tinted neighbours, invisible on four of five cards. 🚫 The palette is **data
 > copied byte-for-byte**, never derived — no `hsl()` arithmetic, since two roles
 > were tuned against measured references and a derivation would discard the
-> approval. ⚠️ **`headerUnderlineColor`'s six values are PROVISIONAL** (the
-> palette study rendered banded + stripes, where a header has no rule) and carry
-> the title hex; step 98 locks the real ones, and they are pinned in a separate
-> test whose name says `provisional` so that revision touches one assertion.
+> approval. ⚠️ **`headerUnderlineColor`'s six values shipped PROVISIONAL** (the
+> palette study rendered banded + stripes, where a header has no rule) carrying
+> the title hex, pinned in a separately-named test — ✅ **confirmed unchanged by
+> step 98.**
 > ✅ **Mutation-tested four ways, and two over-delivered:** adding `borderColor` to
 > the preset scope also took down **`is FALSE when only a color changes`**, a
 > pre-existing guard that is D7's argument in executable form — so the suite
@@ -303,6 +303,41 @@ Building the MVP.
 > a test was added anyway, because the only justification for the field being in
 > the accent is that it carries a **different** tone; if step 98 lands on the
 > border's hex the right move is to drop the field, not duplicate the value.
+>
+> **Step 98 landed 2026-07-30 — 35 renders measured, and NOTHING in the design
+> needed revision.** 5 presets × (Theme control + 6 accents) through the real
+> `renderSpecTablePreviewDocument` at 800px scale 1, every surface read by
+> `getComputedStyle`. ⚠️ **Tests stay at 1179 by design** — this step changed
+> comments and one test NAME, so a moved number would have meant it changed
+> behaviour. ✅ **Q1: the reach table is confirmed 5 of 5**, every predicted-live
+> field carrying the accent hex and every predicted-dead field **byte-identical to
+> its control**. 🔍 One nuance the prediction missed: on the four frameless presets
+> the outline's **colour resolves while its width stays 0px**, so "dead" means zero
+> width, not colour-not-applied — a merchant who later turns on an outer border
+> gets the accent tone already waiting. ✅ **Q2: the provisional underline is
+> CONFIRMED as the title tone**, and for a measured reason rather than by default —
+> in the same Accordion table the row rules sit at the border tone (contrast to
+> white 1.657) against the underline's ≈14, so the two are plainly different
+> surfaces; the `borderColor` fallback would have collapsed them, which is exactly
+> what feature 88 chose `TEXT_ONLY` to avoid. ✅ **Q3: `borderColor`'s reach
+> IMPROVES on the neutral it replaces** — the feared regression (a tint fainter
+> than `rgba(0,0,0,0.1)`) does not occur: the neutral measures **1.254** against
+> white and every accent's row rule lands **1.513–1.764**, i.e. 21–41% more
+> contrasty. It also reads as intentional by eye — tinted rules belong to the band,
+> where neutral ones would have been **grey rules under a coloured band**.
+> 🔴 **A measurement error of mine, caught and worth carrying:** the first probe
+> reported Classic's stripe as unchanged, which would have falsified the reach
+> table. The probe was wrong, not the data — it looked for "the first label whose
+> background differs from label[0]", and on Classic **label[0] IS a striped row**,
+> so it found the unstriped neighbour. **A probe that hunts for "the one that
+> differs" has already assumed which element is the baseline; enumerate the set
+> instead.** 🔬 **The control column was the most valuable thing in the harness** —
+> it turns "Classic's band is transparent under Blue" from a claim needing an
+> argument into "identical to the same table with no accent". Feature 94's harness
+> learned this too; any future matrix should render its own baseline as a column.
+> ⚠️ **Still owed: nothing here touched dark themes.** Every number is against
+> white, so doc 93 §D3's accepted risk is unchanged and still step 102's.
+> `.harness/` stays untracked (1.4 MB of generated `srcdoc`).
 
 ## Current Goal
 

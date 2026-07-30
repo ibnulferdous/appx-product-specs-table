@@ -679,15 +679,17 @@ describe("accents — the constants", () => {
     }
   });
 
-  it("carries a provisional underline colour, equal to the title", () => {
-    // ⚠️ PROVISIONAL (doc 93 §D5). The palette study rendered banded + stripes,
-    // where a header has no rule, so it produced no value for this field. The
-    // title hex is a reasoned placeholder — the underline belongs to the header
-    // and pairs with the title's weight — NOT an approved colour.
+  it("carries an underline colour equal to the title", () => {
+    // ✅ CONFIRMED by measurement, step 98 (2026-07-30) — it shipped in step 97
+    // as provisional, because the palette study rendered banded + stripes where a
+    // header has no rule.
     //
-    // 🔴 Step 98 renders Accordion under all six accents at 1:1 and locks the
-    // real values. When it does, THIS test changes and the approved-palette pin
-    // above does not.
+    // The title tone rather than the paler border tone, because the member exists
+    // to give a clickable header PRESENCE (feature 88's Accordion note). Measured
+    // at 1:1 on the Accordion card: underline `1.81818px` at the title tone,
+    // row rules in the same table at the border tone (contrast to white 1.66),
+    // so the two are plainly different surfaces. The border hex would have
+    // collapsed them into one.
     for (const accent of ACCENT_PRESETS) {
       expect(
         accent.bundle.headerUnderlineColor,
@@ -702,9 +704,11 @@ describe("accents — the constants", () => {
     // (`spec-table.css:205`) and `borderColor` IS in the accent, so equal values
     // make the dedicated field a pure no-op.
     //
-    // ⚠️ Passes vacuously today — the underline tracks the TITLE, which differs
-    // from the border in all six. It is here for step 98, which picks the real
-    // values and is the step that could plausibly land on the border's hex.
+    // Step 98 confirmed the title tone, so this holds by construction today. It
+    // stays as the guard on a future palette revision: if the pale tone is ever
+    // wanted here, the right change is to DROP the field from the scope rather
+    // than write the same value twice, and this test is what forces that choice
+    // to be made deliberately.
     for (const accent of ACCENT_PRESETS) {
       expect(
         accent.bundle.headerUnderlineColor,

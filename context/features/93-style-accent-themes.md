@@ -1,18 +1,22 @@
 # Feature 93 — Accent themes (the gallery's colour-theme swatch row)
 
-**Status:** 🟡 **SPECCED 2026-07-30, not built.** All six open decisions were
-answered by the merchant the same day and are recorded verbatim below.
-**This file is the binding design; it is not an implementation plan.** The build
-is split into six step files, each with its own instructions and completion gate:
+**Status:** 🟢 **IN PROGRESS — 2 of 6 steps done.** Specced 2026-07-30; all seven
+open decisions were answered by the merchant the same day and are recorded
+verbatim below. **This file is the binding design; it is not an implementation
+plan.** Each step file carries its own instructions and completion gate:
 
-| Step | File                              | Scope                                          | Merchant-visible |
-| ---- | --------------------------------- | ---------------------------------------------- | ---------------- |
-| 97   | `97-accent-vocabulary.md`         | `ACCENT_PRESETS` pure domain + palette         | no               |
-| 98   | `98-accent-render-harness.md`     | 5 × 6 render matrix at 1:1, lock the underline | no               |
-| 99   | `99-accent-seed-path.md`          | `&accent=` → resolved styling                  | no               |
-| 100  | `100-accent-swatch-row.md`        | the swatch row component                       | no               |
-| 101  | `101-accent-gallery-wiring.md`    | gallery state + live restyle + hrefs           | ✅               |
-| 102  | `102-accent-live-verification.md` | admin → Postgres → metaobject → storefront     | ✅               |
+| Step | File                              | Scope                                          | Status                       |
+| ---- | --------------------------------- | ---------------------------------------------- | ---------------------------- |
+| 97   | `97-accent-vocabulary.md`         | `ACCENT_PRESETS` pure domain + palette         | ✅ **2026-07-30**, → 1179    |
+| 98   | `98-accent-render-harness.md`     | 5 × 6 render matrix at 1:1, lock the underline | ✅ **2026-07-30**, 35 renders |
+| 99   | `99-accent-seed-path.md`          | `&accent=` → resolved styling                  | 🔲                           |
+| 100  | `100-accent-swatch-row.md`        | the swatch row component                       | 🔲                           |
+| 101  | `101-accent-gallery-wiring.md`    | gallery state + live restyle + hrefs           | 🔲 first merchant-visible    |
+| 102  | `102-accent-live-verification.md` | admin → Postgres → metaobject → storefront     | 🔲                           |
+
+✅ **Nothing in the design has needed revision.** Step 98 confirmed the reach
+table 5 of 5 and the provisional underline value, and measured `borderColor`'s
+reach as a contrast *improvement*. The palette is unchanged from approval.
 
 **Parent feature:** `88-style-preset-gallery.md` §"Feature 93 — accent themes
 (forward compatibility)" — read it first. This file does not restate the
@@ -203,14 +207,20 @@ deliberately deferred: it multiplies D3's risk (a merchant can pick a hue that
 vanishes on their own theme) and nothing is blocked without it, since all ten
 swatches remain hand-settable in the rail.
 
-⚠️ **`headerUnderlineColor` has no approved value yet.** It is dead in the
-banded + stripes combination the palette was approved from, so the study never
-produced a hex for it. It **cannot** simply equal `borderColor` — the stylesheet
-already falls back that way, so writing the same value twice is a no-op. Working
-assumption: **the Title hex**, on the grounds that the underline belongs to the
-header and pairs with the title's weight. 🔴 **Owed to step 98** — that step
-renders Accordion under all six accents at 1:1 and locks the value from what is
-observed. Do not ship a guess.
+✅ **`headerUnderlineColor` = each accent's Title hex, CONFIRMED by measurement**
+(step 98, 2026-07-30). It was dead in the banded + stripes combination the palette
+was approved from, so the study produced no hex for it, and step 97 shipped the
+Title hex as an explicitly provisional placeholder.
+
+Step 98 measured Accordion at 1:1 and confirmed it: the underline computes
+`1.81818px` at the title tone while the row rules in the same table sit at the
+border tone (contrast to white **1.657** for the rules, ≈**14** for the
+underline). Falling back to `borderColor` — which is what an absent value does —
+would have made the header underline and the row rules **the same colour**, and
+feature 88 chose `TEXT_ONLY` for this card precisely so a clickable header would
+have the presence the inert ones lack. 🚫 So it still must never equal
+`borderColor`: if a revision ever wants the pale tone there, the correct change is
+to **drop the field from `ACCENT_SCOPED_FIELDS`**, not to write the value twice.
 
 ### D6 · `borderColor`, not `outerBorderColor` — and interior rules tint too
 
@@ -236,9 +246,16 @@ Per feature 95 it dresses the row rules, the column divider, the feature-80
 collapsible separator, and the outline whenever `outerBorderColor` is unset. The
 palette was approved on a combination with **both** interior rule sets switched
 off (`STRIPES` kills the row rules, `BANDED` kills the band's), so the study only
-ever showed the outline. **Step 98 is what confirms the other four presets** —
-Modern's row rules and Classic's column rule in particular have never been seen
-under an accent.
+ever showed the outline.
+
+✅ **Step 98 measured the surfaces the study never showed, and they IMPROVE on the
+neutral.** The feared failure was a tint fainter than the `rgba(0,0,0,0.1)` grey
+it replaces — a legibility regression disguised as a colour choice. Measured
+contrast to white: the neutral is **1.254**; every accent's row rule lands between
+**1.513** (Amber, weakest) and **1.764** (Plum), i.e. **21–41% more contrasty**.
+And it reads as intentional: tinting the rules ties them to the band, where
+leaving them neutral would have put **grey rules under a coloured band**. Numbers
+and the side-by-side: `98-accent-render-harness.md` §Q3.
 
 ### D7 · Accent colours stay OUT of `PRESET_SCOPED_FIELDS`
 
@@ -281,10 +298,17 @@ which is the same structure-only question.
 
 ## What each preset actually shows under an accent
 
-Derived from the bundles in `stylePresets.ts` against the member rules in
-`spec-table.css`. 🔴 **This table is a prediction and step 98 must measure it** —
-this project has already read a low-contrast fill off a screenshot and got the
-wrong answer once (feature 88, the Classic stripe).
+✅ **MEASURED and confirmed 5 of 5 — step 98, 2026-07-30.** Originally derived by
+reading `spec-table.css` against the bundles and flagged as a prediction; step 98
+rendered all 5 presets × (Theme control + 6 accents) at 800px scale 1 and read
+every surface with `getComputedStyle`. Every predicted-live field carries the
+accent hex and every predicted-dead field is byte-identical to its control. Full
+table of values: `98-accent-render-harness.md` §Q1.
+
+🔍 **One nuance the prediction missed.** On the four presets with no frame the
+outline's **colour resolves to the accent hex while its width stays `0px`** — so
+"dead" means zero width, not colour-not-applied. A merchant who later turns on an
+outer border gets the accent's tone already there.
 
 | Preset       | Header      | Dividers  | Frame | Live accent fields                         |
 | ------------ | ----------- | --------- | ----- | ------------------------------------------ |

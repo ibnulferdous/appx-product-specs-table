@@ -607,25 +607,28 @@ export const ACCENT_PRESETS: readonly AccentPreset[] = Object.freeze([
   },
 ]);
 
-// ⚠️ **`headerUnderlineColor` above is PROVISIONAL — all six of those values are
-// placeholders, not approved colours** (doc 93 §D5).
+// ✅ **`headerUnderlineColor` = the Title hex, CONFIRMED by measurement**
+// (feature 93 · step 98, 2026-07-30). It shipped in step 97 as a provisional
+// placeholder, because the palette study rendered banded headers with striped
+// rows — where a header has no rule at all — and so never produced a value for
+// this field.
 //
-// The palette study rendered banded headers with striped rows, where a header has
-// no rule at all, so it never produced a value for this field. Each accent
-// currently carries its Title hex, on the reasoning that the underline belongs to
-// the header and pairs with the title's weight.
+// It is the Title hex and not the paler border hex because the member exists to
+// give a CLICKABLE header presence (feature 88's Accordion note: "the 2px rule
+// gives a clickable header the presence a disclosure needs"). Measured on the
+// Accordion card at 1:1: the underline computes `1.81818px` at the title tone
+// while the row rules in the same table sit at the border tone — contrast to
+// white 1.66 for the rules against roughly 14 for the underline, so the header
+// reads as a header and not as one more row boundary. Falling back to the border
+// hex would have made those two tones identical, which is the one outcome the
+// member was chosen to avoid.
 //
-// 🔴 **Step 98 renders Accordion under all six accents at 1:1 and locks the real
-// values.** Expect them to change; that is the step doing its job, not rework.
-// The test pinning them says `provisional` in its name for the same reason, so
-// step 98 edits one clearly-labelled assertion rather than the approved-palette
-// pin beside it.
-//
-// 🚫 They must NOT be set equal to `borderColor`. The stylesheet already falls
-// back `header-underline-color -> border-color -> currentColor`
-// (`spec-table.css:205`), and `borderColor` is in the accent, so writing the same
-// value twice is a pure no-op — a redundancy no unit test can see, because it is
-// a rendering fact rather than a data one.
+// 🚫 They must still NOT be set equal to `borderColor`. The stylesheet already
+// falls back `header-underline-color -> border-color -> currentColor`
+// (`spec-table.css:205`), and `borderColor` is in the accent, so equal values
+// make this field a pure no-op. If a future palette revision wants the pale tone
+// here, the correct change is to DROP the field from `ACCENT_SCOPED_FIELDS`, not
+// to write the same value twice — a guard asserts this.
 
 /**
  * Tolerant lookup for the `?accent=<token>` param.
