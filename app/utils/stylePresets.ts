@@ -57,7 +57,18 @@ import {
  * that form compares ZERO fields and would make Banded equal to everything. A
  * fixed set resolves `{}` against the defaults and gets it right.
  *
- * Append-only. Feature 93 appends the accent's color fields.
+ * 🔴 **Colours never join this list, and feature 93 settled that in writing**
+ * (doc `93-style-accent-themes.md` §D7 — this comment previously predicted the
+ * opposite). Appending one recreates the exact bug the scope was invented to
+ * avoid: an accent writes `headerBgColor`, `stylePresetValues` resolves the
+ * BUNDLE ALONE, and every seeded template reads "Customized" the instant it is
+ * created. It cannot be repaired by comparing against bundle + accent either,
+ * because an accent has no provenance column to say which one was picked — so
+ * the colour half of that comparison is not wrong, it is UNDEFINED.
+ *
+ * The accent vocabulary keeps its own scope, `ACCENT_SCOPED_FIELDS`, and a test
+ * asserts the two are disjoint. That is "structure and colour compose" in one
+ * line.
  *
  * 📌 **The frame and column-rule fields were appended 2026-07-27** (merchant
  * decision: the Classic card gets an outer border, a column rule and stripes).
@@ -407,4 +418,229 @@ export function isCustomizedFromPreset(
  */
 export function isThemeDefault(values: StylingValues): boolean {
   return presetScopedEquals(values, DEFAULT_STYLING_VALUES);
+}
+
+// --- Accents (feature 93 · step 97) -------------------------------------------
+//
+// The colour half of the vocabulary. Binding design:
+// `context/features/93-style-accent-themes.md`; this step's spec is
+// `97-accent-vocabulary.md`.
+//
+// **A bundle sets structure, an accent sets colour, they compose.** The merge
+// order lives in `seedStylingFromPreset` and predates this section by design.
+//
+// --- Why an accent is FIVE fields and not one --------------------------------
+//
+// Kaching tints one thing, the band behind a title, and every one of their cards
+// has that band. Ours do not. A pattern picks a `sectionHeaderStyle`, and two of
+// the three members HARDCODE the band away (`spec-table.css` — `--section-plain`
+// and `--section-text-only` both set `background: transparent`). So an accent
+// writing only `headerBgColor` paints NOTHING on three of the five cards —
+// Classic, Minimal and Accordion — and a merchant clicking a colour watches
+// three of five sit still.
+//
+// `headerTextColor` is what makes the set total: none of the three member rules
+// overrides `color:`, so the title is tintable under every header style. It is
+// the ONLY live field on Minimal, which has no band, no rule, no frame and no
+// stripes.
+//
+// 🚫 An accent that varies by pattern — `accentFor(preset, token)` — was
+// rejected (doc 93). It would work, and it would cost the composition promise
+// above, which every later merge of the two would then inherit as an exception.
+
+/**
+ * An overrides-only wire shape, structurally identical to `StyleBundle`.
+ *
+ * ⚠️ **Deliberately a separate type name.** The two vocabularies obey different
+ * laws — a bundle may set a subset and must set no colour; an accent must set
+ * all five colours and no structure — and a shared alias would let a bundle pass
+ * as the `accent` argument to `seedStylingFromPreset` with no type error. That is
+ * the one seam where confusing them yields a silently wrong table.
+ */
+export type AccentBundle = Readonly<Partial<StylingValues>>;
+
+export interface AccentPreset {
+  /**
+   * Stable and URL-safe — carried in `?accent=<id>`.
+   *
+   * ⚠️ **Not persisted anywhere.** Unlike `StylePreset.id`, which is written to
+   * `TableStyling.basedOnPreset` and is therefore a wire format, an accent's
+   * effect lands in five real colour columns and the token itself is discarded.
+   * Renaming one breaks a bookmarked gallery URL and nothing else.
+   */
+  id: string;
+  label: string;
+  bundle: AccentBundle;
+}
+
+/**
+ * The fields an accent is allowed to set — the executable form of "an accent
+ * sets colour".
+ *
+ * Three guards in `stylePresets.test.ts` are stated in terms of this list: every
+ * accent sets EXACTLY these (both directions), every member is a colour field
+ * per the parser probe, and this list is DISJOINT from
+ * `PRESET_SCOPED_FIELDS`. Together they are the composition rule, and the third
+ * is what fails if anyone ever acts on the prediction §D7 corrected.
+ *
+ * ⚠️ Order is `STYLING_FIELD_NAMES`' order, not the palette's
+ * band/title/border/stripe reading order. The palette table in doc 93 is
+ * merchant-facing; this is a comparison scope, and matching the domain's own
+ * order is what lets a test derive it rather than hand-list it.
+ *
+ * 🚫 The four body-surface colours (`labelBgColor`, `valueBgColor`,
+ * `labelTextColor`, `valueTextColor`) are excluded by merchant decision
+ * (doc 93 §D2): a whole column of tinted text reads as a themed widget dropped
+ * onto the page rather than part of the merchant's storefront.
+ */
+export const ACCENT_SCOPED_FIELDS = [
+  "headerBgColor",
+  "headerUnderlineColor",
+  "headerTextColor",
+  "stripeBgColor",
+  // Earns its place by covering three surfaces no other accent field reaches:
+  // the outline (through the stylesheet's own
+  // `outer-border-color -> border-color` fallback, so the frame costs no second
+  // field), the row rules, and the column divider. Merchant decision 2026-07-30,
+  // asked explicitly and answered "tint them all".
+  "borderColor",
+] as const satisfies readonly StylingFieldName[];
+
+export type AccentScopedField = (typeof ACCENT_SCOPED_FIELDS)[number];
+
+/**
+ * The six built-in accents.
+ *
+ * 🔴 **These twenty-four hexes are DATA, approved by the merchant 2026-07-30
+ * from a 1:1 render study — never derived at runtime.** No hue arithmetic, no
+ * shared lightness constant, no `derive(h)` helper. Two of the roles were tuned
+ * against measured references (Blue's stripe `#f1f6fd` against a real storefront's
+ * `#f1f8ff`), and an `hsl()` derivation would produce merely SIMILAR values while
+ * silently discarding that approval. A revision is a merchant decision with a
+ * date, not a refactor.
+ *
+ * ORDER IS MERCHANT-FACING — it is the swatch order. `graphite` leads because it
+ * is the near-neutral one, the closest of the six to "no accent at all", so the
+ * row reads outward from the least committal choice.
+ *
+ * ⚠️ **There is no `theme` entry, and one must never be added.** "Theme" is the
+ * ABSENCE of an accent, exactly as the gallery's Blank card is the absence of a
+ * preset: `findAccent(null)` -> `null` -> `{}` -> `DEFAULT_STYLING_VALUES` is
+ * already that behaviour, reached through the same path every invalid input
+ * takes. A seventh member with an empty bundle would add a second way to express
+ * one state and give the swatch row two code paths to keep in agreement. The
+ * "Theme" option is rendered as a hardcoded first choice in the component — a UI
+ * fact, not a data one.
+ *
+ * Every accent sets all five scoped fields. A PARTIAL accent is a defect the
+ * gallery cannot afford: it would leave one surface neutral grey beside tinted
+ * neighbours, and per doc 93's reach table that inconsistency is invisible on
+ * four of the five cards and shows only on the one preset where that surface is
+ * live.
+ */
+export const ACCENT_PRESETS: readonly AccentPreset[] = Object.freeze([
+  {
+    id: "graphite",
+    label: "Graphite",
+    bundle: Object.freeze({
+      headerBgColor: "#e6ebf7",
+      headerUnderlineColor: "#1c2333",
+      headerTextColor: "#1c2333",
+      stripeBgColor: "#f3f6fb",
+      borderColor: "#c2c9d8",
+    }),
+  },
+  {
+    id: "blue",
+    label: "Blue",
+    bundle: Object.freeze({
+      headerBgColor: "#e6effc",
+      headerUnderlineColor: "#0a4e9e",
+      headerTextColor: "#0a4e9e",
+      stripeBgColor: "#f1f6fd",
+      borderColor: "#b3cbec",
+    }),
+  },
+  {
+    id: "teal",
+    label: "Teal",
+    bundle: Object.freeze({
+      headerBgColor: "#ddf3ee",
+      headerUnderlineColor: "#04564a",
+      headerTextColor: "#04564a",
+      stripeBgColor: "#f4fbf9",
+      borderColor: "#a6d3c9",
+    }),
+  },
+  {
+    id: "amber",
+    label: "Amber",
+    bundle: Object.freeze({
+      headerBgColor: "#fbeeda",
+      headerUnderlineColor: "#5f3f06",
+      headerTextColor: "#5f3f06",
+      stripeBgColor: "#fef9f1",
+      borderColor: "#e5d0a2",
+    }),
+  },
+  {
+    id: "terracotta",
+    label: "Terracotta",
+    bundle: Object.freeze({
+      headerBgColor: "#fbe9e4",
+      headerUnderlineColor: "#79220d",
+      headerTextColor: "#79220d",
+      stripeBgColor: "#fdf4f2",
+      borderColor: "#e8c2b5",
+    }),
+  },
+  {
+    id: "plum",
+    label: "Plum",
+    bundle: Object.freeze({
+      headerBgColor: "#f4e8f8",
+      headerUnderlineColor: "#501760",
+      headerTextColor: "#501760",
+      stripeBgColor: "#f9f3fb",
+      borderColor: "#d5bade",
+    }),
+  },
+]);
+
+// ⚠️ **`headerUnderlineColor` above is PROVISIONAL — all six of those values are
+// placeholders, not approved colours** (doc 93 §D5).
+//
+// The palette study rendered banded headers with striped rows, where a header has
+// no rule at all, so it never produced a value for this field. Each accent
+// currently carries its Title hex, on the reasoning that the underline belongs to
+// the header and pairs with the title's weight.
+//
+// 🔴 **Step 98 renders Accordion under all six accents at 1:1 and locks the real
+// values.** Expect them to change; that is the step doing its job, not rework.
+// The test pinning them says `provisional` in its name for the same reason, so
+// step 98 edits one clearly-labelled assertion rather than the approved-palette
+// pin beside it.
+//
+// 🚫 They must NOT be set equal to `borderColor`. The stylesheet already falls
+// back `header-underline-color -> border-color -> currentColor`
+// (`spec-table.css:205`), and `borderColor` is in the accent, so writing the same
+// value twice is a pure no-op — a redundancy no unit test can see, because it is
+// a rendering fact rather than a data one.
+
+/**
+ * Tolerant lookup for the `?accent=<token>` param.
+ *
+ * Mirrors `findStylePreset` exactly — never throws, never guesses; an unknown
+ * token, a `null`, an empty string and a non-string all degrade to `null`, which
+ * callers read as "Theme", the same state as never having picked one.
+ *
+ * 🚫 **There is deliberately no `normalizeAccentToken` twin.**
+ * `normalizeStylePresetStamp` exists because `basedOnPreset` is a PERSISTED
+ * column that has to stay a closed vocabulary across releases. An accent has no
+ * column — its effect lands in five colour fields `parseStylingValues` already
+ * validates — so a second gate would guard nothing.
+ */
+export function findAccent(id: string | null | undefined): AccentPreset | null {
+  if (typeof id !== "string" || id === "") return null;
+  return ACCENT_PRESETS.find((accent) => accent.id === id) ?? null;
 }

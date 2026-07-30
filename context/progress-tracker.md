@@ -224,6 +224,86 @@ Building the MVP.
 > this work regardless: the new span is `aria-hidden` and outside the
 > `aria-labelledby` target.
 
+> 🟢 **STARTED 2026-07-30 — feature 93 (accent themes), the gallery's
+> colour-theme swatch row.** Design: `context/features/93-style-accent-themes.md`
+> (binding; seven merchant decisions recorded verbatim). Six step files, each with
+> its own gate:
+>
+> | Step | File                              | Scope                                          | Status                    |
+> | ---- | --------------------------------- | ---------------------------------------------- | ------------------------- |
+> | 97   | `97-accent-vocabulary.md`         | `ACCENT_PRESETS` pure domain + palette         | ✅ **2026-07-30**, → 1179 |
+> | 98   | `98-accent-render-harness.md`     | 5 × 6 render matrix at 1:1, lock the underline | 🔲                        |
+> | 99   | `99-accent-seed-path.md`          | `&accent=` → resolved styling                  | 🔲                        |
+> | 100  | `100-accent-swatch-row.md`        | the swatch row component                       | 🔲                        |
+> | 101  | `101-accent-gallery-wiring.md`    | gallery state + live restyle + hrefs           | 🔲                        |
+> | 102  | `102-accent-live-verification.md` | admin → Postgres → metaobject → storefront     | 🔲                        |
+>
+> 🔴 **The finding that reshaped the feature: an accent CANNOT be one field.**
+> Kaching tints the band behind a title and every one of their cards has one; ours
+> do not. `--section-plain` and `--section-text-only` both **hardcode**
+> `background: transparent`, so an accent writing only `headerBgColor` paints
+> nothing on **three of five cards** (Classic, Minimal, Accordion) — the feature
+> failing on its own screen. ✅ `headerTextColor` is what makes the set total: no
+> member rule overrides `color:`, so the title is tintable under all three, and it
+> is the **only** live field on Minimal. 🚫 `accentFor(preset, token)` rejected —
+> it would cost the composition promise every later merge would then inherit as an
+> exception.
+>
+> **Merchant decisions 2026-07-30 (7).** Create-time only, gallery and nowhere
+> else (D1). **Five fields** — `headerBgColor`, `headerUnderlineColor`,
+> `headerTextColor`, `stripeBgColor`, `borderColor` (D2); the table body stays
+> untinted. Tint the title (D3). Blank ignores the accent (D4). Six fixed accents
+>
+> - "Theme" first and pre-selected; no custom hex this feature (D5).
+>   **`borderColor`, not `outerBorderColor`** — the outline rides the stylesheet's
+>   own fallback, so the frame costs no second field, and the merchant said tint the
+>   interior rules too (D6).
+>
+> ⚠️ **D3 is an accepted RISK, in writing.** Every text colour in the table
+> currently defaults to `inherit`, and there is **no `prefers-color-scheme` rule
+> anywhere in `spec-table.css`** (verified) — so the table is dark-theme-safe by
+> construction today and an accent opts one string out of that. The 2026-07-20
+> no-contrast-checking rule holds, so it goes **silently**. Mitigation is palette
+> choice, not code; step 102 is the first time it is observed.
+>
+> 🔴 **D7 REVERSES a forward-reference that was stated in THREE places** —
+> `stylePresets.ts:60`, doc 88, and `stylePresets.test.ts:83`. Colours never join
+> `PRESET_SCOPED_FIELDS`: appending one makes every seeded template read
+> "Customized" the instant it is created (`stylePresetValues` resolves the bundle
+> alone, and Modern's is `{}`), which is the exact bug doc 88 invented the scope
+> to avoid. It cannot be repaired by comparing against bundle + accent, because an
+> accent has **no provenance column** — that half of the comparison is not wrong
+> but **undefined**. All three comments corrected in step 97; doc 88's is **struck
+> through, not deleted**. What is given up: the app can never say "this table
+> drifted from its original colours". Nothing consumes that, and B3 does not need
+> it.
+>
+> **Step 97 landed 2026-07-30 — tests 1158 → 1179 (+21), gate green, nothing
+> imports it.** Six accents × five fields as frozen constants, `findAccent`, and
+> `ACCENT_SCOPED_FIELDS` — the composition rule made executable as three guards
+> (every accent sets **exactly** the scope, every member is a colour by the
+> parser probe, and the two scopes are **disjoint**). The exact-set assertion is
+> deliberately **stricter than the bundle guard**: a bundle may legitimately set a
+> subset (Modern's is `{}`), but a partial accent leaves one surface grey beside
+> tinted neighbours, invisible on four of five cards. 🚫 The palette is **data
+> copied byte-for-byte**, never derived — no `hsl()` arithmetic, since two roles
+> were tuned against measured references and a derivation would discard the
+> approval. ⚠️ **`headerUnderlineColor`'s six values are PROVISIONAL** (the
+> palette study rendered banded + stripes, where a header has no rule) and carry
+> the title hex; step 98 locks the real ones, and they are pinned in a separate
+> test whose name says `provisional` so that revision touches one assertion.
+> ✅ **Mutation-tested four ways, and two over-delivered:** adding `borderColor` to
+> the preset scope also took down **`is FALSE when only a color changes`**, a
+> pre-existing guard that is D7's argument in executable form — so the suite
+> already enforced the reversal before this step named it; and the corrupted-hex
+> mutation printed the mechanism (`parseStylingValues` **silently drops a bad hex
+> to `null`**, so without the fixed-point guard a swatch would ship writing
+> nothing, suite green). 🔴 **One deviation, recorded:** the step file said an
+> underline equal to `borderColor` should fail nothing and forbade a test for it —
+> a test was added anyway, because the only justification for the field being in
+> the accent is that it carries a **different** tone; if step 98 lands on the
+> border's hex the right move is to drop the field, not duplicate the value.
+
 ## Current Goal
 
 **Reshell Phase B2 — the built-in preset gallery (Style tab feature 57, steps 13–14).**
@@ -355,9 +435,9 @@ plan: `~/.claude/plans/style-tab-phase-b-implementation-plan.md` (1–12 = B1, 1
 
 > One line per unit. Detail → the linked `context/features/` doc + git history.
 
-**Outline thickness relabel + Outline color hides itself — ✅ BUILT 2026-07-29,
-gate green, ⚠️ LIVE VERIFICATION OWED. No feature doc (merchant call: "a small
-correction"), so this entry IS the record.**
+**Outline thickness relabel + Outline color hides itself — ✅ COMPLETE 2026-07-29,
+gate green, live-verified 7 of 7 rail → preview, Postgres untouched. No feature
+doc (merchant call: "a small correction"), so this entry IS the record.**
 
 - **Two merchant questions, and they got different answers.** (1) Is "Outline
   width" the right label? The noun is — feature 86 split the rail's vocabulary
@@ -399,10 +479,47 @@ width."` on the same copy rule that deleted two caveats in 95.
   `visibleWhen` fails 3; dropping the early return fails **exactly** the guard
   written for it and nothing else; gating Corner radius fails the new
   swatch-less-group test plus the 7-guard count.
-- ⚠️ **NOT verified live** — nothing observed in the embedded admin: the swatch
-  appearing/vanishing as the thickness crosses 1, the hex surviving 2 → 0 → 2,
-  the absence of a blank strip where the grid used to be, and the new label in
-  place. All four are unit- and mutation-tested only.
+- ✅ **LIVE-VERIFIED 2026-07-29, 7 of 7**, in the embedded admin on two DRAFT
+  scaffolds with 0 assignments (`cms3avu6f000gvpf40o9t3hqd`, all frame columns
+  NULL; `cms3aoedi0001vpf4hy1zr2ql`, `outerBorderWidthPx = 1` stored).
+  **Nothing saved — Postgres byte-identical afterwards**, `updatedAt` still
+  `2026-07-27T14:06:40.054Z` and all three frame columns still NULL.
+  🔴 **BOTH COLD LOADS, which is the check that mattered** — the predicate reads
+  STORED data, not just an in-session edit: the NULL template loads with the
+  swatch **absent**, the `= 1` template loads with it **present** reading "Follows
+  Divider color.", each on a fresh page load with no SaveBar. In-session: 0 → 2
+  makes the swatch appear, flips the thickness help text to "Colored by Outline
+  color, or Divider color if that is unset." (a reference that now resolves,
+  because the control it names is on screen), and draws the frame in the preview;
+  2 → 0 removes all three again.
+- ✅ **No blank strip, and it is measured rather than eyeballed.** With the swatch
+  hidden, "Square corners…" → the next group heading is **56px** — identical to
+  the same gap on the cold load and to the Table-layout → Table-size gap above
+  it. The `<s-grid>` renders nothing, not an empty box.
+- ✅ **`Outline thickness` and `Corner radius` both on screen**, the label rename
+  live, and Corner radius still there at thickness 0 — the near miss, visibly not
+  taken.
+- 🔍 **Incidental**: walking the thickness back to 0 **auto-dismissed the
+  SaveBar** — `fromZeroMeansOffControlValue` maps 0 to the stored NULL, so the
+  dirty snapshot equals the saved state and there is nothing to discard.
+- ✅ **PRESERVE-ON-HIDE OBSERVED — the seventh leg, closed by the merchant the
+  same day.** They set a colour on the swatch, took `Outline thickness` to 0
+  (swatch gone), and back to 1: **the picked colour came back AND the preview
+  painted it**. So the law is not just "the field kept its value" — the value was
+  still live all the way through to the rendered frame. ⚠️ Driven by hand
+  because the automation could not: `s-color-field` is a native color input,
+  clicking it opens Chrome's own picker (a surface the tooling can neither
+  screenshot nor key — it broke the tool path until the page was force-reloaded)
+  and the field rejects a typed hex. Same reason feature 96's live pass was
+  merchant-driven.
+- ✅ **Discarded cleanly, measured after the fact.** Both scaffolds are
+  byte-identical to their pre-test state — `cms3aoedi0001vpf4hy1zr2ql` still
+  `outerBorderWidthPx = 1` / colour NULL / `updatedAt 2026-07-27T14:00:55.392Z`,
+  so the hand-picked colour never reached Postgres.
+- 🔬 **Method note:** `triple_click` inside the embedded admin selects the whole
+  DOCUMENT, not the field's text — it left a page-wide blue selection and the
+  typed value went nowhere. **`left_click` then `ctrl+a` then type** is the
+  recipe that works on these number fields.
 - 🔬 **Method note (self-inflicted, worth carrying):** `git checkout -- <file>`
   during mutation testing **destroyed both source files' uncommitted edits** —
   it restores from the index, and nothing was staged. The `git stash push` +

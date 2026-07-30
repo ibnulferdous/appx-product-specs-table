@@ -1,7 +1,10 @@
 import { describe, it, expect } from "vitest";
 import {
+  ACCENT_PRESETS,
+  ACCENT_SCOPED_FIELDS,
   PRESET_SCOPED_FIELDS,
   STYLE_PRESETS,
+  findAccent,
   findStylePreset,
   isCustomizedFromPreset,
   isThemeDefault,
@@ -80,8 +83,17 @@ describe("style presets — the constants", () => {
   it("the comparison scope contains no color field", () => {
     // Together with the test above this is the structure-only rule: bundles
     // may only touch scoped fields, and no scoped field is a color. Stated on
-    // the scope rather than on each bundle so feature 93 has exactly one place
-    // to revisit when accent colors join the scope.
+    // the scope rather than on each bundle, so it holds for a bundle nobody has
+    // written yet.
+    //
+    // 🔴 **This assertion is PERMANENT — feature 93 settled that** (doc
+    // `93-style-accent-themes.md` §D7; this comment previously said the scope
+    // was "one place to revisit when accent colors join"). They never join:
+    // appending one makes every seeded template read "Customized" on creation,
+    // and there is no accent provenance column to compare colours against, so
+    // that half of the comparison would be undefined rather than merely wrong.
+    // The accent vocabulary has its own scope and the two are asserted disjoint
+    // in the `accents` block below.
     for (const field of PRESET_SCOPED_FIELDS) {
       expect(COLOR_FIELDS).not.toContain(field);
     }
@@ -478,5 +490,284 @@ describe("isCustomizedFromPreset — the rail hint", () => {
         "banded",
       ),
     ).toBe(true);
+  });
+});
+
+// --- Accents (feature 93 · step 97) -------------------------------------------
+
+describe("accents — the constants", () => {
+  it("ships six, in the merchant-facing swatch order", () => {
+    // Order is what a merchant sees, so it is pinned here rather than left to
+    // the array. `graphite` leads deliberately: it is the near-neutral one, the
+    // closest of the six to "no accent", so the row reads outward from the least
+    // committal choice.
+    expect(ACCENT_PRESETS.map((accent) => accent.id)).toEqual([
+      "graphite",
+      "blue",
+      "teal",
+      "amber",
+      "terracotta",
+      "plum",
+    ]);
+  });
+
+  it("ids are unique, non-empty and URL-safe", () => {
+    // `?accent=<id>` carries these verbatim. Unlike a preset id they are NOT
+    // persisted, so a rename breaks a bookmarked gallery URL and nothing else —
+    // but the param still has to survive a round trip through the query string.
+    const ids = ACCENT_PRESETS.map((accent) => accent.id);
+    expect(new Set(ids).size).toBe(ids.length);
+    for (const id of ids) {
+      expect(id).not.toBe("");
+      expect(encodeURIComponent(id)).toBe(id);
+    }
+  });
+
+  it("labels are unique and non-empty", () => {
+    // Each label is the swatch's accessible name (a colour cannot BE its own
+    // name), so two accents sharing one would produce two indistinguishable
+    // radio options for a screen-reader user.
+    const labels = ACCENT_PRESETS.map((accent) => accent.label);
+    expect(new Set(labels).size).toBe(labels.length);
+    for (const label of labels) expect(label).not.toBe("");
+  });
+
+  it("has no `theme` entry", () => {
+    // "Theme" is the ABSENCE of an accent, exactly as the gallery's Blank card
+    // is the absence of a preset. A seventh member with an empty bundle would
+    // give one state two representations and the swatch row two code paths.
+    expect(ACCENT_PRESETS.map((accent) => accent.id)).not.toContain("theme");
+    expect(findAccent("theme")).toBeNull();
+  });
+
+  it("every accent sets exactly ACCENT_SCOPED_FIELDS", () => {
+    // Both directions, and the asymmetry with the bundle guard above is
+    // deliberate. A bundle may legitimately set a SUBSET — banded's is `{}`,
+    // because the default already is the banded pattern. An accent has no such
+    // story: a partial accent leaves one surface neutral grey beside tinted
+    // neighbours, and per doc 93's reach table that inconsistency is invisible
+    // on four of the five cards and shows only on the one preset where that
+    // surface is live. A count-based guard would miss it.
+    const scope = [...ACCENT_SCOPED_FIELDS].sort();
+    for (const accent of ACCENT_PRESETS) {
+      expect(
+        Object.keys(accent.bundle).sort(),
+        `${accent.id} does not set exactly the accent scope`,
+      ).toEqual(scope);
+    }
+  });
+
+  it("every field in the accent scope is a color field", () => {
+    // Probed through the real parser, like COLOR_FIELDS itself — the
+    // mirror-inverse of "the comparison scope contains no color field" above.
+    // Together the two are the composition rule: structure on one side, colour
+    // on the other.
+    for (const field of ACCENT_SCOPED_FIELDS) {
+      expect(COLOR_FIELDS).toContain(field);
+    }
+  });
+
+  it("the accent scope is disjoint from the preset scope", () => {
+    // "A bundle sets structure, an accent sets colour, they compose" in one
+    // line. 🔴 This is also the guard that fails if anyone ever acts on the
+    // prediction doc 93 §D7 corrected — appending a colour to
+    // PRESET_SCOPED_FIELDS fails here AND in the no-color test above, so the
+    // reversal is enforced from two directions.
+    for (const field of ACCENT_SCOPED_FIELDS) {
+      expect(PRESET_SCOPED_FIELDS as readonly string[]).not.toContain(field);
+    }
+  });
+
+  it("no accent sets a structure field", () => {
+    // Falls out of the disjointness guard, but asserted directly because it is
+    // the half a reader checks first, and because it bites on the bundle even if
+    // a future edit widens ACCENT_SCOPED_FIELDS along with it.
+    for (const accent of ACCENT_PRESETS) {
+      for (const field of PRESET_SCOPED_FIELDS) {
+        expect(
+          accent.bundle,
+          `${accent.id} must not set the structure field ${field}`,
+        ).not.toHaveProperty(field);
+      }
+    }
+  });
+
+  it("every accent is a fixed point of parse then serialize", () => {
+    // The hole `Partial<StylingValues>` cannot close, same as for the bundles: a
+    // hex the parser rejects (a 5-digit value, a named colour, a `rgb()` string)
+    // is dropped to `null` on the way in, so the swatch would ship a colour that
+    // never paints and nothing would fail.
+    for (const accent of ACCENT_PRESETS) {
+      expect(
+        serializeStylingOverrides(parseStylingValues(accent.bundle)),
+        `${accent.id} does not survive a parse/serialize round trip`,
+      ).toEqual(accent.bundle);
+    }
+  });
+
+  it("carries the approved palette byte-for-byte", () => {
+    // 🔴 DATA, not derivation. These were approved by the merchant 2026-07-30
+    // from a 1:1 render study, and two roles were tuned against measured
+    // references (blue's stripe against a real storefront's `#f1f8ff`). A
+    // runtime `hsl()` derivation would produce similar values while silently
+    // discarding that approval, so the values are pinned and a revision is a
+    // dated decision rather than a refactor.
+    //
+    // ⚠️ `headerUnderlineColor` is deliberately ABSENT here — it is provisional
+    // and pinned in its own test below, so step 98's revision touches one
+    // clearly-labelled assertion and not this one.
+    const approved: Record<
+      string,
+      { band: string; title: string; border: string; stripe: string }
+    > = {
+      graphite: {
+        band: "#e6ebf7",
+        title: "#1c2333",
+        border: "#c2c9d8",
+        stripe: "#f3f6fb",
+      },
+      blue: {
+        band: "#e6effc",
+        title: "#0a4e9e",
+        border: "#b3cbec",
+        stripe: "#f1f6fd",
+      },
+      teal: {
+        band: "#ddf3ee",
+        title: "#04564a",
+        border: "#a6d3c9",
+        stripe: "#f4fbf9",
+      },
+      amber: {
+        band: "#fbeeda",
+        title: "#5f3f06",
+        border: "#e5d0a2",
+        stripe: "#fef9f1",
+      },
+      terracotta: {
+        band: "#fbe9e4",
+        title: "#79220d",
+        border: "#e8c2b5",
+        stripe: "#fdf4f2",
+      },
+      plum: {
+        band: "#f4e8f8",
+        title: "#501760",
+        border: "#d5bade",
+        stripe: "#f9f3fb",
+      },
+    };
+
+    // Derived from the array, so a seventh accent added without a palette entry
+    // fails here instead of shipping unpinned.
+    expect(Object.keys(approved).sort()).toEqual(
+      ACCENT_PRESETS.map((accent) => accent.id).sort(),
+    );
+
+    for (const accent of ACCENT_PRESETS) {
+      const want = approved[accent.id];
+      expect(accent.bundle.headerBgColor, `${accent.id} band`).toBe(want.band);
+      expect(accent.bundle.headerTextColor, `${accent.id} title`).toBe(
+        want.title,
+      );
+      expect(accent.bundle.borderColor, `${accent.id} border`).toBe(
+        want.border,
+      );
+      expect(accent.bundle.stripeBgColor, `${accent.id} stripe`).toBe(
+        want.stripe,
+      );
+    }
+  });
+
+  it("carries a provisional underline colour, equal to the title", () => {
+    // ⚠️ PROVISIONAL (doc 93 §D5). The palette study rendered banded + stripes,
+    // where a header has no rule, so it produced no value for this field. The
+    // title hex is a reasoned placeholder — the underline belongs to the header
+    // and pairs with the title's weight — NOT an approved colour.
+    //
+    // 🔴 Step 98 renders Accordion under all six accents at 1:1 and locks the
+    // real values. When it does, THIS test changes and the approved-palette pin
+    // above does not.
+    for (const accent of ACCENT_PRESETS) {
+      expect(
+        accent.bundle.headerUnderlineColor,
+        `${accent.id} underline is provisional and tracks the title`,
+      ).toBe(accent.bundle.headerTextColor);
+    }
+  });
+
+  it("no accent's underline duplicates its border", () => {
+    // 🚫 The one redundancy the data must not carry: the stylesheet already
+    // falls back `header-underline-color -> border-color -> currentColor`
+    // (`spec-table.css:205`) and `borderColor` IS in the accent, so equal values
+    // make the dedicated field a pure no-op.
+    //
+    // ⚠️ Passes vacuously today — the underline tracks the TITLE, which differs
+    // from the border in all six. It is here for step 98, which picks the real
+    // values and is the step that could plausibly land on the border's hex.
+    for (const accent of ACCENT_PRESETS) {
+      expect(
+        accent.bundle.headerUnderlineColor,
+        `${accent.id}: an underline equal to the border is a no-op`,
+      ).not.toBe(accent.bundle.borderColor);
+    }
+  });
+});
+
+describe("accents — the merge law", () => {
+  it("every preset × every accent resolves to both halves", () => {
+    // The whole reason the vocabulary is SPLIT, asserted over all 30
+    // combinations and derived from the two arrays — so a seventh accent or a
+    // sixth preset is covered with no edit here.
+    for (const preset of STYLE_PRESETS) {
+      for (const accent of ACCENT_PRESETS) {
+        const resolved = seedStylingFromPreset(preset.id, accent.bundle);
+
+        // The colour half arrives intact...
+        for (const field of ACCENT_SCOPED_FIELDS) {
+          expect(
+            resolved[field],
+            `${preset.id} + ${accent.id} lost ${field}`,
+          ).toBe(accent.bundle[field]);
+        }
+
+        // ...and the structure half is untouched by it. No bundle sets a colour
+        // and no accent sets structure, so today there is nothing to contest;
+        // this is what fails if that ever stops being true.
+        for (const [field, value] of Object.entries(preset.bundle)) {
+          expect(
+            resolved[field as StylingFieldName],
+            `${accent.id} overwrote ${preset.id}'s ${field}`,
+          ).toBe(value);
+        }
+      }
+    }
+  });
+
+  it("no accent still resolves to a fully theme-inherited table", () => {
+    // The zero-config promise the whole module is arranged to protect, pinned
+    // against this step: picking a card with "Theme" selected writes no colour.
+    for (const preset of STYLE_PRESETS) {
+      const resolved = seedStylingFromPreset(preset.id);
+      for (const field of COLOR_FIELDS) {
+        expect(
+          resolved[field],
+          `${preset.id} with no accent must not set ${field}`,
+        ).toBeNull();
+      }
+    }
+  });
+
+  it("an unknown accent token degrades to Theme", () => {
+    // Every invalid input lands on the same state as never having picked one —
+    // the posture `findStylePreset` established, so the route contract stays
+    // total without a validation branch at the call site.
+    for (const token of ["", "nope", "BLUE", "theme", "x".repeat(10_000)]) {
+      expect(findAccent(token), `findAccent(${JSON.stringify(token)})`).toBe(
+        null,
+      );
+    }
+    expect(findAccent(null)).toBeNull();
+    expect(findAccent(undefined)).toBeNull();
   });
 });

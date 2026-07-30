@@ -455,8 +455,19 @@ having none.
 this section stays rather than being deleted. Two of the test guards below are
 stated in terms of it — "every key any bundle sets is a member of it" and "the
 scope contains no colour field" — and together they are the **structure-only rule
-made executable**. That value never depended on the hint. Feature 93 also still
-appends the accent's colour fields here.
+made executable**. That value never depended on the hint. ~~Feature 93 also still
+appends the accent's colour fields here.~~
+
+🔴 **REVERSED 2026-07-30 by feature 93 §D7 — colours never join this list.** The
+strike-through stays because the reversal is the useful part of the record. The
+argument is this section's own, three paragraphs down, turned on the proposal:
+appending `headerBgColor` makes every seeded template read "Customized" the
+instant it is created, because `stylePresetValues` resolves the BUNDLE ALONE and
+Modern's bundle is `{}`. It cannot be repaired by comparing against bundle +
+accent either — an accent has no provenance column (this file's own rule, two
+sections down), so the colour half of the comparison is not wrong but
+**undefined**. The accent vocabulary keeps its own `ACCENT_SCOPED_FIELDS`, and
+`stylePresets.test.ts` now asserts the two scopes are **disjoint**.
 
 The reasoning below is preserved because it is the record of *why* the constant
 is a fixed set rather than derived, and feature 93 will need it if the hint is
@@ -482,7 +493,10 @@ export const PRESET_SCOPED_FIELDS = [
   "sectionsCollapsible",
   "sectionGapPx",
 ] as const satisfies readonly StylingFieldName[];
-// Step 89 appends the accent's colour fields here and nothing else changes.
+// 🔴 The comment that stood here ("Step 89 appends the accent's colour fields")
+// was WRONG and is reversed by feature 93 §D7 — see the strike-through above.
+// The shipped list also gained `columnDividerStyle` + the two frame fields on
+// 2026-07-27; it has never gained a colour and must not.
 ```
 
 🚫 **It cannot be "the keys this bundle sets".** Banded's bundle is `{}`, so that
