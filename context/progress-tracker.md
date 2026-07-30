@@ -234,7 +234,7 @@ Building the MVP.
 > | 97   | `97-accent-vocabulary.md`         | `ACCENT_PRESETS` pure domain + palette         | ✅ **2026-07-30**, → 1179 |
 > | 98   | `98-accent-render-harness.md`     | 5 × 6 render matrix at 1:1, lock the underline | ✅ **2026-07-30**, 35 renders |
 > | 99   | `99-accent-seed-path.md`          | `&accent=` → resolved styling                  | ✅ **2026-07-30**, → 1184 |
-> | 100  | `100-accent-swatch-row.md`        | the swatch row component                       | 🔲                        |
+> | 100  | `100-accent-swatch-row.md`        | the swatch row component                       | ✅ **2026-07-30**, → 1209 |
 > | 101  | `101-accent-gallery-wiring.md`    | gallery state + live restyle + hrefs           | 🔲                        |
 > | 102  | `102-accent-live-verification.md` | admin → Postgres → metaobject → storefront     | 🔲                        |
 >
@@ -385,6 +385,61 @@ Building the MVP.
 > compiler. Found because this was the first non-test caller of the two-argument
 > form. ⚠️ **Nothing merchant-visible yet** — no code generates `&accent=`; step 101
 > does. No live verification owed or claimed.
+>
+> **Step 100 landed 2026-07-30 — tests 1184 → 1209 (+25), 43 → 45 files, five new
+> files and NO existing file edited.** `AccentSwatchRow` is a real WAI-ARIA
+> radiogroup: seven radios (Theme + six accents), roving tabindex, arrows / Home /
+> End, tooltips for the unlabelled chips. 🔴 **The finding that shaped the step: a
+> radiogroup with roving tabindex ALREADY exists** (`SegmentedControl`, the editor's
+> tab group + device toggle) and its own comment warns against a divergent copy — but
+> it cannot be reused, because `SegOption.icon` is required and typed to
+> `<s-icon type>`'s union (nowhere to put a hex) and it imports the **tripwired**
+> `SpecTableEditor.module.css`. ⚠️ **And it has ZERO tests, nor can it have any:**
+> `vitest.config.ts` is `environment: "node"` and jsdom / `@testing-library/react`
+> are **not installed** ("a jsdom project gets added later only if/when component
+> tests are introduced"). So extracting a shared base would have refactored two live
+> merchant-facing controls with no way to verify it. ✅ **Resolution: extract the pure
+> arithmetic, not the component** — `app/utils/rovingRadioKeys.ts` (`nextRovingIndex`)
+> is framework-free and node-testable **today**, which is the only way this step got
+> real behavioural coverage instead of source-reading alone. `SegmentedControl` keeps
+> its own `switch`; the two-line swap is **recorded debt** for after a jsdom project
+> exists.
+> 🔬 **Two debugging findings worth carrying, both cost real time.**
+> **(1) The contract test's own comment-stripping regex silently deleted 2928
+> characters of the component.** I copied the three-rule strip from
+> `createFlowContract.test.ts`, whose JSX rule is
+> `/\{\s*\/\*[\s\S]*?\*\/\s*\}/`. This component destructures props with an inline
+> type literal whose first member has a `/** … */` doc comment, so `}: {\n  /** …`
+> matches the opening — and because that comment's `*/` is not followed by `}`, the
+> lazy quantifier **backtracks forward** to the next `*/}` in the file. ⚠️ **The
+> failure mode is the dangerous part:** the assertions read "the source does not
+> contain `nextRovingIndex(`", which looks like a broken COMPONENT, not broken test
+> preprocessing. The tell was five unrelated assertions failing at once. Fix: strip
+> block comments only — the two-rule form `StylePresetCardContract.test.ts` already
+> uses. `createFlowContract.test.ts` is not broken (neither file it reads has that
+> shape) and was not touched, but the warning is recorded in the new test file where
+> someone would copy the wrong version.
+> **(2) A guard that only LOOKED like it worked.** The `no "theme" sentinel` mutation
+> turned the suite red as predicted — but reading *which* assertion failed showed
+> only the incidental `id: "theme"` half fired. The comparison half,
+> `(option.id ?? "theme") === (value ?? "theme")`, has no `===` directly followed by
+> the literal, so all three negative patterns missed it; a mutation touching the
+> comparison ALONE would have passed with a sentinel live in the selection path.
+> ✅ Rewritten to **count** occurrences (exactly one, in a named `domKey` helper)
+> rather than pattern-match, and verified against the previously-evasive mutation.
+> 🔬 **The lesson: a pattern guard enumerates the spellings someone thought of; a
+> count covers the ones they did not** — and "1 test failed, as predicted" was the
+> wrong level of detail to stop at. It also improved the component (three copies of
+> `?? "theme"` became one).
+> ✅ **Six mutations run plus that seventh**; all caught precisely, and the
+> negative-modulo one over-delivered with a `-0` vs `+0` failure that only `toBe`'s
+> `Object.is` catches. ⚠️ **What no test here can see, stated in the doc rather than
+> implied:** that arrow keys actually move focus (only the arithmetic is executable),
+> that seven chips are distinguishable by eye, that the checkmark reads against a pale
+> band, or that the focus ring shows on a tinted chip in a dark admin. **All owed to
+> step 101**, which must include a keyboard-only pass. 📌 `git grep` is useless for
+> the "nothing imports it" gate on untracked files — it returns nothing and looks
+> like a pass; use a plain content search.
 
 ## Current Goal
 

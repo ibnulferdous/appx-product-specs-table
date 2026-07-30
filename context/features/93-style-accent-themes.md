@@ -1,6 +1,6 @@
 # Feature 93 — Accent themes (the gallery's colour-theme swatch row)
 
-**Status:** 🟢 **IN PROGRESS — 3 of 6 steps done.** Specced 2026-07-30; all seven
+**Status:** 🟢 **IN PROGRESS — 4 of 6 steps done.** Specced 2026-07-30; all seven
 open decisions were answered by the merchant the same day and are recorded
 verbatim below. **This file is the binding design; it is not an implementation
 plan.** Each step file carries its own instructions and completion gate:
@@ -10,7 +10,7 @@ plan.** Each step file carries its own instructions and completion gate:
 | 97   | `97-accent-vocabulary.md`         | `ACCENT_PRESETS` pure domain + palette         | ✅ **2026-07-30**, → 1179    |
 | 98   | `98-accent-render-harness.md`     | 5 × 6 render matrix at 1:1, lock the underline | ✅ **2026-07-30**, 35 renders |
 | 99   | `99-accent-seed-path.md`          | `&accent=` → resolved styling                  | ✅ **2026-07-30**, → 1184    |
-| 100  | `100-accent-swatch-row.md`        | the swatch row component                       | 🔲                           |
+| 100  | `100-accent-swatch-row.md`        | the swatch row component                       | ✅ **2026-07-30**, → 1209    |
 | 101  | `101-accent-gallery-wiring.md`    | gallery state + live restyle + hrefs           | 🔲 first merchant-visible    |
 | 102  | `102-accent-live-verification.md` | admin → Postgres → metaobject → storefront     | 🔲                           |
 
@@ -197,6 +197,17 @@ theme-coloured blank table is a fine answer to a hand-typed URL.
 Invisible in practice — Blank shows no preview either way.
 
 ### D5 · Six fixed accents, plus Theme
+
+✅ **Built in step 100.** "Theme" is a hardcoded first option whose value is `null`,
+and the swatch chips are **two-tone** — each accent's Band hex fills the chip, its
+Title hex rings it. Both come from the bundle, so no seventh colour role was added:
+filling with the Band alone gives six near-white circles (every Band tone below is
+above 0.85 luminance), and the Title alone discards the pairing the merchant is
+choosing. "Theme" gets a dashed neutral chip, borrowing the Blank card's vocabulary
+since both mean "nothing added". 🔴 The selected state carries a checkmark **and** an
+offset outline, because a control whose entire content is colour cannot signal
+selection with colour (WCAG 1.4.1) — and `aria-checked` does not cover that, being
+for assistive tech rather than eyes.
 
 Palette approved 2026-07-30 from a 1:1 render study of the banded + stripes +
 outline combination. **Every value below is merchant-approved and must be copied

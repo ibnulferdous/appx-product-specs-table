@@ -1,0 +1,146 @@
+/* The gallery's accent swatch row (feature 93 · step 100).
+ *
+ * Colour: Polaris colour tokens are sealed in shadow DOM and unreachable from
+ * light-DOM CSS ([[polaris-web-component-gotchas]]) — the same constraint
+ * `StylePresetCard.module.css` works under, and the same answer: neutrals are
+ * declared ONCE as custom properties here and referenced by `var()`, with
+ * hairlines derived from `currentColor` so they follow the admin ink.
+ *
+ * 🔴 **No palette hex appears in this file.** The seven chips' colours arrive as
+ * inline `--appx-chip-fill` / `--appx-chip-ink` from each accent's own bundle.
+ * Per-accent classes here would be a second copy of merchant-approved data, which
+ * is what step 97 D4 rejected `hsl()` derivation to avoid. A test asserts it. */
+
+.row {
+  --appx-chip-size: 1.5rem;
+  --appx-chip-hairline: color-mix(in srgb, currentColor 22%, transparent);
+  --appx-chip-muted: color-mix(in srgb, currentColor 65%, transparent);
+  /* The "Theme" chip's plate. Mirrors `--appx-preset-blank-fill` on the cards —
+     the same "nothing added" idea, so the two should read as related. */
+  --appx-chip-theme-fill: color-mix(in srgb, currentColor 3%, #ffffff);
+
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  /* Wraps rather than overflowing: the row sits in the page header beside the
+     heading, and a narrow admin must not gain a sideways scroll — the lesson
+     step 91 learned the hard way on the card grid. */
+  flex-wrap: wrap;
+}
+
+/* Visible, and the group's accessible name via `aria-labelledby`. Muted because
+   it labels the control rather than competing with the page heading. */
+.caption {
+  font-size: 0.8125rem;
+  color: var(--appx-chip-muted);
+}
+
+.group {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  flex-wrap: wrap;
+}
+
+/* The radio itself. A bare button: no Polaris `<s-button>`, because the whole
+   control is a colour surface and a button chrome would fight it. */
+.swatch {
+  display: inline-flex;
+  padding: 0;
+  border: none;
+  background: none;
+  cursor: pointer;
+  /* The tap target, not the chip. The chip is 1.5rem, which is under the 24px
+     WCAG 2.2 target-size minimum on its own; the button's padding is what makes
+     the hit area comfortable on a touch admin without growing the visual dot. */
+  padding: 0.1875rem;
+  border-radius: 50%;
+  line-height: 0;
+}
+
+/* Keyboard users must SEE which chip they are on, and 🔴 the ring must NOT be one
+   of the palette's own tones — a ring drawn in the accent's colour is invisible on
+   the chip it surrounds. `currentColor` at the row's ink, offset outside the chip.
+   `:focus-visible` only, so a pointer click leaves no ring behind. Same treatment
+   as `.card:focus-visible` next door. */
+.swatch:focus-visible {
+  outline: 0.125rem solid currentColor;
+  outline-offset: 0.125rem;
+}
+
+/* The two-tone chip: the accent's band fills it, the accent's title tone rings it.
+   Both come from the bundle, so the chip previews the real pairing rather than
+   standing in for it. */
+.chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  inline-size: var(--appx-chip-size);
+  block-size: var(--appx-chip-size);
+  border-radius: 50%;
+  background: var(--appx-chip-fill);
+  /* The ink ring. Thin, because at 1.5rem a heavier ring swallows the fill and
+     all six chips converge on their dark tone. */
+  border: 0.09375rem solid var(--appx-chip-ink);
+  color: var(--appx-chip-ink);
+  transition: transform 120ms ease-out;
+}
+
+/* "Theme" — no colour at all, and dashed, borrowing the vocabulary the gallery
+   already uses for the Blank card's plate. */
+.chipTheme {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  inline-size: var(--appx-chip-size);
+  block-size: var(--appx-chip-size);
+  border-radius: 50%;
+  background: var(--appx-chip-theme-fill);
+  border: 0.09375rem dashed var(--appx-chip-hairline);
+  color: inherit;
+  transition: transform 120ms ease-out;
+}
+
+.swatch:hover .chip,
+.swatch:hover .chipTheme {
+  transform: scale(1.08);
+}
+
+/* 🔴 The non-colour half of the selected state (WCAG 1.4.1), and the reason it is
+   an OUTLINE rather than a heavier border: the border is already the accent's own
+   ink tone, so thickening it says "selected" in colour only — exactly what this
+   rule exists to avoid. An outline sits outside the chip, in the row's ink, and
+   reads at a glance across seven items.
+
+   It pairs with the checkmark glyph the component renders. Either alone would be
+   weaker: the outline can be mistaken for the focus ring on a mouse-free admin,
+   and the glyph alone is small against a pale band. */
+.swatch[aria-checked="true"] .chip,
+.swatch[aria-checked="true"] .chipTheme {
+  outline: 0.125rem solid currentColor;
+  outline-offset: 0.125rem;
+}
+
+/* The glyph. Sized against the chip so it stays inside the 1.5rem circle, and
+   drawn in the chip's own ink (`color` is set by `.chip`) so it is legible on the
+   accent's pale band. On "Theme" it inherits the row ink. */
+.check {
+  font-size: 0.875rem;
+  line-height: 1;
+  font-weight: 700;
+}
+
+/* The chips are legible and complete without the hover nudge — it is decoration
+   on top of a control that already states its state in an outline and a glyph, so
+   it costs nothing to drop. Same reasoning as the card's action arrow. */
+@media (prefers-reduced-motion: reduce) {
+  .chip,
+  .chipTheme {
+    transition: none;
+  }
+
+  .swatch:hover .chip,
+  .swatch:hover .chipTheme {
+    transform: none;
+  }
+}
