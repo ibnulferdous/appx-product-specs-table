@@ -855,9 +855,14 @@ doc (a wording correction), so this entry IS the record.**
   currently-hidden `"A specific collection"` → `"Selected collections"` option so
   the two stay consistent whenever collection scoping is re-enabled
   (`app/utils/assignmentScope.ts`).
-- Tightened the EXCLUDE carve-out help text under "Except these products" —
-  "Assign them their own table, or leave them with nothing" → "Give them their
-  own table, or leave them without one" (`app/routes/app.templates_.$id/SettingsTab.tsx`).
+- **Deleted** the EXCLUDE carve-out help text under "Except these products"
+  outright (it was first merely reworded, then cut). The heading renders
+  directly beneath "Show this table on → All products", so the two read as one
+  sentence — *show this table on all products, EXCEPT these* — and the
+  heading's own first word carries the meaning. Sentence 1 restated it;
+  sentence 2 ("Give them their own table, or leave them without one") was
+  next-step advice, the same class of filler already cut from the conflict
+  banner. Section is now heading → chips → button.
 - Reviewed the rest of the Settings tab's copy (Status help text, scope help
   text, conflict banner, active-but-unassigned banner) — no other grammar,
   spelling, or redundancy issues found; left as-is.

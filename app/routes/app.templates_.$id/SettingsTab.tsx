@@ -406,12 +406,12 @@ export function SettingsTab({ engine }: { engine: RowEngine }) {
         <>
           <s-divider></s-divider>
           <s-stack direction="block" gap="small-200">
+            {/* No help text under this heading. It renders directly beneath
+                "Show this table on → All products", so the two read as one
+                sentence — "show this table on all products, EXCEPT these" —
+                and the heading's own first word carries the whole meaning.
+                The paragraph that used to sit here only restated it. */}
             <s-text type="strong">Except these products</s-text>
-            <s-text color="subdued">
-              These products won’t show this table, even though they match the
-              assignment above. Give them their own table, or leave them
-              without one.
-            </s-text>
             <CollapsibleChipList
               items={excludes.map((gid) => ({
                 key: gid,
