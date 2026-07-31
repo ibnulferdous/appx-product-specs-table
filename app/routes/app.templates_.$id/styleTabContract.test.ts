@@ -383,3 +383,85 @@ describe("feature 86 — the Style rail renders all eight groups", () => {
     expect(body).not.toContain("colors-note");
   });
 });
+
+// The typing bug, 2026-07-31 — and the half of it only a text scan can see.
+//
+// `stylingControls.test.ts` proves `liveCommitValue` decides correctly WHEN a
+// keystroke should commit. Nothing there can prove a box ever asks it: the
+// original defect was not a wrong decision, it was a missing handler, and every
+// test in the repo passed while all nine boxes were commit-on-blur only. So the
+// guard has to walk the JSX, the same way the reachability guard above does.
+//
+// ⚠️ REACHABILITY, NOT BEHAVIOUR, as everywhere in this file. It cannot see that
+// a box passed the WRONG formatter to `liveCommitValue` (the derived table in
+// `stylingControls.test.ts` covers that) or that it read the result with a
+// truthiness test. It catches exactly one failure — a number box that went back
+// to firing only on blur.
+describe("2026-07-31 — every number box in the rail reacts while typing", () => {
+  // Each `<s-number-field …/>` as its own slice of source. Split on the tag and
+  // cut at the self-close, so one box's handlers can never satisfy the
+  // assertion for the box below it — the failure this shape exists to prevent,
+  // since the boxes sit adjacent inside the same groups.
+  const boxes = body
+    .split(/<s-number-field\b/)
+    .slice(1)
+    .map((rest) => rest.slice(0, rest.indexOf("/>")));
+
+  it("finds every number field", () => {
+    // Guards the guard, twice over: a zero-length split would make the loops
+    // below vacuous, and a missing `/>` would silently truncate a box to the
+    // empty string. Nine is the rail's current count — a tenth box is meant to
+    // fail here and be added deliberately, with both handlers.
+    expect(boxes.length).toBe(9);
+    for (const box of boxes) expect(box.length).toBeGreaterThan(0);
+  });
+
+  it("gives each one an onInput as well as an onChange", () => {
+    // The regression itself. `onChange` alone is commit-on-blur: the merchant
+    // types a value, `isDirty` stays false, the SaveBar never appears, and
+    // navigating away discards the number with no warning — the unsaved-changes
+    // guard reads the same flag.
+    const missing = boxes
+      .map((box, index) => ({
+        index,
+        label: box.match(/label="([^"]+)"/)?.[1] ?? "(unlabelled)",
+        onInput: box.includes("onInput="),
+        onChange: box.includes("onChange="),
+      }))
+      .filter((box) => !box.onInput || !box.onChange);
+
+    // Named rather than counted, so a failure says WHICH box lost a handler.
+    expect(missing).toEqual([]);
+  });
+
+  it("routes every onInput through liveCommitValue", () => {
+    // The other direction, and the one that keeps the fix from becoming the
+    // worse bug it replaced. These boxes are CONTROLLED and every `from…`
+    // clamps, so an `onInput` that commits unconditionally rewrites a half-typed
+    // number under the caret and makes the box untypeable. Passing through
+    // `liveCommitValue` is what makes the commit conditional.
+    const unguarded = boxes.filter(
+      (box) => box.includes("onInput=") && !box.includes("liveCommitValue("),
+    );
+
+    expect(unguarded).toEqual([]);
+  });
+
+  it("reads the result with !== undefined, never a truthiness test", () => {
+    // ⚠️ THE SUBTLE WAY TO GET THIS WRONG. `liveCommitValue` returns THREE
+    // things — `undefined` for "still typing", `null` for a real empty/off
+    // value, and a number. A call site written `if (value)` would drop every
+    // cleared box AND the `0` of a zero-means-off box; `if (value != null)`
+    // would drop the same clears while looking correct.
+    //
+    // Asserted over the whole rail rather than per box, since the two bad
+    // spellings are what is being banned, not a required phrasing.
+    const onInputBodies = boxes.filter((box) => box.includes("onInput="));
+    expect(onInputBodies.length).toBe(9); // guards the guard
+
+    for (const box of onInputBodies) {
+      expect(box).toMatch(/!==\s*undefined/);
+      expect(box).not.toMatch(/!=\s*null/);
+    }
+  });
+});

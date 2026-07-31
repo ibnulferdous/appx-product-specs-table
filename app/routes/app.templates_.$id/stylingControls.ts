@@ -1554,3 +1554,58 @@ export function fromSectionGapControlValue(raw: string): number | null {
     SECTION_GAP_PX_MAX,
   );
 }
+
+// --- Committing a number box WHILE the merchant is still typing --------------
+//
+// 🔴 THE BUG THIS EXISTS FOR (2026-07-31). Every box above was wired to
+// `onChange` alone, and on a Polaris field `change` fires on COMMIT — blur or
+// Enter — not per keystroke (its own types say so: `onInput` is documented as
+// firing BEFORE `onChange`, which fires "when the user has finished editing").
+// So typing `1000` into Maximum width called no setter, `isDirty` stayed false,
+// and the SaveBar never appeared until the merchant happened to click something
+// else. Worse than the missing bar: the SaveBar is the only Save affordance AND
+// `isDirty` is what the unsaved-changes guard reads, so leaving the editor
+// between the last keystroke and a blur discarded the number with no warning.
+//
+// ⚠️ AND `onInput` ALONE IS WORSE THAN THE BUG. These boxes are CONTROLLED and
+// every `from…` above CLAMPS. Per keystroke, the `1` of a `1000` typed into a
+// box whose floor is 240 would be stored as 240 and re-rendered into the field
+// under the caret — the merchant cannot type a four-digit number at all.
+//
+// The rule that reconciles them, and the whole content of this function: commit
+// on a keystroke only when the parse is LOSSLESS — when the text already spells
+// exactly what would be stored, so the re-render cannot rewrite the box. Text
+// that is half-typed (`1`), out of range (`5000`), fractional (`12.5`) or
+// zero-padded (`0240`) is left alone and falls through to `onChange`, which
+// clamps on blur exactly as it always did.
+//
+// Stated as a ROUND TRIP rather than a range test on purpose — a range test
+// would be wrong for two of the three families the rail uses, and this one rule
+// is right for all three without knowing which is which:
+//
+//   - blank box (Maximum width, Label width, Title size, …): `""` round-trips
+//     to `""`, so CLEARING a box dirties the editor live, as it should;
+//   - zero-means-off (Outline thickness, Corner radius, Gap between sections):
+//     `"0"` parses to null and formats back to `"0"`, so typing 0 turns the
+//     thing off live — while an EMPTIED one of these correctly does not commit,
+//     because the box would refill itself with `0` mid-edit;
+//   - custom font size: the caller keeps its own "null means ignore" guard;
+//     this only decides whether the keystroke is settled enough to look at.
+
+/**
+ * The value a number box should commit for `raw` on a keystroke, or `undefined`
+ * for "not yet — wait for blur".
+ *
+ * ⚠️ THE THREE RESULTS ARE ALL DIFFERENT. `undefined` means do not write;
+ * `null` means write the field's own empty/off state; a number means write it.
+ * A call site testing truthiness, or `!= null`, would silently drop every
+ * legitimate clear-the-box and every zero-means-off.
+ */
+export function liveCommitValue(
+  raw: string,
+  parse: (raw: string) => number | null,
+  format: (value: number | null) => string,
+): number | null | undefined {
+  const value = parse(raw);
+  return format(value) === raw ? value : undefined;
+}

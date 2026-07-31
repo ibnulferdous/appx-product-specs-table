@@ -30,6 +30,7 @@ import {
   fromOuterBorderWidthControlValue,
   fromSectionGapControlValue,
   fromTableMaxWidthControlValue,
+  liveCommitValue,
   nextFontSizeForControl,
   parseCustomFontSizePx,
   rememberedCustomFontSizePx,
@@ -166,6 +167,20 @@ import type { RowEngine } from "./useRowEngine";
 // `context/features/69-…` §3): the app cannot compute contrast — a null color
 // inherits an unknown theme value and every background knob allows alpha — so any
 // warning would be a guess, and an unreliable a11y warning is worse than none.
+//
+// EVERY NUMBER BOX CARRIES BOTH `onInput` AND `onChange`, and dropping either
+// one is a bug rather than a simplification (2026-07-31). `onChange` fires on
+// COMMIT — blur or Enter — so with it alone a merchant could type `1000` into
+// Maximum width and see NO SaveBar, and leaving the editor before blurring threw
+// the number away silently, since `isDirty` is also what the unsaved-changes
+// guard reads. `onInput` alone is worse: these boxes are controlled and every
+// `from…` clamps, so a per-keystroke commit rewrites a half-typed number under
+// the caret. The reconciliation is `liveCommitValue` in `stylingControls.ts` —
+// commit on a keystroke only when the text already spells exactly what would be
+// stored — and the ONLY correct way to read its result is `!== undefined`, since
+// `null` is a real value here (a cleared box, or a zero-means-off `0`). The
+// selects and swatches need none of this: their `change` is already immediate.
+// Pinned per box in `styleTabContract.test.ts`.
 //
 // NO GENERIC CONTROL WRAPPER, deliberately. Five near-identical selects look like
 // they want a `<StylingSelect knob={…}>`, but at this size the abstraction would
@@ -382,6 +397,15 @@ export function StyleTab({ engine }: { engine: RowEngine }) {
               value={toGridMinColumnWidthControlValue(
                 styling.gridMinColumnWidthPx,
               )}
+              onInput={(event: Event) => {
+                const value = liveCommitValue(
+                  readValue(event),
+                  fromGridMinColumnWidthControlValue,
+                  toGridMinColumnWidthControlValue,
+                );
+                if (value !== undefined)
+                  setStylingField("gridMinColumnWidthPx", value);
+              }}
               onChange={(event: Event) => {
                 setStylingField(
                   "gridMinColumnWidthPx",
@@ -441,6 +465,15 @@ export function StyleTab({ engine }: { engine: RowEngine }) {
               max={LABEL_WIDTH_PCT_MAX}
               step={1}
               value={toLabelWidthControlValue(styling.labelWidthPct)}
+              onInput={(event: Event) => {
+                const value = liveCommitValue(
+                  readValue(event),
+                  fromLabelWidthControlValue,
+                  toLabelWidthControlValue,
+                );
+                if (value !== undefined)
+                  setStylingField("labelWidthPct", value);
+              }}
               onChange={(event: Event) => {
                 setStylingField(
                   "labelWidthPct",
@@ -486,6 +519,15 @@ export function StyleTab({ engine }: { engine: RowEngine }) {
             max={TABLE_MAX_WIDTH_PX_MAX}
             step={10}
             value={toBoundedIntControlValue(styling.tableMaxWidthPx)}
+            onInput={(event: Event) => {
+              const value = liveCommitValue(
+                readValue(event),
+                fromTableMaxWidthControlValue,
+                toBoundedIntControlValue,
+              );
+              if (value !== undefined)
+                setStylingField("tableMaxWidthPx", value);
+            }}
             onChange={(event: Event) => {
               setStylingField(
                 "tableMaxWidthPx",
@@ -544,6 +586,15 @@ export function StyleTab({ engine }: { engine: RowEngine }) {
             max={OUTER_BORDER_WIDTH_PX_MAX}
             step={1}
             value={toZeroMeansOffControlValue(styling.outerBorderWidthPx)}
+            onInput={(event: Event) => {
+              const value = liveCommitValue(
+                readValue(event),
+                fromOuterBorderWidthControlValue,
+                toZeroMeansOffControlValue,
+              );
+              if (value !== undefined)
+                setStylingField("outerBorderWidthPx", value);
+            }}
             onChange={(event: Event) => {
               setStylingField(
                 "outerBorderWidthPx",
@@ -566,6 +617,15 @@ export function StyleTab({ engine }: { engine: RowEngine }) {
             max={OUTER_BORDER_RADIUS_PX_MAX}
             step={1}
             value={toZeroMeansOffControlValue(styling.outerBorderRadiusPx)}
+            onInput={(event: Event) => {
+              const value = liveCommitValue(
+                readValue(event),
+                fromOuterBorderRadiusControlValue,
+                toZeroMeansOffControlValue,
+              );
+              if (value !== undefined)
+                setStylingField("outerBorderRadiusPx", value);
+            }}
             onChange={(event: Event) => {
               setStylingField(
                 "outerBorderRadiusPx",
@@ -642,6 +702,20 @@ export function StyleTab({ engine }: { engine: RowEngine }) {
               max={FONT_SIZE_PX_MAX}
               step={1}
               value={String(styling.fontSize)}
+              onInput={(event: Event) => {
+                // Two guards, and they mean different things. `undefined` is
+                // "still typing" (below), `null` is this box's own "nothing
+                // usable to store" — an emptied field must not flip the select
+                // above out of Custom, which is why the blur handler has always
+                // carried the same `!== null` test.
+                const px = liveCommitValue(
+                  readValue(event),
+                  parseCustomFontSizePx,
+                  toBoundedIntControlValue,
+                );
+                if (px !== undefined && px !== null)
+                  setStylingField("fontSize", px);
+              }}
               onChange={(event: Event) => {
                 const px = parseCustomFontSizePx(readValue(event));
                 if (px !== null) setStylingField("fontSize", px);
@@ -751,6 +825,15 @@ export function StyleTab({ engine }: { engine: RowEngine }) {
             max={FONT_SIZE_PX_MAX}
             step={1}
             value={toHeaderFontSizeControlValue(styling.headerFontSizePx)}
+            onInput={(event: Event) => {
+              const value = liveCommitValue(
+                readValue(event),
+                fromHeaderFontSizeControlValue,
+                toHeaderFontSizeControlValue,
+              );
+              if (value !== undefined)
+                setStylingField("headerFontSizePx", value);
+            }}
             onChange={(event: Event) => {
               setStylingField(
                 "headerFontSizePx",
@@ -821,6 +904,15 @@ export function StyleTab({ engine }: { engine: RowEngine }) {
             value={toHeaderPaddingBlockControlValue(
               styling.headerPaddingBlockPx,
             )}
+            onInput={(event: Event) => {
+              const value = liveCommitValue(
+                readValue(event),
+                fromHeaderPaddingBlockControlValue,
+                toHeaderPaddingBlockControlValue,
+              );
+              if (value !== undefined)
+                setStylingField("headerPaddingBlockPx", value);
+            }}
             onChange={(event: Event) => {
               setStylingField(
                 "headerPaddingBlockPx",
@@ -857,6 +949,14 @@ export function StyleTab({ engine }: { engine: RowEngine }) {
               max={SECTION_GAP_PX_MAX}
               step={1}
               value={toZeroMeansOffControlValue(styling.sectionGapPx)}
+              onInput={(event: Event) => {
+                const value = liveCommitValue(
+                  readValue(event),
+                  fromSectionGapControlValue,
+                  toZeroMeansOffControlValue,
+                );
+                if (value !== undefined) setStylingField("sectionGapPx", value);
+              }}
               onChange={(event: Event) => {
                 setStylingField(
                   "sectionGapPx",

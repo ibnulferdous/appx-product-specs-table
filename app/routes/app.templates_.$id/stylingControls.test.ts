@@ -29,6 +29,8 @@ import {
   fromOuterBorderWidthControlValue,
   fromSectionGapControlValue,
   fromGridMinColumnWidthControlValue,
+  fromTableMaxWidthControlValue,
+  liveCommitValue,
   ZERO_MEANS_OFF_CONTROL_MIN,
   nextFontSizeForControl,
   parseCustomFontSizePx,
@@ -74,6 +76,8 @@ import {
   OUTER_BORDER_RADIUS_PX_MIN,
   OUTER_BORDER_WIDTH_PX_MAX,
   OUTER_BORDER_WIDTH_PX_MIN,
+  TABLE_MAX_WIDTH_PX_MAX,
+  TABLE_MAX_WIDTH_PX_MIN,
   COLUMN_DIVIDER_STYLES,
   MOBILE_LAYOUTS,
   ROW_DIVIDER_STYLES,
@@ -1837,5 +1841,185 @@ describe("showsStripeBackgroundControl — the AND (feature 95)", () => {
     const back = { ...lined, rowDividerStyle: "STRIPES" as const };
     expect(showsStripeBackgroundControl(back)).toBe(true);
     expect(back.stripeBgColor).toBe("#f9b8b8");
+  });
+});
+
+// The typing bug, 2026-07-31. The Style rail's nine number boxes were wired to
+// `onChange` alone, which on a Polaris field fires on COMMIT — blur or Enter.
+// Typing a value therefore called no setter at all: no dirty flag, no SaveBar,
+// and no unsaved-changes guard, so leaving the editor between the last keystroke
+// and a blur discarded the number in silence.
+//
+// `liveCommitValue` is what lets the boxes also carry `onInput` WITHOUT the
+// naive fix's own bug — every `from…` above clamps, and the boxes are
+// controlled, so a blind per-keystroke commit re-renders a half-typed number
+// under the merchant's caret.
+//
+// These pin the rule against the REAL parse/format pairs each box uses rather
+// than a stand-in, because the rule's whole claim is that one round-trip test is
+// correct for all three families the rail contains — a bespoke fixture would
+// only prove it against itself.
+describe("feature 57 — a number box commits only settled text", () => {
+  const maxWidth = (raw: string) =>
+    liveCommitValue(
+      raw,
+      fromTableMaxWidthControlValue,
+      toBoundedIntControlValue,
+    );
+
+  it("guards the guard: the bounds this suite is written against still hold", () => {
+    // Every "half-typed" case below assumes 1 / 10 / 100 are all beneath the
+    // floor and that 5000 is over the ceiling. Widen the range one day and these
+    // assertions would pass while testing nothing.
+    expect(TABLE_MAX_WIDTH_PX_MIN).toBeGreaterThan(100);
+    expect(TABLE_MAX_WIDTH_PX_MAX).toBeLessThan(5000);
+  });
+
+  it("does not commit a half-typed number", () => {
+    // THE BUG THE NAIVE FIX WOULD HAVE SHIPPED. Typing `1000` passes through
+    // `1`, `10` and `100`, each of which the parse clamps UP to the 240 floor.
+    // Committing any of them would rewrite the box to "240" mid-keystroke and
+    // make a four-digit width untypeable.
+    expect(maxWidth("1")).toBeUndefined();
+    expect(maxWidth("10")).toBeUndefined();
+    expect(maxWidth("100")).toBeUndefined();
+  });
+
+  it("commits the moment the typed number is the stored number", () => {
+    // The end of that same sequence, and the whole point of the fix: the fourth
+    // keystroke dirties the editor and opens the SaveBar with no blur.
+    expect(maxWidth("1000")).toBe(1000);
+    expect(maxWidth(String(TABLE_MAX_WIDTH_PX_MIN))).toBe(
+      TABLE_MAX_WIDTH_PX_MIN,
+    );
+    expect(maxWidth(String(TABLE_MAX_WIDTH_PX_MAX))).toBe(
+      TABLE_MAX_WIDTH_PX_MAX,
+    );
+  });
+
+  it("leaves out-of-range, fractional and zero-padded text for the blur", () => {
+    // All three would be REWRITTEN by a commit — to the ceiling, to a rounded
+    // integer, and to an unpadded one. Waiting for `onChange` is what keeps the
+    // clamp a blur-time correction rather than an edit-time fight.
+    expect(maxWidth("5000")).toBeUndefined();
+    expect(maxWidth("12.5")).toBeUndefined();
+    expect(maxWidth("0240")).toBeUndefined();
+    expect(maxWidth("abc")).toBeUndefined();
+
+    // And the blur still lands them where it always did.
+    expect(fromTableMaxWidthControlValue("5000")).toBe(TABLE_MAX_WIDTH_PX_MAX);
+    expect(fromTableMaxWidthControlValue("12.5")).toBe(TABLE_MAX_WIDTH_PX_MIN);
+  });
+
+  it("commits a CLEARED blank box, which is a real edit", () => {
+    // ⚠️ `null`, not `undefined`, and a call site that conflates the two drops
+    // this. Emptying Maximum width means "full width" — an edit the merchant
+    // must be able to make and then see a SaveBar for.
+    expect(maxWidth("")).toBeNull();
+  });
+
+  it("commits the 0 of a zero-means-off box but not an emptied one", () => {
+    // The second family, where the rule pays off without being told about it.
+    // `0` is this box's own spelling of off: it parses to null and formats back
+    // to "0", so it round-trips and turns the outline off live.
+    const outline = (raw: string) =>
+      liveCommitValue(
+        raw,
+        fromOuterBorderWidthControlValue,
+        toZeroMeansOffControlValue,
+      );
+
+    expect(outline("0")).toBeNull();
+    expect(outline("3")).toBe(3);
+
+    // An EMPTIED one, though, must wait: the box refills itself with "0", so
+    // committing would type a character into the field the merchant just
+    // cleared. Same stored outcome, arrived at on blur instead.
+    expect(outline("")).toBeUndefined();
+    expect(fromOuterBorderWidthControlValue("")).toBeNull();
+  });
+
+  it("applies to every number box in the rail, in both families", () => {
+    // Derived rather than spot-checked: each pair below is exactly what its box
+    // passes in StyleTab, so a box wired to a mismatched formatter — the one
+    // mistake that would make this silently commit nothing, ever — shows up
+    // here as a settled value that refuses to commit.
+    const boxes: ReadonlyArray<{
+      name: string;
+      parse: (raw: string) => number | null;
+      format: (value: number | null) => string;
+      settled: number;
+    }> = [
+      {
+        name: "gridMinColumnWidthPx",
+        parse: fromGridMinColumnWidthControlValue,
+        format: toGridMinColumnWidthControlValue,
+        settled: GRID_MIN_COLUMN_WIDTH_PX_MIN,
+      },
+      {
+        name: "labelWidthPct",
+        parse: fromLabelWidthControlValue,
+        format: toLabelWidthControlValue,
+        settled: LABEL_WIDTH_PCT_MIN,
+      },
+      {
+        name: "tableMaxWidthPx",
+        parse: fromTableMaxWidthControlValue,
+        format: toBoundedIntControlValue,
+        settled: TABLE_MAX_WIDTH_PX_MIN,
+      },
+      {
+        name: "headerFontSizePx",
+        parse: fromHeaderFontSizeControlValue,
+        format: toHeaderFontSizeControlValue,
+        settled: FONT_SIZE_PX_MIN,
+      },
+      {
+        name: "headerPaddingBlockPx",
+        parse: fromHeaderPaddingBlockControlValue,
+        format: toHeaderPaddingBlockControlValue,
+        settled: HEADER_PADDING_BLOCK_PX_MAX,
+      },
+      {
+        name: "fontSize (custom)",
+        parse: parseCustomFontSizePx,
+        format: toBoundedIntControlValue,
+        settled: FONT_SIZE_PX_MAX,
+      },
+      {
+        name: "outerBorderWidthPx",
+        parse: fromOuterBorderWidthControlValue,
+        format: toZeroMeansOffControlValue,
+        settled: OUTER_BORDER_WIDTH_PX_MAX,
+      },
+      {
+        name: "outerBorderRadiusPx",
+        parse: fromOuterBorderRadiusControlValue,
+        format: toZeroMeansOffControlValue,
+        settled: OUTER_BORDER_RADIUS_PX_MAX,
+      },
+      {
+        name: "sectionGapPx",
+        parse: fromSectionGapControlValue,
+        format: toZeroMeansOffControlValue,
+        settled: SECTION_GAP_PX_MAX,
+      },
+    ];
+
+    // Nine, matching the `<s-number-field>` count `styleTabContract.test.ts`
+    // walks. The two files check different halves — that every box IS wired,
+    // and that the wiring behaves — and both need the same population.
+    expect(boxes.length).toBe(9);
+
+    for (const box of boxes) {
+      const raw = String(box.settled);
+      expect({
+        [box.name]: liveCommitValue(raw, box.parse, box.format),
+      }).toEqual({ [box.name]: box.settled });
+      // And something no box can store settles for none of them.
+      expect({
+        [box.name]: liveCommitValue("999999", box.parse, box.format),
+      }).toEqual({ [box.name]: undefined });
+    }
   });
 });

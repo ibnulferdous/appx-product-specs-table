@@ -1015,6 +1015,68 @@ plan: `~/.claude/plans/style-tab-phase-b-implementation-plan.md` (1–12 = B1, 1
 
 > One line per unit. Detail → the linked `context/features/` doc + git history.
 
+**Style-tab number boxes did not dirty the editor while typing — ✅ FIXED + LIVE
+VERIFIED 2026-07-31, gate green (typecheck · lint · format · 1256 · build).** No feature
+doc (a bug fix), so this entry IS the record.
+
+- **The bug.** All nine `<s-number-field>`s in the Style rail were wired to `onChange`
+  alone, and on a Polaris field `change` fires on COMMIT — blur or Enter — not per
+  keystroke (`FieldReactProps` in `@shopify/polaris-types` documents `onInput` as firing
+  BEFORE it). So typing `1000` into Maximum width called no setter: `isDirty` stayed
+  false and the SaveBar never appeared until the merchant happened to click elsewhere.
+  ⚠️ **The missing bar was the visible half; the data loss was the real one** — the
+  SaveBar is the only Save affordance AND `isDirty` is what the unsaved-changes guard
+  reads, so leaving the editor between the last keystroke and a blur discarded the
+  number with no warning. The selects and swatches were never affected (their `change`
+  is already immediate); the Settings tab and the header rename had used `onInput` all
+  along, so the rail was the outlier, not the convention.
+- 🔴 **THE NAIVE FIX IS WORSE THAN THE BUG.** These boxes are CONTROLLED and every
+  `from…ControlValue` CLAMPS. A blind `onInput` commits the `1` of a `1000` as the 240
+  floor and re-renders "240" into the field under the caret — a four-digit width becomes
+  untypeable. Anyone revisiting this must not "simplify" to one handler.
+- **The rule, in `liveCommitValue` (`stylingControls.ts`): commit on a keystroke only
+  when the parse is LOSSLESS** — `format(parse(raw)) === raw`, i.e. the text already
+  spells exactly what would be stored, so the re-render cannot rewrite the box.
+  Half-typed (`1`), out-of-range (`5000`), fractional (`12.5`) and zero-padded (`0240`)
+  text falls through to `onChange`, which clamps on blur exactly as before.
+- **Stated as a round trip, not a range test, and that is load-bearing** — a range test
+  would be wrong for two of the rail's three number-box families, and this one rule is
+  right for all three without knowing which is which: a cleared *blank box* round-trips
+  `""`→`""` (so clearing dirties the editor live), a *zero-means-off* box round-trips
+  `"0"`→null→`"0"` (so typing 0 turns the outline off live) while an EMPTIED one
+  correctly waits (the box would refill itself with `0` mid-edit), and *custom font size*
+  keeps its own "null means ignore" guard on top.
+- ⚠️ **`liveCommitValue` returns THREE things** — `undefined` (still typing), `null` (a
+  real empty/off value), a number. `if (value)` drops every cleared box and every
+  zero-means-off `0`; `if (value != null)` drops the clears while looking correct. Only
+  `!== undefined` is right, and `styleTabContract.test.ts` bans both bad spellings.
+- **Tests 1245 → 1256 (+11), in two halves that neither file could cover alone.**
+  `stylingControls.test.ts` pins the DECISION against the real parse/format pair of each
+  of the nine boxes (a derived table, so a box wired to a mismatched formatter shows up
+  as a settled value that refuses to commit). `styleTabContract.test.ts` walks the JSX
+  for the WIRING — the original defect was a missing handler, not a wrong decision, and
+  every test in the repo passed while all nine boxes were commit-on-blur only.
+- **Live verification 2026-07-31, dev store, template `Accordion - Graphite`** (saved
+  Maximum width 1000, Outline thickness 0). Driven one key at a time, reading the
+  admin's own save bar from the top frame; **Discard restored 1000 / 0, nothing was
+  saved.**
+  - Typed `1` → `12` → `120` → `1200` into Maximum width (floor 240). The box held
+    `1`, `12`, `120` **verbatim — never rewritten to 240** — with **no save bar**; the
+    bar appeared on the `1200` keystroke, **focus still in the field, nothing clicked**.
+    That one sequence is both halves at once: the fix works and the clamp does not fight
+    the caret.
+  - Appended a digit to make `10000` (over the 1600 ceiling): box held `10000`, **no
+    save bar** — out-of-range text is not committed, and **Polaris does NOT clamp on
+    input**, so the round-trip rule is the only thing standing between the merchant and
+    a rewritten box.
+  - Zero-means-off, live per keystroke: `3` into Outline thickness drew the frame in the
+    preview AND **revealed the `Outline color` swatch** (`showsOuterBorderColorControl`
+    flipping mid-keystroke) and swapped the help text; `0` removed all three again.
+  - ⚠️ **Browser-automation trap, not an app bug:** `computer type` after a
+    `triple_click` DID commit a clamped 240 and looked exactly like the bug the fix
+    prevents. `computer key`, one keystroke at a time, does not. Verify per-keystroke
+    field behaviour with `key`; `type` is not faithful here.
+
 **Settings-tab copy pass — ✅ COMPLETE 2026-07-30, `npm run build` green. No feature
 doc (a wording correction), so this entry IS the record.**
 
