@@ -884,6 +884,168 @@ Building the MVP.
 > the only genuine argument for `ALL_OPEN`. 🚫 **Not** an SEO cost: closed
 > `<details>` content is in the DOM and indexed at full weight.
 
+> ✅ **Gallery cards gained a derived "what's different" line 2026-07-31 —
+> merchant ask ("six cards are hard to tell apart"), and the cause was NOT the
+> two-per-row layout.** Gate green (typecheck · lint · format · **1270**, +14 ·
+> build). ✅ **LIVE-VERIFIED on `appx-dev` 2026-07-31 — and the pass found two
+> real defects, both mine, both invisible to all 1268 tests.** See the
+> "live pass" block at the end of this entry.
+>
+> 🔴 **The diagnosis is arithmetic, and it is the reusable part.** Three of the
+> five patterns are the same two-column shape differing only in hairlines:
+> Classic's `columnDividerStyle: "LINE"` and `outerBorderWidthPx: 1` render at
+> **0.55px** under `--appx-preset-scale`, so **two of the three features
+> separating the most-decorated card from the default one are sub-pixel**. The
+> previews were never going to carry that difference. Multi-column and Accordion
+> depart structurally and read fine, which is why the problem looked like a
+> layout problem.
+> ⚠️ **And the scale cannot be raised to fix it.** `--appx-preset-render-width`
+> must stay above the storefront's **749px** mobile breakpoint (below it every
+> card renders in its identical phone form) and two cards + a 16px gap must fit
+> the measured **966px** page — capping two-up at `(966-16)/2/749` ≈ **0.63**, a
+> 13% bump that still leaves a 1px rule invisible. 🚫 So no geometry was touched:
+> `--appx-preset-scale`, the 420px viewport and the 948px `@container`
+> breakpoint are byte-unchanged. **The difference is carried in words.**
+>
+> **What shipped:** `presetHighlights(preset)` in `app/utils/stylePresets.ts`,
+> rendered as one muted line under each card's description —
+> `Underlined section headers · Line between rows · Line between columns · Outer
+> border` on Classic, `Shaded section headers · Line between rows` on Modern.
+> 🔴 **DERIVED from the resolved bundle, never stored beside `description`**, and
+> the 2026-07-30 polish pass is the proof that matters: Classic moved
+> `PLAIN` + `STRIPES` → `TEXT_ONLY` + LINES, and a hand-written line would still
+> be promising stripes today **with nothing failing** — the same argument step 90
+> used to reject a static thumbnail, applied to copy.
+> ⚠️ Reads `stylePresetValues` (the bundle ALONE), which is safe by construction
+> rather than by luck: `PRESET_SCOPED_FIELDS` and `ACCENT_SCOPED_FIELDS` are
+> asserted disjoint, so no accent can move a value it reads.
+>
+> 📌 **Which axes speak.** Header treatment and row separation on EVERY card —
+> the shared vocabulary is what makes five cards comparable instead of five
+> unrelated pitches — plus layout / collapsible / column rule / frame only when
+> they leave the default, because "No column line · No outer border" on four of
+> five cards buries the one card where the frame is the point. Structure leads
+> (`Several columns…` before `Shaded section headers…`), and that ORDER is
+> pinned. 🚫 `sectionGapPx` stays silent: it is the one tuning value in any
+> bundle and "12px between sections" is not why anyone picks a card.
+>
+> ✅ **The a11y half is the part that is not cosmetic.** The line goes INTO
+> `aria-describedby` as a second id, not beside it — the preview is `aria-hidden`
+> (correctly), so before this the entire basis for a screen-reader user's choice
+> was one prose sentence per card. ⚠️ **It must NOT copy the action line's
+> `aria-hidden` treatment**: that is hidden because the link role already
+> announces it, where this is information available nowhere else. Guarded both
+> ways.
+> 🔬 **One implementation detail that is a real trap, not a preference: the
+> phrases are joined into ONE text node.** `aria-describedby` concatenates the
+> referenced element's **text content**, and `<span>A</span><span>B</span>` has
+> the text content `"AB"` — no space at all. A row of chip spans (the obvious
+> visual design) would announce "Shaded section headersLine between rows", and a
+> CSS `::before` separator fails the other way — generated content some AT reads
+> and some does not. The middle dot is real DOM text so the eye and the screen
+> reader get the same string. 🚫 Also not a `<ul>`: `.body` is a `<span>`, which
+> is phrasing content and cannot contain flow content.
+> 📌 **Blank passes no highlights, deliberately** — faking a line from the
+> defaults would print Modern's exact string on the card whose whole meaning is
+> "no pattern was chosen", the same trap the missing preview avoids, in words
+> instead of pixels — Blank keeps a written sentence, which it is the only card
+> allowed.
+>
+> ✅ **+12 tests: 8 behavioural** (pairwise-distinct lines, derivation by bundle
+> swap, the shared-vocabulary pair, Classic's two sub-pixel axes named and no
+> other card claiming them, leading order, no digits or wire keywords, totality
+> over all three vocabularies via synthetic bundles) **and 4 structural.**
+>
+> 🔴 **`StylePreset.description` REMOVED the same day (merchant decision) — the
+> derived line replaced it rather than joining it.** The first cut shipped BOTH:
+> the hand-written sentence and, one line below it in a darker ink, the readout.
+> They said nearly the same thing twice ("A bordered grid with a line between
+> every row." above "Underlined section headers · Line between rows · Line
+> between columns · Outer border"), which spent vertical space and some of the
+> scannability the line was added for. The field is deleted, not merely unread:
+> a merchant-facing string nothing renders is a claim nobody re-reads.
+> 🔬 **And the field had ALREADY gone stale once, which is the argument for
+> deriving in the first place** — Classic's description said "a line between
+> every row" through the entire period its bundle shipped `STRIPES`, which paints
+> no row lines at all. Nothing failed, because nothing compares prose to values.
+> ✅ **The component got simpler, not more complex:** `CardFrame` is back to ONE
+> `description` string, ONE `descriptionId` and an unconditional
+> `aria-describedby` — the preset cards join their derived phrases into it, Blank
+> passes its literal. The `highlights` prop, the second id, the second span, the
+> conditional attribute and the `--appx-preset-spec` ink all went with the
+> duplication. ⚠️ Test count held at **1268**: two guards were restated onto the
+> new source rather than added (`every preset carries a label and a one-line
+> description` now bounds the DERIVED line at 96 chars — roughly two lines in the
+> 440px card — and the card's derivation guard now asserts `preset.description`
+> is *absent* from the component).
+> 📌 **What was genuinely lost, recorded rather than waved off:** Accordion's
+> "Shoppers open one section at a time" named WHO the pattern is for, which no
+> readout of `sectionsCollapsible` can say. If that voice is wanted back it
+> belongs in the page's single help line above all six cards, **not** as a
+> per-preset field — that is what recreates the duplication.
+> ⚠️ `context/features/90-style-preset-card-preview.md` corrected: its worked
+> example of the screen-reader announcement quoted the old sentence verbatim.
+> Struck, not deleted, with the new announcement beside it. The RULE that section
+> states (name = label alone, description associated not concatenated, iframe
+> `aria-hidden`) is unchanged — only the source of the help text moved.
+>
+> ---
+>
+> 🔴 **The live pass 2026-07-31 found TWO defects, both introduced by this work,
+> both invisible to all 1268 tests, and both fixed + re-verified in the same
+> session** (→ **1270**). 🔬 **Neither is about the text being wrong — the strings
+> were exactly as the unit tests said. Both are about what a WRAPPED line does to
+> a layout that had never had one**, which is precisely the class of thing a
+> source-reading contract test cannot see. The reasoning-only note this entry
+> shipped with ("the wrap has only been reasoned about, not looked at") named the
+> right risk and got the consequence wrong twice.
+>
+> **(1) The action line went ragged across every row.** Grid rows stretch their
+> cards to a common height, so Classic — whose line wraps to two rows — was
+> exactly as TALL as Modern beside it and only its CONTENT was taller. Result:
+> "Use this style →" sat ~16px lower on Classic than on Modern, ~16px lower on
+> Multi-column than on Minimal, and ~14px HIGHER on Blank than on Accordion — the
+> one element identical on five of the six cards, misaligned on all three rows.
+> ✅ Fixed with `margin-block-start: auto` on `.action`, which bottom-aligns it
+> within the stretched card. ⚠️ Works only because `.card` is a flex column and
+> the grid stretches it; the comment says so, because either change silently
+> switches it off.
+>
+> **(2) Classic broke MID-PHRASE.** `… · Line between` / `rows · Line between
+> columns · Outer border` — the second line opened on a fragment, which is exactly
+> the scanning the line exists to enable. ✅ Fixed by making the spaces inside each
+> phrase non-breaking and the separator ` ·` + ordinary space, so the only break
+> opportunity in the string is immediately after a `·`: a wrapped line now ends
+> with its separator and the next begins on a whole phrase. `text-wrap: balance`
+> then distributes whole phrases. 🚫 **Not** solved by a span-per-phrase with
+> `white-space: nowrap` — that is the obvious form and it re-breaks the accessible
+> name, since `aria-describedby` concatenates text content and sibling spans have
+> no space between them. ⚠️ Written as ` ` escapes, never literal U+00A0: a raw
+> one is invisible in a diff and indistinguishable from a space in an editor, so
+> the property would be unreviewable and deletable by accident. A guard asserts
+> the escapes AND that no raw U+00A0 exists in the file.
+>
+> ✅ **Confirmed after the fix, at zoom, in the real admin:** both action lines in
+> a row share a baseline; Classic reads
+> "Underlined section headers · Line between rows ·" / "Line between columns ·
+> Outer border"; Multi-column and Accordion break after a `·` too; **all six cards
+> carry exactly ONE line** — no leftover description anywhere — and Blank still
+> reads its sentence. ✅ **The narrow-admin one-column fallback still fires** and
+> the cards read correctly in it (reached accidentally, by shrinking the window).
+>
+> ⚠️ **OWED, and stated rather than implied: row 3 (Accordion + Blank) was never
+> seen in the TWO-column layout.** Rows 1 and 2 were, and they are what proves the
+> alignment fix; row 3 is the same mechanism on the same CSS but that is an
+> inference, not an observation. The window could not be restored —
+> **`resize_window` reports success and the viewport does not change**, the same
+> environment limitation recorded in [[embedded-admin-iframe-automation]] and hit
+> in the 2026-07-28 pass. Cheap to close on the next look at this page.
+> ⚠️ **Also not observed: the accessible description.** The app's cross-origin
+> iframe is absent from the top frame's a11y tree and `javascript_tool` cannot
+> reach into it (re-confirmed this session — `contentDocument` throws). The
+> mechanism is guarded by the contract test; the announcement is still unheard, as
+> it has been since step 91.
+
 ## Current Goal
 
 **Reshell Phase B2 — the built-in preset gallery (Style tab feature 57, steps 13–14).**

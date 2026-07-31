@@ -147,6 +147,93 @@ describe("the accent reaches the preview (feature 93 · step 101)", () => {
   });
 });
 
+describe("the difference line", () => {
+  // Added after a merchant said six cards were hard to tell apart. The cause is
+  // not the layout: at `--appx-preset-scale: 0.55` Classic's 1px column rule and
+  // 1px frame render at 0.55px, so two of the three things separating the most
+  // decorated card from the default one are literally sub-pixel. These guard the
+  // words that carry the difference instead.
+
+  it("🔴 DERIVES a preset card's line — it is never stored copy", () => {
+    // The regression this exists for, and it is not hypothetical. A sentence
+    // stored beside the bundle is a second account of the same values with
+    // nothing keeping the two in agreement: `StylePreset.description` said
+    // "a line between every row" on Classic through the whole period that
+    // bundle shipped `STRIPES`, which paints no row lines at all. Green suite.
+    // The field is gone; this is what stops it coming back through the card.
+    expect(body).toContain("presetHighlights(preset)");
+    expect(body).not.toContain("preset.description");
+  });
+
+  it("🔴 keeps the line in the accessible description", () => {
+    // The a11y half, and the reason this is not just a visual tweak. The preview
+    // is `aria-hidden`, so this ONE string is the entire basis a screen-reader
+    // user has for choosing between six cards.
+    //
+    // ⚠️ It must NOT copy the action line's `aria-hidden` treatment. That is
+    // hidden because the link role already announces it — a restatement. This is
+    // information available nowhere else on the card.
+    expect(body).toContain("aria-describedby={descriptionId}");
+    expect(body).not.toMatch(
+      /className=\{styles\.description\}[^>]*aria-hidden/,
+    );
+  });
+
+  it("🔴 joins the phrases into ONE text node", () => {
+    // `aria-describedby` concatenates the referenced element's TEXT CONTENT, and
+    // `<span>A</span><span>B</span>` has the text content "AB" — no space. A row
+    // of chip spans would announce "Shaded section headersLine between rows".
+    // The separator has to be real DOM text, which `join` is and CSS generated
+    // content is not.
+    expect(body).toContain("highlightLine(presetHighlights(preset))");
+    // One description span in the whole file — `CardFrame` renders it once for
+    // both card shapes. A container of per-phrase spans would push this above 1.
+    expect(body.match(/className=\{styles\.description\}/g)).toHaveLength(1);
+  });
+
+  it("🔴 keeps each phrase unbreakable, in `\\u00a0` escapes", () => {
+    // Observed live 2026-07-31: with ordinary spaces the browser broke Classic
+    // mid-phrase — "… · Line between" / "rows · Line between columns · Outer
+    // border" — so the second line opened on a fragment, defeating the scanning
+    // this line exists for. Non-breaking spaces inside each phrase leave exactly
+    // one break opportunity, the ordinary space after each "·".
+    //
+    // ⚠️ Asserted as the ESCAPE, not the character. A literal U+00A0 is
+    // invisible in a diff and indistinguishable from a space in an editor, so it
+    // could be "tidied" away with nothing to see; this fails if it is.
+    expect(body).toContain('replace(/ /g, "\\u00a0")');
+    expect(body).toContain('.join("\\u00a0· ")');
+    // Non-vacuous: no raw non-breaking space smuggled in beside the escapes.
+    expect(body).not.toContain("\u00a0");
+  });
+
+  it("🔴 pins the action line to the bottom of the card", () => {
+    // Also observed live 2026-07-31. Grid rows stretch their cards to a common
+    // height, so a card whose line wraps to two rows is as TALL as its one-line
+    // neighbour and only its content is taller — leaving "Use this style →"
+    // ~16px lower on Classic than on Modern beside it, on every row. The wrap is
+    // not avoidable (Classic names four axes), so the alignment comes from the
+    // layout.
+    const css = readFileSync(
+      fileURLToPath(new URL("./StylePresetCard.module.css", import.meta.url)),
+      "utf8",
+    ).replace(/\/\*[\s\S]*?\*\//g, "");
+    expect(css).toMatch(/\.action\s*\{[^}]*margin-block-start:\s*auto/);
+  });
+
+  it("🔴 gives Blank a written sentence, never a derived one", () => {
+    // Blank has no bundle. Deriving from `DEFAULT_STYLING_VALUES` would print
+    // Modern's exact line on the card whose entire meaning is "no pattern was
+    // chosen" — the same trap the missing preview avoids, in words instead of
+    // pixels. It is the one card allowed a literal here.
+    const blankCard = body.slice(
+      body.indexOf("export function BlankStyleCard"),
+    );
+    expect(blankCard).not.toContain("presetHighlights");
+    expect(blankCard).toMatch(/description="[^"]+"/);
+  });
+});
+
 describe("the preview is hidden from assistive tech", () => {
   it("marks the preview wrapper aria-hidden and takes the frame out of tab order", () => {
     expect(body).toMatch(/className=\{styles\.preview\}\s+aria-hidden="true"/);

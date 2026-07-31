@@ -1,7 +1,11 @@
 import { useId, useMemo } from "react";
 import { Link } from "react-router";
 import type { AccentPreset, StylePreset } from "../../utils/stylePresets";
-import { galleryHref, seedStylingFromPreset } from "../../utils/stylePresets";
+import {
+  galleryHref,
+  presetHighlights,
+  seedStylingFromPreset,
+} from "../../utils/stylePresets";
 import { renderSpecTablePreviewDocument } from "../app.templates_.$id/specTablePreviewHtml";
 import { STYLE_PREVIEW_SAMPLE_ROWS } from "./sampleRows";
 import styles from "./StylePresetCard.module.css";
@@ -44,6 +48,43 @@ import styles from "./StylePresetCard.module.css";
 // simply never runs. Fewer capabilities for five frames, and no reason to grant
 // more. The frame stays a unique opaque origin either way.
 
+/**
+ * Join the derived phrases into the card's one description string.
+ *
+ * 🔴 **The spaces INSIDE a phrase are non-breaking, and that is the whole
+ * function** — observed live 2026-07-31, on the admin. With ordinary spaces the
+ * browser breaks wherever the line runs out, and on Classic that landed
+ * mid-phrase: `… · Line between` / `rows · Line between columns · Outer border`.
+ * The second line then opens on a fragment, which is precisely the scanning this
+ * line exists to make possible.
+ *
+ * The separator carries a non-breaking space BEFORE the dot and an ordinary one
+ * after, so the only break opportunity in the whole string is immediately after
+ * a `·`. A wrapped line therefore ends with its separator and the next begins on
+ * a whole phrase — the shape Multi-column already happened to get. `text-wrap:
+ * balance` then distributes whole phrases between the rows.
+ *
+ * ⚠️ A phrase wider than the card's 440px content box would overflow rather than
+ * break, which is the cost of forbidding the break. The longest today is
+ * "Several columns, label above each value" at roughly half that, and the
+ * ≤96-character guard in `stylePresets.test.ts` bounds the whole line — but a
+ * genuinely long new phrase is the thing to look at, not the number of them.
+ *
+ * 🚫 Not solved by wrapping each phrase in its own `<span>` with
+ * `white-space: nowrap`. That is the obvious form and it breaks the accessible
+ * name: `aria-describedby` concatenates TEXT CONTENT, and sibling spans have no
+ * space between them (see the note at the render site).
+ */
+function highlightLine(phrases: readonly string[]): string {
+  // ⚠️ Written as \u00a0 escapes, never as literal non-breaking spaces. A raw
+  // U+00A0 is invisible in a diff and indistinguishable from an ordinary space
+  // in an editor, so the one property this function exists for would be
+  // unreviewable and deletable by accident.
+  return phrases
+    .map((phrase) => phrase.replace(/ /g, "\u00a0"))
+    .join("\u00a0· ");
+}
+
 /** Everything both card shapes share: the frame, the name, the help text. */
 function CardFrame({
   to,
@@ -54,6 +95,24 @@ function CardFrame({
 }: {
   to: string;
   label: string;
+  /**
+   * The ONE explanatory line under the name — what this card gets you.
+   *
+   * 🔴 **One line, not two.** Until 2026-07-31 there were two: a hand-written
+   * `StylePreset.description` and, below it, the derived
+   * `presetHighlights` readout. They said nearly the same thing one line apart
+   * in two ink tones ("A bordered grid with a line between every row." above
+   * "Underlined section headers · Line between rows · Line between columns ·
+   * Outer border"), which spent vertical space on a page whose whole problem was
+   * six cards being hard to compare. The hand-written half went; see the note in
+   * `stylePresets.ts` for what that cost.
+   *
+   * ⚠️ It is a plain string rather than the highlight ARRAY because the two card
+   * shapes fill it from different places — the preset cards join their derived
+   * phrases, Blank passes a literal sentence, having no bundle to derive from.
+   * Taking the array here would make Blank the special case in a component that
+   * exists precisely to have none.
+   */
   description: string;
   /**
    * The call-to-action line — what happens when this card is activated, in the
@@ -77,6 +136,12 @@ function CardFrame({
       to={to}
       className={styles.card}
       aria-labelledby={titleId}
+      // 🔴 The description is the merchant's ENTIRE basis for choosing when they
+      // cannot see the card: the preview is `aria-hidden` (rightly — five fake
+      // tables read aloud is worse than nothing), so this one string is all a
+      // screen-reader user gets. It must never take the action line's
+      // `aria-hidden` treatment; that line is hidden because the link role
+      // already announces it, where this is information available nowhere else.
       aria-describedby={descriptionId}
     >
       {visual}
@@ -84,6 +149,21 @@ function CardFrame({
         <span className={styles.title} id={titleId}>
           {label}
         </span>
+        {/* ⚠️ ONE text node, and on the preset cards the middle dots between the
+            phrases are IN it. `aria-describedby` concatenates the referenced
+            element's text content, and `<span>A</span><span>B</span>` has the
+            text content "AB" — no space at all, so rendering the phrases as a
+            row of chip spans would announce "Shaded section headersLine between
+            rows". A CSS `::before` separator fails the other way: generated
+            content that some AT reads and some does not. Keeping the separator
+            in the DOM is what makes the eye and the screen reader get the same
+            string.
+
+            🚫 NOT a `<ul>`, however much the preset cards read like a list:
+            `.body` is a `<span>`, which is phrasing content and cannot contain
+            flow content. Swapping it for a `<div>` to allow one would put a
+            block element inside the anchor's flex column for no gain a merchant
+            can see. */}
         <span className={styles.description} id={descriptionId}>
           {description}
         </span>
@@ -170,7 +250,19 @@ export function StylePresetCard({
     <CardFrame
       to={galleryHref({ preset: preset.id, accent: accent?.id ?? null })}
       label={preset.label}
-      description={preset.description}
+      // 🔴 DERIVED from the bundle, never a stored sentence — and the field this
+      // replaced is the argument. `StylePreset.description` was hand-written
+      // copy, so it could disagree with the bundle beside it and did: Classic's
+      // read "a line between every row" through the whole period its bundle
+      // shipped `STRIPES`, which paints no row lines at all. Nothing failed,
+      // because nothing compares prose to values. This line cannot drift,
+      // because it IS the values.
+      //
+      // ⚠️ Deliberately NOT memoised alongside `document` below. It resolves six
+      // frozen fields into a short array; the memo exists for the ~36 KB `srcDoc`
+      // string beside it, and a second one here would cost more in
+      // dependency-array surface than the work it skips.
+      description={highlightLine(presetHighlights(preset))}
       action="Use this style"
       visual={
         // ⚠️ The preview is DECORATIVE and hidden from assistive tech. The
@@ -229,6 +321,14 @@ export function BlankStyleCard() {
     <CardFrame
       to="/app/templates/new"
       label="Blank"
+      // 🔴 The one card whose line is still a written SENTENCE, and the only one
+      // that may be. Blank has no bundle, so there is nothing to derive from —
+      // and deriving from `DEFAULT_STYLING_VALUES` instead would print Modern's
+      // exact line on the card whose whole meaning is "no pattern was chosen",
+      // the same trap the missing preview avoids, in words instead of pixels.
+      // 📌 It is also the reason `CardFrame` takes a string rather than the
+      // highlight array: this card is not a special case, it just fills the slot
+      // from somewhere else.
       description="Start with your theme's own styles — nothing added."
       // ⚠️ NOT "Use this style". Blank is the absence of a preset, so there is
       // no style to use; the line has to name what actually happens.

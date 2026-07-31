@@ -131,8 +131,32 @@ screen reader.
 Its accessible name is the preset **label**; the description is associated help
 text, not part of the name. **The iframe is decorative** and must be hidden from
 assistive tech — the merchant is choosing a look, and a screen-reader user
-should hear "Minimal — no bands and no rules, spacing does the work", not the
+should hear ~~"Minimal — no bands and no rules, spacing does the work"~~, not the
 fake sample's rows read aloud six times over.
+
+> 🔴 **Correction 2026-07-31 — the description is now DERIVED, and the example
+> above is struck because that exact string no longer exists.**
+> `StylePreset.description` (the hand-written sentence) was removed and the help
+> text is `presetHighlights(preset)` joined with middle dots, so Minimal now
+> announces **"Minimal — Plain section headers · No lines between rows"**.
+>
+> Why, in one line: at `--appx-preset-scale: 0.55` Classic's 1px column rule and
+> 1px frame render **sub-pixel**, so the preview cannot show three of the five
+> patterns apart and the difference has to be carried in words. Once it was,
+> the written sentence said nearly the same thing one line above it.
+>
+> ⚠️ **The rule this section states is UNCHANGED and is what made the swap
+> safe**: the name is still the label alone, the help text is still associated
+> rather than concatenated, and the iframe is still `aria-hidden`. Only the
+> SOURCE of the help text moved. It also raised the stakes on the last of those —
+> with the preview hidden, this one string is now the entire basis a
+> screen-reader user has for choosing, which is why it must never take the action
+> line's `aria-hidden` treatment.
+>
+> 🚫 The **Blank** card keeps a written sentence ("Start with your theme's own
+> styles — nothing added."), and must: it has no bundle, so there is nothing to
+> derive from, and deriving from the defaults would print Modern's exact line on
+> the card that means "no pattern was chosen".
 
 ⚠️ Feature 70's stacked-layout screen-reader pass is owed on the storefront
 table; **do not try to pay it here.** Hiding the iframe is what keeps this card

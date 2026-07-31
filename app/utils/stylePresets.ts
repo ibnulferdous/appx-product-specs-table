@@ -118,10 +118,34 @@ export interface StylePreset {
    */
   id: string;
   label: string;
-  /** One line, merchant-facing. Shown on the gallery card, under the label. */
-  description: string;
   bundle: StyleBundle;
 }
+
+// 🔴 **`description` was REMOVED 2026-07-31 (merchant decision), not left unused.**
+// Each preset carried a hand-written sentence — "A shaded band behind each
+// section title." — shown under the label on the gallery card. `presetHighlights`
+// below now derives that same information from the bundle, so the two sat one
+// line apart saying nearly the same thing in two ink tones ("A bordered grid with
+// a line between every row." above "Underlined section headers · Line between
+// rows · Line between columns · Outer border"), which cost vertical space on a
+// page whose whole problem was six cards being hard to compare.
+//
+// ⚠️ Deleted rather than kept "in case": a merchant-facing string nothing renders
+// is a claim nobody re-reads, and this exact field had already gone stale once —
+// Classic's said "a line between every row" through the whole period its bundle
+// shipped `STRIPES`, which paints no row lines at all. The derived line cannot do
+// that.
+//
+// 📌 What was genuinely lost, recorded because it is not nothing: Accordion's
+// "Shoppers open one section at a time" named WHO the pattern is for, which no
+// readout of `sectionsCollapsible` can say. If that voice is wanted back it
+// belongs in one place — the page's help line, above all six cards — and NOT as
+// a per-preset field, which is what recreates the duplication.
+//
+// 🚫 The "Blank" card still shows a sentence ("Start with your theme's own
+// styles — nothing added."), and that is not an inconsistency: Blank has no
+// bundle, so it has no derived line, and the sentence is its only explanation.
+// It is a literal in `BlankStyleCard`, where it has always lived.
 
 /**
  * The five built-in patterns.
@@ -163,7 +187,6 @@ export const STYLE_PRESETS: readonly StylePreset[] = Object.freeze([
     // silently redefine the card.
     id: "banded",
     label: "Modern",
-    description: "A shaded band behind each section title.",
     bundle: Object.freeze({}),
   },
   {
@@ -205,7 +228,6 @@ export const STYLE_PRESETS: readonly StylePreset[] = Object.freeze([
     // click, and a curved frame is not what makes this pattern legible.
     id: "classic",
     label: "Classic",
-    description: "A bordered grid with a line between every row.",
     bundle: Object.freeze({
       sectionHeaderStyle: "TEXT_ONLY",
       columnDividerStyle: "LINE",
@@ -218,7 +240,6 @@ export const STYLE_PRESETS: readonly StylePreset[] = Object.freeze([
     // is the card `PLAIN` was added for.
     id: "minimal",
     label: "Minimal",
-    description: "No bands and no rules — spacing does the work.",
     bundle: Object.freeze({
       sectionHeaderStyle: "PLAIN",
       rowDividerStyle: "NONE",
@@ -243,7 +264,6 @@ export const STYLE_PRESETS: readonly StylePreset[] = Object.freeze([
     // being stacked in one column.
     id: "multi-column",
     label: "Multi-column",
-    description: "Specs flow into several columns, each label above its value.",
     bundle: Object.freeze({
       rowLayout: "GRID",
       rowDividerStyle: "NONE",
@@ -291,7 +311,6 @@ export const STYLE_PRESETS: readonly StylePreset[] = Object.freeze([
     // this card leaves `rowLayout` at its default, and a test asserts it.
     id: "accordion",
     label: "Accordion",
-    description: "Shoppers open one section at a time.",
     bundle: Object.freeze({
       sectionsCollapsible: true,
       sectionGapPx: 12,
@@ -384,6 +403,132 @@ export function seedStylingFromPreset(
 /** The full working shape a preset's bundle resolves to, defaults filled in. */
 export function stylePresetValues(preset: StylePreset): StylingValues {
   return parseStylingValues(preset.bundle);
+}
+
+// --- What makes this pattern different ----------------------------------------
+//
+// 🔴 **The gallery's previews cannot show three of the five patterns apart, and
+// the arithmetic says so.** `--appx-preset-scale` is 0.55, so Classic's
+// `columnDividerStyle: "LINE"` and `outerBorderWidthPx: 1` render at **0.55px** —
+// two of that card's three differentiating features are sub-pixel. Modern,
+// Classic and Minimal are the same two-column shape differing only in hairlines
+// and a section-title treatment; Multi-column and Accordion differ structurally
+// and read fine. So the cards a merchant most needs help telling apart are
+// exactly the ones the thumbnail cannot help with.
+//
+// ⚠️ And the scale cannot be raised to fix it. `--appx-preset-render-width` must
+// stay above the storefront stylesheet's 749px mobile breakpoint (below it every
+// card renders in its identical phone form), and two cards plus a 16px gap must
+// fit the measured 966px `inlineSize="base"` page — which caps two-up at
+// `(966 - 16) / 2 / 749` ≈ **0.63**. A 13% bump does not make a 1px rule visible.
+// The difference has to be carried in WORDS, which is what this function is.
+//
+// It is also the only form of it a screen-reader user can perceive at all: the
+// preview is `aria-hidden` (step 90, and rightly — five fake tables read aloud is
+// worse than nothing), so before this line the entire basis for choosing was one
+// prose sentence per card.
+
+/**
+ * Merchant-facing words for each pair layout, or `null` where there is nothing
+ * to say — `TWO_COLUMN` is the shape a merchant already pictures when they hear
+ * "spec table", so naming it would spend a chip on the absence of news.
+ *
+ * ⚠️ A `Record` over the union rather than an `if` chain, here and below, so
+ * appending a member to `ROW_LAYOUTS` is a COMPILE error instead of a card that
+ * silently stops describing its own layout.
+ */
+const ROW_LAYOUT_HIGHLIGHTS: Record<StylingValues["rowLayout"], string | null> =
+  {
+    TWO_COLUMN: null,
+    STACKED: "Label above each value",
+    // GRID welds "several tracks" and "label above value" into one member (feature
+    // 85 — a pair cannot be two-column AND grid), so one phrase names both halves
+    // rather than splitting a single decision across two chips.
+    GRID: "Several columns, label above each value",
+  };
+
+/** Merchant-facing words for each section-header treatment. */
+const SECTION_HEADER_HIGHLIGHTS: Record<
+  StylingValues["sectionHeaderStyle"],
+  string
+> = {
+  BANDED: "Shaded section headers",
+  // "Underlined", not "Text only" — the rail renamed this member for merchants
+  // (feature 87) because the wire value describes what it DROPS while the label
+  // has to describe what a merchant sees. Same reasoning applies here.
+  TEXT_ONLY: "Underlined section headers",
+  PLAIN: "Plain section headers",
+};
+
+/** Merchant-facing words for each row-separation treatment. */
+const ROW_DIVIDER_HIGHLIGHTS: Record<StylingValues["rowDividerStyle"], string> =
+  {
+    LINES: "Line between rows",
+    STRIPES: "Alternating row shading",
+    NONE: "No lines between rows",
+  };
+
+/**
+ * The short "what's different about this one" line under a gallery card.
+ *
+ * 🔴 **Derived from the RESOLVED values, never hand-written per preset, and that
+ * is the whole point.** A hand-written list is a second description of the same
+ * bundle with nothing keeping the two in agreement — exactly the failure mode
+ * step 90 rejected a static thumbnail for. The 2026-07-30 polish pass is the
+ * proof it is not hypothetical: Classic moved `PLAIN` + `STRIPES` →
+ * `TEXT_ONLY` + LINES, and a hardcoded line would still be promising stripes and
+ * a plain title today, with nothing failing.
+ *
+ * ⚠️ **Reads the bundle alone (`stylePresetValues`), NOT the accent-merged
+ * shape.** Safe by construction rather than by luck: `PRESET_SCOPED_FIELDS` and
+ * `ACCENT_SCOPED_FIELDS` are asserted disjoint, so no accent can change any value
+ * read below. Threading the accent through here would make the line vary with a
+ * colour choice while saying nothing about colour.
+ *
+ * --- Which axes speak, and when ----------------------------------------------
+ *
+ * Header treatment and row separation are emitted for EVERY preset — they are the
+ * two axes every pattern has an answer to, they carry the most visual weight, and
+ * a shared vocabulary is what makes five cards comparable instead of five
+ * unrelated pitches. The rest speak only when they depart from the default,
+ * because "No column line · No outer border" on four of five cards is noise that
+ * buries the one card where the frame is the point.
+ *
+ * 🚫 `sectionGapPx` is deliberately silent. It is the one tuning value in any
+ * bundle (Accordion's, a knowing exception to the structure-only rule) and
+ * "12px between sections" is not a reason anybody picks a card.
+ *
+ * Structure leads, decoration follows: a merchant sorting six cards needs
+ * "several columns" before "shaded headers".
+ */
+export function presetHighlights(preset: StylePreset): readonly string[] {
+  const values = stylePresetValues(preset);
+  const highlights: string[] = [];
+
+  // The two structural departures, first because they are the largest
+  // differences in the gallery and the ones a merchant can decide on alone.
+  if (values.sectionsCollapsible) {
+    highlights.push("Sections open and close");
+  }
+  const layout = ROW_LAYOUT_HIGHLIGHTS[values.rowLayout];
+  if (layout !== null) {
+    highlights.push(layout);
+  }
+
+  // Always spoken — the shared vocabulary.
+  highlights.push(SECTION_HEADER_HIGHLIGHTS[values.sectionHeaderStyle]);
+  highlights.push(ROW_DIVIDER_HIGHLIGHTS[values.rowDividerStyle]);
+
+  // Spoken only when set, and they are the two the preview renders sub-pixel —
+  // this line is the ONLY place a merchant learns Classic has them.
+  if (values.columnDividerStyle === "LINE") {
+    highlights.push("Line between columns");
+  }
+  if ((values.outerBorderWidthPx ?? 0) > 0) {
+    highlights.push("Outer border");
+  }
+
+  return highlights;
 }
 
 /**

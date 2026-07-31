@@ -10,13 +10,18 @@ import {
   isCustomizedFromPreset,
   isThemeDefault,
   normalizeStylePresetStamp,
+  presetHighlights,
   presetScopedEquals,
   resolveGalleryParams,
   seedStylingFromPreset,
   stylePresetValues,
+  type StylePreset,
 } from "./stylePresets";
 import {
   DEFAULT_STYLING_VALUES,
+  ROW_DIVIDER_STYLES,
+  ROW_LAYOUTS,
+  SECTION_HEADER_STYLES,
   STYLING_FIELD_NAMES,
   parseStylingValues,
   serializeStylingOverrides,
@@ -55,14 +60,23 @@ describe("style presets — the constants", () => {
     for (const id of ids) expect(id).toMatch(/^[a-z][a-z0-9-]*$/);
   });
 
-  it("every preset carries a label and a one-line description", () => {
+  it("every preset carries a label, and its card line stays short", () => {
+    // ⚠️ RESTATED 2026-07-31, not dropped. This asserted a `description` field
+    // that no longer exists — the hand-written sentence was removed once
+    // `presetHighlights` derived the same information from the bundle. The claim
+    // it was making (every card gets a non-empty explanatory line, short enough
+    // for the card to hold) still matters and now has a different source.
     for (const preset of STYLE_PRESETS) {
       expect(preset.label.length).toBeGreaterThan(0);
-      expect(preset.description.length).toBeGreaterThan(0);
-      // The rail card is 300px wide (the fixed rail track). Feature 86 found
-      // the hard way that character counts filter but do not substitute for
-      // looking — this is the filter, not the verification.
-      expect(preset.description.length).toBeLessThanOrEqual(64);
+
+      const line = presetHighlights(preset).join(" · ");
+      expect(line.length, preset.id).toBeGreaterThan(0);
+      // The gallery card's content box is 440px (800 × 0.55) and the line is
+      // 13px, so ~96 characters is roughly two full lines. Feature 86 found the
+      // hard way that character counts FILTER but do not substitute for looking
+      // — this is the filter, not the verification. A sixth pattern setting
+      // every axis at once is what it exists to catch.
+      expect(line.length, `${preset.id}: ${line}`).toBeLessThanOrEqual(96);
     }
   });
 
@@ -1106,5 +1120,138 @@ describe("accents — the merge law", () => {
     }
     expect(findAccent(null)).toBeNull();
     expect(findAccent(undefined)).toBeNull();
+  });
+});
+
+describe("presetHighlights — what a card says is different about it", () => {
+  // The gallery's previews render at `--appx-preset-scale: 0.55`, so Classic's
+  // 1px column rule and 1px frame come out at 0.55px — two of the three things
+  // that distinguish the most-decorated card from the default one are sub-pixel.
+  // These guard the words that carry that instead.
+
+  /** A throwaway preset, for probing an axis the five real bundles do not use. */
+  const probe = (bundle: StylePreset["bundle"]) =>
+    presetHighlights({ id: "probe", label: "Probe", bundle });
+
+  it("gives every pattern a non-empty line", () => {
+    for (const preset of STYLE_PRESETS) {
+      expect(presetHighlights(preset).length, preset.id).toBeGreaterThan(0);
+    }
+  });
+
+  it("🔴 gives no two patterns the SAME line", () => {
+    // The whole feature in one assertion. A line that reads identically on two
+    // cards is worse than no line — it actively tells a merchant the two are the
+    // same, on a page whose only job is telling them apart, and it would be
+    // invisible by eye unless someone happened to compare those two cards.
+    const lines = STYLE_PRESETS.map((preset) =>
+      presetHighlights(preset).join(" · "),
+    );
+    expect(new Set(lines).size).toBe(STYLE_PRESETS.length);
+  });
+
+  it("🔴 is DERIVED from the bundle, not written per card", () => {
+    // The regression this exists for, and it is not hypothetical: Classic moved
+    // `PLAIN` + `STRIPES` -> `TEXT_ONLY` + LINES on 2026-07-30. A hardcoded line
+    // would still be promising stripes and a plain title, with nothing failing.
+    //
+    // Stated as a bundle SWAP rather than a snapshot: give Classic's identity an
+    // empty bundle and it must speak as the default pattern does.
+    const classic = findStylePreset("classic");
+    expect(classic).not.toBeNull();
+    expect(probe(classic!.bundle)).toEqual(presetHighlights(classic!));
+    expect(probe({})).toEqual(presetHighlights(findStylePreset("banded")!));
+  });
+
+  it("always names the header treatment and the row separation", () => {
+    // The shared vocabulary — the two axes every pattern answers. Without both
+    // on every card the lines stop being comparable and become five unrelated
+    // pitches, which is the state this replaced.
+    for (const preset of STYLE_PRESETS) {
+      const values = stylePresetValues(preset);
+      const line = presetHighlights(preset).join(" · ");
+      expect(line, `${preset.id} header`).toMatch(/section headers/);
+      expect(line, `${preset.id} rows`).toMatch(/row|rows/);
+      // Non-vacuous: the phrases have to track the values, not merely exist.
+      expect(line, `${preset.id}`).toMatch(
+        values.sectionHeaderStyle === "BANDED"
+          ? /Shaded section headers/
+          : values.sectionHeaderStyle === "TEXT_ONLY"
+            ? /Underlined section headers/
+            : /Plain section headers/,
+      );
+    }
+  });
+
+  it("🔴 names the two axes the thumbnail renders sub-pixel", () => {
+    // Classic is the only preset setting a column rule or a frame, and at 0.55
+    // scale both are 0.55px. This line is the ONLY place a merchant can learn
+    // they are there.
+    const classic = presetHighlights(findStylePreset("classic")!);
+    expect(classic).toContain("Line between columns");
+    expect(classic).toContain("Outer border");
+
+    for (const preset of STYLE_PRESETS) {
+      if (preset.id === "classic") continue;
+      const values = stylePresetValues(preset);
+      expect(values.columnDividerStyle, preset.id).toBe("NONE");
+      expect(presetHighlights(preset), preset.id).not.toContain(
+        "Line between columns",
+      );
+      expect(presetHighlights(preset), preset.id).not.toContain("Outer border");
+    }
+  });
+
+  it("leads with the structural departure where there is one", () => {
+    // A merchant sorting six cards needs "several columns" before "shaded
+    // headers" — the layout decides whether the card is even a candidate, the
+    // header treatment only decides how it looks once it is. Position, not
+    // merely presence, so a reordering of the pushes fails here.
+    expect(presetHighlights(findStylePreset("multi-column")!)[0]).toBe(
+      "Several columns, label above each value",
+    );
+    expect(presetHighlights(findStylePreset("accordion")!)[0]).toBe(
+      "Sections open and close",
+    );
+    // And the two-column family leads with the header, because there is no
+    // structural departure to lead with.
+    for (const id of ["banded", "classic", "minimal"]) {
+      expect(presetHighlights(findStylePreset(id)!)[0], id).toMatch(
+        /section headers$/,
+      );
+    }
+  });
+
+  it("🚫 says nothing about tuning — no numbers, no wire keywords", () => {
+    // Two failure modes in one guard. `sectionGapPx` is the one tuning value in
+    // any bundle (Accordion's, a knowing exception to the structure-only rule)
+    // and "12px between sections" is not a reason anyone picks a card. And a
+    // phrase built by interpolating a value would leak `TEXT_ONLY` / `GRID` /
+    // `STRIPES` — the wire spellings, which are not English.
+    for (const preset of STYLE_PRESETS) {
+      for (const phrase of presetHighlights(preset)) {
+        expect(phrase, `${preset.id}: ${phrase}`).not.toMatch(/\d/);
+        expect(phrase, `${preset.id}: ${phrase}`).not.toMatch(/_|[A-Z]{2,}/);
+      }
+    }
+  });
+
+  it("has a phrase for every member of every vocabulary it reads", () => {
+    // Totality, probed through synthetic bundles because the five real presets
+    // between them do not exercise `STACKED`. A missing entry would push
+    // `undefined` into the line and render the string "undefined" on a card.
+    for (const rowLayout of ROW_LAYOUTS) {
+      for (const sectionHeaderStyle of SECTION_HEADER_STYLES) {
+        for (const rowDividerStyle of ROW_DIVIDER_STYLES) {
+          const line = probe({
+            rowLayout,
+            sectionHeaderStyle,
+            rowDividerStyle,
+          });
+          expect(line.every((phrase) => typeof phrase === "string")).toBe(true);
+          expect(line.join(" ")).not.toContain("undefined");
+        }
+      }
+    }
   });
 });

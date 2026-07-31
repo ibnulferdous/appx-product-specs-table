@@ -176,9 +176,30 @@
   font-weight: 600;
 }
 
+/* The card's one explanatory line. On the five preset cards it is the derived
+ * `presetHighlights` readout — the pattern axes in words, because the preview
+ * renders two of them sub-pixel at 0.55 scale; on Blank it is a written
+ * sentence.
+ *
+ * 🚫 No chips, pills or borders round the phrases, and no second tone for them.
+ * Six cards × up to four bordered boxes is a lot of drawn edges beside a
+ * thumbnail whose entire subject IS drawn edges — the chrome would read as part
+ * of the pattern being previewed. The middle dots come from the DOM string
+ * rather than CSS generated content (see `StylePresetCard.tsx` for why that
+ * separator has to be real text), so there is nothing to style here beyond ink.
+ *
+ * 📌 It stayed at the description's muted tone when it replaced the description
+ * 2026-07-31 — the two-line version briefly gave the readout a darker ink to
+ * separate it from the sentence above, and with that sentence gone there is
+ * nothing left to separate it FROM. */
 .description {
   font-size: 0.8125rem;
   color: var(--appx-preset-muted);
+  /* Four phrases wrap to two lines on Classic and Multi-column. `balance` splits
+     them evenly rather than leaving one orphan below three — the cards are a
+     fixed height, so there is room for the second line either way and only its
+     shape is in question. */
+  text-wrap: balance;
 }
 
 /* The action line. It is text inside the anchor, not a control — see the note
@@ -189,6 +210,19 @@
   display: flex;
   align-items: center;
   gap: 0.25rem;
+  /* 🔴 Pins the action to the BOTTOM of the card, and it is a fix rather than a
+     flourish — observed live 2026-07-31, on the admin, after the description
+     became the derived highlight line.
+     Cards in a grid row stretch to the row's height, so a card whose line wraps
+     to two rows is exactly as tall as its one-line neighbour and only its
+     CONTENT is taller. Without this, "Use this style →" sat ~16px lower on
+     Classic than on Modern beside it, and lower on Multi-column than on Minimal
+     — every row visibly ragged along the one element that is the same on five of
+     the six cards. The wrap is not avoidable (Classic names four axes), so the
+     alignment has to come from the layout.
+     ⚠️ Works only because `.card` is a flex column and the grid stretches it; if
+     either changes this silently stops doing anything. */
+  margin-block-start: auto;
   font-size: 0.8125rem;
   font-weight: 500;
   /* The only non-neutral ink on the card, and the entire point of the line:
