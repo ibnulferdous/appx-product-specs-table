@@ -1177,6 +1177,61 @@ plan: `~/.claude/plans/style-tab-phase-b-implementation-plan.md` (1–12 = B1, 1
 
 > One line per unit. Detail → the linked `context/features/` doc + git history.
 
+📏 **Step 104 — metafield byte budgets → `data-model.md` §14 — ✅ DONE 2026-08-01
+(`context/features/104-metafield-byte-budgets.md`). Gate green (typecheck · lint ·
+format · **1309** · build), tests 1284 → 1309 (+25), files 47 → 49.** Step 2 of the
+scale/verification series; consumes 103's F1 + F2 and produces the numbers step 105
+needs to write an overflow *policy*.
+- 🔴 **The deliverable is one number: 3,446.** That is where `excludedProductGids` —
+  §13 F2's "bounded by NOTHING" — collides with the 128KB `json` write ceiling. Also
+  **1,745** `byProduct` entries or **1,769** `byCollection` entries. §13 said *what*
+  bounds each read; this says *how much fits*, which is what 105 cannot be written
+  without. `byType`/`byVendor` get no per-entry number, honestly: the key is
+  merchant-authored text with no length limit, so their count is bounded and their
+  size is not.
+- 🔬 **Two spec predictions were wrong, and the tests caught both.** 104 predicted
+  **3,445** excludes; the truth is **3,446**. Capacity is *not*
+  `floor((limit − envelope) / perEntry)` — the first array element carries no leading
+  comma, so marginal cost and total capacity are different questions. The tests
+  binary-search the **real serializer** instead of restating a literal. (The second
+  was a fixture byte-count in a test, not a shipped number.)
+- 🚫 **104 measures and warns. It does not block — deliberately.** A payload of any
+  size still reaches `metafieldsSet`, and there is a test whose only job is to prove
+  it. Refusing / truncating / surfacing a merchant error is **105**, and that guard is
+  what stops a future session quietly making 105's decision inside a logging change.
+- 🔴 **The part with teeth is `app/shopify.server.test.ts` — an API-version tripwire.**
+  The ceiling is dormant *only* because the runtime client is pinned to
+  `ApiVersion.October25`. ⚠️ **`ApiVersion.April26` is the newest stable version the
+  installed `@shopify/shopify-api` offers** — so the *next* routine bump is precisely
+  the one that arms a 16× reduction under a live storefront path, with no other code
+  change. A comment saying "don't bump this" loses to a dependency PR; a red suite does
+  not. It reads the app's own exported `apiVersion`, never a copy.
+- ⚠️ **Correction to §13 F1, found while scoping: `Metafield.sizeInBytes` is
+  UNSTABLE-ONLY.** Validated absent from 2025-10, 2026-04 **and** 2026-07 via
+  `validate_graphql_codeblocks`. shopify.dev's `product` page shows it in a
+  "Get the size of a metafield value in bytes" example under *latest*, which is what
+  misled the previous session. Measurement is therefore app-side — and better for it:
+  a *pre-write* read of the exact bytes, no round-trip, versus a post-write read of a
+  write that already succeeded or failed. Second correction: `shopify.app.toml:12` is
+  the **webhook** payload version, not the Admin client's (104 §C2). Both corrected in
+  §13 F1 and in the step-103 entry below.
+- 📌 **`rows` measured but NOT instrumented (104 §D7).** 200 rows breaches 128KB only at
+  ~**508 chars** of value text per row; realistic tables sit at 31–37KB (~25%). There is
+  no per-label/per-value length cap anywhere — `parseRowsWithinCap` enforces the row
+  count and nothing else — so the bound is real but distant. Recorded rather than wired,
+  because a second call site doubles the diff to restate a bound the row cap mostly holds.
+- ✅ **Mutation-tested four ways, all as predicted.** `TextEncoder` → `.length` → **3**
+  failures (the accented / CJK / emoji tests — `String.length` under-reports a
+  6-accent vendor name by 60%). `>` → `>=` at the `over` boundary → **exactly 1**. Refuse
+  the write when over budget → **exactly 1** (the §D1 guard, confirming it has precisely
+  one guard and it works). Bump to `ApiVersion.April26` → the tripwire fires with its
+  full message. 📌 A first attempt used `ApiVersion.July26`, which does not exist — the
+  suite *skipped* rather than failed, which is why the mutation was re-run against the
+  real enum member instead of being recorded as a pass.
+- 🚫 **Not verified live.** No shop has a routing map near any of these numbers; that
+  needs seeded data (**106**). The arithmetic is asserted against the real
+  `buildRoutingProjection`, not against a live `metafieldsSet` response.
+
 🔴 **Scope/exclude chips turned into raw GIDs past 250 products — ✅ FIXED 2026-08-01
 (OQ-103-B / `data-model.md` §13 F4). Gate green (typecheck · lint · format · **1284** ·
 build), tests 1270 → 1284 (+14).** No feature doc (a bug fix), so this entry IS the
@@ -1239,10 +1294,13 @@ was the whole point of the split.
 grandfathered.** Shopify's 128KB `json` metafield **write** limit (API 2026-04+)
 grandfathers apps that used json fields before 2026-04-01. This repo's first commit is
 **2026-06-09** and its first `type = "json"` landed **2026-07-02** (`6d1cd3a`) — both
-after the cutoff. ⚠️ **It is masked only by the API-version mismatch**: the runtime
-client is `ApiVersion.October25` (`app/shopify.server.ts:13`) while `shopify.app.toml:12`
-declares `2026-07`. **Bumping the runtime client past 2026-04 arms the ceiling** — so the
-routine-looking version upgrade is the thing to gate on 104, not a storefront change.
+after the cutoff. ⚠️ **It is masked only by the pinned runtime client**:
+`ApiVersion.October25` (`app/shopify.server.ts:13`). **Bumping it to 2026-04 or later
+arms the ceiling** — so the routine-looking version upgrade is the thing to gate on 104,
+not a storefront change. *(Corrected 2026-08-01 by step 104: this entry originally also
+cited `shopify.app.toml:12`'s `api_version = "2026-07"` as if it governed the Admin
+client. It does not — line 12 sits under `[webhooks]` and sets the webhook payload
+version only. See 104 §C2.)*
 🔴 **P5 half-falsified, and the falsified half is the finding.** Key Decisions claims the
 activation gate is "O(rules) … never a catalog scan". Never-a-catalog-scan holds; the
 Postgres side is ≤4 queries. But the probes are per **(candidate × other-ACTIVE)** *pair*

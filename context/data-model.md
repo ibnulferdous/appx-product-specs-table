@@ -21,6 +21,7 @@ This document defines the current MVP data model and storefront architecture for
 11. Billing and Entitlement Strategy
 12. Why Row Keys Matter
 13. Read Patterns
+14. Byte Budgets
 
 ---
 
@@ -1110,7 +1111,7 @@ dropped — dropping it is a migration and a different unit.
 
 | # | Finding | Routed to |
 | --- | --- | --- |
-| **F1** | R1a's 128KB ceiling is real, is **not** currently enforced, and this app is **not grandfathered**. Shopify limits `json` metafield **writes** to 128KB from API 2026-04; apps using json fields *before 2026-04-01* keep the 2MB limit. This repo's first commit is **2026-06-09** and its first `type = "json"` declaration landed **2026-07-02** (`6d1cd3a`), both after the cutoff — so no grandfathering. It is masked only because the runtime client is `October25` (`app/shopify.server.ts:13`) while `shopify.app.toml:12` declares `api_version = "2026-07"`. **Moving the runtime client past 2026-04 activates the ceiling.** (`Metafield.sizeInBytes` exists and would measure headroom.) | **104** (byte budgets) |
+| **F1** | R1a's 128KB ceiling is real, is **not** currently enforced, and this app is **not grandfathered**. Shopify limits `json` metafield **writes** to 128KB from API 2026-04; apps using json fields *before 2026-04-01* keep the 2MB limit. This repo's first commit is **2026-06-09** and its first `type = "json"` declaration landed **2026-07-02** (`6d1cd3a`), both after the cutoff — so no grandfathering. It is masked only because the runtime Admin client is pinned to `ApiVersion.October25` (`app/shopify.server.ts:13`). **Moving the runtime client to 2026-04 or later activates the ceiling.** ✅ Quantified 2026-08-01 — see **§14**. | **104** (byte budgets) — ✅ **done** |
 | **F2** | `excludedProductGids` (R1b / R3d) is bounded by **nothing** — no cap at the picker, the writer, or the projection — and it is the most reachable route to F1's ceiling, since each entry is a full ~40-char product GID. It is also scanned linearly on every product page view. | **104 / 105** |
 | **F3** | R2a reads and ships **every template's full `rows` JSON** to the browser to render a row *count*. Unpaginated on top of that. | **Next-Up item 6** (templates-list pagination) |
 | **F4** | ✅ **FIXED 2026-08-01** (the only 103 finding acted on, as its own unit — not in 103's diff). R3c / R3e sent an **unchunked** `nodes(ids:)` whose id count is bounded by nothing (R3d) or nothing app-side (R3b). Past the Admin API's 250-id cap the **whole batch** failed and fail-softed to raw GIDs — every chip silently degrading to `gid://shopify/Product/…`, no message anywhere. Now chunked at `NODES_MAX_IDS = 250` with **per-chunk** fail-soft, so a failure costs one chunk instead of the list. `scopeResourceLabel.server.ts:51/62/130/201`; 14 tests, 3 mutations. | **Closed** — was OQ-103-B |
@@ -1128,6 +1129,129 @@ Recorded either way; a falsified prediction is a result.
 | **P3** | R2 is unpaginated *and* carries a live Admin API dependency | ⚠️ **CONFIRMED but PARTLY FALSIFIED.** Unpaginated: confirmed, and worse than stated (full `rows` JSON, not just row metadata → F3). The Admin dependency is **real but O(1) requests**, not per-template: `assignedProductCounts.server.ts` collapses every lookup into **one** batched aliased query and fails soft. The "most-visited list page depends on Admin API latency" framing stands; "and rate limits" is overstated at one request per page view. |
 | **P4** | At least one index maps to no catalogued read | ✅ **CONFIRMED, ×6.** Four `ProductAssignmentIndex` indexes (the model is entirely unreferenced), `Shop @@index([isInstalled])`, and `ProductAssignment @@index([shopId, scope, scopeValue])`. Plus one redundancy. → F6 |
 | **P5** | The O(rules) claim will hold, but the `products(query,first:1)` calls will be per-rule, making activation latency scale with rule count | ⚠️ **HALF CONFIRMED, HALF FALSIFIED — and the falsified half is worse.** "Never a catalog scan" holds; the Postgres side is ≤4 queries. But the probes are **not** per-rule: they are per **pair** and **sequential**, so latency scales with candidate-values × other-ACTIVE-rules, not with rule count. → F5 |
+
+---
+
+## 14. Byte Budgets
+
+> **Added 2026-08-01 (step 104, `context/features/104-metafield-byte-budgets.md`).**
+> §13 records *what bounds* each read. This section answers the follow-on question
+> §13 deliberately left open: **how much actually fits.**
+>
+> Appended rather than inserted, for the same reason §13 was — nothing renumbers.
+
+### The ceiling
+
+Shopify limits a **`json` metafield write** to **131,072 bytes (128 × 1024)** from
+API version **2026-04** onward. Apps that used json fields before **2026-04-01** are
+grandfathered at the old 2MB limit.
+
+🔴 **This app is not grandfathered.** Its first commit is 2026-06-09 and its first
+`type = "json"` declaration landed 2026-07-02 (`6d1cd3a`) — both after the cutoff.
+
+⚠️ **The ceiling is dormant but armed.** The runtime Admin client is pinned to
+`ApiVersion.October25` (`app/shopify.server.ts:13`), i.e. pre-2026-04, so writes
+currently sit at 2MB. **`ApiVersion.April26` is the newest stable version the
+installed `@shopify/shopify-api` offers** — so the *next* routine version bump is
+precisely the one that arms a 16× reduction, under a live storefront delivery path,
+with no other code change.
+
+`app/shopify.server.test.ts` is the **tripwire**: it reads the app's own exported
+`apiVersion` and fails the suite the moment it reaches 2026-04, with a message
+naming the budgets below and step 105 as the prerequisite. Bumping the version is
+not forbidden — it just cannot happen quietly.
+
+It is `128 * 1024`, **not** `128_000`: Shopify's metafield-limits page pins the
+sibling limit as "64KB (65,536 bytes)", so KB means 1024 here. The 72-byte
+difference is one whole `byProduct` entry.
+
+### Which fields this applies to
+
+| Field | Owner | Section |
+| --- | --- | --- |
+| `$app:routing` | shop metafield | R1a / R1b — **instrumented** |
+| `rows` | metaobject | R1d / R1f — documented below, not instrumented |
+| `styling` | metaobject | R1f — overrides-only, far under budget |
+| `styling_css` | metaobject | R1f — ~450 chars fully overridden (§10) |
+
+### The routing map (R1a) — measured
+
+Measured against the real `buildRoutingProjection` output, real GID formats
+(13-digit product ids), and the real handle shape `template-{cuid}` (34 chars,
+`app/shopify/metaobjects.server.ts:39`). Every number below is **re-derived from
+the live serializer** in `app/utils/routingBudget.test.ts` — not a literal that can
+drift from the projection shape.
+
+| Component | Bytes each | Entries that fit |
+| --- | --- | --- |
+| Empty projection envelope | 125 (fixed) | — |
+| `excludedProductGids` entry | **38** | **3,446** |
+| `byProduct` entry | **75** | **1,745** |
+| `byCollection` entry | **74** | **1,769** |
+| `byType` / `byVendor` entry | key + handle + 6 | **count-bounded only** |
+
+`byType` / `byVendor` get no per-entry number, honestly: the key is a
+merchant-authored product type or vendor name with no length limit anywhere. Their
+*count* is bounded by the shop's distinct types/vendors; their *size* is not.
+
+🔴 **This is the number §13 F2 was missing.** `excludedProductGids` is bounded by
+nothing app-side — no cap at the picker, the writer, or the projection — and it
+collides with the ceiling at **3,446 carve-outs**. That is the cheapest route to
+overflow, because an exclude entry is a bare GID (38 bytes) rather than a
+GID-plus-handle pair (75).
+
+📌 **Capacity is not `floor((limit − envelope) / perEntry)`.** That division is off
+by one for the array maps — the first element carries no leading comma. It is how
+104's own spec predicted 3,445 excludes when the true answer is 3,446. The tests
+search the real serializer instead.
+
+### What the writer does about it
+
+`app/shopify/routing.server.ts` measures **the exact string it is about to send**
+(not a re-serialization, which could diverge from it) and logs a warning at ≥80% of
+budget, naming the entry count of every map so the line is actionable.
+
+🚫 **It does not block.** A payload of any size still reaches `metafieldsSet`,
+proven by a test. Refusing, truncating, or surfacing a merchant-facing error at the
+ceiling is **step 105's** decision; 104 exists to produce the number that decision
+needs. The warn threshold (80% = 104,857 bytes) leaves **689** further carve-outs of
+runway — the justification is lead time measured in merchant actions, not roundness.
+
+⚠️ **Measurement is app-side by necessity, and that is better anyway.**
+`Metafield.sizeInBytes` is **unstable-only** — validated absent from 2025-10,
+2026-04, and 2026-07. (shopify.dev's `product` query page shows it in a
+"Get the size of a metafield value in bytes" example under *latest*, which does not
+run on any stable version.) It would in any case have been a *post-write* read of a
+write that already succeeded or failed; the app-side measurement is free, needs no
+round-trip, and sees the exact bytes before they are sent.
+
+### The metaobject `rows` field (R1d / R1f)
+
+Bounded by `MAX_TEMPLATE_ROWS = 200` — but **not obviously under 128KB**, because
+there is no per-label or per-value length cap anywhere: `parseRowsWithinCap`
+(`app/models/template.server.ts:36`) enforces the row count and nothing else.
+
+| 200 rows, value text per row | Payload |
+| --- | --- |
+| 10 chars (typical spec value) | ~31KB — 24% of budget |
+| 40 chars | ~37KB — 28% |
+| 200 chars | ~68KB — 52% |
+| **~508 chars** | **the ceiling** |
+
+So a realistic table sits at about a quarter of budget, and only a merchant pasting
+paragraph-length values into all 200 rows would breach it. Recorded, **not
+instrumented** — the row cap mostly holds this, and wiring a second call site would
+double the diff to restate a bound that already exists. If 105 decides the row
+payload needs a policy, `app/utils/routingBudget.ts` takes one call.
+
+### The failure mode, if the ceiling is ever crossed
+
+Unchanged from §13's R7 note, and worth restating because it is quiet: the write is
+Postgres-**first**, so an over-ceiling `metafieldsSet` returns a `userErrors` entry
+surfaced as *"Saved routing, but couldn't publish it to your storefront."* while
+`ShopStorefrontRouting` is already correct and `syncedToShopifyAt` is left unstamped.
+**The storefront then serves the previous map indefinitely.** The write fails loudly
+at that moment; the read stays silently stale afterwards.
 
 ---
 

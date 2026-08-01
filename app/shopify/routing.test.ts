@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 // Prisma is mocked at the boundary (same pattern as template.server.test.ts): the
 // pure glue is asserted directly; the orchestrator is exercised with mocked Prisma
@@ -339,5 +339,119 @@ describe("rebuildShopRouting", () => {
 
     expect(result.ok).toBe(false);
     expect(prismaMock.shopStorefrontRouting.update).not.toHaveBeenCalled();
+  });
+});
+
+// --- Byte budget observation (step 104 / data-model.md §14) ------------------
+// 🚫 The single most important test here is that an OVER-budget projection still
+// reaches `metafieldsSet`. 104 measures and warns; refusing a write is step 105's
+// decision, and this guard is what stops a future session quietly making that
+// decision inside a logging change.
+
+describe("rebuildShopRouting — routing payload budget", () => {
+  function mockAdmin(
+    graphqlImpl: (op: string, opts?: unknown) => Promise<unknown>,
+  ): AdminApiContext {
+    return { graphql: vi.fn(graphqlImpl) } as unknown as AdminApiContext;
+  }
+
+  function okAdmin() {
+    return mockAdmin(async (op: string) => {
+      if (op.includes("ShopId")) {
+        return {
+          ok: true,
+          json: async () => ({
+            data: { shop: { id: "gid://shopify/Shop/7" } },
+          }),
+        };
+      }
+      return {
+        ok: true,
+        json: async () => ({
+          data: {
+            metafieldsSet: {
+              metafields: [{ id: "gid://shopify/Metafield/1" }],
+              userErrors: [],
+            },
+          },
+        }),
+      };
+    });
+  }
+
+  /** N EXCLUDE carve-outs — the cheapest way to a large map (§14: 38 bytes each). */
+  function excludeTemplate(count: number): ActiveTemplateForRouting {
+    return {
+      shopifyMetaobjectHandle: "template-cl9ebqhxk00003b600tymydho",
+      assignments: Array.from({ length: count }, (_, i) => ({
+        scope: "PRODUCT" as const,
+        scopeValue: `gid://shopify/Product/${7000000000000 + i}`,
+        mode: "EXCLUDE" as const,
+      })),
+    };
+  }
+
+  let warn: ReturnType<typeof vi.spyOn>;
+
+  beforeEach(() => {
+    prismaMock.template.findMany.mockReset();
+    prismaMock.shopStorefrontRouting.upsert.mockReset();
+    prismaMock.shopStorefrontRouting.update.mockReset();
+    prismaMock.shopStorefrontRouting.upsert.mockResolvedValue({});
+    prismaMock.shopStorefrontRouting.update.mockResolvedValue({});
+    warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    warn.mockRestore();
+  });
+
+  it("🔴 STILL WRITES an over-budget payload — 104 observes, 105 decides", async () => {
+    // 3,447 carve-outs is one past the ceiling (§14). The write must go through.
+    prismaMock.template.findMany.mockResolvedValue([excludeTemplate(3447)]);
+    const admin = okAdmin();
+
+    const result = await rebuildShopRouting(admin, "shop_1");
+
+    expect(result).toEqual({
+      ok: true,
+      metafieldGid: "gid://shopify/Metafield/1",
+    });
+    // The mutation was actually issued, not skipped.
+    const ops = (admin.graphql as ReturnType<typeof vi.fn>).mock.calls.map(
+      (c) => c[0] as string,
+    );
+    expect(ops.some((op) => op.includes("metafieldsSet"))).toBe(true);
+    // And sync state was stamped, exactly as at any other size.
+    expect(prismaMock.shopStorefrontRouting.update).toHaveBeenCalledTimes(1);
+  });
+
+  it("warns at `over`, naming the map that is carrying the payload", async () => {
+    prismaMock.template.findMany.mockResolvedValue([excludeTemplate(3447)]);
+
+    await rebuildShopRouting(okAdmin(), "shop_1");
+
+    expect(warn).toHaveBeenCalledTimes(1);
+    const message = String(warn.mock.calls[0][0]);
+    expect(message).toContain("over budget");
+    expect(message).toContain("excluded 3447");
+    expect(message).toContain("§14");
+  });
+
+  it("warns at `warn` — before the ceiling, while there is still runway", async () => {
+    prismaMock.template.findMany.mockResolvedValue([excludeTemplate(2757)]);
+
+    await rebuildShopRouting(okAdmin(), "shop_1");
+
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(String(warn.mock.calls[0][0])).toContain("warn budget");
+  });
+
+  it("stays SILENT at ok — a warning on every routine write is a warning nobody reads", async () => {
+    prismaMock.template.findMany.mockResolvedValue([excludeTemplate(10)]);
+
+    await rebuildShopRouting(okAdmin(), "shop_1");
+
+    expect(warn).not.toHaveBeenCalled();
   });
 });

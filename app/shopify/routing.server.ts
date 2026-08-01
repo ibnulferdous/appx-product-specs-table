@@ -26,6 +26,11 @@ import {
   type RoutingRule,
   type RoutingProjection,
 } from "../utils/routingProjection";
+import {
+  measurePayload,
+  countRoutingEntries,
+  type PayloadBudget,
+} from "../utils/routingBudget";
 
 // The reserved app namespace + key the `[shop.metafields.app.routing]` TOML
 // definition resolves to. Liquid reads `shop.metafields["$app"].routing.value`.
@@ -96,6 +101,45 @@ export function buildRoutingMetafieldInput(
       },
     ],
   };
+}
+
+/**
+ * Measure the routing payload against the `json` metafield ceiling and log when it
+ * is at or over budget (step 104, `data-model.md` §14).
+ *
+ * 🚫 OBSERVES ONLY — it must never gate the write, and the caller must never
+ * branch on its result. Refusing, truncating, or surfacing a merchant-facing
+ * error at the ceiling is **step 105's** decision; 104 exists to produce the
+ * number that decision needs. `routing.test.ts` pins this with a test that an
+ * over-budget projection still reaches `metafieldsSet` (104 §D1).
+ *
+ * ⚠️ Takes the SERIALIZED string, not the projection, so it measures the exact
+ * bytes the mutation sends rather than a re-serialization that could drift from
+ * it (104 §D2). The caller passes the value it already built.
+ *
+ * The ceiling is currently DORMANT: the runtime Admin client is
+ * `ApiVersion.October25`, i.e. pre-2026-04, so writes still sit at the legacy 2MB
+ * limit. `app/shopify.server.test.ts` is the tripwire that fires when that moves.
+ */
+function reportRoutingBudget(
+  serialized: string,
+  projection: RoutingProjection,
+): PayloadBudget {
+  const budget = measurePayload(serialized);
+  if (budget.level !== "ok") {
+    const counts = countRoutingEntries(projection);
+    console.warn(
+      `[routing] storefront routing payload is ${budget.level} budget: ` +
+        `${budget.bytes} / ${budget.limit} bytes ` +
+        `(${Math.round(budget.ratio * 100)}%, ${budget.remaining} remaining). ` +
+        `Entries: ${counts.total} total — ` +
+        `byType ${counts.byType}, byVendor ${counts.byVendor}, ` +
+        `byCollection ${counts.byCollection}, byProduct ${counts.byProduct}, ` +
+        `excluded ${counts.excludedProductGids}. ` +
+        `See data-model.md §14.`,
+    );
+  }
+  return budget;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -228,8 +272,12 @@ export async function rebuildShopRouting(
   // 3. Write the delivery copy (shop metafield), then stamp sync state.
   try {
     const shopGid = await fetchShopGid(admin);
+    const variables = buildRoutingMetafieldInput(shopGid, projection);
+    // Measure the exact value we are about to send (104 §D2). Observation only —
+    // the write proceeds at any size; see `reportRoutingBudget`.
+    reportRoutingBudget(variables.metafields[0].value, projection);
     const response = await admin.graphql(METAFIELDS_SET_MUTATION, {
-      variables: buildRoutingMetafieldInput(shopGid, projection),
+      variables,
     });
     if (!response.ok) {
       return {
