@@ -1177,6 +1177,104 @@ plan: `~/.claude/plans/style-tab-phase-b-implementation-plan.md` (1–12 = B1, 1
 
 > One line per unit. Detail → the linked `context/features/` doc + git history.
 
+🔴 **Scope/exclude chips turned into raw GIDs past 250 products — ✅ FIXED 2026-08-01
+(OQ-103-B / `data-model.md` §13 F4). Gate green (typecheck · lint · format · **1284** ·
+build), tests 1270 → 1284 (+14).** No feature doc (a bug fix), so this entry IS the
+record. It is the first finding from step 103 to be acted on, and deliberately **its own
+unit** — 103's rule was that findings route out of its diff, not that they stay unfixed.
+- **The bug.** `resolveScopeResourceDetails` passed the whole GID set to **one**
+  `nodes(ids:)` request. Shopify rejects **any** GraphQL input array over 250 (Admin AND
+  Storefront, since API 2020-01) and rejects the **whole request** — it does not resolve
+  the first 250. Because this resolver is fail-soft by design, the rejection landed in the
+  catch and returned the identity map, so **every** chip rendered as
+  `gid://shopify/Product/7234567890123` with no thumbnail.
+- ⚠️ **The silence was the dangerous part, not the threshold.** No error, no toast, no
+  console line — the editor loaded normally and simply looked broken. A merchant would
+  report "the app is showing weird codes", not "an error occurred". Same class as the
+  save-bar spinner bug: correct-looking code, silent wrong output.
+- 🔴 **It was all-or-nothing, and reachable.** Not "250 work, the rest don't" — 251 ids
+  meant 251 broken chips. And the likeliest trigger is the `ALL_PRODUCTS` "Except these
+  products" list, which is capped **nowhere**: not the picker, not `setTemplateExcludes`,
+  not the schema. Excluding 300 products from a store-wide table is ordinary merchant
+  behaviour.
+- ✅ **Fix:** `NODES_MAX_IDS = 250` + a pure, exported `chunkIds` (the "extract the
+  arithmetic, not the component" move from step 100's `rovingRadioKeys.ts`), and the
+  live runner loops chunks into a shared map. **A set at or under the cap is still exactly
+  ONE request** — byte-identical to before, which is why no existing test moved.
+- 🔬 **The design decision worth carrying: failure is now PER CHUNK.** The map is seeded
+  with identity entries and each chunk *mutates* it, so "did nothing" and "failed" are the
+  same state by construction — there is no partial-result merge to get wrong. A 400-product
+  set whose second request fails now shows 250 real chips and 150 GIDs, where before one
+  failure blanked all 400. That is a **strict improvement on the pre-bug behaviour**, not
+  just a restoration.
+- ⚠️ **Chunks run SEQUENTIALLY, not `Promise.all`** — matches the in-repo precedent
+  (`checkCrossDimensionConflicts`), and a set big enough to need several chunks is exactly
+  the one most likely to bump the rate limit if fired at once (priority #3). 🚫 **No cap on
+  chunk count**, unlike `fetchProductMetafieldDefinitions`' MAX_PAGES: the input is the
+  merchant's own saved selection, so truncating would silently drop chips they can see.
+- ✅ **Mutation-tested three ways, all caught precisely.** Removing the chunking → 3
+  failures; raising the cap to 251 → 4 (including the pin on Shopify's documented limit);
+  making a failed chunk wipe already-resolved titles → **exactly 1**, the isolation test.
+  🔬 That last one landing on a single test is the useful result: it proves the isolation
+  guarantee has exactly one guard and that the guard works.
+- 📌 **The 250 is verified against Shopify's docs, not assumed** — the `nodes` reference
+  states "The input must not contain more than 250 values", and the 2019 changelog applies
+  it to every GraphQL input array. A test pins the constant so raising it re-opens F4.
+- ⚠️ **Not live-verified.** The failure needs a template with >250 selected/excluded
+  products; the dev store has no such data (that is step 106, seed data). The mechanism is
+  unit-tested and the ≤250 path is provably unchanged, but **no merchant-visible before/after
+  was observed** — recorded rather than implied.
+
+**Step 103 — ✅ COMPLETE 2026-08-01, the read-pattern catalog.
+`data-model.md` §13 · Read Patterns. Doc: `context/features/103-read-pattern-catalog.md`.**
+The second step in the project to ship **no code** (102 was the first), and like 102 an
+unmoved test count is the result it wanted: **1270 unmoved, 47 files unmoved,
+`npm run build` green.** 20 reads catalogued (R1a–R1f storefront, R2a–R5b admin loaders,
+R6–R7 write-path reads, R8a–R8b webhooks), every one citing a `file:line`, **no
+"Bounded by" cell empty or hedged**, plus a 12-row index → read mapping. Six findings
+routed — F1/F2 → 104, F3 → Next-Up 6, F4/F5/F6 → **OQ-103-B/C/D**, plus **OQ-103-A** for
+the one bound that is genuinely unreadable — and 🚫 **none of them fixed here**, which
+was the whole point of the split.
+🔴 **P1 is confirmed and it is worse than the spec guessed: the app is NOT
+grandfathered.** Shopify's 128KB `json` metafield **write** limit (API 2026-04+)
+grandfathers apps that used json fields before 2026-04-01. This repo's first commit is
+**2026-06-09** and its first `type = "json"` landed **2026-07-02** (`6d1cd3a`) — both
+after the cutoff. ⚠️ **It is masked only by the API-version mismatch**: the runtime
+client is `ApiVersion.October25` (`app/shopify.server.ts:13`) while `shopify.app.toml:12`
+declares `2026-07`. **Bumping the runtime client past 2026-04 arms the ceiling** — so the
+routine-looking version upgrade is the thing to gate on 104, not a storefront change.
+🔴 **P5 half-falsified, and the falsified half is the finding.** Key Decisions claims the
+activation gate is "O(rules) … never a catalog scan". Never-a-catalog-scan holds; the
+Postgres side is ≤4 queries. But the probes are per **(candidate × other-ACTIVE)** *pair*
+and **sequential** (`assignmentActivation.server.ts:191` → `assignmentConflict.server.ts:178`),
+so a 200-product candidate vs one VENDOR template = 200 sequential Admin round-trips.
+⚠️ **The Key Decisions line was deliberately NOT edited** — 103 records discrepancies,
+104+ resolve them.
+⚠️ **P3 partly FALSIFIED and the correction matters.** R2's Admin dependency is **one
+batched aliased request**, not per-template (`assignedProductCounts.server.ts:202`), and
+fails soft — so "depends on Admin API rate limits" was overstated. But the unpaginated
+half is **worse** than stated: `listTemplatesForShop` uses no `select`, so every
+template's **full `rows` JSON** (≤200 rows) is read from Postgres *and shipped to the
+browser* to render a row **count** (F3).
+✅ **P4 confirmed six times over.** `ProductAssignmentIndex` has **zero references in
+application code** — the 2026-07-07 routing redesign made it moot — so four indexes plus
+the model itself serve nothing; add `Shop @@index([isInstalled])`, the `scopeValue`
+component of `[shopId, scope, scopeValue]`, and `Template @@index([shopId])` (redundant
+with the `@@unique` above it).
+🔬 **The catalog's most useful row is R7, because it makes §D3 concrete.** The routing
+write is Postgres-first, so an over-ceiling `metafieldsSet` returns a `userErrors`,
+surfaces one honest toast, leaves the DB row correct and `syncedToShopifyAt` unstamped —
+and the storefront then serves the **previous** blob indefinitely. The write fails loudly
+once; the read stays silently stale forever. That is exactly why "served from the delivery
+copy" may never be recorded as "a cached database read".
+⚠️ **One deviation from the spec, recorded in the section itself:** §D1 asked for
+placement "after the assignment/routing sections (§9-ish)". Inserting there would
+renumber §10/§11/§12 and break **~16 live cross-references** across the repo. It ships as
+**§13**, which is still after §9 *and* after §10 (whose metaobject vocabulary R1d/R1f
+cite) — D1's reasoning satisfied, its arithmetic not.
+📌 **Owed:** per the spec's Tests section, the row-by-row review must be run by a
+**session that did not write the catalog**.
+
 **Style-tab number boxes did not dirty the editor while typing — ✅ FIXED + LIVE
 VERIFIED 2026-07-31, gate green (typecheck · lint · format · 1256 · build).** No feature
 doc (a bug fix), so this entry IS the record.
@@ -2605,6 +2703,44 @@ Multi-value applies to PRODUCT + COLLECTION only. No migrations needed for the 4
 
 ## Open Questions
 
+- 🔴 **OQ-103-A — what does a webhook retry burst do to the Neon connection pool?**
+  (raised 2026-08-01 by step 103; `data-model.md` §13 R8a/R8b.) Both webhook actions are
+  tiny and idempotent, but Shopify **retries** them, and no `connection_limit` / pool size
+  is set anywhere trackable: not in `prisma/schema.prisma`, not in `app/db.server.ts` —
+  the parameters live in `DATABASE_URL` in an **untracked `.env`**. So the bound is not
+  determinable by reading the repo, which is why it is here rather than in a §13 cell.
+  Two things would settle it: read the live `DATABASE_URL` for `connection_limit` /
+  `pgbouncer`, and check the Neon project's compute pool size. Related: Neon cold starts
+  already needed `connect_timeout=30`, so this app has met the "the pool is not free"
+  class of problem once. **Not** step 103's to fix — 103 wrote no code.
+- ~~**OQ-103-B — unchunked `nodes(ids:)` past the 250-id cap.**~~ ✅ **CLOSED 2026-08-01
+  by chunking** — see the §Completed entry below, which is the record. Kept as a stub
+  because F4 in `data-model.md` §13 points here.
+- **OQ-103-C — the activation gate's probe count is O(pairs) and sequential, not O(rules).**
+  (raised 2026-08-01 by step 103, finding F5; `data-model.md` §13 R6.) §Key Decisions
+  "Assignment model" claims "O(rules) Postgres set-algebra + `products(query,first:1)`
+  existence tests, never a catalog scan". Two of three parts hold — the Postgres side is
+  ≤4 queries and no probe ever scans the catalog. But `assignmentActivation.server.ts:191`
+  loops candidate selectors and `assignmentConflict.server.ts:178` `await`s one probe per
+  NEEDS_CHECK pair **inside** it, so a 200-product candidate against one VENDOR template
+  issues **200 sequential** Admin round-trips before the merchant learns whether Activate
+  worked. ⚠️ **The Key Decisions line has not been edited** — 103 records discrepancies,
+  it does not fix them, and whether the right response is to correct the claim or to
+  parallelize the probes is the open part. Note the fail-closed bias (`:199`) makes any
+  timeout a **block**, so this is a correctness-adjacent latency question, not only a
+  speed one.
+- **OQ-103-D — six indexes and one whole model serve no catalogued read.**
+  (raised 2026-08-01 by step 103, finding F6; `data-model.md` §13 §Index → read mapping.)
+  `ProductAssignmentIndex` has **zero references in application code** — the 2026-07-07
+  shop-routing redesign removed the need to materialize per-product overrides — so its
+  four indexes and the table itself are dead weight. Plus `Shop @@index([isInstalled])`
+  (no query selects shops by install state), the `scopeValue` component of
+  `ProductAssignment @@index([shopId, scope, scopeValue])`, and `Template @@index([shopId])`
+  (redundant with the `@@unique` whose leading column is the same). ⚠️ Dropping any of
+  them is a **migration**, and §9 still describes `ProductAssignmentIndex` as a live part
+  of the model — so this needs a decision about the design, not just a schema edit. See
+  also the vestigial `Shop.metaobjectDefinitionGid` (§10), already deferred as "a later
+  cleanup" — these want to land as one migration, not four.
 - **Can `TWO_COLUMN` express a section gap via `border-collapse: separate`? (raised
   2026-07-28 while speccing feature 94 — the one option nobody has costed.)** The existing
   in-repo rejection at `stylingControls.ts:463` rules out a transparent
@@ -2673,5 +2809,5 @@ Multi-value applies to PRODUCT + COLLECTION only. No migrations needed for the 4
 - **App-owned definitions are declarative TOML** (slice 1): the `$app:appx_spec_table` metaobject and the `$app:spec_table` product `metaobject_reference` are declared in `shopify.app.toml`, distributed on deploy/install. Runtime `metaobjectDefinitionCreate` removed; `Shop.metaobjectDefinitionGid` vestigial. Metaobject _entries_ are still written at runtime via `metaobjectUpsert`.
 - **Assignment model — rigid block-on-conflict + shop-level routing (2026-07-07, `data-model.md` §5/§9).** One scope per template (`scope`+`scopeValue`+`mode`); overlaps between ACTIVE templates are **blocked at DRAFT→ACTIVE** (merchant decides — no silent precedence, no priority knob; `priority` column dormant). Overlap check is O(rules) Postgres set-algebra + `products(query,first:1)` existence tests, never a catalog scan. Broad rules deliver as O(1) entries in one `[shop.metafields.app.routing]` json metafield, resolved in Liquid via `metaobjects["$app:appx_spec_table"][handle]`. Per-product `metaobject_reference` survives only for bounded overrides; `ProductAssignmentIndex` is sparse.
 - **Style tab design (2026-07-18 — `admin-screen-plan.md` §Tab 2, `data-model.md` §5/§10, PRD, code-standards).** One spec-table primitive with **orthogonal style knobs** (row layout, mobile behavior, section headers, collapsible sections via native `<details>` zero-JS, row dividers incl. zebra `stripeBgColor`, density). Modal/drawer containers + multi-column flow rejected. **Presets = COPY semantics** (built-ins as code constants; phase-2 merchant-saved `StylePreset`) copy values into per-template `TableStyling` **real columns**, not `extraStyles`; `basedOnPreset` is provenance only. **No shop-level default styling record** (copy keeps edits side-effect-free on live storefronts). Storefront delivery via the metaobject `styling` json field (no TOML change): layout knobs → wrapper modifier classes, colors/typography → CSS variables. **Typography:** `fontSize` = S/M/L theme-relative presets or bounded Custom px (10–184, clamped; JSON number on the wire, digit-string in the DB); `lineHeight` (TIGHT/NORMAL/LOOSE) + `labelCase` (DEFAULT/UPPERCASE, labels only) + `fontStyle` kept; font-family/letter-spacing/wrap/per-side padding rejected.
-- **Testing strategy:** Vitest; Phases 1–2 done (unit + shop-isolation, mocked Prisma); reach Phase 4 (route loaders/actions + GDPR webhooks) before App Store submission, E2E (Playwright) fast-follow. Polaris web components don't render in jsdom → editor UI is browser-verified, pure logic unit-tested. Full doc: `~/.claude/plans/there-is-no-automated-encapsulated-yeti.md`.
+- **Testing strategy:** Vitest; Phases 1–2 done (unit + shop-isolation, mocked Prisma); reach Phase 4 (route loaders/actions + GDPR webhooks) before App Store submission, E2E (Playwright) fast-follow. Polaris web components don't render in jsdom → editor UI is browser-verified, pure logic unit-tested. ⚠️ **The pointer to a fuller doc was DROPPED 2026-08-01 (step 103's fold-in fix):** it cited `~/.claude/plans/there-is-no-automated-encapsulated-yeti.md`, which **no longer exists** (only `style-tab-phase-b-implementation-plan.md` remains in that directory), and it could not be restored. This entry is now the whole record of the testing strategy — a dangling reference in the one entry that defines the testing phases is worse than no reference. If the phases need more detail than this line carries, write it here or in a `context/` file, not in an untracked plans directory outside the repo.
 - **Embedded-app verification:** the editor is a cross-origin iframe (top frame can't read its DOM/AOM/console); verify via Claude-in-Chrome on the `shopify app dev` preview + direct Postgres/Neon checks. Polaris CDN-build gotchas → `polaris-web-component-gotchas` memory. Admin GraphQL runtime is 2025-10 — validate against that, not the TOML's 2026-07.

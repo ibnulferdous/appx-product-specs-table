@@ -20,6 +20,7 @@ This document defines the current MVP data model and storefront architecture for
 10. Shopify Metaobject Strategy
 11. Billing and Entitlement Strategy
 12. Why Row Keys Matter
+13. Read Patterns
 
 ---
 
@@ -969,6 +970,164 @@ Early-bird pricing + review-reward logic (per `prd.md`) need DB records. `AppSub
 - **`key`** — the row's stable *meaning* (e.g. `screen_size`), used for CSV import/export matching, AI auto-fill, localization, JSON-LD/SEO, and product metafield JSON values. Generated from the label at creation, then stable: translating the label to French/Arabic leaves `key` as `screen_size`, so anything keyed on it never breaks when the label changes.
 
 See §7 for the full id/key rules.
+
+---
+
+## 13. Read Patterns
+
+> **Added 2026-08-01 (step 103, `context/features/103-read-pattern-catalog.md`).**
+> §1–§12 document the **write** side thoroughly. This section answers the other
+> question: *what reads this, how often, and how large can it get?*
+>
+> **This section records what IS, not what should be (103 §D6).** Where a read is
+> unbounded it says so and stops — it proposes no pagination, cache, or schema
+> change. Findings are routed at the end of the section; none of them are fixed
+> here.
+>
+> ⚠️ **Placement deviates from 103 §D1, deliberately.** D1 asked for placement
+> "after the assignment/routing sections (§9-ish)". Inserting there would renumber
+> §10→§11→§12, invalidating **~16 live `§10`/`§11`/`§12` cross-references** across
+> the repo's docs and code comments. The reasoning behind D1 — the catalog is
+> unreadable before the vocabulary it cites — is satisfied by sitting *after* both
+> §9 (assignment/routing) and §10 (metaobject), which the end of the document also
+> is. The substance of D1 (one new top-level section, in this file, not a new
+> context file) is unchanged.
+
+### The three stores, and why the distinction is load-bearing
+
+Every row's **Served from** column names exactly one primary store. They are never
+interchangeable — they fail in completely different ways:
+
+| Store | Failure mode |
+| --- | --- |
+| **Postgres (Neon)** | Source of truth. Fails **loudly**, per request, recoverable. |
+| **Shop metafield / metaobject** | The **delivery copy**. Hard size ceilings; fails at **write** time, and the failure surfaces much later as a **stale read** on the storefront. |
+| **Admin API** | Live, rate-limited; a **latency dependency** of the admin UI. |
+
+A read served from the delivery copy is **not** "a database read that happens to be
+cached". R7 below is the concrete case: a routing write that fails leaves Postgres
+correct and the storefront serving the previous blob, indefinitely, with nothing
+merchant-visible saying so.
+
+**Volume is relative, never absolute.** No traffic figures are invented here; the
+column exists to rank the reads against each other, which is all any decision
+downstream needs.
+
+### R1 · Storefront (no app server involved at all)
+
+The highest-volume reads in the system, and the only ones a shopper triggers.
+Per 103 §D5 the product-page read is **not one row** — `blocks/spec_table.liquid`
+and `snippets/spec-table-resolve.liquid` carry separately-bounded costs, and each
+gets its own row. R1a–R1d are D5's required four; R1e–R1f are additions this step
+found (D5 said "at least four").
+
+| Read | Trigger | Volume | Served from | Bounded by |
+| --- | --- | --- | --- | --- |
+| **R1a** · Routing blob transfer + parse | Every product page view — `blocks/spec_table.liquid:58` | **Highest** — every product page, every shopper | **Shop metafield** (`shop.metafields["$app"].routing`) | Total entries across `byType` + `byVendor` + `byCollection` + `byProduct` + `excludedProductGids` — one entry per ACTIVE INCLUDE assignment row, one per ACTIVE EXCLUDE row (`app/utils/routingProjection.ts:69`). **Hard ceiling: 128KB** (json metafield write, API 2026-04+). ⚠️ **Not enforced today** — the runtime Admin client is `ApiVersion.October25` (`app/shopify.server.ts:13`), i.e. pre-2026-04, so writes currently sit at the legacy 2MB limit. See F1. |
+| **R1b** · The exclude gate | Every product page view that reaches the broad tiers — `snippets/spec-table-resolve.liquid:50` | **Highest** (same page views as R1a, minus `byProduct` hits) | **Shop metafield** (the same blob as R1a) | **NOTHING.** `routing.excludedProductGids contains pgid` is a linear scan of an array whose length is the shop's ACTIVE EXCLUDE PRODUCT row count. No cap in `setTemplateExcludes` (`app/models/assignment.server.ts:277`), none in the projection (`app/utils/routingProjection.ts:95`), none in the picker. The only indirect bound is R1a's 128KB write ceiling, once it applies. See F2. |
+| **R1c** · The collection scan | Product page views reaching the collection tier — `snippets/spec-table-resolve.liquid:58–72` | High (page views with no `byProduct`/`byType`/`byVendor` hit, not excluded) | **Shop metafield** + the storefront `product.collections` object | The **product's own** collection membership — not the shop's collection count. Walked in 50-item chunks (Liquid's `for` cap) with one `byCollection` lookup per collection, breaking on first hit. No app-side cap; the effective ceiling is Shopify's own per-product collection limit. |
+| **R1d** · The rows render | Every product page view that resolves a template — `blocks/spec_table.liquid:200–268` | High (page views that render a table) | **Metaobject** (`spec.rows.value`) | `MAX_TEMPLATE_ROWS = 200` (`app/utils/rows.ts:14`), re-enforced server-side at `app/models/template.server.ts:39`. Walked in 50-row chunks; each DATA row renders `snippets/spec-table-value.liquid`. |
+| **R1e** · Per-product override metafield *(beyond D5)* | Every product page view, unconditionally — `blocks/spec_table.liquid:57` | **Highest** — same as R1a | **Product metafield** (`metaobject_reference`) | O(1) — a single reference resolving to one metaobject. A reference, not `json`, so no value-size ceiling applies. |
+| **R1f** · Metaobject fetch by handle *(beyond D5)* | Product page views where the routing map matched — `blocks/spec_table.liquid:76` | High (same as R1d) | **Metaobject** (`metaobjects["$app:appx_spec_table"][handle]`) | One metaobject entry: `rows` (bounded by R1d's 200-row cap), `styling` (overrides-only; ≤ the `TableStyling` column set of §5), `styling_css` (~450 chars fully overridden, §10). All three are `json` fields and share R1a's 128KB write ceiling per field. |
+
+📌 **R1a is unconditional in source.** `blocks/spec_table.liquid:57–58` assigns the
+per-product override **and** the routing blob in the same `liquid` block, before the
+tier-1 test at line 66 — so the routing read is not gated on tier 1 missing. Whether
+Shopify's Liquid defers the json parse until first use is **not determinable by
+reading**; either way the bound in the R1a cell is unchanged, so this is recorded as
+an observation about *conditionality*, not about size.
+
+### R2–R5 · Admin, React Router loaders
+
+| Read | Trigger | Volume | Served from | Bounded by |
+| --- | --- | --- | --- | --- |
+| **R2a** · Templates list — the templates | Templates-list page view — `app/routes/app.templates.tsx:282` → `app/models/template.server.ts:183` | **Highest in the admin** (most-visited page) | **Postgres** | The shop's template count × **each template's full `rows` JSON**. `findMany({ where: { shopId }, orderBy })` has **no pagination and no `select`**, so every column — including `rows` (≤200 rows) — is read, and the loader returns them to the browser unfiltered (`app.templates.tsx:290–300`). The payload is templates × rows, not templates × row-count, even though only `rowCount` is displayed. See F3. |
+| **R2b** · Templates list — assigned-product counts | Same loader — `app/routes/app.templates.tsx:289` → `app/shopify/assignedProductCounts.server.ts:385` | Same as R2a | **Postgres** (primary, line 389) **+ Admin API** (line 407) | Postgres: the shop's total `ProductAssignment` row count (`where: { shopId }`, no pagination). Admin API: **exactly one** batched aliased request whose *document* grows with the number of **distinct** broad values (collections + product types + vendors) across all templates (`buildAssignedCountQuery:202`) — O(1) requests, **not** O(templates). Skipped entirely when every template is PRODUCT/NONE. Fail-soft (line 422): a failure renders "—", never breaks the list. |
+| **R3a** · Editor — template + styling | Editor open — `app/routes/app.templates_.$id/route.tsx:165` → `app/models/template.server.ts:242` | One per editor open | **Postgres** | One `Template` row by primary key + its one `TableStyling` row (`include`). `rows` ≤ `MAX_TEMPLATE_ROWS` (200). |
+| **R3b** · Editor — INCLUDE scope set | Editor open — `route.tsx:177` → `app/models/assignment.server.ts:66` | One per editor open | **Postgres** | The template's INCLUDE row count: 0 (NONE), 1 (ALL_PRODUCTS / PRODUCT_TYPE / VENDOR), or **1..N uncapped** for PRODUCT / COLLECTION (feature 46 multi-value). |
+| **R3c** · Editor — INCLUDE chip labels | Editor open, PRODUCT/COLLECTION scopes only — `route.tsx:90` → `app/shopify/scopeResourceLabel.server.ts:190` | One per editor open | **Admin API** | `ceil(\|R3b\| / 250)` sequential `nodes(ids:)` requests — `NODES_MAX_IDS = 250` (`scopeResourceLabel.server.ts:51`), chunked at `:201`. One request at or under the cap. R3b itself is uncapped, so the **request count** is unbounded; each request is not. Per-chunk fail-soft (`:130`): a failing chunk degrades only its own ids to raw GIDs. ✅ Was "one unchunked request, whole batch fails" — fixed 2026-08-01, see F4. |
+| **R3d** · Editor — EXCLUDE carve-outs | Editor open — `route.tsx:186` → `app/models/assignment.server.ts:337` | One per editor open | **Postgres** | **NOTHING** — the same uncapped set as R1b, read here per template rather than per shop. Loaded even when the scope is not ALL_PRODUCTS (`route.tsx:184`). See F2. |
+| **R3e** · Editor — EXCLUDE chip labels | Editor open — `route.tsx:187` → `scopeResourceLabel.server.ts:190` | One per editor open | **Admin API** | `ceil(\|R3d\| / 250)` sequential requests, same chunking and same per-chunk fail-soft as R3c. Because R3d is bounded by **nothing**, this is the read that reaches multiple chunks first. ✅ Fixed alongside R3c, see F4. |
+| **R4** · Product metafield definitions | **First** Insert-field modal open per editor session — `app/routes/app.metafield-definitions.tsx:33` → `app/shopify/metafieldDefinitions.server.ts:148` | Low — lazy `useFetcher`, never eager (a merchant may never open the modal) | **Admin API** | `PAGE_SIZE = 250` × `MAX_PAGES = 10` = **2,500 definitions**, then a logged warning rather than a silent truncation (line 172). Shopify caps product metafield definitions at 256 per app and 256 for the merchant, so the backstop sits far above any realistic shop. |
+| **R5a** · App shell — shop upsert | **Every** admin page view (`/app` is the parent route of every admin page) — `app/routes/app.tsx:13` → `app/models/shop.server.ts:5` | High — every admin navigation | **Postgres** | O(1). One `findUnique` on `Shop.myshopifyDomain` (`@unique`). The upsert branch runs only on first install / reinstall — steady state returns at `shop.server.ts:11` after the single indexed point read. |
+| **R5b** · App index (Home) | Home page view — `app/routes/app._index.tsx:12` | One per Home view | **Nothing** | O(1), no data read: the loader is `authenticate.admin(request)` then `return null`. 📌 The `admin.graphql` calls in the same file are in the **boilerplate `action`** (line 19), not the loader — they run only on the demo button, never on load. |
+
+### R6–R7 · Admin write paths whose *reads* are the cost
+
+| Read | Trigger | Volume | Served from | Bounded by |
+| --- | --- | --- | --- | --- |
+| **R6** · Activation dry-run (the conflict gate) | DRAFT→ACTIVE, and any editor Save that changes an ACTIVE template's scope — `app/shopify/assignmentActivation.server.ts:164` | Low — one per activation / scope change | **Postgres + Admin API** | **Postgres: ≤4 queries**, each O(the shop's assignment rows) — `getTemplateIncludeSelectors` (line 175), `getActiveIncludeScopesExcept` (183), `getActiveExcludesByTemplate` (225), `getExcludesForTemplate` (240). **Admin API: \|candidateSelectors\| × \|NEEDS_CHECK others\| requests, run SEQUENTIALLY** — the candidate loop is `assignmentActivation.server.ts:191`, the probe loop with an `await` inside it is `assignmentConflict.server.ts:178`. Every probe is `products(first: 1, query:)` (`assignmentConflict.server.ts:153`) — **never a catalog scan**, as claimed. See F5. |
+| **R7** · Routing map projection (the write that produces R1a's blob) | activate / deactivate / ACTIVE-scope change — `app/shopify/routing.server.ts:195` | Low — same as R6 | **Postgres + Admin API** | Postgres: one `template.findMany({ shopId, status: "ACTIVE" })` with nested assignments (line 200) — O(ACTIVE templates + their assignment rows) — then one `shopStorefrontRouting.upsert` (222). Admin API: exactly **2** requests (`ShopId` query at line 170, `metafieldsSet` at 231). ⚠️ **R7's output bound IS R1a's ceiling** — the `metafieldsSet` payload is the blob R1a reads. |
+
+🔴 **R7 is where a 128KB overflow would surface, and §D3's failure mode is exact.**
+The write is ordered Postgres-**first** (`routing.server.ts:212`), so an over-ceiling
+`metafieldsSet` returns a `userErrors` entry — narrowed at `routing.server.ts:114`,
+surfaced as "Saved routing, but couldn't publish it to your storefront." — while the
+`ShopStorefrontRouting` row is already correct and `syncedToShopifyAt` is left
+unstamped. The storefront then keeps serving the **previous** blob. The write fails
+loudly to the merchant *at that moment*; the read stays silently stale afterwards.
+
+### R8 · Webhooks
+
+| Read | Trigger | Volume | Served from | Bounded by |
+| --- | --- | --- | --- | --- |
+| **R8a** · `app/uninstalled` | App uninstall; **retried by Shopify** on failure — `app/routes/webhooks.app.uninstalled.tsx` | Very low, **bursty** | **Postgres** | Two writes, no reads: `markShopUninstalled` → one `updateMany` on `Shop.myshopifyDomain` (`@unique`, `app/models/shop.server.ts:38`), and one `session.deleteMany({ where: { shop } })` — O(that shop's session rows). Idempotent by construction, so a retry burst is safe. Connection-pool behaviour under burst: see OQ-103-A. |
+| **R8b** · `app/scopes_update` | Scope change; retried — `app/routes/webhooks.app.scopes_update.tsx` | Very low, bursty | **Postgres** | O(1) — one `session.update` by primary key. Connection-pool behaviour under burst: see OQ-103-A. |
+
+⚠️ **What a burst does to the Neon connection pool is NOT determinable by reading.**
+No `connection_limit` or pool size is set in `prisma/schema.prisma`, `app/db.server.ts`,
+or any tracked file — the parameters live in `DATABASE_URL` in an untracked `.env`.
+Recorded as **OQ-103-A** in `progress-tracker.md` §Open Questions rather than guessed.
+
+### Index → read mapping
+
+Every index in `prisma/schema.prisma`, and the catalogued read it serves.
+**An index that serves no catalogued read is a finding, recorded rather than dropped.**
+
+| Index (`prisma/schema.prisma`) | Serves |
+| --- | --- |
+| `Shop @@index([isInstalled])` (:71) | 🔴 **No catalogued read.** The only `isInstalled` predicate is `markShopUninstalled` (`shop.server.ts:39`), which resolves through the `myshopifyDomain` `@unique`; `isInstalled` is a filter there, not a lookup key. No query selects shops *by* install state. |
+| `Template @@unique([shopId, shopifyMetaobjectHandle])` (:104) | Constraint (handle uniqueness per shop). Its `[shopId]` prefix also covers R2a — which makes the next row redundant. |
+| `Template @@index([shopId])` (:105) | R2a. ⚠️ Redundant with the `@@unique` above, whose leading column is the same. |
+| `Template @@index([shopId, status])` (:106) | R7 (`findMany({ shopId, status: "ACTIVE" })`). |
+| `ProductAssignment @@unique([shopId, templateId, scope, scopeValue, mode])` (:220) | Constraint (stops literal duplicate rules, §9). |
+| `ProductAssignment @@index([shopId, scope])` (:221) | Its `[shopId]` prefix serves R2b. ⚠️ **The `scope` component serves no catalogued read** — no query filters on `scope` without also filtering `templateId`. |
+| `ProductAssignment @@index([shopId, scope, scopeValue])` (:222) | 🔴 **No catalogued read.** The only `scopeValue` predicate in the codebase is `setTemplateScope`'s contradiction-delete (`assignment.server.ts:176`), which is a **write** and is already narrowed by `templateId`. |
+| `ProductAssignment @@index([shopId, templateId])` (:223) | R3b, R3d, R6, and every assignment write path. |
+| `ProductAssignmentIndex @@unique([shopId, shopifyProductGid])` (:275) | 🔴 **No read — the entire MODEL is unreferenced.** |
+| `ProductAssignmentIndex @@index([shopId, templateId])` (:276) | 🔴 ditto |
+| `ProductAssignmentIndex @@index([shopId, status])` (:277) | 🔴 ditto |
+| `ProductAssignmentIndex @@index([sourceAssignmentId])` (:278) | 🔴 ditto |
+
+🔴 **`ProductAssignmentIndex` has zero references in application code** — no
+`prisma.productAssignmentIndex` call, no import, no type reference anywhere under
+`app/`. §9 describes it as "the sparse record of materialized single-product
+overrides only", and the shop-routing redesign of 2026-07-07 removed the need to
+materialize anything. Four indexes and one table serve nothing today. Recorded, not
+dropped — dropping it is a migration and a different unit.
+
+### Findings (routed, not fixed)
+
+| # | Finding | Routed to |
+| --- | --- | --- |
+| **F1** | R1a's 128KB ceiling is real, is **not** currently enforced, and this app is **not grandfathered**. Shopify limits `json` metafield **writes** to 128KB from API 2026-04; apps using json fields *before 2026-04-01* keep the 2MB limit. This repo's first commit is **2026-06-09** and its first `type = "json"` declaration landed **2026-07-02** (`6d1cd3a`), both after the cutoff — so no grandfathering. It is masked only because the runtime client is `October25` (`app/shopify.server.ts:13`) while `shopify.app.toml:12` declares `api_version = "2026-07"`. **Moving the runtime client past 2026-04 activates the ceiling.** (`Metafield.sizeInBytes` exists and would measure headroom.) | **104** (byte budgets) |
+| **F2** | `excludedProductGids` (R1b / R3d) is bounded by **nothing** — no cap at the picker, the writer, or the projection — and it is the most reachable route to F1's ceiling, since each entry is a full ~40-char product GID. It is also scanned linearly on every product page view. | **104 / 105** |
+| **F3** | R2a reads and ships **every template's full `rows` JSON** to the browser to render a row *count*. Unpaginated on top of that. | **Next-Up item 6** (templates-list pagination) |
+| **F4** | ✅ **FIXED 2026-08-01** (the only 103 finding acted on, as its own unit — not in 103's diff). R3c / R3e sent an **unchunked** `nodes(ids:)` whose id count is bounded by nothing (R3d) or nothing app-side (R3b). Past the Admin API's 250-id cap the **whole batch** failed and fail-softed to raw GIDs — every chip silently degrading to `gid://shopify/Product/…`, no message anywhere. Now chunked at `NODES_MAX_IDS = 250` with **per-chunk** fail-soft, so a failure costs one chunk instead of the list. `scopeResourceLabel.server.ts:51/62/130/201`; 14 tests, 3 mutations. | **Closed** — was OQ-103-B |
+| **F5** | **Discrepancy against §Key Decisions.** The claim is "O(rules) Postgres set-algebra + `products(query,first:1)` existence tests, never a catalog scan." The Postgres half and the never-a-catalog-scan half **hold**. The probe count does **not**: probes are per **(candidate selector × other ACTIVE INCLUDE row)** *pair* and run **sequentially**, so a 200-product candidate against one VENDOR template issues 200 sequential Admin round-trips. O(pairs), not O(rules). | **New Open Question — OQ-103-C** |
+| **F6** | Four indexes plus the whole `ProductAssignmentIndex` model, and the `scopeValue` component of `ProductAssignment @@index([shopId, scope, scopeValue])`, serve no catalogued read (see the mapping table). `Template @@index([shopId])` is redundant with the `@@unique` above it. | **New Open Question — OQ-103-D** |
+
+### Predictions from 103 §Expected findings — verdicts
+
+Recorded either way; a falsified prediction is a result.
+
+| | Prediction | Verdict |
+| --- | --- | --- |
+| **P1** | R1a has a 128KB ceiling that nothing in the repo mentions | ✅ **CONFIRMED, and sharper than predicted.** The ceiling is real and unmentioned, *and* the app is not grandfathered, *and* it is currently masked by the 2025-10 runtime client. → F1 |
+| **P2** | `excludedProductGids` is bounded by nothing, and is the most reachable route to P1's ceiling | ✅ **CONFIRMED** on both halves. → F2 |
+| **P3** | R2 is unpaginated *and* carries a live Admin API dependency | ⚠️ **CONFIRMED but PARTLY FALSIFIED.** Unpaginated: confirmed, and worse than stated (full `rows` JSON, not just row metadata → F3). The Admin dependency is **real but O(1) requests**, not per-template: `assignedProductCounts.server.ts` collapses every lookup into **one** batched aliased query and fails soft. The "most-visited list page depends on Admin API latency" framing stands; "and rate limits" is overstated at one request per page view. |
+| **P4** | At least one index maps to no catalogued read | ✅ **CONFIRMED, ×6.** Four `ProductAssignmentIndex` indexes (the model is entirely unreferenced), `Shop @@index([isInstalled])`, and `ProductAssignment @@index([shopId, scope, scopeValue])`. Plus one redundancy. → F6 |
+| **P5** | The O(rules) claim will hold, but the `products(query,first:1)` calls will be per-rule, making activation latency scale with rule count | ⚠️ **HALF CONFIRMED, HALF FALSIFIED — and the falsified half is worse.** "Never a catalog scan" holds; the Postgres side is ≤4 queries. But the probes are **not** per-rule: they are per **pair** and **sequential**, so latency scales with candidate-values × other-ACTIVE-rules, not with rule count. → F5 |
 
 ---
 
