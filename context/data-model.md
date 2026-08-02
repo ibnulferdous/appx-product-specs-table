@@ -1259,7 +1259,22 @@ at that moment; the read stays silently stale afterwards.
 ## 15. Data Retention & Erasure
 
 Added 2026-08-02 with step 105 (`context/features/105-privacy-webhook-domain-and-erase.md`),
-the domain half of the mandatory privacy webhooks.
+the domain half of the mandatory privacy webhooks; wired to real endpoints the
+same day by step 106 (`…/106-privacy-webhook-routes-and-subscriptions.md`).
+
+**Entry points.** Three routes, subscribed in `shopify.app.toml` under
+`compliance_topics` (never `topics`):
+
+| Topic                    | Route file                                    | URL                                | Does                          |
+| ------------------------ | --------------------------------------------- | ---------------------------------- | ----------------------------- |
+| `customers/data_request` | `app/routes/webhooks.customers.data_request.tsx` | `/webhooks/customers/data_request` | logs, no DB                   |
+| `customers/redact`       | `app/routes/webhooks.customers.redact.tsx`    | `/webhooks/customers/redact`       | logs, no DB                   |
+| `shop/redact`            | `app/routes/webhooks.shop.redact.tsx`         | `/webhooks/shop/redact`            | `eraseShopData` (below)       |
+
+🔴 **The erase takes the AUTHENTICATED shop, never `payload.shop_domain`.** The
+former comes from the HMAC-verified request; the latter is body content, and it
+selects which shop gets deleted. `parseComplianceSummary().shopDomain` is parsed
+only to be cross-checked and logged on mismatch.
 
 ### What this app holds for one shop
 
@@ -1320,7 +1335,14 @@ makes the operation idempotent: `deleteMany` returns `{ count: 0 }` where
 
 ⚠️ **A mocked Prisma cannot verify this guard** — it returns whatever it is told
 regardless of the query. The unit tests pin that the condition is *written*; only
-Postgres applies it. Live verification is step 106's.
+Postgres applies it. Live verification is step 106's, and is **owed** — the code
+and the subscriptions landed 2026-08-02, the against-Postgres run has not.
+
+⚠️ **A 200 from `/webhooks/shop/redact` does not mean data was deleted.** The
+handler acknowledges all three outcomes — erased, declined-because-installed, and
+not-found — because a non-200 earns a retry, and two of those three are correct
+handling rather than failure. The log line is the only place the distinction
+appears.
 
 ### Shopify-side data is out of reach, by design
 

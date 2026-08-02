@@ -1102,6 +1102,120 @@ Building the MVP.
 > diff is measured against** — kept, it would have claimed +68 tests for 29 tests
 > of work, and read as thoroughness rather than as a measurement error.
 
+> ✅ **Step 106 — code complete AND FULLY LIVE-VERIFIED 2026-08-02. Gate 9 of 10;
+> the DEPLOY is all that remains.** The three route files, 15 route-action tests, and the
+> three `[[webhooks.subscriptions]]` blocks. Local gate green: typecheck · lint ·
+> format · **1353** tests / **51** files · build; baseline **1338 / 50**, so **+15
+> — exactly the planned count**, no silent overshoot. Full record:
+> `context/features/106-privacy-webhook-routes-and-subscriptions.md`.
+> 🔴 **NOTHING HAS REACHED SHOPIFY YET.** The subscriptions live only in the local
+> TOML — the routes answer, but Shopify does not know to call them, so **the App
+> Store blocker is not cleared** until `shopify app deploy` runs, which is the
+> merchant's. ⚠️ **Check `application_url` immediately before deploying** — it
+> reads `https://example.com` on disk and `shopify app dev` rewrites it to the
+> live tunnel; whatever is present at deploy time becomes the app's URL.
+>
+> ✅ **Nine live checks against the dev server and real Neon, all passing, with
+> `appx-dev` UNCHANGED at 21 templates / 1 session before and after.** Bad HMAC →
+> **401** on all three routes (which also proves the URLs resolve — a wrong path
+> would 404). Throwaway shop A (uninstalled) erased **with the FK cascade and the
+> session sweep** — the session is the telling half, since `Session` has no FK so
+> no cascade could reach it and only the explicit second delete could. B
+> (installed) declined with shop, template **and session** intact; redelivery
+> idempotent; both `customers/*` topics acknowledged with the database
+> **completely untouched**. 🚫 `shop/redact` was never fired at the real dev-store
+> domain — the throwaway installed case proves the guard on a row we could afford
+> to lose.
+> 🔬 **The strongest evidence was free: B's request re-sent BYTE-FOR-BYTE after
+> flipping one boolean — declined, then erased.** A controlled experiment with
+> exactly one variable, which no mocked-Prisma test can produce (step 105's M2
+> established that a mock cannot apply a `WHERE`). It doubled as the cleanup, so
+> the throwaway rows were removed **by the feature under test** and no destructive
+> SQL was hand-written.
+>
+> 🔴 **NEW FINDING — the SDK does NOT cross-check `payload.shop_domain` against
+> the HMAC-authenticated header.** A forged `shop_domain: attacker…` was delivered
+> and returned 200 with the payload domain ignored, i.e. **the forged value
+> reaches the handler** and the only thing between it and a `where` clause is the
+> route using the authenticated `shop`. D1 is load-bearing, not defence-in-depth,
+> and the `payload_shop_domain_mismatch=` log branch is reachable in production
+> rather than dead code.
+> 🔴 **NEW FINDING — `X-Shopify-Webhook-Id` is REQUIRED by `authenticate.webhook`;
+> omitting it is a 400.** This nearly produced a wrong conclusion: an early probe
+> 400'd and the attractive reading was "the library rejected the shop mismatch" —
+> which would have made the finding above untestable and silently false. A 2×2
+> isolation (payload B/attacker × header present/absent) settled it: **both** 400s
+> were the missing header, **both** 200s came back regardless of payload domain.
+> 🔬 **Step 102's instrument rule, one layer out: a non-200 from a hand-built
+> request is a claim about the REQUEST first and the code second** — and the more
+> interesting hypothesis is the one to test, not the one to adopt.
+>
+> ✅ **The no-PII log check is CLOSED** — merchant pasted the dev-server terminal.
+> No email, no phone, no order id in any line; `orders=3` is the count doing
+> exactly the job it was invented for. 🔬 **The strongest line was unplanned:** the
+> first delivery came from `shopify app webhook trigger`, and its
+> `customer_id=191167 / orders=3 / data_request_id=9999` identify it as
+> **Shopify's OWN documented sample payload** — the one carrying
+> `john@example.com` and `555-625-1199`. So the guarantee is verified against
+> Shopify-generated data through the real HMAC path, not against a fixture we
+> wrote to be clean. That same line fired `payload_shop_domain_mismatch=` (the CLI
+> sends a literal `{shop}.myshopify.com`), proving the branch is live code
+> independently of the forged-payload test.
+> 📌 **`customer_id` IS logged, deliberately** — D4 classes it as an opaque id;
+> email, phone and order ids are what the summary excludes.
+> 🔬 **An ABSENCE was evidence too:** the 2×2 isolation sent four requests and
+> produced exactly two log lines — the two 400s logged nothing, confirming from the
+> other side that a rejected request never reaches handler code.
+>
+> ✅ **D6 discharged with evidence rather than inference.**
+> `.react-router/types/+routes.ts` declares `/webhooks/customers/data_request`,
+> `/webhooks/customers/redact` and `/webhooks/shop/redact` verbatim — a mid-word
+> underscore IS literal to `flatRoutes`, so the hyphenated fallback was never
+> needed. 📌 **`+routes.ts` is where a route's real URL is readable**; the
+> `+types/` files are named after the source file and never state the path, which
+> is the file a reader would check first.
+> ✅ **`shopify app config validate --json` → `{"valid": true, "issues": []}`**,
+> which validates `compliance_topics` against the CLI's own schema instead of
+> against a doc page, and confirms the diff touched no definition block.
+>
+> ✅ **The step-105 M2 problem did NOT recur, and the reason is the useful part.**
+> There, dropping `isInstalled: false` from a `where` left the test named for it
+> green: a mocked Prisma returns what it was told regardless of the query. Here
+> the equivalent mutation (`eraseShopData(summary.shopDomain ?? shop)`) failed
+> exactly one test, the one named for it. 🔬 **A mock can testify to what you
+> passed it, never to what the database would have done with it** — so the
+> shop-isolation boundary is testable at this layer precisely because it is an
+> *argument*, not a *clause*. The test asserts the whole argument list, so a
+> second parameter smuggling the payload domain in later also fails.
+>
+> ⚠️ **Two of my six mutation predictions were wrong, from one mistake.** M3 and
+> M4 were predicted as "tests 11–12" and "tests 13–15" — the paired guards across
+> all three routes — but each mutation was applied to **one** route, so exactly one
+> of each pair fired. The guards are fine; the prediction confused the pattern with
+> the instance. 🔬 **A per-route mutation can only fail per-route tests**, and
+> stating predictions as test-number ranges hid that.
+>
+> 🔴 **M3b was added because M3 left the Prisma trap unproven.** `db.server`'s
+> default export is replaced by a Proxy recording the dotted path of every call at
+> any depth — stronger than stubbing the one method someone thought of. M3 trips
+> the *`eraseShopData`* assertion beside it and says nothing about the trap, so a
+> direct `db.session.deleteMany` call was added: it fires, and the failure message
+> names the path (`expected [ 'session.deleteMany' ] to deeply equal []`).
+> ⚠️ **Stated limit, in the test file rather than implied:** neither `customers/*`
+> route imports `db.server` today, so the trap is armed for a future edit rather
+> than describing current behaviour.
+>
+> ✅ **The checklist correction step 105 owed is paid.**
+> `app-store-review-checklist.md` §3 claimed all three topics "may be acknowledged
+> no-ops" — false for `shop/redact`, which deletes across five tables plus a
+> session sweep. It now says which two are no-ops, and gained a **separate 401
+> line**: the invalid-HMAC response is what a reviewer actually probes, and it was
+> previously implied by a general "HMAC verified" bullet rather than stated.
+> ⚠️ **A 200 from `/webhooks/shop/redact` does not mean data was deleted** — the
+> handler acknowledges all three outcomes (erased / declined-because-installed /
+> not-found) because a non-200 earns a retry and two of the three are correct
+> handling. `data-model.md` §15 now says so, beside the topic → route → URL table.
+
 ## Current Goal
 
 **Reshell Phase B2 — the built-in preset gallery (Style tab feature 57, steps 13–14).**
@@ -2803,19 +2917,20 @@ Multi-value applies to PRODUCT + COLLECTION only. No migrations needed for the 4
    footer/card bottom instead of the hardcoded 3rem. Touches the measurer both scrollers share,
    so it is its own unit.
 6. **Templates-list Phase 2** — search / sort / pagination (server-side, with pagination) when the list can grow large; multi-select bulk actions later.
-7. **Pre-submission — mandatory privacy webhooks: 🔨 IN PROGRESS, step 105 of 2 done.**
-   The domain (`app/utils/complianceWebhook.ts`) and the erase path
-   (`eraseShopData`) landed 2026-08-02 with nothing importing them. **Step 106 is
-   next and is the half that can fail review:** three route files, three
-   `[[webhooks.subscriptions]]` blocks with `compliance_topics` (⚠️ **not**
-   `topics` — a compliance topic under `topics` fails CLI validation), a
-   `shopify app deploy` to register them, and live verification. ⚠️ **`shopify.app.toml`
-   is a protected file** (`ai-workflow-rules.md:29`) — the merchant approved the
-   edit 2026-08-02 and asked to be shown it before it is made. 🔴 The live check
-   that matters is a bad-HMAC `curl` returning **401**: `authenticate.webhook`
-   throws that for free, so the only way to lose it is to wrap the call in
-   `try/catch`. Then **Billing** (`prd.md`, `context/app-store-review-checklist.md`),
-   which is the other hard blocker for a paid listing.
+7. **Pre-submission — mandatory privacy webhooks: 🔨 CODE COMPLETE, DEPLOY + LIVE PASS OWED.**
+   Both steps' code landed 2026-08-02 — step 105 the domain
+   (`app/utils/complianceWebhook.ts`) and erase path (`eraseShopData`), step 106
+   the three routes, the tests and the subscriptions
+   (`106-privacy-webhook-routes-and-subscriptions.md`, gate **6 of 10**).
+   🔴 **Nothing has reached Shopify yet.** The subscriptions exist only in a local
+   `shopify.app.toml`; the routes answer, but Shopify does not know to call them,
+   so **the App Store blocker is NOT cleared** until `shopify app deploy` runs —
+   which is the merchant's to run, along with the live pass (gate items 7–9).
+   ⚠️ **Check `application_url` immediately before deploying** — it reads
+   `https://example.com` on disk and `shopify app dev` rewrites it to the live
+   tunnel; whatever is present at deploy time becomes the app's URL.
+   Then **Billing** (`prd.md`, `context/app-store-review-checklist.md`), which is
+   the other hard blocker for a paid listing.
 
 **Deferred:** editor bulk-delete range-select (Shift+click) + Delete/Backspace shortcut; per-product overflow materialization + a bulk apply-to-all styling route.
 
