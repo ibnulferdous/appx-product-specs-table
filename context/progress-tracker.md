@@ -1102,8 +1102,28 @@ Building the MVP.
 > diff is measured against** — kept, it would have claimed +68 tests for 29 tests
 > of work, and read as thoroughness rather than as a measurement error.
 
-> ✅ **Step 106 — code complete AND FULLY LIVE-VERIFIED 2026-08-02. Gate 9 of 10;
-> the DEPLOY is all that remains.** The three route files, 15 route-action tests, and the
+> ✅ **Step 106 — COMPLETE 2026-08-02, gate 10 of 10, DEPLOYED AND CONFIRMED
+> REGISTERED** (version `appx-product-specs-table-7`, Active; the Dev Dashboard's
+> Versions page lists a **"Privacy compliance webhook subscriptions"** block with
+> all three URLs — a separate section from the two ordinary `topics` ones, which
+> is precisely why `compliance_topics` is its own key).
+> 🔬 **The route paths survive the whole chain byte-for-byte** — `flatRoutes` →
+> generated router → TOML → Shopify — `data_request`'s mid-word underscore
+> included, so D6 is confirmed at the far end and not only at ours.
+> 🔴 **BUT NOT SUBMISSION-READY — `app_url` is still `https://example.com`.** A
+> relative subscription `uri` resolves against `application_url` at deploy time, so
+> all three registered endpoints point at a domain **we do not own**. ⚠️ **This
+> passes every local and dev-store check** because `shopify app dev` rewrites the
+> URLs while it runs — and **compliance webhooks are the one thing Shopify delivers
+> when no dev session exists** (`shop/redact` arrives 48 h after uninstall), so in
+> production every delivery would go elsewhere and the erase would never run.
+> Surfaced, not caused, by this step: the placeholder has been there since the app
+> was scaffolded and 106 is simply the first feature whose correctness depends on
+> it. `redirect_urls` has the same placeholder, so OAuth shares the latent problem
+> — fix both together and re-deploy. 🚫 Not attempted here: guessing a hostname
+> and deploying it anchors a wrong URL at the same one-way cost as the right one.
+> Now a checklist item in `app-store-review-checklist.md` §3.
+> The three route files, 15 route-action tests, and the
 > three `[[webhooks.subscriptions]]` blocks. Local gate green: typecheck · lint ·
 > format · **1353** tests / **51** files · build; baseline **1338 / 50**, so **+15
 > — exactly the planned count**, no silent overshoot. Full record:
@@ -2917,7 +2937,16 @@ Multi-value applies to PRODUCT + COLLECTION only. No migrations needed for the 4
    footer/card bottom instead of the hardcoded 3rem. Touches the measurer both scrollers share,
    so it is its own unit.
 6. **Templates-list Phase 2** — search / sort / pagination (server-side, with pagination) when the list can grow large; multi-select bulk actions later.
-7. **Pre-submission — mandatory privacy webhooks: 🔨 CODE COMPLETE, DEPLOY + LIVE PASS OWED.**
+7. **Pre-submission — mandatory privacy webhooks: ✅ DONE (steps 105 + 106, deployed
+   and registered 2026-08-02). 🔴 One NEW blocker in their place: `application_url`
+   is still the template placeholder `https://example.com`,** so the three
+   registered compliance endpoints resolve to a domain we do not own — and these
+   are the one class of webhook Shopify delivers with no dev session running.
+   Fix = stand up the production host, put it in `application_url` **and**
+   `redirect_urls`, re-deploy. See `app-store-review-checklist.md` §3 and the
+   step-106 doc. **Then Billing**, the other hard blocker for a paid listing.
+   *(Superseded detail below, kept for the reasoning:)*
+   **Pre-submission — mandatory privacy webhooks: ~~CODE COMPLETE, DEPLOY + LIVE PASS OWED~~.**
    Both steps' code landed 2026-08-02 — step 105 the domain
    (`app/utils/complianceWebhook.ts`) and erase path (`eraseShopData`), step 106
    the three routes, the tests and the subscriptions

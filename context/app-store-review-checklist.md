@@ -50,6 +50,7 @@ compliance → maintainability.**
 - [ ] **`app/uninstalled` cleanup** — marks the shop uninstalled + deletes sessions; **idempotent** so a duplicate delivery is a safe no-op (covered by `shop.server.test.ts`; the route itself is the Phase-3 test gap — verify live).
 - [ ] **HMAC verified** — every webhook validates the Shopify signature before acting (handled by the template's `authenticate.webhook`; confirm new topics use it).
 - [ ] **Retry-safe** — Shopify retries on non-200; every handler is idempotent and returns 200 quickly (no long work inline).
+- [ ] 🔴 **`application_url` is the REAL production host, not a placeholder** — as of 2026-08-02 the deployed app (version 7) carries `app_url = https://example.com`, so all three registered compliance endpoints resolve to `https://example.com/webhooks/…`, a domain we do not own. A relative subscription `uri` is resolved against `application_url` at deploy time. ⚠️ **This passes every local and dev-store check**, because `shopify app dev` rewrites the URLs while it runs — but compliance webhooks are the one thing Shopify delivers when **no dev session exists** (`shop/redact` arrives 48 h after uninstall), so in production every delivery would go elsewhere and the erase would never run. `redirect_urls` carries the same placeholder, so OAuth has the identical latent problem; fix both together and re-deploy.
 
 ## 4. Billing (before submission, if charging)
 

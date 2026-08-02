@@ -1,7 +1,11 @@
 # Step 106 — the three route files, the subscriptions, the deploy
 
-**Status:** ✅ **code complete and FULLY LIVE-VERIFIED 2026-08-02. Gate 9 of 10 —
-the only open item is the deploy, which is the merchant's by agreement.** Full
+**Status:** ✅ **COMPLETE 2026-08-02 — gate 10 of 10, deployed and confirmed
+registered** (version `appx-product-specs-table-7`, Active).
+🔴 **BUT NOT SUBMISSION-READY:** the app's `app_url` is still the template
+placeholder `https://example.com`, so all three registered compliance endpoints
+point at a domain we do not own. Surfaced — not caused — by this step; see
+§"The blocker this step uncovered". Full
 local gate green (typecheck · lint · format · **1353** tests / **51** files ·
 build); baseline **1338 / 50**, so **+15 tests and one new file** — exactly the
 planned count. Six mutations run (five planned + one added), all caught. Nine live
@@ -472,10 +476,10 @@ on B after the `isInstalled` flip. Two instruments, one story.
 
 ---
 
-## Completion gate — 9 of 10
+## Completion gate — 10 of 10 ✅
 
-🚫 **The one open item is item 9, `shopify app deploy`, and it is the merchant's
-by agreement.** Everything verifiable without touching Shopify's side is done.
+…but the feature is **not submission-ready**, for a reason this step surfaced and
+did not create. See §"The blocker this step uncovered" below.
 
 1. ✅ Three route files exist, each ending in a 200, none wrapping
    `authenticate.webhook` — and the wrapping is banned behaviourally (M1), not
@@ -508,11 +512,17 @@ by agreement.** Everything verifiable without touching Shopify's side is done.
    variable, opposite outcome. Throwaway rows cleaned up **by the feature under
    test**, so no destructive SQL was hand-written. `appx-dev` **unchanged at 21
    templates / 1 session**, counted before and after.
-9. ☐ **OWED, and the merchant's to run** — `shopify app deploy`, then the three
-   compliance URLs confirmed registered in the Partner Dashboard. ⚠️ Check
-   `application_url` immediately beforehand: it currently reads
-   `https://example.com` on disk and `shopify app dev` rewrites it to the live
-   tunnel, so whichever value is present at deploy time becomes the app's URL.
+9. ✅ **Deployed and CONFIRMED REGISTERED.** Merchant ran `shopify app deploy`
+   2026-08-02; version **`appx-product-specs-table-7`** is Active (released
+   06:15 UTC = 12:15 local, nine minutes after the TOML mtime of 12:06:33 local —
+   the ordering was checked, not assumed). The Dev Dashboard's **Versions → 7**
+   page lists a **"Privacy compliance webhook subscriptions"** block with all
+   three: `customers_data_request_url`, `customers_redact_url`,
+   `shop_redact_url`. 🔬 **The paths survive the whole chain byte-for-byte** —
+   `flatRoutes` → generated router → TOML → Shopify — including `data_request`'s
+   mid-word underscore, which is D6 confirmed at the far end rather than only at
+   ours.
+   🔴 **BUT the host is `https://example.com` — see the blocker below.**
 10. ✅ Docs: `app-store-review-checklist.md` §3 corrected (it claimed all three
     "may be acknowledged no-ops" — false for `shop/redact`) and gained a separate
     401 line; `data-model.md` §15 gained the topic → route → URL table and the
@@ -522,6 +532,52 @@ by agreement.** Everything verifiable without touching Shopify's side is done.
 subscriptions exist only in a local file: the routes answer, but Shopify does not
 yet know to call them, so the App Store blocker this feature exists to clear is
 **not yet cleared**.
+
+---
+
+## 🔴 The blocker this step uncovered — `app_url` is a placeholder
+
+Confirmed on the Dev Dashboard 2026-08-02, version 7:
+
+```
+app_url        https://example.com
+Redirect URLs  ["https://example.com/api/auth"]
+
+customers_data_request_url  https://example.com/webhooks/customers/data_request
+customers_redact_url        https://example.com/webhooks/customers/redact
+shop_redact_url             https://example.com/webhooks/shop/redact
+```
+
+🔬 **Why a relative `uri` in the TOML became an absolute `example.com` URL.** A
+subscription `uri` that starts with `/` is resolved against the app's
+`application_url` at deploy time. Ours is still the Shopify template's
+placeholder, so Shopify has recorded three endpoints that **resolve to a domain
+we do not own**.
+
+🔴 **This is worse for compliance webhooks than for anything else in the app**,
+and the reason is worth stating precisely. Every other surface — the embedded
+admin, OAuth, the editor — works in development because `shopify app dev` rewrites
+the app's URLs to the live tunnel for the duration of the session, so the
+placeholder is never exercised. **Compliance webhooks are the one thing Shopify
+delivers when no dev session exists**: `shop/redact` arrives **48 hours after an
+uninstall**. In production, against a placeholder host, every one of those
+deliveries goes to someone else's domain and the erase never runs.
+
+⚠️ **Not caused by this step, and not fixable inside it.** `application_url` has
+been the template default since the app was scaffolded; step 106 is simply the
+first feature whose correctness depends on it. Fixing it means choosing and
+standing up the production host — a deployment decision, not a code change — and
+then a `shopify app deploy` from a TOML carrying the real value. 🚫 Deliberately
+not attempted here: guessing a hostname and deploying it would anchor a wrong URL
+with the same one-way cost as the right one.
+
+📌 **The same placeholder is in `redirect_urls`**, so OAuth has the identical
+latent problem. One fix covers both; they must be changed together.
+
+📌 **Nothing is wrong on the dev store today.** `shopify app dev` overrides the
+URLs while it runs, which is exactly why every live check in this step passed
+against the tunnel. The failure is invisible until production, which is what makes
+it worth writing down rather than remembering.
 
 ---
 
