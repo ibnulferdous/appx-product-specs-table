@@ -1046,6 +1046,62 @@ Building the MVP.
 > mechanism is guarded by the contract test; the announcement is still unheard, as
 > it has been since step 91.
 
+> ✅ **Step 105 landed 2026-08-02 — the compliance domain + shop erase path.**
+> First slice of the **mandatory privacy webhooks**, the App Store submission
+> blocker (Next Up item 7). Gate green: typecheck · lint · format · **1338** tests
+> / **50** files · build. Design + full findings:
+> `context/features/105-privacy-webhook-domain-and-erase.md`. **Nothing imports
+> either module** — no route, no TOML, no deploy; all of that is step 106, which
+> is deliberately split off because it edits a **protected file** and registers
+> subscriptions on Shopify's side that a local revert cannot undo.
+>
+> 🔴 **The finding that sized the feature: `shop/redact` is NOT a no-op, and our
+> own checklist says it is.** The app stores **zero customer PII** — no customer,
+> order or buyer data, and `Shop.email` / `Shop.name` are columns nothing ever
+> writes — so `customers/data_request` and `customers/redact` are honest
+> acknowledgements. But a shop's footprint spans six tables, so `shop/redact` has
+> real work. `app-store-review-checklist.md:48` still claims all three "may be
+> acknowledged no-ops"; ⚠️ **the correction is owed by step 106**, where the
+> handlers it describes will exist.
+>
+> 🔴 **Merchant decision D1 — the erase is GUARDED on `isInstalled`.** Shopify
+> sends `shop/redact` 48 h after uninstall and never cancels it on reinstall, so
+> an unguarded erase deletes every template of a merchant who uninstalled Friday
+> and reinstalled Monday — silently, on schedule. The guard lives **inside the
+> `WHERE` clause**, not in a preceding read: a read-then-delete leaves a window
+> for the reinstall to land between the two statements, reintroducing the exact
+> failure it prevents. Same shape buys idempotency free (`deleteMany` → `count: 0`
+> where `delete` throws `P2025`, and Shopify retries every non-200).
+>
+> ⚠️ **`Session` is outside the cascade and that is the trap.** Five tables come
+> down with the `Shop` row via FKs that are `ON DELETE CASCADE` **in the emitted
+> SQL**; `Session` has no FK at all (keyed by a plain `shop` string), so it needs
+> its own delete — gated on the erase actually happening, or a reinstalled
+> merchant gets logged out by a redaction we just declined.
+>
+> 🔴 **M2 falsified this step's central test claim: A MOCKED PRISMA CANNOT ENFORCE
+> A `WHERE` CLAUSE.** Dropping the guard left the test *named* for the reinstall
+> case passing green — the mock returns what it was told regardless of the query,
+> and only Postgres can apply the condition. What caught it was an exact-`where`
+> assertion in a differently-named test. 🔬 **A behavioural test whose subject is
+> enforced by the database is structural whether or not it looks it.** The test
+> was rewritten to assert both halves and say which is which.
+>
+> 🔴 **M5 exists because a careless global `sed` broke the code and NOTHING
+> FAILED.** Restoring M2 also rewrote the classifying `findUnique`'s `where`,
+> adding the guard to a read that must stay unfiltered — which **inverts the log
+> line**, reporting a still-installed shop as `not-found`. Suite green throughout,
+> because that `where` was asserted nowhere. 🔬 Two lessons: a blind global
+> substitution is a mutation you did not intend to run, and **the accident found a
+> gap all four planned mutations missed**. Closed by a new test; M5 is its mutation.
+>
+> ⚠️ **The step's planned baseline (1270 / 47) was WRONG — the real one is
+> 1309 / 49**, settled by stashing the tracked edits and re-running. The bad figure
+> came from a session-start `test:run`; no explanation was found and none was
+> invented. 🔬 **A baseline is only a baseline if it was measured on the tree the
+> diff is measured against** — kept, it would have claimed +68 tests for 29 tests
+> of work, and read as thoroughness rather than as a measurement error.
+
 ## Current Goal
 
 **Reshell Phase B2 — the built-in preset gallery (Style tab feature 57, steps 13–14).**
@@ -2747,7 +2803,19 @@ Multi-value applies to PRODUCT + COLLECTION only. No migrations needed for the 4
    footer/card bottom instead of the hardcoded 3rem. Touches the measurer both scrollers share,
    so it is its own unit.
 6. **Templates-list Phase 2** — search / sort / pagination (server-side, with pagination) when the list can grow large; multi-select bulk actions later.
-7. **Pre-submission** — mandatory privacy webhooks (`customers/data_request`, `customers/redact`, `shop/redact`) + Billing (`prd.md`, `context/app-store-review-checklist.md`).
+7. **Pre-submission — mandatory privacy webhooks: 🔨 IN PROGRESS, step 105 of 2 done.**
+   The domain (`app/utils/complianceWebhook.ts`) and the erase path
+   (`eraseShopData`) landed 2026-08-02 with nothing importing them. **Step 106 is
+   next and is the half that can fail review:** three route files, three
+   `[[webhooks.subscriptions]]` blocks with `compliance_topics` (⚠️ **not**
+   `topics` — a compliance topic under `topics` fails CLI validation), a
+   `shopify app deploy` to register them, and live verification. ⚠️ **`shopify.app.toml`
+   is a protected file** (`ai-workflow-rules.md:29`) — the merchant approved the
+   edit 2026-08-02 and asked to be shown it before it is made. 🔴 The live check
+   that matters is a bad-HMAC `curl` returning **401**: `authenticate.webhook`
+   throws that for free, so the only way to lose it is to wrap the call in
+   `try/catch`. Then **Billing** (`prd.md`, `context/app-store-review-checklist.md`),
+   which is the other hard blocker for a paid listing.
 
 **Deferred:** editor bulk-delete range-select (Shift+click) + Delete/Backspace shortcut; per-product overflow materialization + a bulk apply-to-all styling route.
 

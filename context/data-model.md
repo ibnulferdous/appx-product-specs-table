@@ -22,6 +22,7 @@ This document defines the current MVP data model and storefront architecture for
 12. Why Row Keys Matter
 13. Read Patterns
 14. Byte Budgets
+15. Data Retention & Erasure
 
 ---
 
@@ -1252,6 +1253,82 @@ surfaced as *"Saved routing, but couldn't publish it to your storefront."* while
 `ShopStorefrontRouting` is already correct and `syncedToShopifyAt` is left unstamped.
 **The storefront then serves the previous map indefinitely.** The write fails loudly
 at that moment; the read stays silently stale afterwards.
+
+---
+
+## 15. Data Retention & Erasure
+
+Added 2026-08-02 with step 105 (`context/features/105-privacy-webhook-domain-and-erase.md`),
+the domain half of the mandatory privacy webhooks.
+
+### What this app holds for one shop
+
+🔴 **No customer personal data, anywhere in the schema.** No customer, order or
+buyer record is stored, and no field derived from one. `Shop.email` and
+`Shop.name` exist as columns that **nothing ever writes** (`upsertShop` creates
+with `myshopifyDomain` alone). `Session` carries `firstName` / `lastName` /
+`email`, but the app requests offline tokens only, so they stay null — and they
+would be merchant-staff data, not customer data, if they were populated.
+
+**This is what makes `customers/data_request` and `customers/redact` honest
+no-ops** — there is nothing to disclose and nothing to delete — and it is why
+`shop/redact` is the only compliance topic that does real work.
+
+A shop's full footprint:
+
+| Table                    | Reached by                          |
+| ------------------------ | ----------------------------------- |
+| `Shop`                   | the row itself                      |
+| `Template`               | FK cascade from `Shop`              |
+| `TableStyling`           | FK cascade from `Template`          |
+| `ProductAssignment`      | FK cascade from `Shop`              |
+| `ProductAssignmentIndex` | FK cascade from `Shop`              |
+| `ShopStorefrontRouting`  | FK cascade from `Shop`              |
+| `Session`                | ⚠️ **nothing — see below**          |
+
+Every cascade above is `ON DELETE CASCADE` **in the emitted migration SQL**, not
+only in `schema.prisma`, so one `Shop` delete takes the whole tree in Postgres.
+
+⚠️ **`Session` is outside the graph and it is the trap.** It has no foreign key
+at all — it is keyed by a plain `shop` **string** — so no cascade reaches it. It
+must be deleted explicitly or an access token outlives the shop record it
+belonged to.
+
+### The two-stage lifecycle
+
+**Uninstall (`app/uninstalled`) RETAINS.** `markShopUninstalled` flips
+`isInstalled` / `uninstalledAt` and deletes sessions; templates, styling and
+assignments stay. That retention is a feature — it is what lets a merchant
+reinstall and find their work intact, and `upsertShop`'s reinstall branch depends
+on the row still existing.
+
+**`shop/redact` ERASES**, 48 hours later, via `eraseShopData`.
+
+🔴 **The erase is guarded on `isInstalled: false`, inside the `WHERE` clause.**
+Shopify sends `shop/redact` 48 hours after uninstall and never cancels it on
+reinstall, so an unguarded erase would delete every template of a merchant who
+uninstalled on Friday and reinstalled on Monday — silently, on schedule. An
+installed shop is an active relationship with its own basis for retention, and
+since the app holds zero customer personal data the guard concedes no compliance
+ground (merchant decision D1, 2026-08-02).
+
+The guard lives in the `WHERE` rather than in a preceding read because a
+read-then-delete leaves a window for the reinstall to land between the two
+statements — reintroducing the exact failure it exists to prevent. The same shape
+makes the operation idempotent: `deleteMany` returns `{ count: 0 }` where
+`delete` would throw `P2025`, and Shopify retries every non-200.
+
+⚠️ **A mocked Prisma cannot verify this guard** — it returns whatever it is told
+regardless of the query. The unit tests pin that the condition is *written*; only
+Postgres applies it. Live verification is step 106's.
+
+### Shopify-side data is out of reach, by design
+
+The metaobject entries, the shop routing metafield and the per-product metafields
+all live in the merchant's store. By the time `shop/redact` fires there is no
+access token, so the Admin API cannot be called — and it does not need to be:
+Shopify removes app-owned metaobjects and reserved-namespace metafields when the
+app is uninstalled. 🚫 Do not write code that tries.
 
 ---
 
