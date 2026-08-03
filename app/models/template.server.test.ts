@@ -470,6 +470,10 @@ describe("saveTemplateForShop", () => {
 
     expect(prismaMock.template.findFirst).toHaveBeenCalledWith({
       where: { id: "tmpl_owned_by_A", shopId: "shop_B" },
+      // Narrowed to the two columns the save actually uses: `rows` (for key
+      // reconciliation) and `styling` (for the change-check that skips the
+      // nested upsert). Ownership still holds — an unowned id matches nothing.
+      select: { rows: true, styling: true },
     });
     expect(prismaMock.template.update).not.toHaveBeenCalled();
     expect(result).toEqual({ ok: false, error: "Template not found" });
@@ -494,6 +498,7 @@ describe("saveTemplateForShop", () => {
       id: "t1",
       shopId: "shop_A",
       rows: [], // nothing persisted yet -> r1 is provisional
+      styling: null,
     });
     prismaMock.template.update.mockResolvedValue({ id: "t1" });
 
@@ -517,6 +522,7 @@ describe("saveTemplateForShop", () => {
       shopId: "shop_A",
       // r1 was already finalized to `battery_life` on a prior save.
       rows: [{ ...aRow, key: "battery_life" }],
+      styling: null,
     });
     prismaMock.template.update.mockResolvedValue({ id: "t1" });
 
@@ -534,6 +540,7 @@ describe("saveTemplateForShop", () => {
       id: "t1",
       shopId: "shop_A",
       rows: [],
+      styling: null,
     });
     prismaMock.template.update.mockResolvedValue({ id: "t1" });
 
@@ -553,6 +560,7 @@ describe("saveTemplateForShop", () => {
       id: "t1",
       shopId: "shop_A",
       rows: [],
+      styling: null,
     });
     prismaMock.template.update.mockResolvedValue({ id: "t1" });
 
@@ -567,6 +575,7 @@ describe("saveTemplateForShop", () => {
       id: "t1",
       shopId: "shop_A",
       rows: [],
+      styling: null,
     });
     prismaMock.template.update.mockResolvedValue({ id: "t1" });
 
@@ -599,6 +608,7 @@ describe("saveTemplateForShop", () => {
       id: "t1",
       shopId: "shop_A",
       rows: [],
+      styling: null,
     });
     prismaMock.template.update.mockResolvedValue({ id: "t1" });
 
@@ -613,6 +623,77 @@ describe("saveTemplateForShop", () => {
     expect(updateArg.data.styling).toEqual({
       upsert: { create: expectedColumns, update: expectedColumns },
     });
+  });
+
+  // --- the styling change-check: skip the upsert when nothing changed ------
+  //
+  // The editor resends the current styling on EVERY save (an all-default table
+  // sends `{}`), so most saves carry styling identical to the stored row. When it
+  // matches, the write must collapse to a plain single-statement update — no
+  // nested upsert, and no `include` (which would force an interactive
+  // transaction). The already-read styling rides back out so the caller's sync
+  // still gets the relation. A real edit must still upsert.
+
+  it("skips the styling upsert when the payload's styling equals the stored row — the fast path, no include/transaction", async () => {
+    const storedStyling = {
+      ...ALL_DEFAULT_COLUMNS,
+      rowDividerStyle: "STRIPES",
+      basedOnPreset: "minimal",
+      // Never compared (not emitted by the mapping) — present to prove the match
+      // ignores them, not that they must line up.
+      id: "s1",
+      templateId: "t1",
+      extraStyles: { future: true },
+    };
+    prismaMock.template.findFirst.mockResolvedValue({
+      rows: [],
+      styling: storedStyling,
+    });
+    prismaMock.template.update.mockResolvedValue({ id: "t1", rows: [] });
+
+    const result = await saveTemplateForShop("shop_A", "t1", {
+      rows: [],
+      // The overrides-only wire shape that decodes to exactly the stored row.
+      styling: { rowDividerStyle: "STRIPES" },
+      basedOnPreset: "minimal",
+    });
+
+    expect(result.ok).toBe(true);
+    const updateArg = prismaMock.template.update.mock.calls[0][0];
+    // Plain update: no styling write, and NOT an include — the two things that
+    // would turn this back into a multi-statement transaction.
+    expect(updateArg.data).not.toHaveProperty("styling");
+    expect(updateArg).not.toHaveProperty("include");
+    // The unchanged styling row is reattached to the returned shape.
+    expect(result.ok && result.data.styling).toEqual(storedStyling);
+  });
+
+  it("still upserts (with include) when the payload's styling differs from the stored row", async () => {
+    prismaMock.template.findFirst.mockResolvedValue({
+      rows: [],
+      // A stored non-default divider …
+      styling: {
+        ...ALL_DEFAULT_COLUMNS,
+        rowDividerStyle: "STRIPES",
+        basedOnPreset: null,
+        id: "s1",
+        templateId: "t1",
+        extraStyles: {},
+      },
+    });
+    prismaMock.template.update.mockResolvedValue({ id: "t1" });
+
+    // … that the payload resets back to default. Clearing STRIPES is a change,
+    // so the change-check must NOT swallow it.
+    await saveTemplateForShop("shop_A", "t1", { rows: [], styling: {} });
+
+    const updateArg = prismaMock.template.update.mock.calls[0][0];
+    const expectedColumns = { ...ALL_DEFAULT_COLUMNS, basedOnPreset: null };
+    expect(updateArg.data.styling).toEqual({
+      upsert: { create: expectedColumns, update: expectedColumns },
+    });
+    // The changed path includes the written row for the storefront sync.
+    expect(updateArg.include).toEqual({ styling: true });
   });
 
   // --- the style-preset stamp (feature 88 step 89) -------------------------
@@ -633,6 +714,7 @@ describe("saveTemplateForShop", () => {
       id: "t1",
       shopId: "shop_A",
       rows: [],
+      styling: null,
     });
     prismaMock.template.update.mockResolvedValue({ id: "t1" });
     await saveTemplateForShop("shop_A", "t1", {
@@ -685,6 +767,7 @@ describe("saveTemplateForShop", () => {
       id: "t1",
       shopId: "shop_A",
       rows: [],
+      styling: null,
     });
     prismaMock.template.update.mockResolvedValue({ id: "t1" });
 
@@ -704,6 +787,7 @@ describe("saveTemplateForShop", () => {
       id: "t1",
       shopId: "shop_A",
       rows: [],
+      styling: null,
     });
     prismaMock.template.update.mockResolvedValue({ id: "t1" });
 
@@ -734,6 +818,7 @@ describe("saveTemplateForShop", () => {
       id: "t1",
       shopId: "shop_A",
       rows: [],
+      styling: null,
     });
 
     const result = await saveTemplateForShop("shop_A", "t1", {
@@ -750,6 +835,7 @@ describe("saveTemplateForShop", () => {
       id: "t1",
       shopId: "shop_A",
       rows: [],
+      styling: null,
     });
     prismaMock.template.update.mockRejectedValue(new Error("db down"));
 

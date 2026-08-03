@@ -1,4 +1,4 @@
-import { Prisma, TemplateStatus } from "@prisma/client";
+import { Prisma, TemplateStatus, type TableStyling } from "@prisma/client";
 import prisma from "../db.server";
 import { MAX_TEMPLATE_ROWS, newRowId, type EditorRow } from "../utils/rows";
 import {
@@ -156,6 +156,24 @@ export function stylingToDbColumns(values: StylingValues): TableStylingColumns {
     labelCase: values.labelCase,
     labelWidthPct: values.labelWidthPct,
   } satisfies Record<keyof StylingValues, string | number | boolean | null>;
+}
+
+// Does a freshly-computed styling column set (stylingToDbColumns output plus the
+// basedOnPreset stamp) already match the persisted TableStyling row, over ONLY
+// the columns this app writes? Lets `saveTemplateForShop` skip the nested styling
+// upsert — and the interactive transaction it forces — when the incoming styling
+// is byte-for-byte what's stored (the common case: the editor resends the current
+// styling on every save, changed or not). Every written column is a primitive, so
+// `===` per key is a complete equality; `extraStyles` / `id` / `templateId` are
+// never written by the mapping, so they are never compared.
+function stylingColumnsMatch(
+  columns: TableStylingColumns & { basedOnPreset: string | null },
+  row: TableStyling,
+): boolean {
+  const persisted = row as unknown as Record<string, unknown>;
+  return Object.entries(columns).every(
+    ([key, value]) => value === persisted[key],
+  );
 }
 
 // Coerce an untrusted status into a known TemplateStatus for the TOLERANT paths
@@ -361,9 +379,17 @@ export async function saveTemplateForShop(
     return { ok: false as const, error: rowsResult.error };
   }
 
-  // Read the owned row first — both the ownership gate and the source of the
-  // persisted keys the finalization reconciles against.
-  const existing = await prisma.template.findFirst({ where: { id, shopId } });
+  // Read the owned row first — the ownership gate, the source of the persisted
+  // keys the finalization reconciles against (`rows`), AND the currently-stored
+  // styling (`styling`). Fetching styling HERE is what lets the common save skip
+  // the nested upsert below: the editor resends the current styling on every
+  // save, so most saves carry styling that is unchanged from the stored row.
+  // `select` keeps this to the two columns actually used; ownership still holds
+  // because an unowned/unknown id matches nothing → null.
+  const existing = await prisma.template.findFirst({
+    where: { id, shopId },
+    select: { rows: true, styling: true },
+  });
   if (!existing) {
     return { ok: false as const, error: "Template not found" };
   }
@@ -387,17 +413,30 @@ export async function saveTemplateForShop(
   if (status !== undefined) {
     data.status = resolveStatus(status);
   }
-  if (styling !== undefined) {
-    // The stamp is spread in BESIDE the mapping's output, never through it —
-    // `stylingToDbColumns` owes a round-trip law that `basedOnPreset` is not
-    // part of (see its doc comment). Same object on both upsert arms, so a
-    // first styling save and a later one write identical shapes.
-    const columns = {
-      ...stylingToDbColumns(parseStylingValues(styling)),
-      basedOnPreset: normalizeStylePresetStamp(basedOnPreset),
-    };
-    data.styling = { upsert: { create: columns, update: columns } };
-  }
+
+  // The styling columns the payload WOULD write — or `undefined` when it carries
+  // no styling. The stamp is spread in BESIDE the mapping's output, never through
+  // it (`stylingToDbColumns` owes a round-trip law that `basedOnPreset` is not
+  // part of; see its doc comment). Same object feeds both upsert arms below.
+  const stylingColumns =
+    styling !== undefined
+      ? {
+          ...stylingToDbColumns(parseStylingValues(styling)),
+          basedOnPreset: normalizeStylePresetStamp(basedOnPreset),
+        }
+      : undefined;
+
+  // The styling to actually upsert this save — or `undefined` when there is
+  // nothing to write: either the payload omitted styling, or the incoming columns
+  // are byte-for-byte the stored row. In that no-op case we skip the nested upsert
+  // AND the interactive transaction it forces. A missing stored row (a template's
+  // first styling save) always counts as a change, so the row still gets created.
+  const stylingUpsertColumns =
+    stylingColumns !== undefined &&
+    (existing.styling == null ||
+      !stylingColumnsMatch(stylingColumns, existing.styling))
+      ? stylingColumns
+      : undefined;
 
   try {
     // Defense in depth (priority #1): the write is shop-scoped itself, not only
@@ -405,16 +444,43 @@ export async function saveTemplateForShop(
     // extended where-unique filter (Prisma 5+, GA), so even a future regression
     // that weakened the read can never cross-write into another shop's template.
     // Mirrors setTemplateMetaobjectRef's shop-scoped write. A shopId mismatch
-    // makes the record "not found" → P2025, caught below.
+    // makes the record "not found" → P2025, caught below. Both write paths carry
+    // it.
+    if (stylingUpsertColumns) {
+      // Styling changed → nest the full-column upsert INSIDE the shop-scoped
+      // update (the isolation answer for a model with no shopId column) and
+      // `include` the written row so the caller's storefront sync (feature 57
+      // Step 7) writes the merchant's real look.
+      const template = await prisma.template.update({
+        where: { id, shopId },
+        data: {
+          ...data,
+          styling: {
+            upsert: {
+              create: stylingUpsertColumns,
+              update: stylingUpsertColumns,
+            },
+          },
+        },
+        include: { styling: true },
+      });
+      return { ok: true as const, data: template };
+    }
+
+    // Fast path: nothing to write for styling. A plain update with no nested
+    // write and no `include` is a single `UPDATE … RETURNING` — one round-trip,
+    // no interactive transaction (the include path is several). Reattach the
+    // styling we already read so the returned shape still carries the relation
+    // the sync consumes; it is UNCHANGED this save, so it is exactly what an
+    // `include` would have returned.
     const template = await prisma.template.update({
       where: { id, shopId },
       data,
-      // Return the styling the sync must write to the storefront (feature 57
-      // Step 7) — post-write, so it reflects the nested upsert above when this
-      // save carried styling, and the UNCHANGED persisted row when it did not.
-      include: { styling: true },
     });
-    return { ok: true as const, data: template };
+    return {
+      ok: true as const,
+      data: { ...template, styling: existing.styling ?? null },
+    };
   } catch {
     return { ok: false as const, error: "Could not save template" };
   }

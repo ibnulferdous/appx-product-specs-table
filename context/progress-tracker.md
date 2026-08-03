@@ -194,6 +194,29 @@ saved presets, cuttable).
 
 > One line per unit. Detail → the linked `context/features/` doc + git history.
 
+### Editor Save — `saveTemplateForShop` round-trip cut (2026-08-03)
+
+- **The editor Save write dropped from ~5 DB round-trips to 2 on the common path** —
+  ✅ 2026-08-03, tests → 1365, gate green (typecheck · build). Root cause (measured, not
+  guessed): the write is just `findFirst` + one `update`; server-side both are ~1ms
+  (EXPLAIN ANALYZE of the read = 1.1ms PK scan; `rows` JSON avg 5.5KB / max 23KB). The
+  multi-second Save is **round-trips × the dev link's ~0.5–1.6s/RT cost**, NOT DB work —
+  and it's near-zero in prod (co-located host). The editor resends styling on **every**
+  save (`useRowEngine.ts` sends `serializeStylingOverrides`), so the nested `styling.upsert`
+  + `include` — which forces an interactive transaction — ran on every save even when
+  styling was unchanged. Fix, all in `app/models/template.server.ts`: (1) the ownership
+  `findFirst` now `select`s **`{ rows, styling }`** (styling fetched in the read we already
+  do); (2) new `stylingColumnsMatch` compares the payload's would-be columns to the stored
+  row; (3) when styling is a no-op (absent, or byte-for-byte equal), the write is a plain
+  single-statement `update` with **no nested write and no `include`**, and the already-read
+  styling is reattached to the returned shape the metaobject sync consumes; (4) the nested
+  upsert + `include` runs **only** when styling actually changed (first save / real edit).
+  Shop isolation unchanged — `{ id, shopId }` where-unique on both read and write, both
+  paths. No schema change, no migration, no `route.tsx` change (return shape preserved).
+  Tests: `findFirst`-args updated for the `select`, `styling: null` added to the save-block
+  mocks, +2 tests pinning the fast path (no styling/include) and the changed path (upsert +
+  include). Measurement trail recorded in agent memory (`save-action-latency-breakdown`).
+
 ### Templates-list loader — read-path perf (2026-08-03)
 
 - **The list loader stopped shipping the `rows` blob, took Shopify + the shop.id
