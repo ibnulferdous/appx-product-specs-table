@@ -2,1350 +2,68 @@
 
 Update this file after every meaningful implementation change.
 
-> **Forward-looking status doc, kept compact.** Per-step detail (verification logs,
-> file lists, decisions) lives in `context/features/NN-*.md` and git history — link
-> there, don't re-narrate. Each completed item is one line + its feature-doc pointer.
+> **Forward-looking status doc, kept compact.** Per-step detail (verification logs, file
+> lists, decisions, findings) lives in `context/features/NN-*.md` and in git history — link
+> there, don't re-narrate. Each completed item is **one line + its feature-doc pointer**.
+>
+> ⚠️ **Compacted 2026-08-03.** Before that date this file carried the full per-step
+> narrative for features 74–106 inline (3,083 lines). Nothing was deleted: every unit's
+> detail is in its `context/features/` doc, and the pre-compaction text is readable in full
+> at `git show 75176bd:context/progress-tracker.md`. Durable laws that had no other home
+> were promoted into **Binding rules** and **Key Decisions** below.
+>
+> **The rule that keeps this file small:** a completed unit gets ONE line here. If a finding
+> is load-bearing for future work, it belongs in Binding rules, Key Decisions, Open
+> Questions, or the feature doc — not in a Completed entry.
 
 ---
 
 ## Current Phase
 
-Building the MVP.
+**Building the MVP — feature work is at the App Store pre-submission gate.**
 
-> ✅ **COMPLETE 2026-07-27 — feature 88 (style preset gallery).** The design is
-> `context/features/88-style-preset-gallery.md`; the build ran as four step
-> files, each with its own instructions and completion gate.
->
-> | Step | File                                    | Scope                                     | Status                                                    |
-> | ---- | --------------------------------------- | ----------------------------------------- | --------------------------------------------------------- |
-> | 13a  | —                                       | pure domain (`app/utils/stylePresets.ts`) | ✅ `3714361`, 1021 → 1044 tests                           |
-> | 89   | `89-style-preset-engine-persistence.md` | `basedOnPreset` state + write path        | ✅ **2026-07-27**, 1044 → **1055**                        |
-> | 90   | `90-style-preset-card-preview.md`       | canned sample + preview card              | ✅ **2026-07-27**, 1055 → **1072**                        |
-> | 91   | `91-style-preset-gallery-route.md`      | `/app/templates/choose-style`, six cards  | ✅ **2026-07-27**, 1072 → **1085**, live 10/10            |
-> | 92   | `92-style-preset-create-flow.md`        | repoint Create buttons, `?style=` seeding | ✅ **2026-07-27**, 1085 → **1097**, live 8/9 + storefront |
->
-> **What shipped:** Create template → an unskippable gallery of six cards → a
-> scaffold already styled like the card and stamped with which card it was,
-> through to `styling_css` on the rendered storefront. Six saved rows in the dev
-> store carry five distinct `basedOnPreset` values and one NULL, **with no colour
-> column written by any card** — the zero-config theme-inherit promise survived a
-> preset pick on real data.
->
-> ⚠️ **Dev-store baseline moved: 6 → 13 templates.** Seven "Untitled template"
-> DRAFT rows from step 92's live pass were left in place deliberately (the
-> evidence is re-readable); the one that was set ACTIVE was reverted to DRAFT, so
-> the storefront is unchanged.
->
-> 🔴 **A test file directly in `app/routes/` is a ROUTE** and breaks
-> `npm run build` while leaving the whole suite green (step 92 finding 1).
-> `app/routes.ts` now passes `ignoredRouteFiles: ["**/*.test.{ts,tsx}"]`.
->
-> 🔴 **Merchant decisions 2026-07-27 — presets are CREATE-TIME ONLY.** A planned
-> in-rail preset picker (+ the "Customized" hint) was **cut**: a merchant picks a
-> pattern only while creating a template, and the Style rail keeps its eight
-> feature-86 groups and gains nothing. No capability is lost — a pattern is 5 of
-> the 34 rail knobs. Three more decisions the same day: the gallery lives at
-> **`/app/templates/choose-style`** and is **unskippable** (both Create buttons go
-> straight there, the Skip link is deleted); a **sixth "Blank" card** replaces it,
-> modelled as the ABSENCE of a preset (`basedOnPreset` stays NULL, no
-> `STYLE_PRESETS` entry, no preview — its output is pixel-identical to Banded's);
-> and card order stays Banded · Simple · Minimal · Multi-column · Accordion ·
-> Blank. Step 90 removes the two engine exports these cuts orphaned.
->
-> **Step 89 landed 2026-07-27.** A preset id now travels merchant → engine →
-> dirty snapshot → Save payload → action → Postgres → loader → engine, normalized
-> at both ends by `normalizeStylePresetStamp` (an unknown id or a non-string
-> stores NULL). `resetStyling` clears the stamp, `setStylingField` deliberately
-> does not. **No control writes it yet**, so a merchant sees no change — live
-> verification is owed by the gallery steps and listed in the step-89 file. No
-> migration (the column has existed since feature 57 Step 4), so the
-> stale-Prisma-client trap does not apply.
->
-> **Step 90 landed 2026-07-27.** Two things, and no page to put them on:
-> `sampleRows.ts` (the one canned table every card previews — 2 section headers +
-> 7 data rows, static ids) and `StylePresetCard.tsx` (`StylePresetCard` +
-> `BlankStyleCard`). The preview renders through `renderSpecTablePreviewDocument`
-> — the SAME pipeline as the editor's device previews, so a card can never drift
-> from the storefront the way a static thumbnail would — into a `sandbox=""`
-> iframe, hidden from AT, inside a real `<Link>`. It also removed the two engine
-> exports the create-time-only decision orphaned (`applyStylePreset`,
-> `isCustomizedFromStylePreset`); `isCustomizedFromPreset` +
-> `PRESET_SCOPED_FIELDS` stay in the domain module with corrected comments — the
-> latter is now justified as the executable form of the structure-only rule, which
-> never depended on the cut hint. **Nothing imports the card yet**, so it is
-> absent from the build until step 91 mounts it.
->
-> 🔴 **Card revision 2026-07-27, after looking at the rendered gallery.** Three
-> of the four changes were spotted by eye, not by a test. **Banded → "Modern"**
-> (label only — the `id` stays `banded`, since the id names the pattern and is a
-> wire format while the label is branding). **Simple → "Classic", and it became
-> the full grid** — outer border, column rule, stripes, from the merchant's
-> ACEFAST YF4 reference; its `id` DID change (`simple` → `classic`) because
-> `simple` had become misleading on the most decorated card, and no
-> `basedOnPreset` has ever been written outside tests, so this was the last free
-> moment for that rename. **Multi-column gained BANDED section headers** by
-> dropping `sectionHeaderStyle` from its bundle — a GRID header spans every track,
-> so a plain one floats over the flow with nothing tying it to the items beneath.
-> Minimal / Accordion / Blank untouched.
->
-> ⚠️ **`PRESET_SCOPED_FIELDS` gained `columnDividerStyle` + the two frame
-> fields.** Not a widening of the structure-only rule — the frame has been
-> **pattern axis 4** in `stylePresets.ts`'s taxonomy since the module was written
-> and no bundle had ever used it. Typography, density, widths and
-> `gridMinColumnWidthPx` stay off-limits and are still named field-by-field in a
-> test that now says why the others left.
->
-> 🔴 **Layout decision 2026-07-27: TWO CARDS PER ROW, in an
-> `inlineSize="base"` `<s-page>`.** ⚠️ The width recorded here at the time
-> (1086px, counted off a screenshot) was **wrong — it is 966px**; see the step-91
-> correction above for the real arithmetic. The decision itself stands, and
-> **step 91's grid is `repeat(2, minmax(0, 1fr))`, not `auto-fit`.**
->
-> **Step 91 landed 2026-07-27 — the gallery is LIVE at
-> `/app/templates/choose-style`,** and it is the first merchant-visible piece of
-> feature 88. One route file + one stylesheet + 9 source-text guards; nothing in
-> step 90's files moved. `<s-page inlineSize="base">`, a breadcrumb back to
-> `/app/templates` ("no skip" must not mean trapped), one help line saying the
-> choice is not permanent, and a `repeat(2, minmax(0, 1fr))` grid of the six
-> cards **mapped from `STYLE_PRESETS`** — never hand-listed, because the card
-> order is merchant-facing and lives in the array. **No loader, no action**: the
-> page renders frozen constants, so it has no shop-scoped query to get isolation
-> wrong in and no DB footprint at all. ⚠️ Reachable **by typed URL only** until
-> step 92 repoints the two Create buttons — deliberate, so the half of the
-> feature that can persist a wrong stamp lands on its own.
->
-> ✅ **The five-iframe cost is measured and it is not a problem** — the number
-> feature 88 has owed since step 90. **All five frames loaded 130.4 ms** after
-> navigation, spread **24.7 ms** first-to-last (they render together, not in a
-> cascade), 180 KB of `srcDoc` total, and building all five documents in JS costs
-> **0.09 ms**. That is ~7× under the 1 s threshold set in advance, so 🚫 **the
-> shared-stylesheet fallback is not needed and must not be built** — the pipeline
-> stays and so does its zero-drift guarantee. Measured on a standalone local page
-> at the real geometry, not inside the embedded admin (a cross-origin app iframe
-> cannot be instrumented from the admin's top frame).
->
-> 🔴 **A 4% stripe fill is not resolvable in a downscaled screenshot, and looking
-> at it gave the wrong answer.** Classic was read off the gallery capture as "the
-> label column is shaded" — which would have been a real defect. Rendering its
-> document at 1:1 and reading `getComputedStyle` shows `rgba(0,0,0,0.04)` on both
-> the label AND the value of alternating rows, plus the column rule. **Verify
-> low-contrast styling claims by computed style at 1:1; use the gallery
-> screenshot for structure (bands, rules, column count, disclosures), not tint.**
-> Relevant to feature 93, which is entirely about colour.
->
-> 🔴 **`inlineSize="base"` is 966px, NOT the 1086px step 90 recorded — so
-> two-per-row had never actually fit.** Step 90's figure was counted off a
-> screenshot; step 91 asked the page itself (a temporary ladder of
-> `@container (width >= Npx)` rules, each printing its own threshold) and got 966,
-> **capped** — identical at a 1600px and a 2400px window. Two 506px cards + a
-> 16px gap need 1028: the grid still made two tracks, every card overran its
-> track by ~26px, and every preview was cropped on the right, invisibly, because
-> the crop landed in the table's empty margin. Fixed by scaling to the real
-> width — **`--appx-preset-scale` 0.6 → 0.55**, card 466, row 948 in 966; label
-> text ~9.6px → ~8.8px, still readable. ⚠️ **Measure a container by querying it,
-> not by counting pixels in a screenshot** — that number was wrong by 120px and
-> survived two sessions and a merchant review because everything downstream was
-> derived consistently from it.
->
-> 🔴 **`max-width: 100%` does not stop a content-box card overflowing its grid
-> track.** The narrow-admin check produced a sideways scroll; `/app/additional` at
-> the same window size did not, which is what proved it was ours. The card boxes
-> are content-box, so `max-width: 100%` caps the CONTENT at the track and lets the
-> border box overrun by the padding and border — 26px per card. Each box now
-> subtracts its own chrome. And below 948px the grid drops to **one column** via a
-> `@container` query — two cards that no longer fit do not shrink, they CROP, and
-> one full card beats two slices. 🚫 Still not `auto-fit`, which would also seat a
-> third card on a wide admin.
->
-> ✅ **Live verification complete — 10 of 10.** Direct document load (the
-> loaderless child is covered by the parent auth chain); five previews each
-> looking like the pattern they name; Blank showing no table; two per row with
-> grid overflow 0; narrow admin → one column, `docOverflowX: 0`; breadcrumb back
-> to the list; **Tab gives six stops, not eleven** (frames are untabbable), focus
-> is a visible ring, Enter navigates; a click in the MIDDLE of a preview activates
-> the card (`pointer-events: none` earning its comment); every card lands on the
-> blank scaffold with `?style=` inert; and **Postgres unchanged throughout — 6
-> templates before and after**. The accessible name was verified on the real
-> component's server-rendered output (the admin's cross-origin iframe cannot be
-> read from outside): name = the label alone, description associated, preview
-> `aria-hidden`. ⚠️ An actual screen reader was not run — no AT in this
-> environment; the mechanism is verified, the announcement is not observed.
->
-> 🔍 **The scale geometry is measured, not guessed.** The preview is the real
-> table at **800px** scaled to **0.55** — 800 because below the storefront
-> stylesheet's **749px mobile breakpoint** every card renders in its identical
-> phone form and the gallery stops distinguishing anything. The viewport height
-> was cut 470 → **420px** after a static harness showed a band of dead white under
-> every card. The scale rose 0.4 → 0.6 with the two-per-row decision and was
-> corrected to **0.55** in step 91 once the base width was measured properly —
-> preview label text ~6.4px → **~8.8px**, readable rather than merely textured.
-> All six cards were rendered and inspected: five visibly distinct, Multi-column
-> flows into 3 columns, Blank reads as a different kind of choice.
->
-> ⚠️ **The accent/colour-theme feature renumbered 89 → 93** when the step files
-> took 89–92. Doc 88 and `stylePresets.ts` were updated; the design is unchanged.
->
-> 🔴 **Card follow-up 2026-07-28 — the cards now STATE their action, and they are
-> still one link each.** The merchant compared the gallery to Kaching's, which
-> puts a **Choose** button on every card, and asked whether ours should too. The
-> observation was right (nothing on the card said it was clickable — the only
-> signal was a hover border, invisible until the pointer arrives and **absent on
-> a touch admin**); the proposed fix was not. 🚫 **A button was rejected**: their
-> preview is interactive (radios, dropdowns) so they have no choice, ours is a
-> `pointer-events: none` iframe so the whole card can be the target. A button
-> means dropping the whole-card link — interactive content inside an anchor is
-> invalid HTML — shrinking the target ~36× and leaving the preview a merchant
-> aims at **inert**. Shipped instead: an admin-blue action line inside the same
-> anchor (`Use this style →`, `Start blank` on Blank — ⚠️ per-card, since "use
-> this style" is false on the absence of a style), `aria-hidden` because the link
-> role already announces the action, arrow nudge guarded by
-> `prefers-reduced-motion`. Full reasoning + the trade table: doc `88-…`
-> §"A card is ONE LINK". Tests 1097 → **1101**; ✅ **mutation-tested** — swapping
-> the line for a `<button>` fails two guards. Gate green (typecheck · lint ·
-> format · 1101 tests · build).
->
-> ✅ **Live-verified in the embedded admin 2026-07-28** — all six cards carry the
-> line, the blue reads as interactive against the white card, and the rhythm
-> (title → muted description → gap → action) does **not** crowd the description
-> at 0.55 scale. Blank reads **"Start blank →"**, visibly different from its five
-> neighbours, so the per-card copy decision is confirmed by eye and not only by
-> the test. The hover nudge fires (arrow gap visibly wider than an un-hovered
-> card). 🔴 **The click test is the one that mattered**: clicking the ACTION LINE
-> on Accordion navigated to `/app/templates/new?style=accordion` — correct card,
-> correct param — proving the line is inside the anchor rather than dead text
-> beside it. Nothing saved; no DB write (create-on-save).
-> ⚠️ **NOT re-checked: the narrow-admin one-column state.** `resize_window`
-> reports success on this window and the viewport never changes, so the pass
-> could not be run — it is **owed**, not passed. Low risk by construction (the
-> line adds no width and the grid's 948px `@container` breakpoint is untouched),
-> but the step-91 overflow bug was also invisible until the window was squeezed.
-> ⚠️ The accessible name still cannot be read live — the app's cross-origin
-> iframe is absent from the top frame's a11y tree, as in step 91. Unchanged by
-> this work regardless: the new span is `aria-hidden` and outside the
-> `aria-labelledby` target.
+Test suite **1353 tests / 51 files**; full gate (typecheck · lint · format · test · build)
+green as of 2026-08-02 (step 106). Last unit shipped: step 106, privacy webhook routes +
+subscriptions, deployed and confirmed registered.
 
-> ✅ **COMPLETE 2026-07-30 — feature 93 (accent themes), the gallery's
-> colour-theme swatch row.** Six steps, all shipped and live-verified end to end.
-> 🔴 **One open decision, the merchant's:** step 102 measured §D3's dark-theme risk
-> and it is real on two surfaces — doc 93 §Open question 2. Nothing regressed and
-> nothing is broken on a light theme.
-> Design: `context/features/93-style-accent-themes.md`
-> (binding; seven merchant decisions recorded verbatim). Six step files, each with
-> its own gate:
->
-> | Step | File                              | Scope                                          | Status                    |
-> | ---- | --------------------------------- | ---------------------------------------------- | ------------------------- |
-> | 97   | `97-accent-vocabulary.md`         | `ACCENT_PRESETS` pure domain + palette         | ✅ **2026-07-30**, → 1179 |
-> | 98   | `98-accent-render-harness.md`     | 5 × 6 render matrix at 1:1, lock the underline | ✅ **2026-07-30**, 35 renders |
-> | 99   | `99-accent-seed-path.md`          | `&accent=` → resolved styling                  | ✅ **2026-07-30**, → 1184 |
-> | 100  | `100-accent-swatch-row.md`        | the swatch row component                       | ✅ **2026-07-30**, → 1209 |
-> | 101  | `101-accent-gallery-wiring.md`    | gallery state + live restyle + hrefs           | ✅ **2026-07-30**, → 1227 |
-> | 102  | `102-accent-live-verification.md` | admin → Postgres → metaobject → storefront     | ✅ **2026-07-30**, 1227 unmoved |
->
-> 🔴 **The finding that reshaped the feature: an accent CANNOT be one field.**
-> Kaching tints the band behind a title and every one of their cards has one; ours
-> do not. `--section-plain` and `--section-text-only` both **hardcode**
-> `background: transparent`, so an accent writing only `headerBgColor` paints
-> nothing on **three of five cards** (Classic, Minimal, Accordion) — the feature
-> failing on its own screen. ✅ `headerTextColor` is what makes the set total: no
-> member rule overrides `color:`, so the title is tintable under all three, and it
-> is the **only** live field on Minimal. 🚫 `accentFor(preset, token)` rejected —
-> it would cost the composition promise every later merge would then inherit as an
-> exception.
->
-> **Merchant decisions 2026-07-30 (7).** Create-time only, gallery and nowhere
-> else (D1). **Five fields** — `headerBgColor`, `headerUnderlineColor`,
-> `headerTextColor`, `stripeBgColor`, `borderColor` (D2); the table body stays
-> untinted. Tint the title (D3). Blank ignores the accent (D4). Six fixed accents
->
-> - "Theme" first and pre-selected; no custom hex this feature (D5).
->   **`borderColor`, not `outerBorderColor`** — the outline rides the stylesheet's
->   own fallback, so the frame costs no second field, and the merchant said tint the
->   interior rules too (D6).
->
-> ⚠️ **D3 is an accepted RISK, in writing.** Every text colour in the table
-> currently defaults to `inherit`, and there is **no `prefers-color-scheme` rule
-> anywhere in `spec-table.css`** (verified) — so the table is dark-theme-safe by
-> construction today and an accent opts one string out of that. The 2026-07-20
-> no-contrast-checking rule holds, so it goes **silently**. Mitigation is palette
-> choice, not code; step 102 is the first time it is observed.
-> 🔴 **OBSERVED, and it is real — see the step 102 entry below.** Illegible on two
-> surfaces (title **1.21–2.35**, stripe **1.02–1.07**), the stripe being a collision
-> §D3 never named; banded presets are safe on any theme. The response is an **open
-> merchant decision** (doc 93 §Open question 2), not a change already made.
->
-> 🔴 **D7 REVERSES a forward-reference that was stated in THREE places** —
-> `stylePresets.ts:60`, doc 88, and `stylePresets.test.ts:83`. Colours never join
-> `PRESET_SCOPED_FIELDS`: appending one makes every seeded template read
-> "Customized" the instant it is created (`stylePresetValues` resolves the bundle
-> alone, and Modern's is `{}`), which is the exact bug doc 88 invented the scope
-> to avoid. It cannot be repaired by comparing against bundle + accent, because an
-> accent has **no provenance column** — that half of the comparison is not wrong
-> but **undefined**. All three comments corrected in step 97; doc 88's is **struck
-> through, not deleted**. What is given up: the app can never say "this table
-> drifted from its original colours". Nothing consumes that, and B3 does not need
-> it.
->
-> **Step 97 landed 2026-07-30 — tests 1158 → 1179 (+21), gate green, nothing
-> imports it.** Six accents × five fields as frozen constants, `findAccent`, and
-> `ACCENT_SCOPED_FIELDS` — the composition rule made executable as three guards
-> (every accent sets **exactly** the scope, every member is a colour by the
-> parser probe, and the two scopes are **disjoint**). The exact-set assertion is
-> deliberately **stricter than the bundle guard**: a bundle may legitimately set a
-> subset (Modern's is `{}`), but a partial accent leaves one surface grey beside
-> tinted neighbours, invisible on four of five cards. 🚫 The palette is **data
-> copied byte-for-byte**, never derived — no `hsl()` arithmetic, since two roles
-> were tuned against measured references and a derivation would discard the
-> approval. ⚠️ **`headerUnderlineColor`'s six values shipped PROVISIONAL** (the
-> palette study rendered banded + stripes, where a header has no rule) carrying
-> the title hex, pinned in a separately-named test — ✅ **confirmed unchanged by
-> step 98.**
-> ✅ **Mutation-tested four ways, and two over-delivered:** adding `borderColor` to
-> the preset scope also took down **`is FALSE when only a color changes`**, a
-> pre-existing guard that is D7's argument in executable form — so the suite
-> already enforced the reversal before this step named it; and the corrupted-hex
-> mutation printed the mechanism (`parseStylingValues` **silently drops a bad hex
-> to `null`**, so without the fixed-point guard a swatch would ship writing
-> nothing, suite green). 🔴 **One deviation, recorded:** the step file said an
-> underline equal to `borderColor` should fail nothing and forbade a test for it —
-> a test was added anyway, because the only justification for the field being in
-> the accent is that it carries a **different** tone; if step 98 lands on the
-> border's hex the right move is to drop the field, not duplicate the value.
->
-> **Step 98 landed 2026-07-30 — 35 renders measured, and NOTHING in the design
-> needed revision.** 5 presets × (Theme control + 6 accents) through the real
-> `renderSpecTablePreviewDocument` at 800px scale 1, every surface read by
-> `getComputedStyle`. ⚠️ **Tests stay at 1179 by design** — this step changed
-> comments and one test NAME, so a moved number would have meant it changed
-> behaviour. ✅ **Q1: the reach table is confirmed 5 of 5**, every predicted-live
-> field carrying the accent hex and every predicted-dead field **byte-identical to
-> its control**. 🔍 One nuance the prediction missed: on the four frameless presets
-> the outline's **colour resolves while its width stays 0px**, so "dead" means zero
-> width, not colour-not-applied — a merchant who later turns on an outer border
-> gets the accent tone already waiting. ✅ **Q2: the provisional underline is
-> CONFIRMED as the title tone**, and for a measured reason rather than by default —
-> in the same Accordion table the row rules sit at the border tone (contrast to
-> white 1.657) against the underline's ≈14, so the two are plainly different
-> surfaces; the `borderColor` fallback would have collapsed them, which is exactly
-> what feature 88 chose `TEXT_ONLY` to avoid. ✅ **Q3: `borderColor`'s reach
-> IMPROVES on the neutral it replaces** — the feared regression (a tint fainter
-> than `rgba(0,0,0,0.1)`) does not occur: the neutral measures **1.254** against
-> white and every accent's row rule lands **1.513–1.764**, i.e. 21–41% more
-> contrasty. It also reads as intentional by eye — tinted rules belong to the band,
-> where neutral ones would have been **grey rules under a coloured band**.
-> 🔴 **A measurement error of mine, caught and worth carrying:** the first probe
-> reported Classic's stripe as unchanged, which would have falsified the reach
-> table. The probe was wrong, not the data — it looked for "the first label whose
-> background differs from label[0]", and on Classic **label[0] IS a striped row**,
-> so it found the unstriped neighbour. **A probe that hunts for "the one that
-> differs" has already assumed which element is the baseline; enumerate the set
-> instead.** 🔬 **The control column was the most valuable thing in the harness** —
-> it turns "Classic's band is transparent under Blue" from a claim needing an
-> argument into "identical to the same table with no accent". Feature 94's harness
-> learned this too; any future matrix should render its own baseline as a column.
-> ⚠️ **Still owed: nothing here touched dark themes.** Every number is against
-> white, so doc 93 §D3's accepted risk is unchanged and still step 102's.
-> `.harness/` stays untracked (1.4 MB of generated `srcdoc`).
->
-> **Step 99 landed 2026-07-30 — tests 1179 → 1184 (+5), and the whole diff is TWO
-> files, both in `app/utils/`.** ✅ **The forward-compatibility claim feature 88
-> made is collected in full:** `?accent=` arrived as **one line** inside
-> `resolveGalleryParams`, and `app/routes/app.templates_.$id/route.tsx` plus
-> `createFlowContract.test.ts` are **byte-unchanged**. Feature 88 paid for a
-> `URLSearchParams` signature nothing then needed precisely to buy that; a `string`
-> signature would have cost a route edit and a contract-test edit for identical
-> behaviour. ⚠️ **A `null` `basedOnPreset` no longer implies default styling** —
-> `?accent=blue` with no `?style=` seeds five colours and stamps nothing, because
-> D4 ("Blank ignores the accent") is a decision about the **card's href**, not the
-> parser, which stays total and honours a hand-typed URL. 🔴 **That broke step 92's
-> central guard, and it was RESTATED rather than relaxed.**
-> `never seeds without stamping` read "null stamp ⇒ styling equals the defaults",
-> and `accent=blue` was already in its input matrix as an ignored param. The lazy
-> repair was to delete that input; instead the invariant is now stated in **two
-> halves, one per scope** — the stamp must explain every `PRESET_SCOPED_FIELDS`
-> value, the accent param must explain every `ACCENT_SCOPED_FIELDS` value.
-> 🔬 **This is only writable because step 97 proved the two scopes disjoint**: with
-> no overlap, "the stamp explains the structure" survives accents untouched. The
-> disjointness guard stopped being a tidiness assertion and became the thing that
-> lets a stronger invariant exist — and the restatement pins every structure field
-> individually, where the old form accepted a whole-shape match.
-> 🔴 **A prediction of mine was WRONG and the correction is the finding.** The step
-> file predicted that swapping the merge order (`{...accent, ...bundle}`) would fail
-> **nothing**, reasoning that disjoint scopes never collide so the order is
-> unenforceable over real data. Mutation-tested: **one test fails**, and it is the
-> right one. `lets an accent overlay win over the bundle` (written in step 92) passes
-> a **synthetic** accent carrying `sectionHeaderStyle` — a structure field no real
-> accent may set — purely to manufacture the overlap. 🔬 **The lesson: a precedence
-> law cannot be tested with values that never overlap.** Disjointness makes the
-> composition safe and simultaneously makes the merge order invisible to every
-> realistic fixture, so the only test that can cover it must violate the very law
-> that guarantees the disjointness. Both comments were corrected before the gate —
-> the one I had just written claiming "no test can break that order", and that test's
-> own stale "`ACCENT_PRESETS` does not exist yet", which now carries a 🚫 against
-> tidying it to use a real accent (it would still pass and would stop testing
-> anything). ✅ **Five mutations run**; the other four all failed loudly, two
-> over-delivering benignly. 🔴 **Also corrected: step 97's `AccentBundle` comment
-> overclaimed.** It said a separate type name stops a `StyleBundle` from passing as
-> the `accent` argument. It does not — TypeScript is structural and both are
-> `Readonly<Partial<StylingValues>>`, so they are mutually assignable (checked under
-> `tsc --strict`). The name is worth keeping as documentation and as what the
-> exact-set test is stated about, but the guard at that seam is the suite, not the
-> compiler. Found because this was the first non-test caller of the two-argument
-> form. ⚠️ **Nothing merchant-visible yet** — no code generates `&accent=`; step 101
-> does. No live verification owed or claimed.
->
-> **Step 100 landed 2026-07-30 — tests 1184 → 1209 (+25), 43 → 45 files, five new
-> files and NO existing file edited.** `AccentSwatchRow` is a real WAI-ARIA
-> radiogroup: seven radios (Theme + six accents), roving tabindex, arrows / Home /
-> End, tooltips for the unlabelled chips. 🔴 **The finding that shaped the step: a
-> radiogroup with roving tabindex ALREADY exists** (`SegmentedControl`, the editor's
-> tab group + device toggle) and its own comment warns against a divergent copy — but
-> it cannot be reused, because `SegOption.icon` is required and typed to
-> `<s-icon type>`'s union (nowhere to put a hex) and it imports the **tripwired**
-> `SpecTableEditor.module.css`. ⚠️ **And it has ZERO tests, nor can it have any:**
-> `vitest.config.ts` is `environment: "node"` and jsdom / `@testing-library/react`
-> are **not installed** ("a jsdom project gets added later only if/when component
-> tests are introduced"). So extracting a shared base would have refactored two live
-> merchant-facing controls with no way to verify it. ✅ **Resolution: extract the pure
-> arithmetic, not the component** — `app/utils/rovingRadioKeys.ts` (`nextRovingIndex`)
-> is framework-free and node-testable **today**, which is the only way this step got
-> real behavioural coverage instead of source-reading alone. `SegmentedControl` keeps
-> its own `switch`; the two-line swap is **recorded debt** for after a jsdom project
-> exists.
-> 🔬 **Two debugging findings worth carrying, both cost real time.**
-> **(1) The contract test's own comment-stripping regex silently deleted 2928
-> characters of the component.** I copied the three-rule strip from
-> `createFlowContract.test.ts`, whose JSX rule is
-> `/\{\s*\/\*[\s\S]*?\*\/\s*\}/`. This component destructures props with an inline
-> type literal whose first member has a `/** … */` doc comment, so `}: {\n  /** …`
-> matches the opening — and because that comment's `*/` is not followed by `}`, the
-> lazy quantifier **backtracks forward** to the next `*/}` in the file. ⚠️ **The
-> failure mode is the dangerous part:** the assertions read "the source does not
-> contain `nextRovingIndex(`", which looks like a broken COMPONENT, not broken test
-> preprocessing. The tell was five unrelated assertions failing at once. Fix: strip
-> block comments only — the two-rule form `StylePresetCardContract.test.ts` already
-> uses. `createFlowContract.test.ts` is not broken (neither file it reads has that
-> shape) and was not touched, but the warning is recorded in the new test file where
-> someone would copy the wrong version.
-> **(2) A guard that only LOOKED like it worked.** The `no "theme" sentinel` mutation
-> turned the suite red as predicted — but reading *which* assertion failed showed
-> only the incidental `id: "theme"` half fired. The comparison half,
-> `(option.id ?? "theme") === (value ?? "theme")`, has no `===` directly followed by
-> the literal, so all three negative patterns missed it; a mutation touching the
-> comparison ALONE would have passed with a sentinel live in the selection path.
-> ✅ Rewritten to **count** occurrences (exactly one, in a named `domKey` helper)
-> rather than pattern-match, and verified against the previously-evasive mutation.
-> 🔬 **The lesson: a pattern guard enumerates the spellings someone thought of; a
-> count covers the ones they did not** — and "1 test failed, as predicted" was the
-> wrong level of detail to stop at. It also improved the component (three copies of
-> `?? "theme"` became one).
-> ✅ **Six mutations run plus that seventh**; all caught precisely, and the
-> negative-modulo one over-delivered with a `-0` vs `+0` failure that only `toBe`'s
-> `Object.is` catches. ⚠️ **What no test here can see, stated in the doc rather than
-> implied:** that arrow keys actually move focus (only the arithmetic is executable),
-> that seven chips are distinguishable by eye, that the checkmark reads against a pale
-> band, or that the focus ring shows on a tinted chip in a dark admin. **All owed to
-> step 101**, which must include a keyboard-only pass. 📌 `git grep` is useless for
-> the "nothing imports it" gate on untracked files — it returns nothing and looks
-> like a pass; use a plain content search.
->
-> **Step 101 — ✅ COMPLETE 2026-07-30, tests 1209 → 1227 (+18), LIVE-VERIFIED on the
-> dev store. The feature works: clicking a colour restyles all five cards.** The page
-> holds one `useState<string | null>` and one `findAccent`, and each card takes the
-> resolved accent. All ten gate items closed, including **four debts other steps left
-> owed**: the keyboard-only pass (step 100 could only test arithmetic), the focus ring
-> on a tinted chip, the five-iframe flicker question doc 93's cost profile deferred
-> here, and the **narrow-admin one-column pass open since step 92**.
-> 🔴 **D5's header placement FAILED live, and the pre-decided fallback shipped.**
-> `<div slot="primary-action">` inside `<s-page>` was **silently discarded** — absent
-> from the DOM *and* the accessibility tree, not clipped or hidden, with no console
-> error. Same family as `<s-button-group>` rendering no slot: these elements accept
-> specific children in named slots and drop the rest without warning. The row moved
-> into the gallery body above the paragraph — one JSX move, no logic change, no test
-> affected. 🔬 **Deciding the fallback before looking is what made it cheap:** the live
-> pass became a yes/no instead of a redesign with the dev server running.
-> ✅ **Keyboard, live:** arrows move AND check; `Home` → first; **`Home` then `Left`
-> wraps to Plum**, i.e. `nextRovingIndex`'s negative-modulo path (`-1 → 6`) executing
-> in a real browser; and **Tab LEAVES the row** onto the Modern card — one tab stop,
-> which the contract test could only infer from a `tabIndex` expression. Tooltips fire
-> on focus, not just hover.
-> ✅ **Flicker: none visible**, including five rapid keyboard changes in one burst — no
-> blank, partial or torn frames, never a mix of two accents across the five cards. ⚠️
-> Stated limit: a screenshot cannot catch a sub-frame flash, so this is "no visible
-> flicker", not a frame-level measurement. Consistent with the hypothesis recorded up
-> front (card surface and preview background are both white, so a reload flash is
-> white-on-white). **No mitigation needed** — `sandbox=""` keeps its no-capabilities
-> posture and `postMessage` stays unused.
-> 🔴 **I GOT A LIVE READING WRONG and corrected it.** I first concluded the title tint
-> was **imperceptible on Minimal** — which, since the title is Minimal's only live
-> field, would have collapsed doc 93 §D3's entire justification. It was an artifact of
-> **my own zoom crop**: a coarser region is upsampled harder and the hue in antialiased
-> 8.8px glyphs washes out. Re-run with a tighter crop and a baseline captured through
-> the same instrument, all three are plainly distinct (Theme near-black, Terracotta
-> reddish-brown, Plum purple). ⚠️ **Same class of error as step 98's stripe probe** —
-> both times my *instrument* produced a false negative about working code.
-> 🔬 **The rule: when a visual check says "no change", suspect the instrument before
-> the code, and always capture the baseline through the same instrument at the same
-> settings in the same session.** Doc 93's reach table, D3 and the palette all stand
-> unchanged; nothing was altered.
-> 🔍 **One observation left for the merchant, not a defect:** the chips read as pale
-> circles with coloured rings rather than saturated dots — D2 working as specified (every
-> band tone is above 0.85 luminance) and legible, but less immediate than a conventional
-> picker. If a change is wanted, a diagonal two-tone fill shows both approved colours at
-> full strength and adds no data. Not changed unilaterally.
-> ⚠️ **Not discharged:** §D3's dark-theme risk (the admin content area stays light
-> whatever the chrome does, so a dark ground was never rendered) and anything reaching
-> Postgres or a metaobject. Both are step 102.
-> ✅ **The zero-drift line is the most valuable change:** the card now resolves its
-> preview through `seedStylingFromPreset(preset.id, accent?.bundle)` — **the same
-> function `resolveGalleryParams` calls** — so a card cannot promise a look the seeded
-> template does not produce. Two independent merges of the same pair could have
-> disagreed with **nothing failing**, since no test compares a rendered preview
-> against a real scaffold. A test pins that this is provably a no-op at `accent = null`
-> (`stylePresetValues(preset)` deep-equals `seedStylingFromPreset(preset.id)` for all
-> five), so the switch is not a silent restyle of today's gallery.
-> ✅ **The centrepiece test composes the encoder with the decoder:**
-> `resolveGalleryParams(new URL(galleryHref({...})).searchParams)` over all 30 pairs.
-> Step 99 built the decode, 101 built the encode, and neither can drift without the
-> other failing — the whole wire checked with no browser.
-> 🔴 **A mutation passed, and the fix was a TYPE rather than an assertion.**
-> `galleryHref` shipped first as two positional strings; transposing them **at the
-> call site** left **all 119 tests green** while every merchant would have landed on
-> `?style=blue&accent=classic` — neither id resolving in the other's lookup, so **every
-> card would silently create a blank, unstamped, uncoloured template.** Total failure,
-> green suite. 🔬 **The round-trip test cannot reach it, and that is the lesson:** a
-> composition test covers the seam between two FUNCTIONS, never the seam between a
-> function and its CALLER. I had recorded the round-trip as the guard for this, which
-> was wrong. Fixed by (1) changing the signature to one named object
-> `galleryHref({ preset, accent })`, so the swap cannot happen by accident — ⚠️ **not
-> compiler-enforced, and the comment says so: both fields are `string | null`, so the
-> swap still typechecks (verified, not assumed)** — and (2) a textual call-site
-> backstop in the card's contract test, brittle by nature and the right trade at one
-> call site for a failure this total. Re-verified: the mutation now fails.
-> 🔬 **General rule worth carrying: a positional signature whose params share a type
-> is a defect waiting for a call site.** Prefer named arguments the moment two params
-> could be swapped without a type error.
-> ✅ **The other four mutations all failed loudly.** The stale-`useMemo` one landing on
-> **exactly one** test is the useful result rather than a thin one: it confirms that a
-> gallery whose swatches highlight correctly and whose cards never restyle — the exact
-> symptom this feature exists to prevent — is invisible to the other 118 guards. 🚫
-> `AccentSwatchRow` and its stylesheet are **byte-unchanged**, which is the small
-> confirmation that splitting 100 from 101 was the right cut. 📌 No `aria-live` for the
-> restyle, asserted as a negative: the previews are `aria-hidden`, so no accessible
-> content changes, and the `role="radio"` already announces the choice.
->
-> **Step 102 — ✅ COMPLETE 2026-07-30, tests 1227 / 45 files UNMOVED, `npm run build`
-> green. Feature 93 is 6 of 6 and shipped.** The only step in the feature that wrote
-> **no code** — its deliverable was evidence and one decision, and an unmoved test
-> count is the result it wanted. One accent watched end to end:
-> `?style=classic&accent=plum` → template `cms76k2s5…` → Postgres → metaobject →
-> a real product page on `appx-dev`.
-> ✅ **Five of six items came back clean.** All five hexes exact in `TableStyling`
-> with the four body colours + `outerBorderColor` still NULL (D2 holding at the data
-> layer); `basedOnPreset` = `"classic"`, the bare pattern id (D7); the metaobject
-> carries **both** `styling` and `styling_css.vars`, and the storefront's inline
-> `style` attribute is **byte-identical** to `vars`, so the whole chain is one copy
-> with no transformation; four live surfaces read exact by `getComputedStyle`; and
-> D1's never-verified "no capability is lost" is **true** — the rail shows the
-> accent's values and accepts an edit (typing `#008000` into Title colour repainted
-> the preview's title green while the underline stayed plum). ⚠️ **One qualifier D1
-> needs:** the band and underline controls are **gated by Header style**, so under
-> `Plain` two of the five are off-screen until you switch to `Banded` / `Underlined`
-> — reachable, not always visible.
-> 🔴 **V5 — the dark-theme risk doc 93 §D3 deferred since the feature was specced is
-> REAL, and it is BIGGER than §D3 said.** Verdict: **illegible**, on **two**
-> surfaces. (1) The title fails as predicted — **1.21–2.35** across the six accents
-> where AA wants 4.5. (2) 🔴 **`stripeBgColor` is a second collision §D3 never named
-> and it is worse: 1.02–1.07, the row's text vanishes** — in the capture two striped
-> rows are blank while the unstriped row between them reads normally.
-> ✅ **And one finding that shrinks the blast radius: banded presets are SAFE on any
-> theme.** Modern and Multi-column put the title on the accent's **own** band, so
-> both colours are absolute and travel together — **6.98–13.15**. The risk is not
-> uniform across the gallery; it is the three presets whose title sits on the theme's
-> ground (Classic, Minimal, Accordion) plus Classic's stripe.
-> 🔬 **The mechanism, and why the stripe is not a hue problem.** The stylesheet's
-> default is `var(--appx-spec-stripe-bg, rgba(0, 0, 0, 0.04))` — a **translucent**
-> black, theme-agnostic *by construction* because it darkens whatever ground it lands
-> on. An accent replaces it with an **opaque** hex, and every stripe value is
-> near-white because it must be on a light theme. **The failure is the opacity, not
-> the hue**, so no re-tuning of an opaque value fixes it. The band has the same
-> `rgba(0,0,0,0.06)` default and does **not** fail — the only text on a band is the
-> accent's own absolute title.
-> ⚠️ **Nothing regressed and nothing was changed.** On a light theme the same
-> measurements are **12.86** and **19.24**. The response is a palette-or-scope
-> decision that belongs to the merchant, now recorded as doc 93 §Open question 2 with
-> three options and what each costs — 🚫 **not** contrast-checking code, which the
-> 2026-07-20 rule still bars (the ratios above were computed off-line by the verifier
-> against a ground *we* chose, which is not a capability the app has). 🔴 **It must
-> not be closed by silence** — that is the precise failure mode §D3 warned about.
-> 🔬 **The instrument rules earned their place: rule 4 fired TWICE in one step, on
-> the same mistake, and both times the code was fine.** "No stripe" — I read
-> `backgroundColor` off each `<tr>`; the stripe is on the **cells**. "No column
-> divider" — I read `borderInlineStart` off `__value`; the divider is `border-right`
-> on **`__label`**. Both died the moment I enumerated every descendant instead of the
-> element I expected. 📌 Third: `document.styleSheets[].cssRules` returned `[]` — the
-> stylesheet is cross-origin from `cdn.shopify.com`, so an empty result there is an
-> **instrument limit, not evidence**.
-> 📌 **Two environment facts worth carrying.** The dev store runs **Horizon, not
-> Dawn**, and Horizon has no shared named palette — every section carries its own
-> `color-custom-<id>` class and **all nine resolve to white/black**, so there was no
-> dark scheme to borrow and none could be made without editing the merchant's live
-> theme. The dark ground was produced by overriding Horizon's **own** scheme
-> variables on the product section, client-side; a reload restored the light
-> rendering exactly. Faithful to the mechanism, ⚠️ **but it is not a real merchant's
-> dark theme and the write-up says so.**
-
-> ✅ **Gallery polish pass 2026-07-30 — three merchant asks, one of them a real
-> defect.** Gate green (typecheck · lint · format · **1227** · build); ⚠️ **the test
-> count did not move and should not have** — every change was to a value an existing
-> guard already pinned, so a moved number would have meant a new claim went
-> unguarded. Live-verified on `appx-dev`.
->
-> 🔴 **The Classic card had no interior row rules, and nobody had noticed.** It
-> shipped `PLAIN` + `STRIPES`; `--dividers-stripes` sets `border-block-end: none`
-> on every label and value, so the "full grid" card was a frame, a column rule and
-> a checkerboard — the row rules its own description implied were silently off.
-> Now `TEXT_ONLY` (a bare bold title reads as a wider row when every other edge is
-> already drawn) + LINES, and the stripes moved to **Accordion**, where the
-> alternating fill is a within-section reading aid and the storefront restarts the
-> parity at every `<tbody>`. ⚠️ **LINES is the default, so the bundle OMITS the
-> field** — an explicit `"LINES"` serializes away to nothing and fails the
-> fixed-point guard. Classic's description followed the bundle; Accordion's did
-> not, because the disclosure is still what that card is *for*.
-> 📌 **Two knock-ons, neither needing code.** Classic is now the second card on
-> `TEXT_ONLY` (Accordion is the other) and the pairwise-difference guard still
-> passes on four other scoped fields. And feature 93's reach table now describes
-> different cards — `stripeBgColor` went dead on Classic and live on Accordion,
-> `headerUnderlineColor` went live on Classic — so **doc 93 §Open question 2's
-> dark-theme stripe collision is Accordion's now, not Classic's.** Same numbers,
-> same mechanism, different card; both docs corrected rather than left to be
-> re-derived.
->
-> 🔴 **The double-ring bug on the accent swatches was not a bug in either ring.**
-> Arrowing along the row drew two concentric circles round one chip. A
-> roving-tabindex radiogroup moves focus and selection with the SAME keypress, so
-> the focused chip is always the checked chip — there is no keyboard-reachable
-> state where one ring appears without the other. Two rings that can never separate
-> are one state drawn twice. ⚠️ **The fix suppresses the INNER (selected) ring, not
-> the focus ring**: deleting the focus ring instead would leave a keyboard merchant
-> unable to tell the row has focus (WCAG 2.4.7) and would fail *silently*, since
-> the selected ring is still there to look at. Keeping the outer one also makes
-> Tab-in a visible event — the ring travels outward rather than merely thickening.
-> ✅ Both states observed live: focused+checked → one near-black ring at the button;
-> checked-only → one tighter ring at the chip.
-> 🔬 **A comment correction fell out of looking at it:** the selected outline's
-> `currentColor` is the ACCENT's ink, not the row's (`.chip` sets
-> `color: var(--appx-chip-ink)` above it), where the stylesheet had claimed "in the
-> row's ink" since step 100. Harmless — the ring lands on the white card where all
-> six dark tones read — and it is what makes the two rings differ in hue as well as
-> position, but the file said something false about its own rendering.
->
-> ✅ **"Colour theme" → "Color theme".** It was the ONLY merchant-facing British
-> spelling in the app: every Style-rail label already reads `Title color`,
-> `Divider color`, `Outline color`, `Text color`, `Underline color`, and Shopify's
-> admin, Polaris and the Admin API are US English throughout. ⚠️ Prose comments
-> still say "colour" and were deliberately left — not merchant-facing, and a sweep
-> would churn hundreds of lines to change nothing anyone sees.
->
-> ✅ **The default swatch's tooltip: "Theme" → "Your theme's colors"** (merchant
-> ask, same day). The old label was **circular against the caption beside it** —
-> the group reads "Color theme" and the first chip read "Theme", so the tooltip
-> restated the question instead of answering it, and never said what picking it
-> would do. The new string states the outcome and says WHOSE theme, which neither
-> "Theme" nor the proposed "Theme's default" settles (the app's? the store's?), and
-> it reuses the app's existing voice for this exact idea — the Blank card's "Start
-> with your theme's own styles" and the rail's "inherit that color from your theme".
-> 📌 **It is the accessible name too** (`aria-label` takes the same string), so a
-> screen reader now announces "Your theme's colors, selected" rather than "Theme,
-> selected" inside a group named "Color theme".
-> 🔬 **One test got BETTER by being made to stop caring.** `hardcodes Theme FIRST`
-> anchored on `label: "Theme"`, so merchant-facing copy could turn a **position**
-> guard red. Re-anchored on `id: null` — the thing that actually makes that option
-> the absence of an accent — and checked non-vacuous (one occurrence in the file,
-> and `id: string | null` in the type does not contain it). ✅ The lowercase
-> `"theme"` sentinel count is untouched: it matches the literal WITH its quotes,
-> which the new label has none of.
-
-> 🔴 **Save-bar spinner bug fixed 2026-07-30 — merchant report, and the cause is a
-> React 18 trap worth knowing before the next native-element attribute.** Clicking
-> Save showed NO spinner and no progress of any kind: the whole editor froze
-> (`inert`) with a greyed-out Save button and nothing to say a save was running.
-> Gate green (typecheck · lint · format · **1237** · build); live-verified on
-> `appx-dev`.
-> 🔬 **The mechanism.** `SpecTableEditor` passed `loading={engine.saving}` — a
-> BOOLEAN — to the save bar's **native `<button>`** (App Bridge's own contract for
-> `<SaveBar>` children). On React 18, a boolean value for an attribute React does
-> not recognise as a boolean is **dropped from the DOM entirely**, with only a
-> dev-console warning. So App Bridge never saw a loading state. ⚠️ **It typechecked
-> the whole time**: `@shopify/app-bridge-types` augments `ButtonHTMLAttributes` with
-> `loading?: boolean | string`, so the broken form is the one a reader would
-> naturally write. Proven by `renderToStaticMarkup`: `loading={true}` →
-> `<button variant="primary">`, `loading="true"` →
-> `<button variant="primary" loading="true">`.
-> 🔴 **And the four `<s-button loading={flag}>` call sites are FINE, which is what
-> made the bug invisible.** A dashed tag is a **custom element**, and React passes
-> booleans through to those stringified — so the modals' spinners always worked and
-> the broken form looked like house style. 🚫 Do not "fix" the `s-button` ones.
-> ✅ **Fix:** `saveBarSaveAttrs({ saving, canSave })` in `editorShared.ts`, spread
-> onto the button — returns `{ loading: "true" }` while saving, `{ disabled: true }`
-> when blocked for any OTHER reason, `{}` otherwise. A spreadable object, not two
-> props, so the idle case is a **missing** attribute rather than `loading="false"`
-> (which a presence-based parser reads as true). ⚠️ **`disabled` is deliberately
-> dropped while saving** so the spinner is not competing with a greyed button;
-> nothing is at risk, since `handleSave` returns early on a non-idle fetcher, the
-> card is `inert`, and App Bridge disables a loading button itself.
-> ✅ **Live-verified by DOM capture, not by eye** — a `MutationObserver` on the
-> admin's real Save button (it lives in the TOP frame, same origin, so it IS
-> readable unlike the app iframe) recorded the save flipping it to
-> `aria-busy="true"` and injecting
-> `<span class="_Spinner_…"><s-spinner accessibilitylabel="Loading"></s-spinner></span>`.
-> 🔬 **That instrument beats a screenshot here**: the first save took ~5 s (cold
-> Neon) but the second finished between two captures, so a still could easily have
-> missed a spinner that was really there — the [[testing-strategy]] rule about
-> suspecting the instrument, applied in advance for once. 📌 The admin exposing it as
-> `aria-busy` also means a screen reader now gets the busy state, which the old code
-> never announced.
-> ✅ **+10 tests in `saveBarButtonContract.test.ts`**, and the load-bearing ones
-> render through `react-dom/server` rather than asserting the returned shape — a
-> serialization assertion is **the only kind that can fail for the original
-> reason**. One test keeps the boolean form executable as a record of the mechanism.
-> Plus a call-site source guard, per step 101's lesson that a test over a function
-> cannot see the seam between it and its caller. ✅ **Mutation-tested**: restoring
-> `loading={engine.saving}` + a boolean return fails **5** of the 10.
-> 📌 Verified on a throwaway DRAFT template (`cms3aoedi0001vpf4hy1zr2ql`, 0 assigned
-> products) and the row JSON was **restored** — only `updatedAt` moved, nothing
-> merchant-visible and no storefront impact.
-
-> ✅ **Accordion card → BANDED section headers, merchant ask 2026-07-30.** One
-> merchant-facing axis on one gallery card: `sectionHeaderStyle` `TEXT_ONLY` →
-> `BANDED`. Design record: doc `88-…` §"Revision, merchant decision 2026-07-30
-> (third)". ⚠️ **Tests stay at 1237 and should** — same reason as the earlier
-> polish pass: the value is one an existing guard already pins, so a moved count
-> would have meant a new claim shipped unguarded.
-> ⚠️ **The bundle DROPS the field rather than naming `"BANDED"`** — BANDED is
-> `SECTION_HEADER_STYLES[0]`, so an explicit write serializes away to nothing and
-> fails the fixed-point guard. Third card to hit this rule (Multi-column's header,
-> Classic's row LINES), and this time it was **mutation-verified rather than
-> assumed**: putting `sectionHeaderStyle: "BANDED"` back fails *every bundle is a
-> fixed point of parse then serialize* and nothing else. 📌 Absence now carries
-> BANDED on two of the five cards, so the resolved-values assertion is the only
-> place the claim is readable — the bundle literal no longer mentions the axis.
-> **Why a band beats the rule it replaced:** a filled strip reads as a *pressable
-> target* where a 2px rule reads as a *boundary between two things*, and the whole
-> summary row rather than the run of text becomes the hit area. The stylesheet
-> already carries `--collapsible.--section-banded .__section-summary`, so the band
-> is native to the disclosure shape rather than a flat-table look bolted onto it.
-> 🚫 The old rationale (feature 88 §"Accordion uses `TEXT_ONLY`, not `PLAIN`") is
-> **struck through, not deleted** — its premise survived and only the answer moved.
-> 📌 **Three knock-ons for feature 93, none needing code.** `headerBgColor` goes
-> live on Accordion; `headerUnderlineColor` goes dead there, leaving it reaching
-> **exactly one card, Classic** — worth knowing before the next palette revision
-> goes looking for two. And ✅ **doc 93 §Open question 2's title risk shrinks to
-> Classic + Minimal**: a banded title sits on the accent's own band, the case step
-> 102 measured at 6.98–13.15 on any theme. ⚠️ **The stripe half stays Accordion's
-> and is unchanged** — an opaque near-white replacing a translucent black has
-> nothing to do with the header style, so the open question is narrowed, not
-> closed.
-> ✅ **LIVE-VERIFIED on `appx-dev` 2026-07-30, 3 of 3, no DB write.** Gate green
-> (typecheck · lint · format · **1237** · build).
-> ✅ **The risk this pass existed to test did NOT materialize.** A banded Accordion
-> does not read as a third copy of Modern at the gallery's 0.55 scale: captured at
-> equal zoom, Accordion carries the **▼ disclosure markers**, a visible **section
-> gap** above the second band, and **stripes**, against Modern's markerless bands,
-> no gap and row **lines**. Three independent signals, all legible.
-> ✅ **Both feature-93 knock-ons observed under Plum.** Accordion's band is **plum**
-> and it has **no underline rule** — `headerBgColor` live, `headerUnderlineColor`
-> dead, exactly as the reach table now says. Classic in the same capture is the
-> mirror image: transparent header, **plum underline**, plum row lines, column rule
-> and outline — so the underline reaching exactly one card is observed, not inferred.
-> 📌 Verified on the gallery (frozen constants, no loader) and a throwaway
-> `?style=accordion&accent=plum` scaffold that was never saved. **Postgres
-> untouched.**
-> 🔴 **Two instrument findings, both cost real time and neither was a code fault.**
-> **(1) CLICKS NO LONGER REACH THE APP IFRAME — only keys do.** Chip clicks, the
-> editor's Content/Style/Settings tab group and a row's Label cell all no-opped at
-> coordinates verified correct by zoom; the same keypresses drove the same controls
-> fine. [[embedded-admin-iframe-automation]] said clicks DID work, so the note is
-> now wrong and was corrected. The route that works: **Tab to "Skip to content" →
-> Enter → Tab past the breadcrumb and the "…" overflow → the swatch row**, then
-> `End` / arrows. ⚠️ The `shift` modifier on `key` is also ignored — a
-> "Shift+Tab" moves focus **forward**, which reads as a wrong tab order rather than
-> a dead modifier. **(2) The window resizes between calls** (1288×925 ↔ 1308×940),
-> so any coordinate computed from an earlier screenshot is stale; zoom and click
-> must be in the same batch. 🔬 Both are the [[testing-strategy]] rule again —
-> **when a control "does nothing", suspect the instrument before the code.** I
-> nearly recorded a working accent row as broken.
-
-> 🔴 **`sectionsInitialState` default ALL_OPEN → FIRST_OPEN, merchant ask
-> 2026-07-30 — and it is a change with an EXPIRY DATE, which is why it happened
-> now.** Gate green (typecheck · lint · format · **1245** · build). ⚠️ Not
-> now.** Gate green (typecheck · lint · format · **1245** · build).
-> ✅ **STOREFRONT LIVE-VERIFIED 2026-07-30, and it is the half no test could
-> reach.** Template `Accordion - Graphite` (`cms7i4alx0024vposvoqn96rj`, ACTIVE,
-> 5 sections) stores `sectionsInitialState = NULL`, so the Liquid `| default:` is
-> the only thing deciding. On `appx-dev`, product Motorola Moto G45 5G:
-> `Phone Details` **open**, `Display` / `Processor` / `Camera` / `Others`
-> **closed**. Under the old default that identical stored data rendered all five
-> open. 🔬 **No write of any kind was involved** — the metaobject's `styling` JSON
-> omits the key either way, so the rendering flipped purely from the template
-> file. That is the cleanest possible demonstration that the default *is* the
-> storage format, which is the whole argument for doing this pre-launch.
-> ✅ **The feature-80 hairline knock-on is confirmed too**, by `matches()` +
-> `getComputedStyle` rather than by eye. ⚠️ **No template in the dev store can
-> fire that rule** — every collapsible one sets a gap, and the one without a gap
-> has 0 sections — so it was exercised by removing `--section-gap` from the
-> wrapper client-side and restoring it (no DB, no theme edit, reload-safe; the
-> step-102 technique). With the gap: nothing matches, all `0px none`. Without it:
-> `Processor` / `Camera` / `Others` match and paint `0.909px solid`.
-> 🔴 **A correction to what I wrote earlier: it is sections 3..n, not 2..n.**
-> Section 2's predecessor is the OPEN first section, so it gets no hairline — the
-> rule needs a *closed* predecessor, which under FIRST_OPEN starts at section 3.
-> 📌 **A near-miss worth recording: my first probe looked like a false negative
-> and was merely TRUNCATED.** It returned `0px` for the two rows I could see —
-> both correct, one with no predecessor and one with an open predecessor — while
-> the three rows that mattered were cut off. I nearly logged "the rule does not
-> fire". [[testing-strategy]]'s suspect-the-instrument rule applies to **output
-> limits** too, not just to zoom and probes: confirm you are looking at the whole
-> result before concluding a negative.
-> ⚠️ **The ADMIN half is NOT verified and is owed** — the editor's device preview
-> and the rail's "Sections start" select. Blocked by the instrument, not the
-> code: `document.activeElement` stayed `BODY` after clicks and Tabs, so no
-> keystroke ever reached the app; the iframe is cross-origin so its DOM cannot be
-> read; and App Bridge bounces a direct tunnel load back into the admin. Both
-> claims run entirely through unit-tested paths (`DEFAULT_STYLING_VALUES`, the
-> open-matrix tests, the option-list tests), so residual risk is low — but it is
-> **unobserved**, and this file does not get to call that verified. Instrument
-> findings folded into [[embedded-admin-iframe-automation]].
-> that reaches them. A merchant enables collapsing because the table is long, so
-> `ALL_OPEN` hands back the disclosure markup and **none of the benefit** — the
-> page is exactly as tall as before and the only visible change is that headings
-> became clickable — while `ALL_CLOSED` opens on a wall of headings with no
-> content, which reads as an empty block. `FIRST_OPEN` is the only member that
-> shows real content **and** shows that the headings beneath it open.
-> 🔴 **The default IS the storage format, so this was a one-time window.** The
-> wire is overrides-only: a template storing the default stores **nothing**, so
-> there is no "unset" state and no way to scope a default change to new templates
-> only. Changing it repaints every stored table that never set the field. Today
-> that is dev-store data and the blast radius is zero; post-launch the same edit
-> is a silent storefront change for every merchant who left it alone. Same
-> reasoning as step 90's `simple` → `classic` rename — free now, closed later.
-> 🚫 **The literal merchant ask — default it FROM the Enable-collapsing toggle —
-> was rejected, and the reason is not style.** It breaks the pure-read law
-> `showsSectionsInitialStateControl` is built on (toggle collapsing off and back
-> on, and the merchant's own choice must return; unit-tested since feature 65).
-> And it cannot be repaired by writing only when the field "looks untouched":
-> storage **cannot distinguish an explicit `ALL_OPEN` from a field nobody ever
-> set**, so the smart version silently overwrites a real choice. One global
-> default is the only mechanism this wire shape supports. There is no such thing
-> as "the default while collapsing is on".
-> 🔬 **A shared five-list law was RESTATED, not relaxed** (step 99's move again).
-> `SECTIONS_INITIAL_STATES` keeps its open→closed rail order, so its default is
-> now at index 1 and `options[0] === default` no longer holds. What that law
-> actually protected was the arrays being **append-only** — a reorder repaints
-> every stored table — and nothing in the UI ever read `options[0]` (checked:
-> every list renders through a `.map` into a select bound to the styling value).
-> So the table pins a `defaultIndex` per list: any reorder of any array still
-> fails, and the position half is split from the "the default is offered at all"
-> half, which is now its own test. 🚫 Reordering the domain to restore
-> `options[0]` was refused — the dropdown would read First open / All open / All
-> closed, a scrambled spectrum on a merchant-facing control.
-> ✅ **The Liquid duplicate is now GUARDED, which it never was.**
-> `spec_table.liquid` carries `| default: "…"` because the two markup knobs are
-> the only ones read from raw `styling` rather than precomputed `styling_css` —
-> so the default literal lives twice, and the second copy is in a file the module
-> graph cannot see. New `specTableLiquidDefaultsContract.test.ts` reads the
-> extension file off disk (the `specTableAriaContract` pattern) and compares.
-> ⚠️ **Comment-stripping is load-bearing there, not tidy**: the block being
-> guarded names both keywords in prose, so a scan over the raw file would pass on
-> the documentation while the code said something else. The failure it prevents
-> is silent and merchant-facing — admin preview and storefront disagreeing about
-> which sections start open, on exactly the templates that store no value.
-> ✅ **Both mutations caught precisely.** Reverting the Liquid literal alone fails
-> the new parity test; reordering `SECTIONS_INITIAL_STATES` fails
-> `holds the default at its pinned index` and **nothing else**.
-> ⚠️ **One knock-on, and it is the rule working rather than a regression.**
-> Feature 80's band separator is scoped `:not([open])`, and its comment cited the
-> ALL_OPEN default as a second justification ("keeps the rule off every table
-> already live"). **That half has expired**: sections 2..n now start closed, so a
-> default banded collapsible table paints those hairlines on arrival — which is
-> precisely the unbroken-slab bug feature 80 was reported for. The selector is
-> unchanged and still correct on its own terms (an open section is followed by
-> its rows, which already draw the edge). Corrected in all three places that said
-> it: `spec-table.css`, `previewStyles.ts`, and doc 80 (struck, not deleted).
-> 📌 **The Accordion preset needed no edit** and must not get one — it omits the
-> field, so it inherits FIRST_OPEN, which is what "Shoppers open one section at a
-> time" always described. Naming `"FIRST_OPEN"` explicitly would now serialize
-> away to nothing and fail the fixed-point guard — the fourth card to meet that
-> rule.
-> 🔍 **The one accepted cost, recorded rather than discovered later:** text inside
-> a closed `<details>` is not matched by find-in-page in older browsers. Current
-> Chrome, Safari and Firefox all auto-expand for it, so the exposure is small and
-> shrinking, but a shopper searching a spec table is a real use case and this is
-> the only genuine argument for `ALL_OPEN`. 🚫 **Not** an SEO cost: closed
-> `<details>` content is in the DOM and indexed at full weight.
-
-> ✅ **Gallery cards gained a derived "what's different" line 2026-07-31 —
-> merchant ask ("six cards are hard to tell apart"), and the cause was NOT the
-> two-per-row layout.** Gate green (typecheck · lint · format · **1270**, +14 ·
-> build). ✅ **LIVE-VERIFIED on `appx-dev` 2026-07-31 — and the pass found two
-> real defects, both mine, both invisible to all 1268 tests.** See the
-> "live pass" block at the end of this entry.
->
-> 🔴 **The diagnosis is arithmetic, and it is the reusable part.** Three of the
-> five patterns are the same two-column shape differing only in hairlines:
-> Classic's `columnDividerStyle: "LINE"` and `outerBorderWidthPx: 1` render at
-> **0.55px** under `--appx-preset-scale`, so **two of the three features
-> separating the most-decorated card from the default one are sub-pixel**. The
-> previews were never going to carry that difference. Multi-column and Accordion
-> depart structurally and read fine, which is why the problem looked like a
-> layout problem.
-> ⚠️ **And the scale cannot be raised to fix it.** `--appx-preset-render-width`
-> must stay above the storefront's **749px** mobile breakpoint (below it every
-> card renders in its identical phone form) and two cards + a 16px gap must fit
-> the measured **966px** page — capping two-up at `(966-16)/2/749` ≈ **0.63**, a
-> 13% bump that still leaves a 1px rule invisible. 🚫 So no geometry was touched:
-> `--appx-preset-scale`, the 420px viewport and the 948px `@container`
-> breakpoint are byte-unchanged. **The difference is carried in words.**
->
-> **What shipped:** `presetHighlights(preset)` in `app/utils/stylePresets.ts`,
-> rendered as one muted line under each card's description —
-> `Underlined section headers · Line between rows · Line between columns · Outer
-> border` on Classic, `Shaded section headers · Line between rows` on Modern.
-> 🔴 **DERIVED from the resolved bundle, never stored beside `description`**, and
-> the 2026-07-30 polish pass is the proof that matters: Classic moved
-> `PLAIN` + `STRIPES` → `TEXT_ONLY` + LINES, and a hand-written line would still
-> be promising stripes today **with nothing failing** — the same argument step 90
-> used to reject a static thumbnail, applied to copy.
-> ⚠️ Reads `stylePresetValues` (the bundle ALONE), which is safe by construction
-> rather than by luck: `PRESET_SCOPED_FIELDS` and `ACCENT_SCOPED_FIELDS` are
-> asserted disjoint, so no accent can move a value it reads.
->
-> 📌 **Which axes speak.** Header treatment and row separation on EVERY card —
-> the shared vocabulary is what makes five cards comparable instead of five
-> unrelated pitches — plus layout / collapsible / column rule / frame only when
-> they leave the default, because "No column line · No outer border" on four of
-> five cards buries the one card where the frame is the point. Structure leads
-> (`Several columns…` before `Shaded section headers…`), and that ORDER is
-> pinned. 🚫 `sectionGapPx` stays silent: it is the one tuning value in any
-> bundle and "12px between sections" is not why anyone picks a card.
->
-> ✅ **The a11y half is the part that is not cosmetic.** The line goes INTO
-> `aria-describedby` as a second id, not beside it — the preview is `aria-hidden`
-> (correctly), so before this the entire basis for a screen-reader user's choice
-> was one prose sentence per card. ⚠️ **It must NOT copy the action line's
-> `aria-hidden` treatment**: that is hidden because the link role already
-> announces it, where this is information available nowhere else. Guarded both
-> ways.
-> 🔬 **One implementation detail that is a real trap, not a preference: the
-> phrases are joined into ONE text node.** `aria-describedby` concatenates the
-> referenced element's **text content**, and `<span>A</span><span>B</span>` has
-> the text content `"AB"` — no space at all. A row of chip spans (the obvious
-> visual design) would announce "Shaded section headersLine between rows", and a
-> CSS `::before` separator fails the other way — generated content some AT reads
-> and some does not. The middle dot is real DOM text so the eye and the screen
-> reader get the same string. 🚫 Also not a `<ul>`: `.body` is a `<span>`, which
-> is phrasing content and cannot contain flow content.
-> 📌 **Blank passes no highlights, deliberately** — faking a line from the
-> defaults would print Modern's exact string on the card whose whole meaning is
-> "no pattern was chosen", the same trap the missing preview avoids, in words
-> instead of pixels — Blank keeps a written sentence, which it is the only card
-> allowed.
->
-> ✅ **+12 tests: 8 behavioural** (pairwise-distinct lines, derivation by bundle
-> swap, the shared-vocabulary pair, Classic's two sub-pixel axes named and no
-> other card claiming them, leading order, no digits or wire keywords, totality
-> over all three vocabularies via synthetic bundles) **and 4 structural.**
->
-> 🔴 **`StylePreset.description` REMOVED the same day (merchant decision) — the
-> derived line replaced it rather than joining it.** The first cut shipped BOTH:
-> the hand-written sentence and, one line below it in a darker ink, the readout.
-> They said nearly the same thing twice ("A bordered grid with a line between
-> every row." above "Underlined section headers · Line between rows · Line
-> between columns · Outer border"), which spent vertical space and some of the
-> scannability the line was added for. The field is deleted, not merely unread:
-> a merchant-facing string nothing renders is a claim nobody re-reads.
-> 🔬 **And the field had ALREADY gone stale once, which is the argument for
-> deriving in the first place** — Classic's description said "a line between
-> every row" through the entire period its bundle shipped `STRIPES`, which paints
-> no row lines at all. Nothing failed, because nothing compares prose to values.
-> ✅ **The component got simpler, not more complex:** `CardFrame` is back to ONE
-> `description` string, ONE `descriptionId` and an unconditional
-> `aria-describedby` — the preset cards join their derived phrases into it, Blank
-> passes its literal. The `highlights` prop, the second id, the second span, the
-> conditional attribute and the `--appx-preset-spec` ink all went with the
-> duplication. ⚠️ Test count held at **1268**: two guards were restated onto the
-> new source rather than added (`every preset carries a label and a one-line
-> description` now bounds the DERIVED line at 96 chars — roughly two lines in the
-> 440px card — and the card's derivation guard now asserts `preset.description`
-> is *absent* from the component).
-> 📌 **What was genuinely lost, recorded rather than waved off:** Accordion's
-> "Shoppers open one section at a time" named WHO the pattern is for, which no
-> readout of `sectionsCollapsible` can say. If that voice is wanted back it
-> belongs in the page's single help line above all six cards, **not** as a
-> per-preset field — that is what recreates the duplication.
-> ⚠️ `context/features/90-style-preset-card-preview.md` corrected: its worked
-> example of the screen-reader announcement quoted the old sentence verbatim.
-> Struck, not deleted, with the new announcement beside it. The RULE that section
-> states (name = label alone, description associated not concatenated, iframe
-> `aria-hidden`) is unchanged — only the source of the help text moved.
->
-> ---
->
-> 🔴 **The live pass 2026-07-31 found TWO defects, both introduced by this work,
-> both invisible to all 1268 tests, and both fixed + re-verified in the same
-> session** (→ **1270**). 🔬 **Neither is about the text being wrong — the strings
-> were exactly as the unit tests said. Both are about what a WRAPPED line does to
-> a layout that had never had one**, which is precisely the class of thing a
-> source-reading contract test cannot see. The reasoning-only note this entry
-> shipped with ("the wrap has only been reasoned about, not looked at") named the
-> right risk and got the consequence wrong twice.
->
-> **(1) The action line went ragged across every row.** Grid rows stretch their
-> cards to a common height, so Classic — whose line wraps to two rows — was
-> exactly as TALL as Modern beside it and only its CONTENT was taller. Result:
-> "Use this style →" sat ~16px lower on Classic than on Modern, ~16px lower on
-> Multi-column than on Minimal, and ~14px HIGHER on Blank than on Accordion — the
-> one element identical on five of the six cards, misaligned on all three rows.
-> ✅ Fixed with `margin-block-start: auto` on `.action`, which bottom-aligns it
-> within the stretched card. ⚠️ Works only because `.card` is a flex column and
-> the grid stretches it; the comment says so, because either change silently
-> switches it off.
->
-> **(2) Classic broke MID-PHRASE.** `… · Line between` / `rows · Line between
-> columns · Outer border` — the second line opened on a fragment, which is exactly
-> the scanning the line exists to enable. ✅ Fixed by making the spaces inside each
-> phrase non-breaking and the separator ` ·` + ordinary space, so the only break
-> opportunity in the string is immediately after a `·`: a wrapped line now ends
-> with its separator and the next begins on a whole phrase. `text-wrap: balance`
-> then distributes whole phrases. 🚫 **Not** solved by a span-per-phrase with
-> `white-space: nowrap` — that is the obvious form and it re-breaks the accessible
-> name, since `aria-describedby` concatenates text content and sibling spans have
-> no space between them. ⚠️ Written as ` ` escapes, never literal U+00A0: a raw
-> one is invisible in a diff and indistinguishable from a space in an editor, so
-> the property would be unreviewable and deletable by accident. A guard asserts
-> the escapes AND that no raw U+00A0 exists in the file.
->
-> ✅ **Confirmed after the fix, at zoom, in the real admin:** both action lines in
-> a row share a baseline; Classic reads
-> "Underlined section headers · Line between rows ·" / "Line between columns ·
-> Outer border"; Multi-column and Accordion break after a `·` too; **all six cards
-> carry exactly ONE line** — no leftover description anywhere — and Blank still
-> reads its sentence. ✅ **The narrow-admin one-column fallback still fires** and
-> the cards read correctly in it (reached accidentally, by shrinking the window).
->
-> ⚠️ **OWED, and stated rather than implied: row 3 (Accordion + Blank) was never
-> seen in the TWO-column layout.** Rows 1 and 2 were, and they are what proves the
-> alignment fix; row 3 is the same mechanism on the same CSS but that is an
-> inference, not an observation. The window could not be restored —
-> **`resize_window` reports success and the viewport does not change**, the same
-> environment limitation recorded in [[embedded-admin-iframe-automation]] and hit
-> in the 2026-07-28 pass. Cheap to close on the next look at this page.
-> ⚠️ **Also not observed: the accessible description.** The app's cross-origin
-> iframe is absent from the top frame's a11y tree and `javascript_tool` cannot
-> reach into it (re-confirmed this session — `contentDocument` throws). The
-> mechanism is guarded by the contract test; the announcement is still unheard, as
-> it has been since step 91.
-
-> ✅ **Step 105 landed 2026-08-02 — the compliance domain + shop erase path.**
-> First slice of the **mandatory privacy webhooks**, the App Store submission
-> blocker (Next Up item 7). Gate green: typecheck · lint · format · **1338** tests
-> / **50** files · build. Design + full findings:
-> `context/features/105-privacy-webhook-domain-and-erase.md`. **Nothing imports
-> either module** — no route, no TOML, no deploy; all of that is step 106, which
-> is deliberately split off because it edits a **protected file** and registers
-> subscriptions on Shopify's side that a local revert cannot undo.
->
-> 🔴 **The finding that sized the feature: `shop/redact` is NOT a no-op, and our
-> own checklist says it is.** The app stores **zero customer PII** — no customer,
-> order or buyer data, and `Shop.email` / `Shop.name` are columns nothing ever
-> writes — so `customers/data_request` and `customers/redact` are honest
-> acknowledgements. But a shop's footprint spans six tables, so `shop/redact` has
-> real work. `app-store-review-checklist.md:48` still claims all three "may be
-> acknowledged no-ops"; ⚠️ **the correction is owed by step 106**, where the
-> handlers it describes will exist.
->
-> 🔴 **Merchant decision D1 — the erase is GUARDED on `isInstalled`.** Shopify
-> sends `shop/redact` 48 h after uninstall and never cancels it on reinstall, so
-> an unguarded erase deletes every template of a merchant who uninstalled Friday
-> and reinstalled Monday — silently, on schedule. The guard lives **inside the
-> `WHERE` clause**, not in a preceding read: a read-then-delete leaves a window
-> for the reinstall to land between the two statements, reintroducing the exact
-> failure it prevents. Same shape buys idempotency free (`deleteMany` → `count: 0`
-> where `delete` throws `P2025`, and Shopify retries every non-200).
->
-> ⚠️ **`Session` is outside the cascade and that is the trap.** Five tables come
-> down with the `Shop` row via FKs that are `ON DELETE CASCADE` **in the emitted
-> SQL**; `Session` has no FK at all (keyed by a plain `shop` string), so it needs
-> its own delete — gated on the erase actually happening, or a reinstalled
-> merchant gets logged out by a redaction we just declined.
->
-> 🔴 **M2 falsified this step's central test claim: A MOCKED PRISMA CANNOT ENFORCE
-> A `WHERE` CLAUSE.** Dropping the guard left the test *named* for the reinstall
-> case passing green — the mock returns what it was told regardless of the query,
-> and only Postgres can apply the condition. What caught it was an exact-`where`
-> assertion in a differently-named test. 🔬 **A behavioural test whose subject is
-> enforced by the database is structural whether or not it looks it.** The test
-> was rewritten to assert both halves and say which is which.
->
-> 🔴 **M5 exists because a careless global `sed` broke the code and NOTHING
-> FAILED.** Restoring M2 also rewrote the classifying `findUnique`'s `where`,
-> adding the guard to a read that must stay unfiltered — which **inverts the log
-> line**, reporting a still-installed shop as `not-found`. Suite green throughout,
-> because that `where` was asserted nowhere. 🔬 Two lessons: a blind global
-> substitution is a mutation you did not intend to run, and **the accident found a
-> gap all four planned mutations missed**. Closed by a new test; M5 is its mutation.
->
-> ⚠️ **The step's planned baseline (1270 / 47) was WRONG — the real one is
-> 1309 / 49**, settled by stashing the tracked edits and re-running. The bad figure
-> came from a session-start `test:run`; no explanation was found and none was
-> invented. 🔬 **A baseline is only a baseline if it was measured on the tree the
-> diff is measured against** — kept, it would have claimed +68 tests for 29 tests
-> of work, and read as thoroughness rather than as a measurement error.
-
-> ✅ **Step 106 — COMPLETE 2026-08-02, gate 10 of 10, DEPLOYED AND CONFIRMED
-> REGISTERED** (version `appx-product-specs-table-7`, Active; the Dev Dashboard's
-> Versions page lists a **"Privacy compliance webhook subscriptions"** block with
-> all three URLs — a separate section from the two ordinary `topics` ones, which
-> is precisely why `compliance_topics` is its own key).
-> 🔬 **The route paths survive the whole chain byte-for-byte** — `flatRoutes` →
-> generated router → TOML → Shopify — `data_request`'s mid-word underscore
-> included, so D6 is confirmed at the far end and not only at ours.
-> 🔴 **BUT NOT SUBMISSION-READY — `app_url` is still `https://example.com`.** A
-> relative subscription `uri` resolves against `application_url` at deploy time, so
-> all three registered endpoints point at a domain **we do not own**. ⚠️ **This
-> passes every local and dev-store check** because `shopify app dev` rewrites the
-> URLs while it runs — and **compliance webhooks are the one thing Shopify delivers
-> when no dev session exists** (`shop/redact` arrives 48 h after uninstall), so in
-> production every delivery would go elsewhere and the erase would never run.
-> Surfaced, not caused, by this step: the placeholder has been there since the app
-> was scaffolded and 106 is simply the first feature whose correctness depends on
-> it. `redirect_urls` has the same placeholder, so OAuth shares the latent problem
-> — fix both together and re-deploy. 🚫 Not attempted here: guessing a hostname
-> and deploying it anchors a wrong URL at the same one-way cost as the right one.
-> Now a checklist item in `app-store-review-checklist.md` §3.
-> The three route files, 15 route-action tests, and the
-> three `[[webhooks.subscriptions]]` blocks. Local gate green: typecheck · lint ·
-> format · **1353** tests / **51** files · build; baseline **1338 / 50**, so **+15
-> — exactly the planned count**, no silent overshoot. Full record:
-> `context/features/106-privacy-webhook-routes-and-subscriptions.md`.
-> 🔴 **NOTHING HAS REACHED SHOPIFY YET.** The subscriptions live only in the local
-> TOML — the routes answer, but Shopify does not know to call them, so **the App
-> Store blocker is not cleared** until `shopify app deploy` runs, which is the
-> merchant's. ⚠️ **Check `application_url` immediately before deploying** — it
-> reads `https://example.com` on disk and `shopify app dev` rewrites it to the
-> live tunnel; whatever is present at deploy time becomes the app's URL.
->
-> ✅ **Nine live checks against the dev server and real Neon, all passing, with
-> `appx-dev` UNCHANGED at 21 templates / 1 session before and after.** Bad HMAC →
-> **401** on all three routes (which also proves the URLs resolve — a wrong path
-> would 404). Throwaway shop A (uninstalled) erased **with the FK cascade and the
-> session sweep** — the session is the telling half, since `Session` has no FK so
-> no cascade could reach it and only the explicit second delete could. B
-> (installed) declined with shop, template **and session** intact; redelivery
-> idempotent; both `customers/*` topics acknowledged with the database
-> **completely untouched**. 🚫 `shop/redact` was never fired at the real dev-store
-> domain — the throwaway installed case proves the guard on a row we could afford
-> to lose.
-> 🔬 **The strongest evidence was free: B's request re-sent BYTE-FOR-BYTE after
-> flipping one boolean — declined, then erased.** A controlled experiment with
-> exactly one variable, which no mocked-Prisma test can produce (step 105's M2
-> established that a mock cannot apply a `WHERE`). It doubled as the cleanup, so
-> the throwaway rows were removed **by the feature under test** and no destructive
-> SQL was hand-written.
->
-> 🔴 **NEW FINDING — the SDK does NOT cross-check `payload.shop_domain` against
-> the HMAC-authenticated header.** A forged `shop_domain: attacker…` was delivered
-> and returned 200 with the payload domain ignored, i.e. **the forged value
-> reaches the handler** and the only thing between it and a `where` clause is the
-> route using the authenticated `shop`. D1 is load-bearing, not defence-in-depth,
-> and the `payload_shop_domain_mismatch=` log branch is reachable in production
-> rather than dead code.
-> 🔴 **NEW FINDING — `X-Shopify-Webhook-Id` is REQUIRED by `authenticate.webhook`;
-> omitting it is a 400.** This nearly produced a wrong conclusion: an early probe
-> 400'd and the attractive reading was "the library rejected the shop mismatch" —
-> which would have made the finding above untestable and silently false. A 2×2
-> isolation (payload B/attacker × header present/absent) settled it: **both** 400s
-> were the missing header, **both** 200s came back regardless of payload domain.
-> 🔬 **Step 102's instrument rule, one layer out: a non-200 from a hand-built
-> request is a claim about the REQUEST first and the code second** — and the more
-> interesting hypothesis is the one to test, not the one to adopt.
->
-> ✅ **The no-PII log check is CLOSED** — merchant pasted the dev-server terminal.
-> No email, no phone, no order id in any line; `orders=3` is the count doing
-> exactly the job it was invented for. 🔬 **The strongest line was unplanned:** the
-> first delivery came from `shopify app webhook trigger`, and its
-> `customer_id=191167 / orders=3 / data_request_id=9999` identify it as
-> **Shopify's OWN documented sample payload** — the one carrying
-> `john@example.com` and `555-625-1199`. So the guarantee is verified against
-> Shopify-generated data through the real HMAC path, not against a fixture we
-> wrote to be clean. That same line fired `payload_shop_domain_mismatch=` (the CLI
-> sends a literal `{shop}.myshopify.com`), proving the branch is live code
-> independently of the forged-payload test.
-> 📌 **`customer_id` IS logged, deliberately** — D4 classes it as an opaque id;
-> email, phone and order ids are what the summary excludes.
-> 🔬 **An ABSENCE was evidence too:** the 2×2 isolation sent four requests and
-> produced exactly two log lines — the two 400s logged nothing, confirming from the
-> other side that a rejected request never reaches handler code.
->
-> ✅ **D6 discharged with evidence rather than inference.**
-> `.react-router/types/+routes.ts` declares `/webhooks/customers/data_request`,
-> `/webhooks/customers/redact` and `/webhooks/shop/redact` verbatim — a mid-word
-> underscore IS literal to `flatRoutes`, so the hyphenated fallback was never
-> needed. 📌 **`+routes.ts` is where a route's real URL is readable**; the
-> `+types/` files are named after the source file and never state the path, which
-> is the file a reader would check first.
-> ✅ **`shopify app config validate --json` → `{"valid": true, "issues": []}`**,
-> which validates `compliance_topics` against the CLI's own schema instead of
-> against a doc page, and confirms the diff touched no definition block.
->
-> ✅ **The step-105 M2 problem did NOT recur, and the reason is the useful part.**
-> There, dropping `isInstalled: false` from a `where` left the test named for it
-> green: a mocked Prisma returns what it was told regardless of the query. Here
-> the equivalent mutation (`eraseShopData(summary.shopDomain ?? shop)`) failed
-> exactly one test, the one named for it. 🔬 **A mock can testify to what you
-> passed it, never to what the database would have done with it** — so the
-> shop-isolation boundary is testable at this layer precisely because it is an
-> *argument*, not a *clause*. The test asserts the whole argument list, so a
-> second parameter smuggling the payload domain in later also fails.
->
-> ⚠️ **Two of my six mutation predictions were wrong, from one mistake.** M3 and
-> M4 were predicted as "tests 11–12" and "tests 13–15" — the paired guards across
-> all three routes — but each mutation was applied to **one** route, so exactly one
-> of each pair fired. The guards are fine; the prediction confused the pattern with
-> the instance. 🔬 **A per-route mutation can only fail per-route tests**, and
-> stating predictions as test-number ranges hid that.
->
-> 🔴 **M3b was added because M3 left the Prisma trap unproven.** `db.server`'s
-> default export is replaced by a Proxy recording the dotted path of every call at
-> any depth — stronger than stubbing the one method someone thought of. M3 trips
-> the *`eraseShopData`* assertion beside it and says nothing about the trap, so a
-> direct `db.session.deleteMany` call was added: it fires, and the failure message
-> names the path (`expected [ 'session.deleteMany' ] to deeply equal []`).
-> ⚠️ **Stated limit, in the test file rather than implied:** neither `customers/*`
-> route imports `db.server` today, so the trap is armed for a future edit rather
-> than describing current behaviour.
->
-> ✅ **The checklist correction step 105 owed is paid.**
-> `app-store-review-checklist.md` §3 claimed all three topics "may be acknowledged
-> no-ops" — false for `shop/redact`, which deletes across five tables plus a
-> session sweep. It now says which two are no-ops, and gained a **separate 401
-> line**: the invalid-HMAC response is what a reviewer actually probes, and it was
-> previously implied by a general "HMAC verified" bullet rather than stated.
-> ⚠️ **A 200 from `/webhooks/shop/redact` does not mean data was deleted** — the
-> handler acknowledges all three outcomes (erased / declined-because-installed /
-> not-found) because a non-200 earns a retry and two of the three are correct
-> handling. `data-model.md` §15 now says so, beside the topic → route → URL table.
+---
 
 ## Current Goal
 
-**Reshell Phase B2 — the built-in preset gallery (Style tab feature 57, steps 13–14).**
+**Clear the two hard App Store blockers, then finish the reshell.**
+
+1. 🔴 **`application_url` is still the scaffold placeholder `https://example.com`** — so the
+   three registered compliance webhook endpoints resolve to a domain we do not own.
+   `redirect_urls` carries the same placeholder, so OAuth shares the latent problem. Fix =
+   stand up the production host, put it in **both**, re-deploy. ⚠️ This passes every local
+   and dev-store check, because `shopify app dev` rewrites the URLs while it runs — and
+   compliance webhooks are the one class Shopify delivers with **no dev session running**
+   (`shop/redact` arrives 48 h after uninstall). See `app-store-review-checklist.md` §3 and
+   `context/features/106-privacy-webhook-routes-and-subscriptions.md`.
+2. 🔴 **Billing** — the other hard blocker for a paid listing (`prd.md`,
+   `app-store-review-checklist.md`).
 
 Everything upstream is done and live-verified on the dev store:
 
 - **Custom spec-table editor** — 13-step build + Step 9.5 (features 02–15).
 - **Reshell Phase A** — editor reshelled to the mockup (features 16–18).
-- **Editor / templates-list slices** — paste refinements, list polish, bulk delete +
-  Undo, keyboard cell navigation, lifecycle / create-on-save (features 19–33).
+- **Editor / templates-list slices** — paste refinements, list polish, bulk delete + Undo,
+  keyboard cell navigation, lifecycle / create-on-save (features 19–33).
 - **Storefront pipeline** — Theme App Extension renders a product's assigned spec table
   live; dynamic `SHOPIFY_FIELD` / `METAFIELD` parts resolve (features 34–35).
-- **Product assignment engine (37–48)** — merchant-complete end to end: broad +
-  multi-value scopes (PRODUCT / COLLECTION), EXCLUDE carve-outs, block-on-conflict
-  activation gate, shop-level routing metafield, 3-tier storefront resolution, dynamic
-  assigned-product count.
-- **Reshell Phase D — device previews (49–56)** — read-only Desktop / Mobile storefront
-  previews in the editor (tablet removed 2026-07-22).
-- **Reshell Phase B1 — Style tab knobs / rail / rendering (57–69, steps 1–12), COMPLETE
-  2026-07-20** — every field in `STYLING_FIELD_NAMES` has a control, rides the SaveBar,
-  persists to `TableStyling`, serializes to the metaobject, and renders on the storefront;
-  rail a11y pass done; Reset-to-theme-defaults ships; docs reconciled.
+- **Product assignment engine (37–48)** — merchant-complete end to end.
+- **Reshell Phase D — device previews (49–56)** (tablet removed 2026-07-22).
+- **Reshell Phase B1 — Style rail (57–69, steps 1–12)**, complete 2026-07-20.
+- **Reshell Phase B2 — preset gallery (88–92)** + **accent themes (93, 97–102)**, complete
+  2026-07-30. Create template → six-card gallery + seven-swatch accent row → a scaffold
+  already styled and stamped, through to `styling_css` on the rendered storefront.
+- **Scale / verification series (103–106)** — read-pattern catalog, metafield byte budgets,
+  privacy webhook domain + routes.
 
-Test suite **1138 tests / 43 files** (was 1021 at B1 sign-off); full gate
-(typecheck · lint · format · test · build) green as of 2026-07-28.
-
-Since B1: the Style tab's width surface — the collapsible rail (feature 76). Feature 75's
-full-size preview modal shipped the same day and was **removed 2026-07-25**; see Completed.
-
-**Next:** 🟡 **feature 96 (Underline color) is BUILT 2026-07-28, gate green, LIVE
-VERIFICATION OWED** — doc
-`96-…`. A dedicated colour for the `Underlined` section-header rule, which today is
-`borderColor` (the `Divider color` swatch) and so cannot differ from the row rules,
-column divider and outline. Same shape as `outerBorderColor` (feature 78): a nested
-`var(--appx-spec-header-underline-color, var(--appx-spec-border-color, currentColor))`,
-so a null value repaints nothing. Hidden unless `Header style` is `Underlined`
-(merchant decision (b) 2026-07-28) — the third `ColorKnob.visibleWhen`, predicate count
-9 → 10, JSX guards still 7. **No empty-state help text** (decision (a)): the fallback
-chain ends in `currentColor`, not a literal, so the empty state has a two-level truth
-no short string can tell — which makes `ColorKnob.helpText` / `emptyHelpText` optional,
-exactly as feature 86 did to `StylingOption.helpText`. ⚠️ **The first Style-tab unit to
-need a MIGRATION since feature 86** — features 87 / 94 / 95 all avoided one, so the
-silent-save-failure-until-`shopify app dev`-restart trap is live again. Liquid / TOML /
-metaobject definition unchanged.
-
-**Built the same day. Tests 1147 → 1158 (+11); gate green (typecheck · lint · format ·
-1158 · build).** Migration `20260728083021_add_header_underline_color_styling` applied —
-one additive nullable column, no backfill; the `EPERM` on `prisma generate` did not stop
-the client regenerating (verified in the generated types). **Eight existing guards failed
-on the first run and all eight were predicted**; six needed only a number moved, because
-they were derived from the domain rather than hand-listed — the `stylePresets` colour
-probe in particular had said in a comment that a tenth colour would need no edit, and it
-did not, so the preset gallery's zero-colour promise held by construction. ✅
-**Mutation-tested three ways** (flatten the fallback chain → only the 2 new CSS-contract
-tests; unwire `visibleWhen` → the wiring guard + the BAR; weaken the predicate to
-`!== "BANDED"` → both `SECTION_HEADER_STYLES`-derived assertions, no hand-listed one).
-🔴 **Two deviations, both narrowing:** only `emptyHelpText` became optional, not
-`helpText`; and the `visibleWhen` bar was **reworded from "one live RULE" to "one
-SURFACE"** — a section header has two markup shapes, so both header gates feed two rules
-apiece and a rule-count bar would have disqualified the two gates that exist.
-✅ **LIVE-VERIFIED 6 of 8 the same day, rail → Postgres → metaobject → REAL STOREFRONT**
-(not the editor mirror — the embedded admin's iframe would not accept the interactions
-needed to drive the rail this session, so the merchant set the colour and every
-downstream leg was measured by query and by `getComputedStyle` at 1:1). 🔴 **The two
-claims that mattered are now measurements, not arguments.** Before the write, with the
-field null, both custom properties were absent and the section rule computed
-`1.81818px solid rgb(0,0,0)` — the chain resolving to `currentColor`, i.e. byte-for-byte
-the pre-96 rendering. After the merchant set `#E47272` on the ACTIVE `Motorola Moto G45
-5G`: all five section headers compute `rgb(228,114,114)` while the row rules stay
-`rgba(0,0,0,0.1)` — **the underline moved and the row rules did not**, which is the whole
-feature. Postgres touched **exactly one column** (every other colour still NULL, every
-pre-existing value byte-identical); `styling_css.vars` carries the new declaration and
-**`classes` is unchanged** — the "nullable ⇒ custom property, never a modifier class"
-rule holding for the tenth colour. The live CDN extension asset is byte-identical to the
-local file, and its `@media` block never mentions the new var, so **mobile is
-breakpoint-independent by construction** rather than needing feature 87's 390px walk.
-⚠️ **Still owed (2):** the Banded/Plain hide transitions with preserve-on-hide, and the
-collapsible `<summary>` shape (the verified template has collapsing off) — both
-unit-tested and mutation-tested, neither observed. ⚠️ **`Motorola Moto G45 5G` still
-carries `#E47272` and was deliberately NOT reverted** — the merchant chose it on their
-own live template.
-
-Then: ✅ **feature 87 (plain section header) is COMPLETE 2026-07-27** — built,
-live-verified rail → Postgres → metaobject, and all three remaining legs (rendered
-storefront on the ACTIVE `Unikyy Blade Pro Turbo Fan` template / product `Motorola Edge
-60 Fusion 5G`, mobile ≤749px on the real storefront tab, and `AGX TF36 Handheld Turbo
-Fan` loading with `TEXT_ONLY` correctly read as "Underlined") closed the same day — a
-third `SECTION_HEADER_STYLES` member plus a relabel; doc `87-…`. It was item 1 of a
-five-item merchant report and blocked two of the five reference tables; items 2–5 are
-still unscoped. Zero-cost by construction (no migration, no new field, no hide
-predicate, no `StyleTab.tsx` edit), so it never moved B2.
-
-Then: ✅ **feature 86 (Style tab reorganization) is COMPLETE** — all six steps, shipped
-2026-07-26, and it landed BEFORE B2 by merchant decision so presets arrive onto an
-organised rail rather than adding a group to a disorganised one. The rail now carries
-**eight groups on one axis** (the object being styled), each ending with its own colors.
-Doc `86-…`. B2's preset cards slot in ABOVE all eight.
-
-Then: ⚠️ **feature 85 (multi-column row flow) is BUILT but not signed off** — the
-feature-70 screen-reader pass it was gated on was skipped at the merchant's instruction
-and is still owed, plus two small live checks (see Next Up item 4). It cleared B2's
-`ROW_LAYOUTS` blocker, so B2 = steps 13–14 can proceed. **Specced 2026-07-27 as
-feature 88, doc `88-…`** — `stylePresets.ts` constants, rail preset cards, and a
-gallery **route** (`/app/templates/styles`, NOT a modal) reached from Create template.
-**Copy** semantics into real `TableStyling` columns, `basedOnPreset` as provenance
-only. `basedOnPreset` / `extraStyles` exist in the schema, deliberately unwritten
-until Step 13. Then Phase C (Settings display rules) → E
-(assignment folded into the reshell) → F (top-bar status/save model + cleanup). 14-step
-plan: `~/.claude/plans/style-tab-phase-b-implementation-plan.md` (1–12 = B1, 13–14 = B2,
-15+ = B3 saved presets, cuttable).
+**Remaining reshell:** Phase C (Settings display rules) → E (assignment folded into the
+reshell) → F (top-bar status/save model + cleanup). 14-step Style-tab plan:
+`~/.claude/plans/style-tab-phase-b-implementation-plan.md` (1–12 = B1, 13–14 = B2, 15+ = B3
+saved presets, cuttable).
 
 ### Binding rules (do not violate)
 
@@ -1353,13 +71,87 @@ plan: `~/.claude/plans/style-tab-phase-b-implementation-plan.md` (1–12 = B1, 1
   Desktop / Mobile previews are the _only_ place Style / Settings changes appear (they are
   storefront-faithful). Step 11 as originally planned ("live styling on the editing grid")
   was built, rejected on review, and fully reverted — see `context/features/67-…`.
-  `SpecTableEditor.module.css` + `RowGrid.tsx` are tripwired byte-clean against sign-off `a7b304c`.
+  `SpecTableEditor.module.css` + `RowGrid.tsx` are tripwired byte-clean against sign-off
+  `a7b304c`.
 - **No contrast checking ships** (decided 2026-07-20): the app can't compute contrast (null
   colours inherit unknown theme values; alpha is enabled on background knobs), so any signal
   would be a guess. Don't reintroduce without a new decision.
 - **Server precomputes styling; Liquid only prints** — the sync writes derived
   `styling_css {classes, vars}`; the Liquid block carries no styling logic, so a new knob
   needs no storefront work (the pipe is total over `StylingValues`).
+- **Nullable ⇒ CSS custom property; non-null keyword ⇒ modifier class.** The Step 2 rule.
+  It is why most Style-tab features cost no migration, no presence flag and no Liquid edit.
+- 🔴 **The default IS the storage format.** The wire is overrides-only, so a template storing
+  the default stores **nothing** — there is no "unset" state and no way to scope a default
+  change to new templates only. Changing any default repaints every stored table that never
+  set the field. Free while the only data is the dev store's; a silent storefront change for
+  every merchant afterwards. (Same window closed the `simple` → `classic` preset-id rename
+  and the `ALL_OPEN` → `FIRST_OPEN` initial-state change, both 2026-07-30.)
+- **A preset bundle OMITS any field equal to its domain default** — an explicit default
+  serializes away to nothing and fails the fixed-point guard. Four cards have hit this
+  (Multi-column's header, Classic's `LINES`, Accordion's `BANDED` and `FIRST_OPEN`).
+- **A preset bundle sets STRUCTURE ONLY** — no colour, no typography, no density, no width.
+  🔴 **Colours never join `PRESET_SCOPED_FIELDS`** (feature 93 D7, reversing a
+  forward-reference stated in three places): appending one makes every seeded template read
+  "Customized" the instant it is created, and an accent has no provenance column, so the
+  repair is undefined rather than merely wrong. `PRESET_SCOPED_FIELDS` and
+  `ACCENT_SCOPED_FIELDS` are **asserted disjoint**, and that disjointness is what lets the
+  seeding invariant be stated per-scope.
+- **A rail group whose swatches can ALL vanish must still hold a non-swatch control that
+  always renders.** (Replaces feature 95's "every group keeps one unconditional swatch",
+  which feature 96's `tableFrame` gate broke.) A control earns a hide only when its field
+  feeds **exactly one live CSS rule** — a fact about the stylesheet, not a tidiness call.
+  🚫 `borderColor` is a three-place permanent no: it dresses row rules, the column divider,
+  the feature-80 separator, and the outline whenever `outerBorderColor` is unset.
+- **Number boxes commit on a keystroke only when the parse is LOSSLESS** —
+  `format(parse(raw)) === raw` (`liveCommitValue`, `stylingControls.ts`). 🔴 The naive fix is
+  worse than the bug: these fields are controlled and every converter clamps, so a blind
+  `onInput` commits the `1` of a `1000` as the 240 floor and rewrites the box under the
+  caret. `liveCommitValue` returns three things — `undefined` (still typing), `null` (a real
+  empty/off value), a number — so only `!== undefined` is a correct test.
+- 🔴 **On a NATIVE element, a boolean value for an attribute React does not recognise is
+  dropped from the DOM entirely** (React 18, dev-console warning only). App Bridge's
+  `<SaveBar>` takes a native `<button>`, so it needs `loading="true"` as a **string**.
+  ⚠️ Dashed `<s-*>` tags are custom elements and DO receive booleans stringified — 🚫 do not
+  "fix" the four working `<s-button loading={flag}>` call sites.
+- **`aria-describedby` concatenates the referenced element's TEXT CONTENT with no
+  separator** — `<span>A</span><span>B</span>` announces `"AB"`. Any multi-phrase
+  description must be one text node with real DOM separators.
+- **Every GraphQL input array is capped at 250** (Admin and Storefront, since API 2020-01)
+  and Shopify rejects the **whole request**, not the overflow. `nodes(ids:)` chunks at
+  `NODES_MAX_IDS = 250`; failure is per-chunk by construction.
+- **Instrument before code.** When a live check says "nothing changed" or "the control is
+  dead", suspect the instrument first, and capture the baseline through the same instrument
+  at the same settings in the same session. This has produced a false negative about working
+  code at least five times. Environment specifics live in the
+  [[embedded-admin-iframe-automation]], [[testing-strategy]] and
+  [[browser-verify-embedded-app]] memories.
+
+---
+
+## Recently Shipped
+
+> Rolling window, newest first. Older units roll into Completed.
+
+- **Step 106 — privacy webhook routes + subscriptions** — ✅ 2026-08-02, gate 10/10,
+  **deployed and confirmed registered** (version `appx-product-specs-table-7`). 9 live
+  checks green; `appx-dev` unchanged. 🔴 Not submission-ready — see Current Goal item 1.
+  [`106-…`](features/106-privacy-webhook-routes-and-subscriptions.md)
+- **Step 105 — compliance payload domain + shop erase path** — ✅ 2026-08-02, tests → 1338.
+  🔴 `shop/redact` is NOT a no-op (six tables); the erase is guarded on `isInstalled`
+  **inside the `WHERE` clause**; `Session` is outside the FK cascade and needs its own
+  delete. [`105-…`](features/105-privacy-webhook-domain-and-erase.md)
+- **Step 104 — metafield byte budgets** — ✅ 2026-08-01, tests → 1309. The deliverable is
+  one number: **3,446** excluded product GIDs before the 128KB `json` write ceiling. Ships
+  an **API-version tripwire** in `app/shopify.server.test.ts` — the ceiling is dormant only
+  because the runtime client is pinned to `October25`.
+  [`104-…`](features/104-metafield-byte-budgets.md)
+- **Scope/exclude chips turned into raw GIDs past 250 products** — ✅ fixed 2026-08-01,
+  tests → 1284. No feature doc; record is `data-model.md` §13 F4 + git. First OQ-103 finding
+  acted on. ⚠️ Not live-verified (needs a >250-product template; no such dev-store data).
+- **Step 103 — read-pattern catalog** — ✅ 2026-08-01, `data-model.md` §13. No code, tests
+  unmoved at 1270. 20 reads catalogued; six findings routed out.
+  [`103-…`](features/103-read-pattern-catalog.md)
 
 ---
 
@@ -1367,1412 +159,152 @@ plan: `~/.claude/plans/style-tab-phase-b-implementation-plan.md` (1–12 = B1, 1
 
 > One line per unit. Detail → the linked `context/features/` doc + git history.
 
-📏 **Step 104 — metafield byte budgets → `data-model.md` §14 — ✅ DONE 2026-08-01
-(`context/features/104-metafield-byte-budgets.md`). Gate green (typecheck · lint ·
-format · **1309** · build), tests 1284 → 1309 (+25), files 47 → 49.** Step 2 of the
-scale/verification series; consumes 103's F1 + F2 and produces the numbers step 105
-needs to write an overflow *policy*.
-- 🔴 **The deliverable is one number: 3,446.** That is where `excludedProductGids` —
-  §13 F2's "bounded by NOTHING" — collides with the 128KB `json` write ceiling. Also
-  **1,745** `byProduct` entries or **1,769** `byCollection` entries. §13 said *what*
-  bounds each read; this says *how much fits*, which is what 105 cannot be written
-  without. `byType`/`byVendor` get no per-entry number, honestly: the key is
-  merchant-authored text with no length limit, so their count is bounded and their
-  size is not.
-- 🔬 **Two spec predictions were wrong, and the tests caught both.** 104 predicted
-  **3,445** excludes; the truth is **3,446**. Capacity is *not*
-  `floor((limit − envelope) / perEntry)` — the first array element carries no leading
-  comma, so marginal cost and total capacity are different questions. The tests
-  binary-search the **real serializer** instead of restating a literal. (The second
-  was a fixture byte-count in a test, not a shipped number.)
-- 🚫 **104 measures and warns. It does not block — deliberately.** A payload of any
-  size still reaches `metafieldsSet`, and there is a test whose only job is to prove
-  it. Refusing / truncating / surfacing a merchant error is **105**, and that guard is
-  what stops a future session quietly making 105's decision inside a logging change.
-- 🔴 **The part with teeth is `app/shopify.server.test.ts` — an API-version tripwire.**
-  The ceiling is dormant *only* because the runtime client is pinned to
-  `ApiVersion.October25`. ⚠️ **`ApiVersion.April26` is the newest stable version the
-  installed `@shopify/shopify-api` offers** — so the *next* routine bump is precisely
-  the one that arms a 16× reduction under a live storefront path, with no other code
-  change. A comment saying "don't bump this" loses to a dependency PR; a red suite does
-  not. It reads the app's own exported `apiVersion`, never a copy.
-- ⚠️ **Correction to §13 F1, found while scoping: `Metafield.sizeInBytes` is
-  UNSTABLE-ONLY.** Validated absent from 2025-10, 2026-04 **and** 2026-07 via
-  `validate_graphql_codeblocks`. shopify.dev's `product` page shows it in a
-  "Get the size of a metafield value in bytes" example under *latest*, which is what
-  misled the previous session. Measurement is therefore app-side — and better for it:
-  a *pre-write* read of the exact bytes, no round-trip, versus a post-write read of a
-  write that already succeeded or failed. Second correction: `shopify.app.toml:12` is
-  the **webhook** payload version, not the Admin client's (104 §C2). Both corrected in
-  §13 F1 and in the step-103 entry below.
-- 📌 **`rows` measured but NOT instrumented (104 §D7).** 200 rows breaches 128KB only at
-  ~**508 chars** of value text per row; realistic tables sit at 31–37KB (~25%). There is
-  no per-label/per-value length cap anywhere — `parseRowsWithinCap` enforces the row
-  count and nothing else — so the bound is real but distant. Recorded rather than wired,
-  because a second call site doubles the diff to restate a bound the row cap mostly holds.
-- ✅ **Mutation-tested four ways, all as predicted.** `TextEncoder` → `.length` → **3**
-  failures (the accented / CJK / emoji tests — `String.length` under-reports a
-  6-accent vendor name by 60%). `>` → `>=` at the `over` boundary → **exactly 1**. Refuse
-  the write when over budget → **exactly 1** (the §D1 guard, confirming it has precisely
-  one guard and it works). Bump to `ApiVersion.April26` → the tripwire fires with its
-  full message. 📌 A first attempt used `ApiVersion.July26`, which does not exist — the
-  suite *skipped* rather than failed, which is why the mutation was re-run against the
-  real enum member instead of being recorded as a pass.
-- 🚫 **Not verified live.** No shop has a routing map near any of these numbers; that
-  needs seeded data (**106**). The arithmetic is asserted against the real
-  `buildRoutingProjection`, not against a live `metafieldsSet` response.
+### Style tab — presets, accents & polish (2026-07-26 → 2026-07-31)
 
-🔴 **Scope/exclude chips turned into raw GIDs past 250 products — ✅ FIXED 2026-08-01
-(OQ-103-B / `data-model.md` §13 F4). Gate green (typecheck · lint · format · **1284** ·
-build), tests 1270 → 1284 (+14).** No feature doc (a bug fix), so this entry IS the
-record. It is the first finding from step 103 to be acted on, and deliberately **its own
-unit** — 103's rule was that findings route out of its diff, not that they stay unfixed.
-- **The bug.** `resolveScopeResourceDetails` passed the whole GID set to **one**
-  `nodes(ids:)` request. Shopify rejects **any** GraphQL input array over 250 (Admin AND
-  Storefront, since API 2020-01) and rejects the **whole request** — it does not resolve
-  the first 250. Because this resolver is fail-soft by design, the rejection landed in the
-  catch and returned the identity map, so **every** chip rendered as
-  `gid://shopify/Product/7234567890123` with no thumbnail.
-- ⚠️ **The silence was the dangerous part, not the threshold.** No error, no toast, no
-  console line — the editor loaded normally and simply looked broken. A merchant would
-  report "the app is showing weird codes", not "an error occurred". Same class as the
-  save-bar spinner bug: correct-looking code, silent wrong output.
-- 🔴 **It was all-or-nothing, and reachable.** Not "250 work, the rest don't" — 251 ids
-  meant 251 broken chips. And the likeliest trigger is the `ALL_PRODUCTS` "Except these
-  products" list, which is capped **nowhere**: not the picker, not `setTemplateExcludes`,
-  not the schema. Excluding 300 products from a store-wide table is ordinary merchant
-  behaviour.
-- ✅ **Fix:** `NODES_MAX_IDS = 250` + a pure, exported `chunkIds` (the "extract the
-  arithmetic, not the component" move from step 100's `rovingRadioKeys.ts`), and the
-  live runner loops chunks into a shared map. **A set at or under the cap is still exactly
-  ONE request** — byte-identical to before, which is why no existing test moved.
-- 🔬 **The design decision worth carrying: failure is now PER CHUNK.** The map is seeded
-  with identity entries and each chunk *mutates* it, so "did nothing" and "failed" are the
-  same state by construction — there is no partial-result merge to get wrong. A 400-product
-  set whose second request fails now shows 250 real chips and 150 GIDs, where before one
-  failure blanked all 400. That is a **strict improvement on the pre-bug behaviour**, not
-  just a restoration.
-- ⚠️ **Chunks run SEQUENTIALLY, not `Promise.all`** — matches the in-repo precedent
-  (`checkCrossDimensionConflicts`), and a set big enough to need several chunks is exactly
-  the one most likely to bump the rate limit if fired at once (priority #3). 🚫 **No cap on
-  chunk count**, unlike `fetchProductMetafieldDefinitions`' MAX_PAGES: the input is the
-  merchant's own saved selection, so truncating would silently drop chips they can see.
-- ✅ **Mutation-tested three ways, all caught precisely.** Removing the chunking → 3
-  failures; raising the cap to 251 → 4 (including the pin on Shopify's documented limit);
-  making a failed chunk wipe already-resolved titles → **exactly 1**, the isolation test.
-  🔬 That last one landing on a single test is the useful result: it proves the isolation
-  guarantee has exactly one guard and that the guard works.
-- 📌 **The 250 is verified against Shopify's docs, not assumed** — the `nodes` reference
-  states "The input must not contain more than 250 values", and the 2019 changelog applies
-  it to every GraphQL input array. A test pins the constant so raising it re-opens F4.
-- ⚠️ **Not live-verified.** The failure needs a template with >250 selected/excluded
-  products; the dev store has no such data (that is step 106, seed data). The mechanism is
-  unit-tested and the ≤250 path is provably unchanged, but **no merchant-visible before/after
-  was observed** — recorded rather than implied.
+- **Gallery cards gained a derived "what's different" line** — ✅ 2026-07-31, tests → 1270.
+  `presetHighlights()` derived from the resolved bundle, never stored; goes INTO
+  `aria-describedby`. `StylePreset.description` removed the same day (merchant decision) —
+  it had already gone stale once. Live pass found two wrap defects invisible to all 1268
+  tests. No feature doc.
+- **Style-tab number boxes did not dirty the editor while typing** — ✅ fixed + live-verified
+  2026-07-31, tests → 1256. The `liveCommitValue` lossless round-trip rule (see Binding
+  rules). No feature doc.
+- **`sectionsInitialState` default `ALL_OPEN` → `FIRST_OPEN`** — ✅ 2026-07-30, tests → 1245,
+  storefront live-verified. Done then because the default IS the storage format (Binding
+  rules). 🚫 Defaulting it from the Enable-collapsing toggle was rejected — it breaks the
+  pure-read law. Added `specTableLiquidDefaultsContract.test.ts` (the Liquid `| default:`
+  literal was an unguarded second copy). No feature doc.
+- **Accordion card → BANDED section headers** — ✅ 2026-07-30, live-verified, tests unmoved
+  at 1237. [`88-…` §revision 3](features/88-style-preset-gallery.md)
+- **Save-bar spinner bug** — ✅ fixed 2026-07-30, tests → 1237, live-verified by DOM capture.
+  The React 18 native-attribute trap (Binding rules); `saveBarSaveAttrs()` in
+  `editorShared.ts`. No feature doc.
+- **Gallery polish pass** — ✅ 2026-07-30, tests unmoved at 1237. Classic's row rules were
+  silently off (`PLAIN` + `STRIPES`) → `TEXT_ONLY` + LINES, stripes moved to Accordion;
+  accent double-ring fixed by suppressing the **selected** ring, not the focus ring;
+  "Colour theme" → "Color theme"; the default swatch's tooltip → "Your theme's colors".
+  [`88-…`](features/88-style-preset-gallery.md)
+- **Feature 93 — accent themes** (six steps, 97–102) — ✅ COMPLETE 2026-07-30, tests → 1227,
+  live-verified admin → Postgres → metaobject → storefront. 🔴 An accent cannot be one field
+  (three of five cards hardcode `background: transparent`); five fields, `headerTextColor`
+  is what makes the set total. 🔴 **One open merchant decision:** step 102 measured §D3's
+  dark-theme risk and it is real on two surfaces — doc 93 §Open question 2.
+  [`93-…`](features/93-style-accent-themes.md) ·
+  [`97-…`](features/97-accent-vocabulary.md) ·
+  [`98-…`](features/98-accent-render-harness.md) ·
+  [`99-…`](features/99-accent-seed-path.md) ·
+  [`100-…`](features/100-accent-swatch-row.md) ·
+  [`101-…`](features/101-accent-gallery-wiring.md) ·
+  [`102-…`](features/102-accent-live-verification.md)
+- **Outline thickness relabel + Outline color hides itself** — ✅ 2026-07-29, tests → 1164,
+  live-verified 7/7 including preserve-on-hide. 🚫 `Corner radius` must NOT be gated (its
+  `overflow: hidden` clips the band and stripes with no frame drawn). Replaced feature 95's
+  swatch law — see Binding rules. No feature doc.
+- **Feature 96 — section-header underline color** — ✅ 2026-07-28, tests → 1158,
+  live-verified rail → Postgres → metaobject → real storefront. The tenth colour; a nested
+  `var()` chain ending in `currentColor`, so null repaints nothing. ⚠️ Two legs still owed
+  (the Banded/Plain hide transitions, and the collapsible `<summary>` shape). ⚠️ Left with
+  `#E47272` on `Motorola Moto G45 5G` — the merchant's own choice, deliberately not
+  reverted. [`96-…`](features/96-style-section-underline-color.md)
+- **Feature 95 — two dead colour swatches hide themselves** — ✅ 2026-07-28, tests → 1147,
+  live-verified 10/10. Predicates 7 → 9, riding a new `ColorKnob.visibleWhen`; JSX guards
+  still 7. Reverses feature 86 decision 4. [`95-…`](features/95-style-stripe-background-conditional.md)
+- **Feature 94 — section gap in the flat block layouts** — ✅ 2026-07-28, tests → 1120,
+  live-verified across all three row layouts. 🔴 Root cause: "a `<tr>` takes no margin" was
+  true only under `TWO_COLUMN`, and was repeated in three files.
+  [`94-…`](features/94-style-section-gap-in-flat-layouts.md)
+- **Feature 88 — built-in style preset gallery (Reshell Phase B2)**, four steps 89–92 —
+  ✅ COMPLETE 2026-07-27, tests → 1097, live 10/10 + storefront. Six cards at
+  `/app/templates/choose-style`, unskippable, create-time only. **No colour column written
+  by any card** — the zero-config theme-inherit promise survived a preset pick on real data.
+  Follow-up 2026-07-28: each card gained an in-anchor action line (`Use this style →`);
+  🚫 a per-card `<button>` was rejected (it would shrink the target ~36×).
+  [`88-…`](features/88-style-preset-gallery.md) ·
+  [`89-…`](features/89-style-preset-engine-persistence.md) ·
+  [`90-…`](features/90-style-preset-card-preview.md) ·
+  [`91-…`](features/91-style-preset-gallery-route.md) ·
+  [`92-…`](features/92-style-preset-create-flow.md)
+- **Feature 87 — plain section header** — ✅ 2026-07-27, tests → 1021, all three live legs
+  closed same day. A third `SECTION_HEADER_STYLES` member + a relabel (`TEXT_ONLY`'s label →
+  `Underlined`). The cheapest Style-tab unit: no migration, no field, no predicate, no
+  Liquid, no `StyleTab.tsx` edit. [`87-…`](features/87-style-plain-section-header.md)
+- **Settings-tab copy pass** — ✅ 2026-07-30. `"A specific product"` → `"Selected
+  products"`; the "say it twice" pattern swept out of four more surfaces. No feature doc.
+- **Feature 86 — Style tab reorganization** (six steps) — ✅ COMPLETE 2026-07-26, tests →
+  1012. Six groups → **eight on one axis** (the object being styled), Colors and Typography
+  dissolved, every group ending with its own colors. Zero storefront diff by construction.
+  Landed before B2 by merchant decision. [`86-…`](features/86-style-tab-reorganization.md)
+- **Feature 85 — multi-column row flow** — 🛠️ BUILT & live-verified 2026-07-26, tests → 981,
+  ⚠️ **NOT SIGNED OFF** — the feature-70 screen-reader pass it was gated on is still owed
+  (Next Up 3–4). `GRID` + `gridMinColumnWidthPx`. Height win measured at −28% on the 44-row
+  DJI table, ~half the plan's claim; going below 240 makes it worse.
+  [`85-…`](features/85-style-multi-column-row-flow.md)
+- **Feature 81 — section header typography & spacing** — ✅ 2026-07-26, tests → 943, fully
+  live-verified. Five nullable columns. `headerFontSizePx` is absolute px, not an em keyword
+  — the `<summary>` is a **sibling** of the table carrying the font-size var.
+  [`81-…`](features/81-style-section-header-typography.md)
+- **Feature 80 — section separation + section gap** — ✅ 2026-07-26, tests → 914, fully
+  live-verified. `border-block-START`, not `-end`, so the two rules never contest a
+  property. ⚠️ The `:not([open])` scope's second justification (the ALL_OPEN default) expired
+  on 2026-07-30. [`80-…`](features/80-style-section-separation-and-gap.md)
+- **Feature 79 — column divider** — ✅ 2026-07-26, tests → 887, fully live-verified. ⚠️ Its
+  one hazard is SOURCE ORDER, not specificity — all three selectors are two classes, so file
+  order alone decides. [`79-…`](features/79-style-column-divider.md)
+- **Features 77–78 — table width + outer border** — ✅ 2026-07-25, tests → 892 (incl. the
+  zero-means-off follow-up). 77 is CSS-only: `align-self: stretch`, not `width: 100%`.
+  78 adds five knobs and two presence flags; every integer minimum is 1, never 0.
+  [`77-…`](features/77-storefront-container-stretch.md) ·
+  [`78-…`](features/78-style-table-width-and-outer-border.md)
 
-**Step 103 — ✅ COMPLETE 2026-08-01, the read-pattern catalog.
-`data-model.md` §13 · Read Patterns. Doc: `context/features/103-read-pattern-catalog.md`.**
-The second step in the project to ship **no code** (102 was the first), and like 102 an
-unmoved test count is the result it wanted: **1270 unmoved, 47 files unmoved,
-`npm run build` green.** 20 reads catalogued (R1a–R1f storefront, R2a–R5b admin loaders,
-R6–R7 write-path reads, R8a–R8b webhooks), every one citing a `file:line`, **no
-"Bounded by" cell empty or hedged**, plus a 12-row index → read mapping. Six findings
-routed — F1/F2 → 104, F3 → Next-Up 6, F4/F5/F6 → **OQ-103-B/C/D**, plus **OQ-103-A** for
-the one bound that is genuinely unreadable — and 🚫 **none of them fixed here**, which
-was the whole point of the split.
-🔴 **P1 is confirmed and it is worse than the spec guessed: the app is NOT
-grandfathered.** Shopify's 128KB `json` metafield **write** limit (API 2026-04+)
-grandfathers apps that used json fields before 2026-04-01. This repo's first commit is
-**2026-06-09** and its first `type = "json"` landed **2026-07-02** (`6d1cd3a`) — both
-after the cutoff. ⚠️ **It is masked only by the pinned runtime client**:
-`ApiVersion.October25` (`app/shopify.server.ts:13`). **Bumping it to 2026-04 or later
-arms the ceiling** — so the routine-looking version upgrade is the thing to gate on 104,
-not a storefront change. *(Corrected 2026-08-01 by step 104: this entry originally also
-cited `shopify.app.toml:12`'s `api_version = "2026-07"` as if it governed the Admin
-client. It does not — line 12 sits under `[webhooks]` and sets the webhook payload
-version only. See 104 §C2.)*
-🔴 **P5 half-falsified, and the falsified half is the finding.** Key Decisions claims the
-activation gate is "O(rules) … never a catalog scan". Never-a-catalog-scan holds; the
-Postgres side is ≤4 queries. But the probes are per **(candidate × other-ACTIVE)** *pair*
-and **sequential** (`assignmentActivation.server.ts:191` → `assignmentConflict.server.ts:178`),
-so a 200-product candidate vs one VENDOR template = 200 sequential Admin round-trips.
-⚠️ **The Key Decisions line was deliberately NOT edited** — 103 records discrepancies,
-104+ resolve them.
-⚠️ **P3 partly FALSIFIED and the correction matters.** R2's Admin dependency is **one
-batched aliased request**, not per-template (`assignedProductCounts.server.ts:202`), and
-fails soft — so "depends on Admin API rate limits" was overstated. But the unpaginated
-half is **worse** than stated: `listTemplatesForShop` uses no `select`, so every
-template's **full `rows` JSON** (≤200 rows) is read from Postgres *and shipped to the
-browser* to render a row **count** (F3).
-✅ **P4 confirmed six times over.** `ProductAssignmentIndex` has **zero references in
-application code** — the 2026-07-07 routing redesign made it moot — so four indexes plus
-the model itself serve nothing; add `Shop @@index([isInstalled])`, the `scopeValue`
-component of `[shopId, scope, scopeValue]`, and `Template @@index([shopId])` (redundant
-with the `@@unique` above it).
-🔬 **The catalog's most useful row is R7, because it makes §D3 concrete.** The routing
-write is Postgres-first, so an over-ceiling `metafieldsSet` returns a `userErrors`,
-surfaces one honest toast, leaves the DB row correct and `syncedToShopifyAt` unstamped —
-and the storefront then serves the **previous** blob indefinitely. The write fails loudly
-once; the read stays silently stale forever. That is exactly why "served from the delivery
-copy" may never be recorded as "a cached database read".
-⚠️ **One deviation from the spec, recorded in the section itself:** §D1 asked for
-placement "after the assignment/routing sections (§9-ish)". Inserting there would
-renumber §10/§11/§12 and break **~16 live cross-references** across the repo. It ships as
-**§13**, which is still after §9 *and* after §10 (whose metaobject vocabulary R1d/R1f
-cite) — D1's reasoning satisfied, its arithmetic not.
-📌 **Owed:** per the spec's Tests section, the row-by-row review must be run by a
-**session that did not write the catalog**.
+### Editor shell & previews (2026-07-22 → 2026-07-25)
 
-**Style-tab number boxes did not dirty the editor while typing — ✅ FIXED + LIVE
-VERIFIED 2026-07-31, gate green (typecheck · lint · format · 1256 · build).** No feature
-doc (a bug fix), so this entry IS the record.
+- **Feature 76 — collapsible Style / Settings rail** — ✅ 2026-07-25. Collapses to **zero**
+  width, never an icon stub. The ONE answer to the Style tab's width problem.
+  [`76-…`](features/76-editor-collapsible-style-rail.md)
+- **Feature 75 — full-size preview modal** — 🗑️ REMOVED 2026-07-25 (shipped & verified
+  earlier the same day), tests 883 → 870. Kept: `SegmentedControl.tsx`. Doc retained as the
+  record — feature 76 is built on its root-cause analysis.
+  [`75-…`](features/75-editor-preview-fullscreen-modal.md)
+- **Feature 74 — content-free tables render nothing** — ✅ 2026-07-23. Two render-time gates,
+  hand-mirrored in Liquid and the preview renderer. Rows JSON untouched.
+  [`74-…`](features/74-storefront-suppress-contentless-tables.md)
+- **Feature 73 — desktop preview inner scroll** — ✅ 2026-07-23.
+  [`73-…`](features/73-editor-desktop-preview-inner-scroll.md)
+- **Feature 72 — editor device-preview mockups** — ✅ 2026-07-22.
+  [`72-…`](features/72-editor-device-preview-mockups.md)
+- **Feature 71 — editor sidebar inner-scroll** — ✅ 2026-07-22 (+ scrollbar-gutter follow-up
+  2026-07-23). [`71-…`](features/71-editor-sidebar-inner-scroll.md)
 
-- **The bug.** All nine `<s-number-field>`s in the Style rail were wired to `onChange`
-  alone, and on a Polaris field `change` fires on COMMIT — blur or Enter — not per
-  keystroke (`FieldReactProps` in `@shopify/polaris-types` documents `onInput` as firing
-  BEFORE it). So typing `1000` into Maximum width called no setter: `isDirty` stayed
-  false and the SaveBar never appeared until the merchant happened to click elsewhere.
-  ⚠️ **The missing bar was the visible half; the data loss was the real one** — the
-  SaveBar is the only Save affordance AND `isDirty` is what the unsaved-changes guard
-  reads, so leaving the editor between the last keystroke and a blur discarded the
-  number with no warning. The selects and swatches were never affected (their `change`
-  is already immediate); the Settings tab and the header rename had used `onInput` all
-  along, so the rail was the outlier, not the convention.
-- 🔴 **THE NAIVE FIX IS WORSE THAN THE BUG.** These boxes are CONTROLLED and every
-  `from…ControlValue` CLAMPS. A blind `onInput` commits the `1` of a `1000` as the 240
-  floor and re-renders "240" into the field under the caret — a four-digit width becomes
-  untypeable. Anyone revisiting this must not "simplify" to one handler.
-- **The rule, in `liveCommitValue` (`stylingControls.ts`): commit on a keystroke only
-  when the parse is LOSSLESS** — `format(parse(raw)) === raw`, i.e. the text already
-  spells exactly what would be stored, so the re-render cannot rewrite the box.
-  Half-typed (`1`), out-of-range (`5000`), fractional (`12.5`) and zero-padded (`0240`)
-  text falls through to `onChange`, which clamps on blur exactly as before.
-- **Stated as a round trip, not a range test, and that is load-bearing** — a range test
-  would be wrong for two of the rail's three number-box families, and this one rule is
-  right for all three without knowing which is which: a cleared *blank box* round-trips
-  `""`→`""` (so clearing dirties the editor live), a *zero-means-off* box round-trips
-  `"0"`→null→`"0"` (so typing 0 turns the outline off live) while an EMPTIED one
-  correctly waits (the box would refill itself with `0` mid-edit), and *custom font size*
-  keeps its own "null means ignore" guard on top.
-- ⚠️ **`liveCommitValue` returns THREE things** — `undefined` (still typing), `null` (a
-  real empty/off value), a number. `if (value)` drops every cleared box and every
-  zero-means-off `0`; `if (value != null)` drops the clears while looking correct. Only
-  `!== undefined` is right, and `styleTabContract.test.ts` bans both bad spellings.
-- **Tests 1245 → 1256 (+11), in two halves that neither file could cover alone.**
-  `stylingControls.test.ts` pins the DECISION against the real parse/format pair of each
-  of the nine boxes (a derived table, so a box wired to a mismatched formatter shows up
-  as a settled value that refuses to commit). `styleTabContract.test.ts` walks the JSX
-  for the WIRING — the original defect was a missing handler, not a wrong decision, and
-  every test in the repo passed while all nine boxes were commit-on-blur only.
-- **Live verification 2026-07-31, dev store, template `Accordion - Graphite`** (saved
-  Maximum width 1000, Outline thickness 0). Driven one key at a time, reading the
-  admin's own save bar from the top frame; **Discard restored 1000 / 0, nothing was
-  saved.**
-  - Typed `1` → `12` → `120` → `1200` into Maximum width (floor 240). The box held
-    `1`, `12`, `120` **verbatim — never rewritten to 240** — with **no save bar**; the
-    bar appeared on the `1200` keystroke, **focus still in the field, nothing clicked**.
-    That one sequence is both halves at once: the fix works and the clamp does not fight
-    the caret.
-  - Appended a digit to make `10000` (over the 1600 ceiling): box held `10000`, **no
-    save bar** — out-of-range text is not committed, and **Polaris does NOT clamp on
-    input**, so the round-trip rule is the only thing standing between the merchant and
-    a rewritten box.
-  - Zero-means-off, live per keystroke: `3` into Outline thickness drew the frame in the
-    preview AND **revealed the `Outline color` swatch** (`showsOuterBorderColorControl`
-    flipping mid-keystroke) and swapped the help text; `0` removed all three again.
-  - ⚠️ **Browser-automation trap, not an app bug:** `computer type` after a
-    `triple_click` DID commit a clamped 240 and looked exactly like the bug the fix
-    prevents. `computer key`, one keystroke at a time, does not. Verify per-keystroke
-    field behaviour with `key`; `type` is not faithful here.
-
-**Settings-tab copy pass — ✅ COMPLETE 2026-07-30, `npm run build` green. No feature
-doc (a wording correction), so this entry IS the record.**
-
-- `"A specific product"` → **`"Selected products"`** (the picker is multi-select,
-  feature 47; the old singular noun undersold that). Same fix applied to the
-  currently-hidden `"A specific collection"` → `"Selected collections"` option so
-  the two stay consistent whenever collection scoping is re-enabled
-  (`app/utils/assignmentScope.ts`).
-- **Deleted** the EXCLUDE carve-out help text under "Except these products"
-  outright (it was first merely reworded, then cut). The heading renders
-  directly beneath "Show this table on → All products", so the two read as one
-  sentence — *show this table on all products, EXCEPT these* — and the
-  heading's own first word carries the meaning. Sentence 1 restated it;
-  sentence 2 ("Give them their own table, or leave them without one") was
-  next-step advice, the same class of filler already cut from the conflict
-  banner. Section is now heading → chips → button.
-- Reviewed the rest of the Settings tab's copy (Status help text, scope help
-  text, conflict banner, active-but-unassigned banner) — no other grammar,
-  spelling, or redundancy issues found; left as-is.
-- **Follow-up — swept the other editor tabs for the same defect.** The
-  "say it twice" pattern turned out to be a habit, not a one-off; three more
-  instances, all fixed the same way (one voice states the fact, the others stop
-  repeating it):
-  - **Content tab, at-cap banner** — "Delete a row before adding, duplicating,
-    or **adding** a section" repeated its own verb, and the three disabled
-    buttons already say what's blocked → "You've reached the 200 row limit.
-    Delete a row to make space."
-  - **Paste-over-cap modal** — heading ("Some rows won't fit") + a warning
-    banner (the cap) + "only N will fit. The remaining M won't be added" (the
-    same sentence inverted) = the one fact, three times. Collapsed to the
-    heading plus a single sentence that folds the cap in as the reason; the
-    banner and the `droppedWord` plural are gone.
-  - **Delete-template modal** — the warning banner says "This action cannot be
-    undone" and the paragraph said "**permanently** removes", plus an "Any
-    unsaved edits will be lost" that is moot when the template itself is going
-    away. Banner keeps the warning; paragraph just names what's removed. Fixed
-    in **both** copies (`TemplateHeaderActions` and the list route
-    `app.templates.tsx`) so they can't drift.
-  - Reviewed and left alone: the Style rail's `helpText` strings
-    (`stylingControls.ts`, `StyleTab.tsx`), the editor tips, the bulk-delete and
-    Insert-field modals, the toolbar/bulk-action bar — all already terse and
-    non-repeating.
-- **Follow-up:** killed a duplicate message. Under **Active + "No products"**
-  the subdued scope help text and the warning banner both said "isn't assigned
-  → won't show on the storefront", stacked one on top of the other. The help
-  text now yields to the banner (`!activeButUnassigned`), which is strictly more
-  informative — it names the Active status and gives the call to action. Banner
-  trimmed: "is set to Active" → "is Active".
-- **Follow-up:** dropped the conflict banner's "To resolve: ..." sentence
-  entirely (merchant call: it padded an already-clear banner, and "set it to
-  'No products'" was a wrong suggestion — that clears the assignment rather
-  than resolving the overlap, unlike narrowing to `Selected products`, which
-  the first sentence already implies). The banner now ends at the reason /
-  conflicting-template links.
-
-**Outline thickness relabel + Outline color hides itself — ✅ COMPLETE 2026-07-29,
-gate green, live-verified 7 of 7 rail → preview, Postgres untouched. No feature
-doc (merchant call: "a small correction"), so this entry IS the record.**
-
-- **Two merchant questions, and they got different answers.** (1) Is "Outline
-  width" the right label? The noun is — feature 86 split the rail's vocabulary
-  into **Divider** (row/column rules) and **Outline** (the frame) so "border"
-  never names two things. The second word is not: **`Maximum width` sits two
-  fields above it in the same group**, so one group had two labels sharing a word
-  that meant different axes ~40px apart. → **`Outline thickness`.** Label string
-  only; no field, no migration.
-- 🔴 **(2) "Hide Corner radius and Outline color when the outline is off" — half
-  right, and the wrong half would have been a regression.** `Outline color`
-  earns the hide exactly on feature 95's bar: `--appx-spec-outer-border-color`
-  is read by **one** declaration (the `border:` shorthand on `.appx-spec-table`),
-  and at width 0 that is `border: 0 solid <color>` — no referent at all. 🚫
-  **`Corner radius` must NOT be gated**: `.appx-spec-table--outer-radius` sets
-  `overflow: hidden`, so the curve clips the **section band and the stripe
-  fills** with no frame drawn — and `BANDED` is `SECTION_HEADER_STYLES[0]`, the
-  DEFAULT, so that is the untouched template, not an edge case. Gating it would
-  delete the only control for a live effect: the `borderColor` mistake relocated.
-  Pinned by a named test so it has to be re-argued, not drifted into.
-- ⚠️ **The cost was not the predicate, it was the group.** `tableFrame` is the
-  only group with **one** swatch, so this is the first gate that can leave a
-  group with no swatch at all — the hazard feature 95 wrote a law against.
-  `colorGrid` built its `<s-grid>` OUTSIDE the filter, so an empty group painted
-  a bare grid (dead space) and `styleTabContract.test.ts`'s bare-heading count
-  kept crediting `colorGrid(…)` as a control that always renders. Both closed at
-  the renderer: an **early return on an empty filter**, and the count now credits
-  a grid only for a group with an unconditional swatch.
-- 🔴 **Feature 95's "every group keeps one unconditional swatch" is REPLACED, not
-  deleted.** The successor: a group whose swatches can all vanish must still hold
-  a non-swatch control that always renders. Both halves pinned — the group **list**
-  (not count) in `stylingControls.test.ts`, the three surviving `tableFrame`
-  number fields in `styleTabContract.test.ts`. Help text lost `"Needs an Outline
-width."` on the same copy rule that deleted two caveats in 95.
-- Predicates **10 → 11** (first one whose condition is a NUMBER; `!== null`, since
-  `fromZeroMeansOffControlValue` never stores a 0). JSX guards still **7** — the
-  gate rides `ColorKnob.visibleWhen`. Zero storefront diff, no migration, no
-  Liquid/TOML/CSS. **Tests 1158 → 1164 (+6)**; gate green (typecheck · lint ·
-  format · 1164 · build). ✅ **Mutation-tested three ways:** unwiring
-  `visibleWhen` fails 3; dropping the early return fails **exactly** the guard
-  written for it and nothing else; gating Corner radius fails the new
-  swatch-less-group test plus the 7-guard count.
-- ✅ **LIVE-VERIFIED 2026-07-29, 7 of 7**, in the embedded admin on two DRAFT
-  scaffolds with 0 assignments (`cms3avu6f000gvpf40o9t3hqd`, all frame columns
-  NULL; `cms3aoedi0001vpf4hy1zr2ql`, `outerBorderWidthPx = 1` stored).
-  **Nothing saved — Postgres byte-identical afterwards**, `updatedAt` still
-  `2026-07-27T14:06:40.054Z` and all three frame columns still NULL.
-  🔴 **BOTH COLD LOADS, which is the check that mattered** — the predicate reads
-  STORED data, not just an in-session edit: the NULL template loads with the
-  swatch **absent**, the `= 1` template loads with it **present** reading "Follows
-  Divider color.", each on a fresh page load with no SaveBar. In-session: 0 → 2
-  makes the swatch appear, flips the thickness help text to "Colored by Outline
-  color, or Divider color if that is unset." (a reference that now resolves,
-  because the control it names is on screen), and draws the frame in the preview;
-  2 → 0 removes all three again.
-- ✅ **No blank strip, and it is measured rather than eyeballed.** With the swatch
-  hidden, "Square corners…" → the next group heading is **56px** — identical to
-  the same gap on the cold load and to the Table-layout → Table-size gap above
-  it. The `<s-grid>` renders nothing, not an empty box.
-- ✅ **`Outline thickness` and `Corner radius` both on screen**, the label rename
-  live, and Corner radius still there at thickness 0 — the near miss, visibly not
-  taken.
-- 🔍 **Incidental**: walking the thickness back to 0 **auto-dismissed the
-  SaveBar** — `fromZeroMeansOffControlValue` maps 0 to the stored NULL, so the
-  dirty snapshot equals the saved state and there is nothing to discard.
-- ✅ **PRESERVE-ON-HIDE OBSERVED — the seventh leg, closed by the merchant the
-  same day.** They set a colour on the swatch, took `Outline thickness` to 0
-  (swatch gone), and back to 1: **the picked colour came back AND the preview
-  painted it**. So the law is not just "the field kept its value" — the value was
-  still live all the way through to the rendered frame. ⚠️ Driven by hand
-  because the automation could not: `s-color-field` is a native color input,
-  clicking it opens Chrome's own picker (a surface the tooling can neither
-  screenshot nor key — it broke the tool path until the page was force-reloaded)
-  and the field rejects a typed hex. Same reason feature 96's live pass was
-  merchant-driven.
-- ✅ **Discarded cleanly, measured after the fact.** Both scaffolds are
-  byte-identical to their pre-test state — `cms3aoedi0001vpf4hy1zr2ql` still
-  `outerBorderWidthPx = 1` / colour NULL / `updatedAt 2026-07-27T14:00:55.392Z`,
-  so the hand-picked colour never reached Postgres.
-- 🔬 **Method note:** `triple_click` inside the embedded admin selects the whole
-  DOCUMENT, not the field's text — it left a page-wide blue selection and the
-  typed value went nowhere. **`left_click` then `ctrl+a` then type** is the
-  recipe that works on these number fields.
-- 🔬 **Method note (self-inflicted, worth carrying):** `git checkout -- <file>`
-  during mutation testing **destroyed both source files' uncommitted edits** —
-  it restores from the index, and nothing was staged. The `git stash push` +
-  `pop` that preceded it was a no-op round trip, so there was no copy to recover
-  from; both files had to be rewritten from scratch. **Back up with
-  `Copy-Item` before a mutation, never `git checkout`,** unless the work is
-  committed first.
-
-**The two dead colour swatches hide themselves (feature 95, doc `95-…`)
-— ✅ COMPLETE 2026-07-28, live-verified in the embedded admin, 10 of 10**
-
-- **Two parts, one mechanism.** (1) `Stripe background` hides unless `Row
-dividers` is Stripes — the reported item. (2) `Header background` hides unless
-  `Header style` is Banded — the open question part 1 closed with, answered by
-  the merchant the same day. Both are `ColorKnob.visibleWhen` entries; nothing
-  else in the rail changed. Predicates **7 → 9**, JSX guards unchanged at 7.
-- **Part 2's CSS check is the same shape, and the specificity is the point.**
-  `--appx-spec-header-bg` appears in FOUR rules, but the two BASE ones
-  (`__section`, and `__section-summary` under `--collapsible`) are
-  **unreachable**: `stylingToModifierClasses` emits a section-header class
-  unconditionally (defaults included, by its own stated rule), every member
-  selector outspecifies the base, and `TEXT_ONLY` / `PLAIN` both hardcode
-  `background: transparent`. Only the two `--section-banded` rules read it. So
-  the predicate is a bare `sectionHeaderStyle === "BANDED"` — **no collapsing
-  clause**, because feature 87's fix (mirror every member rule onto the
-  `<summary>`) is exactly what lets one predicate cover both shapes. Asserted
-  over every member × both shapes so it stops reading as obvious if a future
-  member is ever added to one shape only.
-- 🔴 **Part 2 reverses a comment in `stylingControls.ts` itself** ("a composition
-  fact rather than a reason to hide the swatch: the merchant may legitimately set
-  it before switching"). Weaker than it sounds, and the difference from the
-  stripe case is worth keeping: **`BANDED` is `SECTION_HEADER_STYLES[0]`, the
-  DEFAULT**, so the swatch is visible on an untouched template and only vanishes
-  once a merchant actively picks Underlined or Plain — set-before-switching is
-  not an order anyone arrives in. Pinned in a test, since the argument rests on
-  it. ✅ `Title color` stays ungated (the base rule's `color:` is never
-  overridden, so a title is coloured under all three members), which is also what
-  keeps that grid from painting empty. 🚫 NOT extended to "the template has no
-  section header rows": that is row DATA, and no rule in the file has ever read
-  it — the rail would start hiding controls in response to merchant content.
-- 🚫 **`borderColor` is now a THREE-PLACE permanent no** (feature 86 decision 3,
-  the `ColorKnob.visibleWhen` doc, and a test listing the two gated fields BY
-  NAME rather than counting them). It is a no-op under Row dividers = None too,
-  so it is the obvious next candidate and it must never join: it also dresses the
-  column divider, the feature-80 separator, and the outline whenever
-  `outerBorderColor` is unset. **The bar is a fact about the stylesheet** — the
-  field must feed exactly one live rule — not a judgement about tidiness.
-- **Report item 1 (the stripe):** should only show while `Row dividers` is
-  `Stripes`. Correct as reported, and it is the narrowest referent in the rail —
-  `stripeBgColor` feeds **exactly one declaration** in `spec-table.css` (the
-  `--dividers-stripes` even-row fill) and `--appx-spec-stripe-bg` appears nowhere
-  else. Outside Stripes the knob has no referent at all, which is the bar
-  `showsGridMinColumnWidthControl` set for earning a hide.
-- 🔴 **This REVERSES feature 86 decision 4** ("Stripe background stays visible too"),
-  and the reversal is sound: decision 4 was made in the same breath as decision 3
-  (`Divider color` stays visible) and inherited its reasoning without the surface
-  count being checked. `borderColor` dresses FOUR surfaces (row rules · column
-  divider · the f80 separator · the outline whenever `outerBorderColor` is unset),
-  so at `NONE` rows it is still the only control for two live surfaces.
-  🚫 **Decision 3 is NOT reopened** — the asymmetry inside one 2-up grid IS the
-  feature: one field / one surface / one rule is what earns a hide.
-- **An AND, and the second clause is not defensive.** `rowDividerStyle ===
-"STRIPES" && rowLayout !== "GRID"`. Grid does not OFFER Stripes (f85), but
-  `GRID` + `STRIPES` is reachable from stored data — the orphan — and the
-  stylesheet stands that fill down to `transparent`. A naive `=== "STRIPES"` would
-  put a live colour picker directly under a select reading **"Stripes — not
-  available in Grid"**. `!== "GRID"` rather than a membership test, same call as
-  feature 94: the excluded case is the one with a reason.
-- ⚠️ **The first hide rules over COLORS, so they have no JSX line to wrap.** The
-  other seven are `{showsX(styling) && <control/>}`; all nine swatches are one
-  `.filter(…).map(…)` over `COLOR_KNOBS`, so the guard rides a new optional
-  `ColorKnob.visibleWhen` and is applied inside `colorGrid`. The predicates still
-  live with the other seven and are registered in `VISIBILITY_PREDICATES`, so
-  they inherit the preserve-on-hide law unchanged — only the attachment point
-  differs. **JSX guards stay at 7** (the contract test now says why it is not 9).
-- ⚠️ **The hazard that opened, guarded:** `colorGrid` renders its `<s-grid>`
-  unconditionally, so a group whose swatches were ALL gated would paint an EMPTY
-  grid — dead space, plus a silent hole in the "no group collapses to a bare
-  heading" count, which treats `colorGrid(…)` as one always-rendering control.
-  Pinned from the data. Both gated swatches sit in groups whose OTHER swatch is
-  unconditional (`Title color`, `Divider color`), which is what keeps that true.
-- **Both help texts had to change too** — `"Alternating rows — needs Row
-dividers set to Stripes."` → `"The fill on alternating rows."`, and `"The band
-behind a section title — needs Header style Banded."` → `"The band behind a
-section title."` The caveat and the hide are two answers to one problem, and
-  shipping both leaves the weaker one on screen: a condition a merchant can only
-  read while it already holds is not information. A test pins this as a property
-  OF GATING, not a ban on caveats — `Divider color` is ungated and keeps its
-  coupling text, and must.
-- **Zero storefront diff, feature-87 cost profile.** No migration, no field, no
-  CSS/Liquid/TOML/markup — hiding is rail-only and a hidden value still
-  serializes and still renders. **Tests 1120 → 1147 (+27)**, including the two
-  domain-derived "exactly one member shows it" assertions, the frozen-input round
-  trips, and one deriving the Grid answer FROM `rowDividerOptionsFor` so the
-  select's filter and the swatch's hide cannot drift into contradicting each
-  other on screen. ✅ **Mutation-tested three ways:** dropping the `!== "GRID"`
-  clause fails 2 and the diff names the orphan; dropping the `visibleWhen` clause
-  from `colorGrid` fails exactly the guard written for it and nothing else;
-  weakening the header predicate to `!== "PLAIN"` fails the
-  `SECTION_HEADER_STYLES`-derived assertion rather than a hand-listed one.
-- ✅ **Live-verified 2026-07-28, 10 of 10**, on the DRAFT scaffold
-  `cms3avu6f000gvpf40o9t3hqd` (0 assigned, 6 rows incl. a section header).
-  **Nothing saved — every change rode the SaveBar and ended in `Discard`.**
-  Part 2: Banded shows both swatches → **Underlined** and **Plain** each hide
-  `Background` while `Title color` stays and reflows to a lone half-width cell →
-  `#E6F4EA` survives Banded → Plain → Banded → and **with collapsing ON, Plain
-  still hides it**, so one predicate really does cover both shapes (feature 87's
-  hazard, confirmed rather than assumed). Part 1: **Lines** leaves `Divider
-color` ALONE → **Stripes** brings the pair back → **None** hides the stripe
-  **while Divider color stays**, which puts feature 86 decision 3 and feature 95
-  side by side in one screenshot → `#F9B8B8` survives the round trip.
-  🔴 **The ORPHAN is the check that mattered**: Row layout → Grid with `STRIPES`
-  stored shows the select reading **"Stripes do not apply in Grid layout"** with
-  the swatch **absent** — a naive `=== "STRIPES"` would have put a live pink
-  picker directly beneath that sentence — and switching back to Two-column
-  returned the swatch still holding `#F9B8B8`.
-  **Both new help texts observed live**, and they double as proof the value
-  committed (the non-empty gloss only renders when the field is non-null).
-  ✅ **Postgres untouched, measured**: after Discard the row's `updatedAt` is
-  still `2026-07-27T14:06:40Z` and all four columns are NULL.
-- ⚠️ **NOT observed: the storefront paint** — the scaffold's data rows have empty
-  values, so there is no visible band or stripe in the preview. Acceptable here
-  in a way it was not for 87/94: this feature is **zero storefront diff by
-  construction** (it hides controls; no CSS, no Liquid, no serialization), so
-  there is no rendering claim to falsify. What needed observing was the rail.
-- 🔬 **Method correction, worth carrying:** clicking an option inside an OPEN
-  native `<select>` popup **does nothing and silently clicks the page
-  underneath** — the first attempt left Header style on Banded and moved focus to
-  the field below. Recipe that then worked ~10× without a miss: click the select
-  → `Escape` → arrow keys. And wheel-scroll DID reach the rail throughout, so the
-  older "use Tab, not scroll" note is session-dependent exactly as it says.
-- ✅ **The feature-87 open question is CLOSED** — `headerBgColor` was the "hiding
-  it would be an 8th hide predicate + a feature-86 group change" item; it cost
-  neither (the group is unchanged and the predicate rides `visibleWhen`).
-
-**Section gap in the flat block layouts (feature 94, doc `94-…`) — ✅ COMPLETE
-2026-07-28, live-verified rail → preview → Postgres across all three row layouts**
-
-- Merchant report + DevTools screenshot: `margin-top: 30px` on
-  `tr.appx-spec-table__section-row` opens a real gap on their live storefront. It does —
-  and the knob it wanted **already existed** (`sectionGapPx`, feature 80). The rail simply
-  hid it unless `sectionsCollapsible` was on. This feature moved that fence.
-- 🔴 **Root cause: one true sentence over-generalised, repeated in three places**
-  (`spec-table.css`, `stylingControls.ts`, `data-model.md`): "a flat section header is a
-  `<tr>` and a `<tr>` takes no margin." True **only under `TWO_COLUMN`**. What a `<tr>`
-  DISPLAYS as is the row-layout rules' call — `table-row` there, but `block` under
-  `STACKED` and a `block` grid item under `GRID`, and margin applies in both. The
-  merchant's screenshot was a **GRID** table, which is exactly why their CSS worked. The
-  thing that cannot express a gap is a **table formatting context**, not the flat shape.
-- **Feature-87 cost profile, as specced.** No migration, no new field, no Liquid/TOML/
-  markup, no repaint (every new declaration gated on the `--section-gap` presence class),
-  and **no new hide predicate** — `showsSectionGapControl` changed its CONDITION to
-  `sectionsCollapsible || rowLayout !== "TWO_COLUMN"`, so the pinned count stays **7** and
-  feature 86 Step 5's 2⁷ empty-group test keeps its shape.
-- **`!== "TWO_COLUMN"`, not a `STACKED`/`GRID` membership test** — inverting the call
-  `showsMobileLayoutControl` makes: the EXCLUDED case is the one with a reason, so a fourth
-  `ROW_LAYOUTS` member inherits "the gap works", which is right (`TWO_COLUMN` is the only
-  member keeping `display: table`). And an **OR, not a replacement** — `TWO_COLUMN` +
-  collapsible still works through feature 80's untouched `<details>` rule.
-- **One CSS rule, two layout-scoped selectors.** Written bare it would be a _silent no-op_
-  under `TWO_COLUMN`; naming the layouts makes the selector state its own constraint.
-  `:not(:first-child)` does double duty — no leading gap, and under `STACKED` it stops a
-  first-child top margin collapsing out through the block `tbody` and pushing the whole
-  table down. ⚠️ Two mechanisms, one result: collapsing block margin under `STACKED`, a
-  never-collapsing grid-item margin under `GRID`; they agree only because every
-  neighbouring margin is 0 today.
-- ⚠️ **The control MOVED group** — feature 86's axis deciding its own placement:
-  `Collapsible sections` (→2) → `Section headers` (→8), last structural knob before the
-  colors, so Title spacing (padding INSIDE a header) sits beside the gap (margin OUTSIDE
-  one). Neither group empties; Collapsible still leads with its ungated switch. Help text
-  dropped "collapsible". `admin-screen-plan.md` §Tab 2 amended at the head of its list.
-- 🚫 **`TWO_COLUMN` with collapsing off stays excluded**, and the rejection was already on
-  file at `stylingControls.ts` before this report: a transparent `border-block-start` loses
-  the `border-collapse: collapse` width contest and silently deletes the previous row's
-  divider. Padding grows the band instead of opening a gap; a spacer `<tr>` would put a
-  cell-less row into the `role="table"` chain. The one uncosted option
-  (`border-collapse: separate`, scoped to the knob) is an **open question**, not a gap.
-- ✅ **No mobile asymmetry, and the predicate is why.** The worrying state — a
-  `TWO_COLUMN` table gapped on a phone and flat on desktop — is unreachable: the control
-  is hidden there, so no value exists to disagree across the breakpoint.
-- **Tests 1101 → 1120 (+19).** The feature-80 guard that pinned "exactly ONE
-  `margin-block-start` in the file" was **rewritten rather than bumped to 2** — a count of
-  2 would be an arithmetic accident; it now asserts the actual law (every such declaration
-  sits in a rule gated on `--section-gap`), which is scale-free. Plus the flat rule naming
-  both layouts and never two-column, `:not(:first-child)` on both shapes, the predicate's
-  full OR matrix derived from `ROW_LAYOUTS`, the group-placement pin in
-  `styleTabContract.test.ts` (the one thing that file says it _cannot_ see, asserted for
-  the one control that moved), and a renderer pin that the two markup shapes are mutually
-  exclusive — so the no-double-gap claim is measured, not argued.
-  ✅ **Mutation-tested:** dropping the `--layout-grid` selector fails 2 tests and the diff
-  names it; reverting the predicate to `sectionsCollapsible` fails 4 including
-  `STACKED`-with-collapsing-off.
-- ✅ **`.harness/` matrix run (8 cases, measured not eyeballed).** `STACKED` first-child
-  gets `0px` with the table's top offset **identical to the no-gap control** — the
-  margin-collapse hazard closed by measurement; rows-before-first-section gaps at BOTH
-  boundaries (the case `+` would skip); `GRID` 30px; **`TWO_COLUMN` measures `-0.0px`**,
-  the deliberate no-op. 🔍 **The stranded-`LINES`-rule question is answered NO, by computed
-  style at 1:1** (the feature-88 lesson): the last row before a gap keeps
-  `0.909px solid rgba(0,0,0,0.1)` — _identical to the same table with no gap_ — so the gap
-  changes spacing only. `STRIPES`/`NONE` have no rule to strand.
-- ✅ **Live-verified** on `Untitled template (copy)` (DRAFT, 0 assignments). Two-column +
-  collapsing off → **control absent** from Section headers. Stacked → control appears
-  under Section headers reading "No gap between sections."; set 30 → preview separates and
-  help text reads **"Space between each section."** Grid → two tracks with the gap spanning
-  both, the merchant's own case driven by the knob instead of hand-edited DevTools CSS.
-  🔴 **The round trip is the one that mattered**: Two-column hides it, and switching
-  collapsing ON brings it back **still reading 30** — preserve-on-hide observed live, not
-  only unit-tested, with feature 80's `<details>` rule painting the gap.
-  Postgres after save: `sectionGapPx = 30`. **Fully restored afterwards** — `rowLayout`
-  and `sectionGapPx` both back to `null`, every other column byte-identical.
-  ⚠️ **Left in place:** the content rows added to that throwaway scaffold to give it a
-  second section (`Basic Information` / Weight / `Physical Description` / Dimensions).
-  ⚠️ **NOT run: the real-storefront leg.** It needs an ACTIVE template, and the two
-  obvious candidates are in merchant use. Owed, low risk by construction (the preview
-  renders through the same renderer and a byte-mirrored stylesheet).
-- 🔴 **Method note, learned the hard way.** Blind `Shift+Tab` repeats in the embedded admin
-  walk focus out of the iframe unobserved. Worse, I read a template's DRAFT→ACTIVE change
-  as self-inflicted and raised a false alarm; it was the merchant's own concurrent work.
-  **Check the mechanism against how the app saves (SaveBar-gated, explicit Save) before
-  attributing a write.** Tab in small batches with a screenshot after each.
-
-**Plain section header (feature 87, doc `87-…`) — ✅ COMPLETE 2026-07-27, live-verified
-rail → Postgres → metaobject → storefront (all 3 legs closed same day)**
-
-- Merchant report item 1 of 5: there is no **plain** section header, and `TEXT_ONLY`
-  **is not text-only** — it drops the band but keeps `border-block-end: 2px solid`
-  (`spec-table.css:218`). Both reference tables (JBL, Samsung) show a bare bold title with
-  no rule, so nothing the rail offered could reproduce them. Fix is a third
-  `SECTION_HEADER_STYLES` member, `PLAIN`. Tests 1012 → 1021.
-- **The cheapest unit the Style tab has had, and it is the Step 2 rule paying out again.**
-  `sectionHeaderStyle` is a non-null keyword ⇒ modifier class, so: **no migration** (a
-  third legal string in an existing `String?` column), **no new field** in
-  `STYLING_FIELD_NAMES` (feature 86's drop guard and the `COLOR_KNOBS` grids untouched),
-  **no hide predicate** (count stays 7), **no Liquid / TOML / markup** — the sixth feature
-  running that "server precomputes `styling_css`; Liquid only prints" pays for — and
-  **no `StyleTab.tsx` edit at all**, because `SECTION_HEADER_OPTIONS` is a `.map` over the
-  domain. Appended, never inserted, so `BANDED` stays `[0]` and nothing repaints.
-- **It is a member AND a relabel** (merchant decision 2026-07-27). `TEXT_ONLY`'s LABEL
-  becomes **`Underlined`** ("Bold title with a rule beneath it"); `PLAIN` reads `Plain`
-  ("Bold title, nothing else"). Every label now names the look and **no label is reused
-  across values.** 🚫 Giving `PLAIN` the freed "Text only" string was rejected: it is the
-  strongest label for the new member but points the same words at a different value, so a
-  merchant who remembers picking "Text only" would find "Underlined" selected. Renaming a
-  choice is honest; silently re-pointing its name is not. The wire value is unchanged.
-- **Two CSS rules, one per shape**, because the collapsible `<summary>` is a **sibling** of
-  the section table carrying its own copy of every header declaration — a member styling
-  only the flat shape hands the rule back the moment Collapsible is enabled (the Step 9a
-  composition hazard). `border-block-end: none`, not a transparent or zero-width border:
-  those still occupy the box. ⚠️ **No source-order hazard, unlike feature 79** — the three
-  members are mutually exclusive at matching specificity, so they never contest a property.
-- **The new guard is the one that would have caught the original defect**, and it is
-  derived from the domain rather than hand-listed: **each member states BOTH its
-  `background` and its `border-block-end`**, in both shapes (3 × 2). A member declaring
-  only one silently inherits the other from the base rule — precisely how "text only" ended
-  up underlined. ✅ **Mutation-tested:** dropping `TEXT_ONLY`'s `border-block-end` fails it,
-  so it bites on an existing member and not only on the new one. Selector lookups anchor on
-  the CLASS and walk to the brace, because all three collapsible selectors wrap at
-  prettier's 80 columns and hardcoding the wrap would make reformatting a test failure.
-- ⚠️ **Two consequences accepted in writing.** (1) Collapsible + Plain + all closed is a run
-  of bare titles with **no separator** — the feature-80 hairline is deliberately NOT
-  extended, since it exists because BANDED _drops_ an edge and two closed bands merge into
-  a slab; a plain title has no fill to merge with, and the absent edge IS the member.
-  `sectionGapPx` is the answer, and a test pins the banded-only scope so a later change has
-  to revisit the decision rather than drift into it. (2) **`headerBgColor` does nothing
-  under Plain** — the rule hardcodes `transparent`, exactly as `TEXT_ONLY` always has.
-  Pre-existing; the swatch already self-reports ("needs Header style Banded"). Hiding it
-  would be an 8th hide predicate + a feature-86 group change — **open question, not done.**
-  ✅ **CLOSED 2026-07-28 by feature 95 part 2** — the swatch now hides unless Banded, and
-  the estimate above was wrong on the second half: it cost **no group change at all**,
-  because a swatch's guard rides `ColorKnob.visibleWhen` rather than a JSX wrapper.
-- ✅ **Live-verified on the DRAFT `Motorola Moto G45 5G`** (0 assigned; merchant added a
-  `Phone Details` section header for the purpose). All three options walked by keyboard;
-  🔴 **the reported defect reproduced en route** — `Underlined` paints the heavy 2px rule
-  with the band gone, which is the state a merchant reached by picking the option that
-  said "Text only". `Plain` renders a bare bold title in the flat shape **and** as a
-  native disclosure once collapsing is toggled on — the composition hazard the second
-  rule exists for, confirmed rather than assumed. Postgres `sectionHeaderStyle="PLAIN"`
-  (only column touched). **Measured on the wire:** `styling` overrides-only,
-  `styling_css.classes` carries `--section-plain` in field order with the **count
-  unchanged at 7**, and **`vars` is EMPTY** — the no-custom-property claim measured, not
-  asserted. Left saved on Plain; collapsing discarded back off.
-- ✅ **All three legs closed 2026-07-27**, on the real storefront domain rather than the
-  editor mirror. Set `Header style` → Plain on the already-ACTIVE `Unikyy Blade Pro
-Turbo Fan` template (assigned to product **Motorola Edge 60 Fusion 5G**) and Saved:
-  all 4 real section headers render bare bold, no band, no rule, live at
-  `appx-dev.myshopify.com/products/motorola-edge-60-fusion-5g`. Resized that same real
-  tab (not the admin iframe, which can't be measured — see `browser-verify-embedded-app`
-  memory) to 390px: identical bare-header rendering holds at mobile width, GRID collapsed
-  to one column. Opened `AGX TF36 Handheld Turbo Fan` (stored `sectionHeaderStyle =
-"TEXT_ONLY"` beforehand, confirmed via Neon) and its rail read **"Underlined"** with the
-  correct help text on a cold load, not only after an in-session pick. Unikyy reverted to
-  Banded and re-saved afterward; Postgres confirms `sectionHeaderStyle` back to `null` and
-  every other `TableStyling` column byte-identical to its pre-test values.
-  🚫 The `.harness/` CSS matrix was **skipped** (recorded as a deviation): two
-  declarations with no specificity or source-order interaction to explore, unlike
-  79/80/85 where the harness caught real plan errors first.
-- ⚠️ **The stale-Prisma-client trap does NOT apply** (no migration), so the dev server
-  needs no restart before the first save. Numbering: takes **87**; 82/83/84 stay reserved.
-  Report items 2–5 are **unscoped** — feature 86's lesson was not to bundle boundaries.
-
-**Style tab reorganization (feature 86, doc `86-…`) — ✅ COMPLETE, all 6 steps
-2026-07-26**
-
-- Merchant reported the Style rail as unorganized and sent two Shopify theme-editor
-  screenshots as the target. Root cause: the rail's six groups are cut on **two axes at
-  once** — four by OBJECT (Layout / Size & frame / Sections / Rows), two by CSS PROPERTY
-  (Colors / Typography). So `headerBgColor` sits ~20 controls from the band it paints,
-  `stripeBgColor` sits away from the switch that makes it visible, and `fontWeight` /
-  `labelCase` sit in Typography with no Labels group to belong to. Fix: one axis, the
-  object axis — **8 groups**, Colors and Typography dissolved, every group ending with its
-  own colors 2-up ("structure knobs, then colors" as one learnable rule).
-- **Six merchant decisions (2026-07-26)**, all recorded in `86-…`: Table layout leads (not
-  Size & frame — Row layout gates four other controls); Sections **splits** into Section
-  headers (7) + Collapsible sections (3); **Divider color stays always-visible** (🚫 the
-  proposed hide-unless-LINES is a functional regression — `borderColor` also dresses the
-  column divider, the feature-80 separator, and the outline whenever `outerBorderColor` is
-  unset); Stripe background likewise; **short labels inside groups** (`Weight`, `Title
-size`); and it lands **before B2**.
-- **Three structural calls, not preferences.** (1) `labelCase` goes to Labels, NOT the
-  merchant's "Table text" — verified against the stylesheet, `--appx-spec-label-transform`
-  and `-font-weight` sit on `.appx-spec-table__label` while size/style/line-height sit on
-  `__table`; filing case as table-wide is falsifiable in one click. (2) Short labels are
-  safe only because every group keeps `role="group"` + `aria-labelledby` — the "do not
-  rename Label weight" lock in `stylingControls.ts` is satisfied by a different mechanism
-  and its comment must be updated (Step 6). (3) The Colors group's "leave a swatch empty to
-  inherit" note has no home once the swatches scatter, so **each swatch reports its own
-  state** instead (the idiom six number fields already use) — better than the group note
-  even for sighted users, and this is the feature's a11y answer rather than repeating one
-  sentence five times.
-- **Zero storefront diff, by construction.** No column added/renamed/dropped, no schema, no
-  migration, no CSS, no Liquid, no TOML, no `tableStylingCss.ts`, no metaobject change.
-  Every rename is a merchant-facing LABEL — `borderColor` stays `borderColor` on the wire.
-  No new hide predicates either: the count stays **7**.
-- ✅ **Step 1 — the drop guard** (`styleTabContract.test.ts`, 5 tests, 981 → 986). Nothing
-  stopped a Style-tab edit from silently dropping a control: the knob would vanish from the
-  rail while its column, CSS var, serialization and storefront rule all stayed live, so it
-  would keep round-tripping and rendering the last saved value while being unreachable —
-  no failing test, no type error, detectable only by eye. Tolerable when adding one
-  control; not when relocating all 34, so the guard was built **first and against the
-  pre-move rail**. Pins: every `STYLING_FIELD_NAMES` member is reachable from a control,
-  and **no field is reachable from two** (a field on both routes would render twice, each
-  control silently overwriting the other). Two routes because the rail has two — a literal
-  `setStylingField("field", …)` for the 24 non-colors, and a `COLOR_KNOBS` entry for the 9
-  colors, whose call passes a VARIABLE and is invisible to a text scan. Reads the real file
-  off disk with comments stripped, same technique + same reason as
-  `specTableCssContract` / `specTableAriaContract` (jsdom cannot render Polaris web
-  components, so text is the only handle on JSX).
-  ⚠️ **Mutation-tested, not assumed:** removing Density's literal call and the `COLOR_KNOBS`
-  render both failed the guard, and the first named `density` in the diff. The
-  `COLOR_KNOBS` check counts **≥2 occurrences** rather than `toContain` — the import alone
-  would satisfy a presence check, so a rail that imported the list and rendered none of it
-  would have passed.
-  🚫 **Deliberately NOT asserted:** that every scanned name is a real field.
-  `setStylingField` is generic over `keyof StylingValues` (`useRowEngine.ts:223`), so a typo
-  is already a compile error — a runtime check would be a weaker second copy of the type
-  system. And the guard proves **reachability, not correctness**: it cannot see a control in
-  the wrong group or a wrong label, which is why steps 4–5 are live verification.
-- ✅ **Step 2 — the copy and data pass** (986 → 1004 tests). Copy only: no control moved,
-  no group changed, no value changed. Eleven control labels shortened + two swatches
-  renamed (`Table outline` → `Outline color`, `Border` → `Divider color`) + four shortened
-  to bare `Background` / `Text color`. `StylingOption.helpText` became **optional**, which
-  cut ten always-on descriptions; the surviving glosses are mostly `Inherit` and
-  empty-state lines, so **the rail's help text is now state-reporting throughout** —
-  it speaks in the states that need explaining and stays quiet otherwise, which makes one
-  idiom out of what were two. `COLOR_KNOBS` gained `group` + `emptyHelpText`, and
-  `STYLE_GROUP_HEADINGS` is the new one table of truth for the eight groups.
-- ⚠️ **The `stylingControls.ts` scope lock was NOT broken, it changed mechanism.** It
-  forbade renaming "Label weight" because "the control names its own scope"; the control
-  now reads "Weight" and the `Labels` group heading states the scope instead — wired with
-  `role="group"` + `aria-labelledby`, so it is announced, not merely seen. What still
-  holds: a table-wide "Font weight" would require moving the var off
-  `.appx-spec-table__label` and repainting every live table. **Dropping a group wrapper
-  would silently break the lock**, which is why `STYLE_GROUP_HEADINGS` says so too.
-- ⚠️ **The old Colors group note was WRONG about four of nine swatches, and per-swatch
-  state text is what exposed it.** "Leave a swatch empty to inherit that color from your
-  theme" holds for five; the band (`rgba(0,0,0,0.06)`), the stripe (`0.04`) and the row
-  rules (`0.1`) fall back to this app's own literals, and **`outerBorderColor` inherits
-  nothing** — it falls back THROUGH `borderColor`, so its empty state is "follows another
-  control on this screen" ("Follows Divider color."), which no group-level sentence could
-  have said. A test pins which five may say "theme".
-- 🔴 **One defect found LIVE that the character count had passed.** `Header background`
-  (17 chars) wrapped in the 2-up color grid and pushed its swatch below its neighbour's,
-  misaligning the row — while `Stripe background`, the _same 17 characters_, fits, because
-  "Stripe" sets narrower than "Header". The usable cell is right at the boundary and the
-  real limit is nearer 15. Shortened to `Background` and re-verified. **Method note:
-  measuring labels analytically filters but does not substitute for looking at the rail.**
-- 🚫 The two feature-81 header `Record`s are now character-identical to their Labels-group
-  twins (the "titles" prose was cut on both sides) and are **deliberately not merged**: the
-  guard asserting the header lists never say "label" can only fail while they are
-  separable. A vacuous guard is worse than four lines of duplication. A second test pins
-  that the two `Inherit` glosses still differ.
-- **Live-verified** top to bottom on the DRAFT `Motorola Moto G45 5G` (0 assigned; nothing
-  saved, SaveBar never appeared): every rename, `On mobile`/`Density` with no help line and
-  **no leftover gap** (the `undefined` mapping works — `""` would paint a blank grey row),
-  and every empty-swatch state line.
-  ⚠️ **The rail is transiently worse in one spot until Step 4** — short labels landed
-  before the groups that justify them, so the still-undivided `Colors` group shows three
-  `Background`s and two `Text color`s in one run. Consequence of the step order, not a
-  defect; the per-group uniqueness test already asserts the post-Step-4 grouping.
-- ✅ **Step 3 — the separation treatment** (1004 → 1006 tests). Visual only: nothing moved
-  between groups, no control and no copy changed, so the step answers _does the separation
-  read well at 300px_ on its own rather than inside Step 4's 34-control diff. Outer stack
-  `gap="base"` → **`large-200`**, inner per-group stacks stay **`base`**, and an
-  `<s-divider>` between each pair of groups plus one above Reset. The pair is the point:
-  proximity alone already reads as groups **before a rule is drawn**, and the dividers
-  restate that boundary for anyone reading structure rather than rhythm. `large-200`
-  verified as a real `SizeKeyword` against `polaris-types`; its px value is not shipped in
-  the package, so the amount was settled by looking (~20px). Reset lost its
-  `paddingBlockStart="base"` — it only ever existed to buy space the stack and rule now
-  supply twice over — and takes a rule despite not being a group, because it acts on
-  everything above it.
-- 🔢 **Count correction: the rail has SIX groups, not seven.** Earlier notes here (and the
-  root-cause line above) say seven; `role="group"` in `StyleTab.tsx` counts **six** —
-  Layout · Size & frame · Sections · Rows · Colors · Typography. That is exactly what the
-  two-axes diagnosis predicts (four by object + two by CSS property), so seven was a
-  miscount. The target is still 8. It mattered concretely: it set the divider count.
-- **The Step 3 guard is scale-free on purpose** (+2 tests in `styleTabContract.test.ts`),
-  so Step 4 can add two groups and move all 34 controls without editing either assertion.
-  (1) **`dividerCount === groupCount`** — not a coincidence: N−1 rules between groups plus
-  one closing rule above Reset means N groups always want N dividers, six today and eight
-  after the move. A group added later without its rule is invisible to every other test in
-  the repo and reads as a rendering glitch rather than a missing line of JSX. (2) **the two
-  gap scales stay different** — outer matches `large-\d+`, every inner stack is `base`;
-  collapsing them would delete the proximity signal, not merely tighten the rail.
-- **Live-verified** on the DRAFT `Motorola Moto G45 5G` (nothing saved, SaveBar never
-  appeared): all six boundaries reading cleanly, even spacing either side of each rule, and
-  Reset now sitting at the same rhythm as a group heading. The rule is a faint hairline
-  inset to the control width — correct here, since `s-divider`'s default `base` keeps
-  whitespace primary where `strong` would read boxy.
-  ⚠️ **"Both rail widths" was a non-question:** the rail is a fixed `18.75rem` track
-  (`EditorShell.tsx:252`) or hidden outright (`railCollapsed` → `1fr`). No intermediate
-  width exists, so window size cannot change the treatment.
-  ⚠️ **Tooling correction:** mouse-wheel scroll does **not** reach the rail inside the admin
-  iframe — the earlier session note claiming it did was wrong. Click a control and `Tab`;
-  the scroll container follows focus. Each `s-color-field` takes **two** tab stops.
-- ✅ **Step 4 — the move** (1006 → 1010 tests). Six groups became **eight**, `Colors` and
-  `Typography` dissolved, all 34 controls now on one axis — the object being styled:
-  Table layout (4) · Table size & frame (5) · Table text (4) · Section headers (7) ·
-  Collapsible sections (3) · Rows (5) · Labels (4) · Values (2). Every group ends with its
-  own colors, which is the one rule a merchant learns once: **structure knobs, then
-  colors.** Headings render FROM `STYLE_GROUP_HEADINGS`, so the Step 2 vocabulary finally
-  has a consumer instead of drifting unobserved.
-- **`colorGrid(group)` is a plain function, not a component.** The nine swatches were one
-  `.map` and are now five FILTERED grids — filtering, never reordering, which is what lets
-  `COLOR_KNOBS` stay in `STYLING_FIELD_NAMES` order. Called as `{colorGrid("labels")}`
-  rather than `<ColorGrid/>` because a component declared inside `StyleTab` is a new type
-  every render and would remount its subtree, losing focus and any half-typed hex; not
-  hoisted to module scope either, since it closes over `styling` + `setStylingField`.
-  `tableFrame`'s single swatch still renders 2-up (half width, gap beside it) — a
-  full-width lone swatch would make Outline color the only differently-sized color input in
-  the rail.
-- ⚠️ **The move opened a hole the Step 1 drop guard cannot see, and it is closed.** That
-  guard proves a color is reachable via `COLOR_KNOBS`, which was airtight while ONE `.map`
-  rendered the whole list; with five filtered grids, deleting a single
-  `{colorGrid("values")}` strips two swatches while `COLOR_KNOBS` still appears five times
-  and every pre-Step-4 test passes. Four tests added, all derived from data rather than
-  hand-listed: every `STYLE_GROUP_HEADINGS` id has a group; every heading is taken FROM the
-  vocabulary rather than retyped (a hardcoded `<s-heading>Labels` renders fine today and
-  silently disagrees the first time a heading is reworded); every group with swatches
-  renders its grid; and the Colors note is gone. ✅ **Mutation-tested** — deleting
-  `{colorGrid("values")}` fails and the diff names `values`.
-- **Live-verified** top to bottom on the DRAFT `Motorola Moto G45 5G` (nothing saved,
-  SaveBar never appeared; storefront preview pixel-identical to before the move, which is
-  the zero-diff claim holding in practice). ✅ **The Step 2 transient regression is
-  resolved** — the three `Background` and two `Text color` swatches now each sit under
-  their own announced heading, and Labels' pair vs Values' pair reads cleanly across a
-  heading plus a rule, which is exactly the bet the short-label decision made. ✅ `Outline
-color` sits under Outline width reading **"Follows Divider color."**
-  ⚠️ **`Collapsible sections` collapses to a heading + one switch** while collapsing is
-  off, and the heading nearly restates the switch label. It earns itself at three controls
-  when on. **Step 5 decides** — recorded as a live observation, not acted on.
-- ✅ **Step 5 — conditional state + a11y** (1010 → 1012 tests). The move redistributed the
-  seven hide-gated controls — `showsCustomFontSizeInput` into a group of four, BOTH
-  `sectionsCollapsible` rules into a group of three — so the new risk was a group whose
-  every control is gated rendering as **a heading and a divider fencing nothing**: an empty
-  section a merchant reads as broken, and a `role="group"` with no members. Pinned as a
-  static test over all **2⁷ combinations**, which beats live toggling (that only samples).
-  Counted rather than parsed, and the soundness condition — each guard wraps exactly one
-  control — is itself asserted at 7 against the registry count; without it the first
-  assertion decays from a real check into an arithmetic accident.
-- **All seven predicates toggled LIVE and correct**, count unchanged at 7 (feature 86 added
-  none, and the rail-side guard now cross-checks the number from the JSX as well as the
-  registry): Stacked/Grid hide On mobile + Label column width · Grid shows Minimum column
-  width · Maximum width 960 shows Alignment · Text size Custom shows Custom size seeded 16
-  · Enable collapsing shows Sections start + Gap. Thinnest state seen live is `Table
-layout` under Stacked — heading + `Row layout` alone — and it reads as a group, not an
-  empty section. **All changes discarded; nothing saved.**
-- ✅ **`Collapsible sections` KEPT** (the Step 4 open question). At three controls it is
-  unambiguously a group; at one it is a heading plus a switch that nearly restates it. Kept
-  because the redundancy is the standard settings idiom (a section named X whose first
-  control enables X), the thin state is the one where the merchant has least to do there,
-  and merging back would rebuild the eight-control group the merchant asked to split.
-- ⚠️ **Two Polaris limits found and accepted.** `s-heading` takes **no level prop** (only
-  `accessibilityRole`), so the panel title and all eight group headings are peers rather
-  than nested — pre-existing, not an 86 regression, and `role="group"` + `aria-labelledby`
-  is what carries the structure; wrapping groups in `s-section` to get levels would add
-  card chrome the rail does not want. `s-divider` extends only `GlobalProps` (no
-  `accessibilityVisibility`), so it cannot be marked decorative — Polaris's call, and a
-  separator between groups is semantically honest anyway. Also: **`s-number-field` commits
-  on blur, not per keystroke** — worth knowing before reading a hide rule as broken.
-- ✅ **Step 6 — lock reconciliation + docs.** `StyleTab.tsx`'s header comment narrated the
-  rail as a sequence of feature-57 steps ("first three groups — Layout · Sections · Rows",
-  "Step 10a adds the Colors group") and described a rail that no longer exists. Rewritten
-  around the **organising rule** plus the four invariants a future knob must respect: one
-  axis (the object), every group ending with its colors; placement decided by **where the
-  CSS var lands**, checked against `spec-table.css`; the headings are load-bearing; and no
-  group may consist entirely of hide-gated controls. Still-true material kept (no contrast
-  checking, no generic control wrapper, the `""`-to-null rule, the a11y decisions).
-  The two `stylingControls.ts` locks needed no work — Step 2 rewrote them when the labels
-  actually shortened; re-read and correct as written.
-- **`admin-screen-plan.md` §Tab 2 amended, not rewritten.** Its "Style rail (top → bottom)"
-  list is the original grouping — now wrong about structure, still right about every knob —
-  so a superseding note was added at the head of the list (the convention the doc already
-  uses for its 2026-07-19 amendments) carrying the eight-group table and the var-placement
-  rule. It also fixes two drifts the list had accumulated independently of feature 86:
-  ⚠️ it says **"seven" colors when there are NINE** (`headerTextColor` from feature 81 and
-  `outerBorderColor` both post-date the spec), and it records that **Style presets still
-  sits ABOVE all eight groups** when B2 lands — the reason 86 deliberately preceded B2.
-
-**Style tab — Reshell Phase B1 (feature 57, steps 1–12; docs `57-…`–`69-…`)**
+### Style tab — Reshell Phase B1 (feature 57, steps 1–12; docs `57-…`–`69-…`)
 
 - Step 1 (`57-…`): pure styling domain `app/utils/tableStyling.ts` — allowed-value arrays,
   `StylingValues`, `DEFAULT_STYLING_VALUES`, tolerant `parseStylingValues` (never throws),
   overrides-only `serializeStylingOverrides`, `stylingEquals`.
 - Step 2 (`58-…`): pure presentation mapping `app/utils/tableStylingCss.ts` —
-  `stylingToCssVars` (nullable→CSS var) / `stylingToModifierClasses` (knob→BEM modifier) /
-  `formatCssVarDeclarations` / frozen `SPEC_TABLE_CSS_VARS`; one translation layer, no drift.
-- Step 3 (`59-…`): storefront `spec-table.css` rewritten to `var(--appx-spec-*, <literal>)`
-  - one dormant rule set per modifier + the `--mobile-stacked` @media default; byte-exact
-    drift guard (`specTableCssContract.test.ts`, `previewStyles.ts` copy).
+  `stylingToCssVars` / `stylingToModifierClasses` / `formatCssVarDeclarations` / frozen
+  `SPEC_TABLE_CSS_VARS`; one translation layer, no drift.
+- Step 3 (`59-…`): storefront `spec-table.css` rewritten to `var(--appx-spec-*, <literal>)`;
+  one dormant rule set per modifier + the `--mobile-stacked` @media default; byte-exact
+  drift guard (`specTableCssContract.test.ts`, `previewStyles.ts` copy).
 - Step 4 (`60-…`): `add_table_styling` migration + server persistence — `TableStyling`
-  (override columns, NULL=default), `stylingToDbColumns`, nested shop-scoped upsert, lazy row.
+  (override columns, NULL=default), `stylingToDbColumns`, nested shop-scoped upsert.
 - Step 5 (`61-…`): engine styling state + Row-dividers control + Save round-trip;
   `editorSnapshot.ts` unifies the dirty baseline + submit snapshot.
 - Step 6 (`62-…`): live styling in the device previews (first consumer of the Step 2 mapping).
 - Step 7 (`63-…`): metaobject serialization + Liquid emission — pipe complete to the live
   storefront; new metaobject `styling_css` field; status-change re-sync hazard closed.
-- Step 8 (`64-…`): the four remaining non-structural keyword knobs (row layout / on-mobile /
-  section headers / density) — zero non-UI diff.
+- Step 8 (`64-…`): the four remaining non-structural keyword knobs — zero non-UI diff.
 - Step 9 (`65-…`): collapsible sections — the only B1 step to change markup
-  (`<details>/<summary>`, one `<table>` per section, native keyboard, per-section `aria-label`).
-- Step 10 (`66-…`): Colors + Typography — the last knob-adding step; nullable "inherit"
-  vocabulary; `FONT_SIZE_PX_MAX` raised 40→184; every `STYLING_FIELD_NAMES` field now has a control.
-- Step 11 (`68-…`): reveal a preview when the merchant opens the Style / Settings tab
-  (per-tab view memory, `tabViewMemory.ts`). _(NOT the withdrawn "style the grid" step — `67-…`.)_
-- Step 12 (`69-…`): Reset-to-theme-defaults + rail a11y (help text on `details`, real group
-  headings, named landmark) + docs reconciliation. **Phase B1 complete.**
-- Resolved en route: the section-header BANDED band is the intended default becoming
-  reachable, not a regression (accept; Step 7 signed off).
+  (`<details>/<summary>`, one `<table>` per section, native keyboard, per-section
+  `aria-label`).
+- Step 10 (`66-…`): Colors + Typography — nullable "inherit" vocabulary; `FONT_SIZE_PX_MAX`
+  raised 40→184; every `STYLING_FIELD_NAMES` field now has a control.
+- Step 11 (`68-…`): reveal a preview when the merchant opens Style / Settings
+  (`tabViewMemory.ts`). _(NOT the withdrawn "style the grid" step — `67-…`.)_
+- Step 12 (`69-…`): Reset-to-theme-defaults + rail a11y + docs reconciliation.
+  **Phase B1 complete 2026-07-20.**
 
-**Multi-column row flow (feature 85, doc `85-…`) — 🛠️ BUILT & live-verified
-2026-07-26, ⚠️ NOT SIGNED OFF (feature-70 screen-reader pass still owed)**
-
-- Merchant sent five competitor spec tables laying rows out in 2–3 side-by-side tracks.
-  Ships "Type A" only (the unit laid out is one label/value pair); section-level flow is
-  out of scope with a recorded reason. `GRID` joins `ROW_LAYOUTS` (appended, never
-  inserted) + one nullable `gridMinColumnWidthPx` (160–640, null = the stylesheet's
-  240px). Migration `20260726100927_add_grid_min_column_width_styling`, confirmed
-  non-repainting (6 rows, 0 affected). **No Liquid, no TOML, no markup change** — the
-  fifth feature running that the "server precomputes `styling_css`; Liquid only prints"
-  pipe paid for. Tests 943 → 981.
-- ⚠️ **Built ahead of its own blocker at the merchant's instruction.** The doc gates this
-  on feature 70's screen-reader pass (item 3 in Next Up) because GRID is the THIRD
-  departure from `display: table` riding on an ARIA chain no assistive tech has ever
-  confirmed. The pass is still owed. One new data point in its favour: Chrome's
-  accessibility tree was read on the live storefront under `display: grid` and still
-  exposes table/rowgroup/row/rowheader/cell — the roles survive the display change.
-  That is not the same as a screen reader ANNOUNCING the pairs, which is what feature 70
-  actually owes.
-- **A minimum column width, never a column count** — `repeat(auto-fit, minmax(min(var(…,
-240px), 100%), 1fr))`. Responsiveness with no media query, no unreadable 3-tracks-in-a-
-  600px-theme case, and it is what keeps the ~640px editor preview honest (a count knob
-  would render "3 columns" there and on a 1400px storefront while looking nothing alike).
-- 🔴 **Three plan corrections, all found by the CSS harness and all invisible when
-  broken** — the full write-up is the build log at the top of `85-…`:
-  (1) the **stripe stand-down LOST on specificity**, not source order — the plan's "they
-  tie" math missed the fill rule's `:nth-child` and `__row`, so the specced 3-part
-  selector never won and the checkerboard painted anyway; the shipped rule mirrors the
-  fill rule's shape (5 parts) and additionally stops the broad form wiping a merchant's
-  own `labelBgColor` / `valueBgColor`; (2) a bare `minmax(<min>, 1fr)` **overflows** when
-  the minimum exceeds the container — measured 25px at 400 and 265px at 640 in a 375px
-  container, both reachable from the rail's range — fixed with `min(…, 100%)`;
-  (3) the **`--outer-border` last-row exception is wrong in grid** (it assumes the last
-  DOM row is the row against the frame; measured `1px,1px,1px,0px` across the final track
-  row), so it now stands down via `:not(--layout-grid)` on all three of its selectors.
-- **The height win is real but ~half the plan's claim, and it peaks at the default.**
-  Measured on the live 44-row DJI storefront, all sections open, 1440px: TWO_COLUMN 3963px
-  → GRID@240 **2848px (−28%, ~1100px, about one screen)**. Not the "44 rows becomes ~15"
-  the plan assumed, because **a grid row is as tall as its tallest member** and this
-  catalog is ragged (value heights median 43px, max 536px). ⚠️ Going BELOW 240 makes it
-  worse (@160 = 2893px): narrower tracks wrap long values more. Empirical vindication of
-  the 240 default, and the guidance to give a merchant who assumes narrower = shorter.
-- **Rail:** third Row layout option; new **Minimum column width** box (blank = 240, the
-  blank-box idiom — 0 clamps UP to the floor rather than meaning "off", unlike Outline
-  width); hide-rule count **6 → 7** (`showsGridMinColumnWidthControl`, registered in
-  `VISIBILITY_PREDICATES` so it inherits preserve-on-hide); `showsMobileLayoutControl`
-  narrowed `!== "STACKED"` → `=== "TWO_COLUMN"`; `showsLabelWidthControl` hides for GRID
-  for free. **Stripes is hidden in Grid** (merchant call) via `rowDividerOptionsFor`, the
-  rail's first per-option hide — deliberately NOT in `VISIBILITY_PREDICATES`, which
-  governs whole controls. Its orphan case (a merchant already on Stripes who switches to
-  Grid) keeps the entry visible and labelled rather than blanking the select or coercing
-  the value.
-- **Round-trip live-verified end to end** on the ACTIVE DJI template: rail → Save →
-  Postgres → metaobject (`styling` overrides-only carrying `rowLayout`/`gridMinColumnWidthPx`;
-  `classes` carrying `--layout-grid` in field order and the **same length as before** —
-  the no-new-presence-flag claim measured on the wire; `vars` carrying
-  `--appx-spec-grid-min-column: 400px`) → rendered Horizon storefront (3 × 480px tracks
-  in 1440px, page overflow 0, 9 disclosures intact). Section header spanning every track,
-  stripe stand-down, and the dropped column divider all re-verified against the production
-  stylesheet. An all-`TWO_COLUMN` control measured **394px before and after**.
-  **Left saved with Grid + minimum 400** (revert = two controls; consider clearing the
-  400, since 240 measured materially shorter).
-- ✅ **Both deferred live checks closed on a second pass 2026-07-26.** (1) The **Stripes
-  orphan renders as specced** on the Moto G35 template (saved `TWO_COLUMN` + `STRIPES`):
-  switching to Grid leaves the select reading "Stripes" with "Stripes do not apply in Grid
-  layout. Pick Lines or None." rather than going blank, the orphan is the TRAILING entry
-  after Lines/None (walked with the keyboard), picking another member **drops it for
-  good**, and the preview's stripe fill vanished the moment Grid was picked — the CSS
-  stand-down is visible in the preview surface too. Template left untouched via Discard,
-  re-read from Postgres to confirm. (2) **Mobile measured at a genuine narrow viewport**
-  (the storefront sends `frame-ancestors 'none'`, so the probe is the real markup + the
-  real CDN-deployed stylesheet in a `srcdoc` iframe): **overflow 0 at every width**, and
-  the doc's "no media query" claim **splits in two** — above 749px `auto-fit` genuinely
-  collapses on its own (1 track at 800px), but at/below 749px the pre-existing
-  `--mobile-stacked` rule is later in the file, wins, and turns the grid OFF in favour of
-  the stacked layout. Same look, different mechanism. On the `--mobile-same-as-desktop`
-  path (rule-less, and reachable because the rail hides that control without clearing it)
-  the grid DOES stay on and `min(…, 100%)` holds it to one 356px track at 375px and one
-  301px track at 320px even with a 640px minimum — which is what makes build-log fix 2 a
-  real shipping guard rather than a theoretical one.
-- ⚠️ **The backtick trap fired for the second feature running** (81 recorded it first): a
-  comment written for the stripe rule contained a backticked snippet, which breaks the
-  `previewStyles.ts` mirror. The mirror is now regenerated by a script that REFUSES to run
-  when the CSS contains a backtick, rather than relying on remembering.
-- ⚠️ **The stale-Prisma-client trap did NOT fire this time, because the dev server was
-  restarted before the first save** — the discipline works. Restarting also let
-  `prisma generate` complete without the usual `EPERM … query_engine-windows.dll.node`,
-  since the running server was what held the lock.
-- Numbering: takes **85**; 82/83/84 stay reserved. ⚠️ **Superseded by feature 88
-  (2026-07-27):** the "must land in the B2 preset bundles" claim repeated across 78–85
-  is wrong — bundles set **structure only** (4 axes + collapsible, 0–3 fields each), so
-  every colour, typography and frame field stays a rail knob and is deliberately absent
-  from every bundle. `GRID` DOES land (Multi-column's bundle); `gridMinColumnWidthPx`
-  does not — null = the stylesheet's 240px, which measured shortest. **No bundle ships
-  `GRID` + `STRIPES`** still holds and now falls out of the rule for free, since no
-  bundle names a divider style other than `NONE`.
-
-**Section header typography & spacing (feature 81, doc `81-…`) — ✅ shipped & fully
-live-verified 2026-07-26**
-
-- Merchant sent five competitor spec tables (Best Buy, Amazon, Trek, AppleGadgets, a fifth
-  blue-band sample) and asked which section-header treatments the app can reproduce. Five
-  were missing; all five ship here as **nullable `TableStyling` columns** — `headerTextColor`,
-  `headerFontSizePx`, `headerFontWeight`, `headerCase`, `headerPaddingBlockPx`. Migration
-  `20260726054441_add_section_header_typography_styling`. Band radius / chevron position /
-  open-close animation from the same report are **82 / 83 / 84**, each split out for a
-  recorded technical reason. Per-row ⓘ icons are content, not styling → Phase C.
-- **The cheapest unit the Style tab has had, and that is a consequence of the Step 2 rule,
-  not a coincidence.** Nullable ⇒ CSS custom property, so: **no modifier class, no presence
-  flag, no hide predicate (count stays 6), no markup, no Liquid, no TOML.** Fourth feature
-  running that "server precomputes `styling_css`; Liquid only prints" paid for. Three tests
-  now pin the no-class claim, and it was **measured on the wire**: after saving three knobs
-  to the ACTIVE DJI template the metaobject's `styling_css.classes` string is byte-identical
-  to before the feature, while `.vars` gained three declarations.
-- ⚠️ **`headerFontSizePx` is absolute px, NOT an em keyword — structural, not taste.** The
-  collapsible `<summary>` is a **sibling** of the `<table>` that carries
-  `--appx-spec-font-size`, so an em multiplier would resolve against a different base in each
-  shape and silently resize when a merchant toggled Collapsible. px resolves identically in
-  both. This also collapsed the control from a five-option tri-state to a plain number box.
-- **`headerPaddingBlockPx` is the ONE integer knob with a 0 floor** (merchant's call). Feature
-  78's minimum-of-1 law governs knobs where null already means off; here null means the
-  `0.75rem` literal, so 0 is a _first_ spelling of a genuinely different render, nothing keys
-  a presence flag on it, and the mapping guard is `!== null` rather than falsiness so a stored
-  0 emits `0px` instead of falling through to the fallback. **Block axis only** — the inline
-  padding stays welded to the row cells' `0.75rem`, or a 24px title would indent past its own
-  labels. Written as `padding-block`/`padding-inline` longhands: a var inside a shorthand is
-  IACVT and would drop **all four sides** to zero.
-- **Live-verified end to end** on the ACTIVE DJI template: rail → Save → Postgres → metaobject
-  → rendered Horizon storefront, all 9 sections at `22px / 700 / uppercase / 18px block`, with
-  **`padding-inline` still `12px`** (the block-only decision in production) and `font-weight:
-700` coming from the _literal fallback_ since `headerFontWeight` is null. Features 79/80
-  undisturbed (`margin-block-start` 0/25px, every `border-block-start` 0px). Row labels stay
-  `text-transform: none` — `headerCase` never touches `labelCase`'s surface. Mobile checked at
-  a genuinely reflowed `innerWidth: 502` (`labelDisplay: block` proves the @media fired): all
-  five identical to desktop. A 16-case CSS harness against the real stylesheet ran **first**;
-  its all-null control measured `12px/16px/700/none` — the pre-feature literals, so the
-  no-repaint claim is measured, not asserted. Migration non-repainting (6 rows, 0 non-null).
-  Tests 914 → 943.
-- ⚠️ **Two traps worth carrying forward.** (1) A **backtick in a `spec-table.css` comment**
-  breaks the `previewStyles.ts` mirror — the file header says so and the first comment written
-  here violated it; use plain words for CSS syntax in that file. (2) The **stale-Prisma-client
-  trap hit for the fourth consecutive feature** (78/79/80/81) and presented at its sharpest:
-  Save wrote nothing and left the SaveBar reading "Unsaved changes" — no toast, no error. The
-  discriminator settled it in one command (a fresh `node -e` writes fine ⇒ the server is just
-  stale). Also: `prisma generate` can report `EPERM … query_engine-windows.dll.node` while
-  still having rewritten the types and client JS, so typecheck/build pass on a "failed"
-  generate — the engine binary is version-, not schema-specific. Don't loop on it.
-- **Left saved with** Section title size 22 · case Uppercase · padding 18 (revert = two boxes
-  - one select). `headerFontWeight` / `headerTextColor` deliberately left null, which is what
-    made "absent from the wire when null" a real check.
-- Numbering: this takes **81**. ⚠️ **Superseded by feature 88 (2026-07-27):** these five
-  do **not** join any preset bundle — header typography is tuning within a pattern, not a
-  pattern. They remain what lets the reference tables be reproduced rather than
-  approximated; that reproduction now happens in the rail after a card is picked.
-
-**Section separation + section gap (feature 80, doc `80-…`) — ✅ shipped & fully
-live-verified 2026-07-26**
-
-- Merchant collapsed every section on the ACTIVE DJI template and the banded headers
-  rendered as **one unbroken grey slab** — no edge between adjacent bands. Root cause is
-  one Step 8 rule doing exactly what it says: `--section-banded` drops the summary's
-  `border-block-end` because "the band edge IS the separator", which is true when a band
-  is followed by ROWS and false when it is followed by ANOTHER BAND — a state only
-  collapsible sections can reach. **Not a regression from 77–79.** Two halves shipped
-  together: **A** a base-rule separator (no knob), **B** a `sectionGapPx` knob.
-  Migration `20260725181733_add_section_gap_styling`. **No Liquid change** — third
-  feature running that the "server precomputes, Liquid only prints" pipe paid for itself.
-- **A — `border-block-START`, not `-end`, and that is the whole trick.** The banded rule
-  owns the bottom edge of the very same element, so claiming the opposite side means the
-  two rules never contest a property: no specificity tie, **no source-order dependency**
-  (contrast feature 79, where the tie made file order load-bearing), no `!important`.
-  Reads `--appx-spec-border-color`, so it matches the row rules by construction — the
-  feature-79 call made again, no new swatch.
-- ⚠️ **`:not([open])` on the PRECEDING section is a no-repaint device, not a nicety.**
-  `ALL_OPEN` is the default initial state, so an unconditional rule would add a second
-  hairline above every band on every collapsible banded table already live. Scoped this
-  way, only the broken state changes — **measured**: a banded ALL_OPEN table renders
-  `border-block-start: 0px` throughout, exactly as before. Free bonus: `[open]` is a live
-  attribute, so the separator appears/disappears as a shopper toggles a section, with
-  **zero JavaScript** — verified on the storefront by clicking (`0px → 0.909091px` on
-  close, and back).
-  **Accepted gap:** an OPEN but EMPTY section (Step 9a's empty collapsible / feature 74
-  R3) renders a zero-height table, so its band still abuts the next. Closing it means
-  dropping `:not([open])` and repainting every default table — the law wins.
-- **B — `sectionGapPx Int?` (1–48, null = no gap)**, in **Sections** under "When the page
-  loads", as a **zero-means-off** box (the third, joining Outline width and Corner
-  radius). px not a keyword: nothing here can clash the way a column-rule width could, and
-  matching a theme's rhythm needs a number. `showsSectionGapControl` is the **6th** hide
-  rule and the second gated on `sectionsCollapsible` — for a harder reason than the
-  initial-state control: a gap is not merely meaningless in the flat shape, it is
-  **unexpressible**, since a flat section header is a `<tr>` and a `<tr>` takes no margin.
-  (🚫 The transparent-`border-block-start` approximation is rejected in writing: under
-  `border-collapse: collapse` the wider border wins the shared edge and would delete the
-  previous row's divider.) Inherited the preserve-on-hide law by adding one row to
-  `VISIBILITY_PREDICATES`.
-- **The third presence flag `--section-gap` earns its keep twice**, and one of those was a
-  **plan correction found during the build**: the gap rule is gated on the class rather
-  than left to `var(--…, 0)`, because an always-declared `margin-block-start: 0` from a
-  two-class selector **beats a theme's own element-level `details` margin** — inert as a
-  value, not as a declaration. Its other job is telling A's hairline to stand down once
-  whitespace already separates the bands. A test pins that the file declares
-  `margin-block-start` exactly once, inside that rule.
-- **Round-trip live-verified end to end** on the ACTIVE DJI template: rail → Save →
-  Postgres `sectionGapPx=12` → metaobject (`styling` overrides-only, `styling_css.classes`
-  ending `--section-gap`, `vars` = `--appx-spec-section-gap: 12px;`) → rendered Horizon
-  storefront (first section `margin-block-start: 0px`, all 8 others `12px`, every
-  `border-block-start` `0px`). Frame interaction probed live without saving: with
-  `--outer-border`/`--outer-radius` on, gaps survive inside the frame, `overflow: hidden`
-  engages, the last summary's bottom rule was already `0px` so nothing doubles, and width
-  stays 1440px (feature 77 unaffected). Mobile ≤749px checked in the editor's Mobile
-  preview: stacked, gap intact, no artifacts. Migration confirmed non-repainting (6 rows,
-  0 non-null). An isolated 6-case CSS harness against the real stylesheet ran **first**, so
-  the storefront pass was a confirmation rather than an exploration. Tests 892 → 914.
-  ⚠️ **`s-number-field` commits on blur, not per keystroke** — typing a value leaves the
-  help text and SaveBar untouched until focus leaves. Pre-existing (all three px boxes do
-  it); knowing it saves a false "the knob is dead" diagnosis.
-  **The DJI template is left saved with `Banded` + `Gap = 12`** (it had been on `Text
-only`, which was the workaround for this bug). Revert = two controls.
-- Numbering: this takes **80**. `sectionGapPx` is the ONE tuning value feature 88 keeps in
-  a bundle (`Accordion`, at 12px) — a Trek-style accordion needs whitespace between
-  disclosures to read as separate blocks. ⚠️ **Corrected 2026-07-27:** the Accordion preset
-  is collapsible + **`TEXT_ONLY`** + a gap, not banded — a clickable header wants the 2px
-  rule, and banded is its own card.
-
-**Column divider (feature 79, doc `79-…`) — ✅ shipped & fully live-verified 2026-07-26**
-
-- Merchant sent two competitor spec tables (techlandbd, AppleGadgets) rendering a full
-  **grid** and asked for a column border. Only ONE edge was actually missing: rows already
-  had `LINES` (57 Step 5) and the frame shipped in 78, so the vertical rule between label
-  and value — **the only interior column edge a 2-column table has** — is one knob, and it
-  completes the grid. One column `columnDividerStyle String?` (`NONE` default / `LINE`),
-  migration `20260725161912_add_column_divider_styling`. **No Liquid change** — second
-  feature running that the "server precomputes, Liquid only prints" pipe paid for itself.
-- **Three merchant decisions (2026-07-26), all narrowing the knob deliberately:**
-  a **style keyword, NOT a px width** (row-divider width is not configurable, so a width box
-  would let a 4px column rule sit on 1px row rules — the knob that cannot express the ugly
-  case is the right knob); **no dedicated color swatch** (reads `--appx-spec-border-color`,
-  so it matches the row rules by construction — `columnDividerColor` stays addable later);
-  and **not hidden on stacked layouts**, deliberately declining a 6th hide predicate. That
-  last one has a cost: `Line` on a stacked table does nothing, so the caveat lives in the
-  option's help text and is a **shipped requirement pinned by a test**, not prose.
-- Non-null keyword ⇒ **modifier class**, per the locked Step 2 rule; `NONE` emits a real
-  `border-inline-end: none` rule rather than being the absence of one. The rule hangs off
-  the **label's `border-inline-end`**, which is the whole design: a section header is a
-  `th[colspan=2]` so the rule stops at every band (the look both references have); each
-  collapsible section owns its own `<table>` so it is per-section for free; and it is
-  INTERIOR, so `border-collapse` has nothing to resolve and it can never double against the
-  outer frame — no analogue of feature 78's three last-row selector cases. Logical property,
-  so RTL is correct for free.
-- ⚠️ **The one hazard is SOURCE ORDER, not specificity.** Both stacked shapes must drop the
-  rule (a block label has no seam; a survivor paints as a stray vertical stub), and all three
-  selectors are two classes — a **tie**, so order alone decides. The ON rule sits with the
-  dividers block _before_ the layout block, making the file's existing documented ordering
-  rule load-bearing for one more knob. Breaking it is invisible: previews and storefront
-  regain the stub together and it reads as a design choice. Three tests pin it (the 1px
-  literal, both `none` rules, and the ordering). No `!important` anywhere. Tests 879 → 887.
-- **Round-trip live-verified end to end** on the ACTIVE DJI template: rail → Save → Postgres
-  `columnDividerStyle="LINE"` → metaobject (`styling` overrides-only; `styling_css.classes`
-  carries `--column-divider-line` in field order, **`vars` empty** — the knob rightly emits no
-  custom property) → rendered Horizon storefront, rule stopping at every section band. The
-  "matches the row rules by construction" claim is **measured, not argued**: the label's
-  computed `border-inline-end` and `border-block-end` are both `0.727273px solid
-rgba(0,0,0,0.1)`. The source-order hazard was verified **observably** — swapping the layout
-  class on the live page dropped the border `0.727273px → 0px` with the divider class still
-  present, and restored it. Mobile ≤749px checked in the editor's Mobile preview (a real
-  ~375px iframe): stacked, no rule, **no stray right-edge stub**. Migration confirmed
-  non-repainting (every pre-existing row read `null`).
-  ⚠️ **`resize_window` is not a usable responsive check here** — it reports success but the
-  viewport never reflows (`innerWidth` stayed 1397); the Mobile device preview is what gives a
-  genuine narrow render. The DJI template is **left saved with `Line`**.
-- Numbering: this takes **79**. ⚠️ **Superseded by feature 88 (2026-07-27):**
-  `columnDividerStyle` lands in **no** bundle, and the "Bordered / Grid" preset it was
-  meant to enable was **withdrawn**. The two banded references (startech, techlandbd)
-  differ only on the frame and column-rule axes, which is evidence those are tuning
-  _within_ Banded rather than a look a merchant starts from. The knob is unaffected —
-  it is two clicks from the Banded card.
-
-**Table width + outer border (features 77–78, docs `77-…` / `78-…`) — ✅ shipped 2026-07-25**
-
-- **77 — the block now fills its container (CSS-only bug fix, live-verified).** Merchant
-  report: the storefront table's width followed its CONTENT, so opening a collapsible
-  section resized the whole table. Measured on the dev store: **206px closed ↔ 1264px open**
-  inside 1438px of space. Cause is one level ABOVE our markup — a theme section that centres
-  its children (`align-items: center` on a column flex container) makes **Shopify's**
-  `.shopify-app-block` wrapper a shrink-to-fit flex item. 🚫 **`width: 100%` on
-  `.appx-spec-table` is a no-op** — measured — because a percentage resolves against the
-  already-shrunk parent and does not feed back into its intrinsic sizing. Fix is
-  `.shopify-app-block:has(> .appx-spec-table) { align-self: stretch; justify-self: stretch }`.
-  **`align-self`, NOT `width: 100%`:** both fill a column-flex parent, but align-self targets
-  the CROSS axis, so in a row-flex theme it touches the height and leaves the width alone
-  (verified — no overflow). Base rule, not a knob: a table that resizes when a shopper opens
-  a section is wrong in every theme. Live-verified on the storefront — **jitter 0px**.
-  _Note the previews never showed this and never could:_ the preview document has no
-  `.shopify-app-block` ancestor, so "storefront-faithful" has a hole exactly where the
-  surrounding theme wraps the block.
-- **78 — five Style-tab knobs**, new **Size & frame** rail group: `tableMaxWidthPx`
-  (240–1600, null = full width), `tableAlign` (LEFT/CENTER/RIGHT), `outerBorderWidthPx`
-  (1–12), `outerBorderRadiusPx` (1–48), `outerBorderColor` (swatch, in **Colors**).
-  Migration `20260725143916_add_table_container_styling`. **No Liquid change** — the
-  "server precomputes, Liquid only prints" pipe paid off exactly as designed.
-  Three locks: **null = the default, not inherit** (no theme value exists for an outline),
-  so **every integer minimum is 1, never 0** — a 0 would be a second spelling of "off" that
-  serializes as a bogus override; **max-width, not width**, so the cap shrinks on a phone
-  and cannot collide with the 749px breakpoint; the outline colour falls back **through**
-  `--appx-spec-border-color`, so one swatch dresses rules + frame until a merchant splits
-  them. Two presence flags (`--outer-border`, `--outer-radius`) exist because CSS cannot
-  branch on whether a var is set: one drops the last row's rule where it would double against
-  the frame (**three** selector cases — flat, last section open, last section CLOSED, where
-  the summary is the last thing painted), the other turns on `overflow: hidden` so a radius
-  actually clips the band and stripes. `showsTableAlignControl` is the **5th** hide rule and
-  inherited the preserve-on-hide law by adding one row to `VISIBILITY_PREDICATES`.
-  **Round-trip live-verified end to end** on the ACTIVE DJI template: rail → Save → all five
-  Postgres columns → metaobject `styling_css` (classes `--align-center --outer-border
---outer-radius`, vars with px units + hex) → rendered storefront (900px, centred 203/203,
-  `2px solid rgb(192,38,211)`, 12px radius, last-row rule dropped, jitter still 0). The cap
-  shrinks rather than overflows — measured 900/700/360 in 1438/700/360px containers.
-  ⚠️ **A migration mid-`shopify app dev` needs the dev server restarted:** the first save
-  failed silently because Vite HMR reloads app code but NOT `@prisma/client` (require cache),
-  so the server called a client without the new columns — the same reason `prisma generate`
-  reported `EPERM ... query_engine-windows.dll.node`. Tell it apart from a real bug by running
-  the upsert from a fresh `node -e`: if that writes, the server is just stale.
-  ⚠️ B2 note **superseded by feature 88 (2026-07-27)**: none of these five lands in a
-  preset bundle. Frame and width are tuning within a pattern, not a pattern — and the
-  frame is the one axis that can collide with the merchant's theme (startech's apparent
-  "frame" is the theme's own section card, not the table's).
-- **Follow-up 2026-07-26 — Outline width and Corner radius show `0` for off; neither box is
-  ever blank.** Merchant report: reaching "no outline" meant _removing the text_, which is a
-  poor gesture on a knob whose whole vocabulary is a px number. So for these two knobs
-  **display and storage disagree, in one direction only**: the box always shows a number,
-  `null` renders as `0` (`toZeroMeansOffControlValue`), and anything rounding to ≤ 0 reads back
-  as `null` (`fromZeroMeansOffControlValue` — so `0`, `0.4`, `-5` _and_ an emptied box all mean
-  off, while `0.6` still clamps up to the minimum). Both fields take the shared
-  `ZERO_MEANS_OFF_CONTROL_MIN = 0` so the **stepper can walk down to off**; the domain
-  minimums stay 1 as the smallest _stored_ values. Off-state help text now reads "No outline.
-  Set 1 or more to frame the table." / "Square corners. Set 1 or more to round them."
-  ⚠️ **The minimum-of-1 lock above is NOT relaxed — it is what makes this safe.** 0 is never
-  stored, so `serializeStylingOverrides` still has nothing to write, and the reason is
-  load-bearing rather than tidiness: **both** knobs carry a presence flag keyed on non-null, so
-  a stored 0 would trip it while painting nothing — `--outer-border` drops the last row's own
-  bottom rule (no frame **and** a lost divider), `--outer-radius` turns on `overflow: hidden`
-  (no rounding **and** an over-wide table starts clipping, the exact trade that flag exists to
-  avoid taking unasked). Keeping 0 out of the model makes both unreachable by construction
-  instead of by a second guard downstream — a test pins that no input reaches the model as `0`.
-  Server `parseStylingValues` untouched. Tests 887 → 892.
-  **Maximum width deliberately keeps its blank box** — 0 is not a spelling of "full width", so
-  the same trick would be a lie there. Confirmed against the Polaris docs en route: `min`/`max`
-  on `s-number-field` are display affordances only — "Users can still type values lower than
-  the minimum using the keyboard. Implement validation to enforce this constraint." — which is
-  why every bound in this file is enforced in the converter, not the markup.
-
-**Collapsible Style / Settings rail (feature 76, doc `76-…`) — ✅ shipped & verified 2026-07-25**
-**— and, since the modal below was removed, the ONLY answer to the Style tab's width problem.**
-
-- The **other** option the same merchant offered for the same report that produced feature
-  75, built at their request. One toggle in the control row
-  collapses the 18.75rem Style/Settings rail to **zero width**, handing the stage the full
-  editor card. Feature 75's doc had rejected this idea on width grounds; that half is
-  **wrong and is retracted** — it modelled the preview off the raw admin viewport instead of
-  the `<s-page inlineSize="large">` card, and the measured chain (`iframe − 64 − 48 − 2`,
-  −300 more with the rail open) clears the 749px breakpoint by ~300px on the reporter's own
-  window. Live-verified at the exact reporting size (`innerWidth` 1397 → iframe 1141):
-  Style + Desktop rendered stacked, one click rendered it two-column.
-- **Collapse to zero, not to an icon stub** — which is what forces the button into the
-  control row beside the tabs rather than into the rail: the tight measured case clears the
-  breakpoint by only 18px, so a ~48px surviving strip would put the preview back under it.
-  One stable icon in a fixed position, `aria-expanded` carrying the state. Hidden, not
-  unmounted, so the rail's scroll position and StyleTab's UI memory survive.
-- **Both Step 0 platform checks came back negative** and both fallbacks were taken.
-  (a) `className` on an `<s-box>` is a **`tsc` error** — Polaris's JSX types accept only a
-  component's own props plus `key`/`ref`/`slot`/`children` — so the hide rule hangs off a
-  hyphenated `data-` attribute (hyphenated JSX attribute names skip excess-property
-  checking, which is also why the ARIA typechecks) rather than the planned wrapper `<div>`,
-  which would have demoted the rail from grid item to nested child and re-entered the
-  unpainted-sliver bug. (b) `<s-button>` **drops `aria-expanded`/`aria-controls`** — measured
-  against the live CDN build: only `accessibilityLabel` reaches the shadow `<button>`, and
-  the host carries no role at all — so the toggle is a plain
-  `<button className={styles.segBtn}>`, the same imported chrome the tab segments use.
-  Shipping a sighted-users-only toggle state into the one rail that spent feature 57 Step 12
-  closing that gap was not acceptable.
-- **One defect the plan did not predict:** collapse/expand drifted the rail's scroll offset
-  ~36px _per cycle_. Not the zero-rect `getBoundingClientRect()` hazard the plan named (that
-  is real, is now guarded in `useScrollRegionHeight`, and did **not** move the drift) — it is
-  Chrome **scroll anchoring** re-compensating a re-laid-out hidden subtree. `overflow-anchor:
-none` on `.railScroller` fixes it; pixel-identical across six cycles.
-- **The honest limit stands, and is now the whole story:** under ~1420px the
-  Style tab still cannot show a truthful desktop table _and_ the knobs at once. Collapse
-  trades the knobs for width; it is look-then-adjust, not adjust-and-watch. If the friction
-  is reported again the answer is a
-  fixed-1100px `transform: scale()` preview, **not** a second panel and **not** a re-added
-  modal — recorded in `76-…` so it is not re-derived. Tripwired files untouched; no
-  rows/styling/assignment changed (the SaveBar never appeared). Details + three corrections
-  in `76-…`.
-
-**Full-size preview modal (feature 75, doc `75-…`) — 🗑️ REMOVED 2026-07-25 (shipped &
-verified earlier the same day)**
-
-- **Removed at the merchant's request** after they used both surfaces: the collapsible rail
-  (feature 76) answered the width problem on its own, so the modal was carrying a second
-  way to do one thing — a second surface to explain, keep truthful, and re-verify on every
-  preview change. Deleted: `PreviewModal.tsx`, the control-row trigger + `PREVIEW_MODAL_ID`,
-  `deviceView.ts`'s `modalPreviewHeight` / `MODAL_CHROME_PX` / `MODAL_PREVIEW_*`,
-  `tabViewMemory.ts`'s `setPreviewDevice`, `SpecTablePreview`'s `availableHeight` override
-  and the `preview` render prop's `options` argument, and their 13 unit tests (883 → 870).
-  **Kept:** `SegmentedControl.tsx`, the verbatim extraction feature 75 made — `EditorShell`
-  uses it for both its tab group and its device toggle, so it survives as a plain shared
-  component. Full gate re-run green; `SpecTableEditor.module.css` / `RowGrid.tsx` still
-  byte-clean. The doc `75-…` is kept as the record (its root-cause analysis is what feature
-  76 is built on) with a REMOVED banner; everything below its "The design" heading
-  describes code that no longer exists.
-- **What the removal does NOT change — the root cause, which is why feature 76 exists:**
-  `previewDeviceWidth("desktop")` is `"100%"`, so "Desktop" is only as wide as the leftover
-  editor column (viewport − admin chrome − the 18.75rem Style rail − `.stage` padding ≈ 640px
-  at 1277 CSS px), genuinely under `spec-table.css`'s 749px mobile breakpoint. The preview was
-  telling the truth about a 640px desktop. **🚫 Never fix this by lowering 749** — Dawn's
-  breakpoint, drift-guarded, and it would change what real shoppers see on phones. The two
-  height-budget rules the modal used (`useScrollRegionHeight` is meaningless in a centred
-  dialog; a ResizeObserver on the modal body is circular, since an `<s-modal>` sizes to its
-  content) are recorded in `75-…` should a dialog-hosted preview ever be revisited.
-
-**Content-free tables render nothing (feature 74, doc `74-…`) — ✅ shipped & verified 2026-07-23**
-
-- Merchant report: a brand-new template's Style/Settings preview showed a bare grey box.
-  Root cause was **not** the preview — the starter scaffold's blank SECTION_HEADER had no
-  emptiness gate at all, so it rendered as a content-free `__section` band (BANDED default =
-  `rgba(0,0,0,.06)`), and a merchant who saved + activated + assigned it would ship that band
-  to a live product page. Two render-time gates, hand-mirrored in `spec_table.liquid` and
-  `specTablePreviewHtml.ts`: **R1** a section header whose label is blank after trimming is
-  skipped (tested trimmed, emitted untrimmed); **R2** if no row survives its gate, emit
-  nothing — no wrapper, no empty `<table>`. The Liquid **captures the body first** and emits
-  the wrapper only if a `has_content` flag was set, because the `<div>` used to open before
-  the loop and a data cell's emptiness is undecidable without rendering it against the live
-  product; one pass, no double-render. Rows JSON is untouched — suppression is render-time
-  only, so blank rows still round-trip into the editor grid.
-- Also closed a **latent preview/storefront divergence**: the empty-state gate was
-  `fragment.includes("<tr")`, which wrongly replaced a legitimate named-but-empty collapsible
-  section (a `<details>` with no `<tr>`) with the empty state. Emptiness now decides once,
-  upstream in `renderSpecTableHtml`, where both renderers agree.
-- **Out of scope (R3):** a section with a REAL label whose rows are all hidden still renders —
-  authored content, and suppressing it would contradict the locked Step 9a empty-collapsible
-  decision. Logged under Open Questions; a test pins it so it can't leak in.
-- Live-verified end to end on the dev store, storefront included (a temporary probe proved
-  `assign`-inside-`capture` survives on the real Liquid runtime, and that all 9 authored
-  sections of the 44-row DJI template are kept). Details + two plan corrections in `74-…`.
-
-**Desktop preview inner scroll (feature 73, doc `73-…`) — ✅ shipped & verified 2026-07-23**
-
-- The Desktop browser mockup no longer grows without bound: the shim-measured content
-  height is **clamped** to the available viewport (pure `browserScreenHeight` in
-  `deviceView.ts`), so a long table scrolls INSIDE the window like a real browser while a
-  short one still hugs its content exactly as in feature 72 (clamp, not fit — merchant's
-  call; always-filling would put dead space under a short table). Both mockups now share
-  one `useScrollRegionHeight` ref; Desktop measures `.browserScreen` (below the chrome
-  bar) so no `BROWSER_CHROME_PX` constant can drift against the CSS. Preview documents get
-  `html { scrollbar-width: thin }` (preview-only ambient, outside the drift-guarded
-  `SPEC_TABLE_CSS`). Iframe pipeline, `DevicePreview.module.css`, and the tripwired files
-  untouched.
-
-**Editor device-preview mockups (feature 72, doc `72-…`) — ✅ shipped & verified 2026-07-22**
-
-- The Desktop/Mobile previews now render inside a device mockup: Desktop = a browser
-  window (traffic-light dots + faux address pill, fills the column; auto-height until
-  feature 73 clamped it to the viewport); Mobile =
-  a light, thin phone frame (subtle border + speaker pill) whose screen fits the available
-  viewport height (`useScrollRegionHeight`), capped at a phone-shaped max (2026-07-23
-  follow-up: pure `phoneScreenHeight` + `PHONE_SCREEN_MAX_PX` 812 in `deviceView.ts`, so a
-  tall monitor no longer stretches the phone), and scrolls internally. Device shadows are
-  sized to fade out INSIDE `.stage`'s padding (it clips: `overflow-x: auto` ⇒ both axes),
-  geometry centralized as `--appx-device-shadow-offset/-blur`. Chrome wraps the iframe
-  in a new `DevicePreview.module.css` (all colours as centralized custom props);
-  the iframe pipeline (renderer, height shim, sandbox, live styling) and the tripwired
-  `SpecTableEditor.module.css` are untouched. Live-verified on the dev store.
-
-**Editor sidebar inner-scroll (feature 71, doc `71-…`) — ✅ shipped & verified 2026-07-22**
-
-- Style/Settings rail now scrolls internally (bounded to the iframe viewport via the
-  reused `useScrollRegionHeight` + a new `EditorShell.module.css` `.railScroller`) so the
-  long Style rail no longer scrolls the preview off-screen. **Only the rail scrolls**
-  (merchant choice); preview keeps natural height. Tripwired `SpecTableEditor.module.css`
-  / `RowGrid.tsx` untouched. Full gate green; live-verified on the dev store (Style rail
-  scrolls to "Reset to theme defaults" with preview anchored; Settings same; Content unchanged).
-- **Follow-up 2026-07-23 — rail scrollbar rides the panel edge.** A scrollbar paints on its
-  scrolling element's _border_ edge, so while the wrapping `s-box` owned `padding="base"` on
-  all four sides the rail's scrollbar floated ~1rem inside the grey panel with a dead strip to
-  its right. The box now sets `paddingInlineEnd="none"` and `.railScroller` owns that one
-  gutter itself (`padding-inline-end: var(--s-space-base, 1rem)`), so the scrollbar hugs the
-  panel edge while the controls stay inset exactly as before. The rail also takes
-  `scrollbar-width: thin` — a full-width platform scrollbar reads as a window edge against a
-  18.75rem rail; same standard property, same no-`::-webkit-scrollbar`-fork call as the device
-  previews' `PREVIEW_AMBIENT` (feature 73). Landmark, `useScrollRegionHeight`,
-  and the tripwired files unchanged. Full gate green; live-verified on the dev store.
-  _(The editor's OTHER visible gutter — the empty ~16px right of the app's own document
-  scrollbar — is Shopify's, not ours: admin's `.Polaris-Scroll` sets `scrollbar-gutter: stable`
-  and lays the app iframe inside `\_ScrollbarSafeArea_`, 16px narrower. Not removable from
-inside the iframe; it only stops being visible if the app document itself stops scrolling —
-today it overflows by roughly the `.tipsFooter`height, which`useScrollRegionHeight`'s flat
-`BOTTOM*PAD_REM = 3` does not budget for. Unfixed; see Next Up.)*
-
-**Device previews — Reshell Phase D (feature 49, steps 1–8; docs `49-…`–`56-…`)**
+### Device previews — Reshell Phase D (feature 49, steps 1–8; docs `49-…`–`56-…`)
 
 - Read-only Desktop / Mobile storefront previews in the editor: toggle swaps the stage (1),
   pure storefront-markup renderer (2), sandboxed iframe (3), shared `spec-table.css` via a
@@ -2780,7 +312,7 @@ today it overflows by roughly the `.tipsFooter`height, which`useScrollRegionHeig
   `allow-scripts` + `postMessage` (6), a11y / read-only / empty-state / dynamic-pill (7),
   docs + sign-off (8). **Tablet removed 2026-07-22.**
 
-**Product assignment engine — features 37–48 (merchant-complete)**
+### Product assignment engine — features 37–48 (merchant-complete)
 
 - 37 (`37-…`): data foundation — `add-assignment` migration, `ProductAssignment(Index)`,
   `assignmentScope.ts`, shop-scoped `assignment.server.ts`.
@@ -2789,15 +321,16 @@ today it overflows by roughly the `.tipsFooter`height, which`useScrollRegionHeig
   `products(query,first:1)`, fails closed, injection-safe).
 - 40 (`40-…`): routing-projection builder + `add-routing` migration (`ShopStorefrontRouting`).
 - 41 (`41-…`): shop routing metafield writer + `[shop.metafields.app.routing]` TOML (deployed).
-- 42 (`42-…`): activation pipeline + DRAFT→ACTIVE dry-run gate wired into both status surfaces
-  (atomic block on conflict, routing rebuild on ACTIVE-set change).
+- 42 (`42-…`): activation pipeline + DRAFT→ACTIVE dry-run gate wired into both status
+  surfaces (atomic block on conflict, routing rebuild on ACTIVE-set change).
 - 43 (`43-…`): storefront 3-tier resolution (`spec-table-resolve.liquid`: override →
   byProduct → exclude gate → broad tiers → default handle).
-- 44 (`44-…`): scope-picker UI + rich conflict banner (`SettingsTab.tsx`; gate over PENDING scope).
+- 44 (`44-…`): scope-picker UI + rich conflict banner (`SettingsTab.tsx`).
 - 45 (`45-…`): EXCLUDE carve-outs (all-products-except-X; gate subtraction; storefront reorder).
 - 46 (`46-…`): multi-value scopes — server (1..N INCLUDE for PRODUCT/COLLECTION; Decision C).
 - 47 (`47-…`): multi-value scopes — UI (multi-select picker → chip cards, full-set loader).
-- 48 (`48-…`): templates-list dynamic assigned-product count (per-scope, batched Admin query, fail-soft). _Live-render on the dev store still pending._
+- 48 (`48-…`): templates-list dynamic assigned-product count (per-scope, batched Admin query,
+  fail-soft). _Live-render on the dev store still pending._
 
 Design lock (2026-07-07, `data-model.md` §5/§9): **rigid block-on-conflict**, one scope per
 template (all / product / type / vendor / collection), no `priority`; broad rules via one
@@ -2805,169 +338,158 @@ shop-level routing metafield resolved in Liquid by handle; per-product `metaobje
 only for bounded overrides. Materialization (`ProductAssignmentIndex`) deferred post-MVP.
 Multi-value applies to PRODUCT + COLLECTION only. No migrations needed for the 45–48 series.
 
-**Storefront (features 34–35)**
+### Storefront (features 34–35)
 
-- 34 (`34-…`): Theme App Extension first pixel — `extensions/product-specs-table/`, declarative
-  TOML metaobject + `metaobject_reference` product metafield (both `public_read`), semantic `<table>`.
+- 34 (`34-…`): Theme App Extension first pixel — `extensions/product-specs-table/`,
+  declarative TOML metaobject + `metaobject_reference` product metafield (both
+  `public_read`), semantic `<table>`.
 - 35 (`35-…`): value-part resolution — `spec-table-value.liquid` resolves
-  `SHOPIFY_FIELD` / `METAFIELD` / `TEXT` / `LINE_BREAK`; whole-cell `hideWhenEmpty`; 50-row chunking.
+  `SHOPIFY_FIELD` / `METAFIELD` / `TEXT` / `LINE_BREAK`; whole-cell `hideWhenEmpty`;
+  50-row chunking.
 
-**Editor build — 13-step order + Step 9.5 (features 02–15)**
+### Editor build — 13-step order + Step 9.5 (features 02–15)
 
-- Step 1 (`02-…`): `app/utils/rows.ts` reducer + static rows + add/delete/duplicate + 200-row cap (`MAX_TEMPLATE_ROWS`).
-- Step 2 (`03-…`): segmented value cell + pills + toolbar + row gutter; `afterId` insert; `ADD_SECTION`.
-- Step 3 (`04-…`): review & harden Steps 1–2 (comment-only fixes; not-fixed items → "Step 3 Follow-ups").
-- Step 4 (`05-…`): single contenteditable value surface — linear caret model (`valueParts.ts` + `valueDom.ts`); inline pills; `LINE_BREAK`; `INSERT_VALUE_PART_AT`.
+- Step 1 (`02-…`): `app/utils/rows.ts` reducer + static rows + add/delete/duplicate +
+  200-row cap (`MAX_TEMPLATE_ROWS`).
+- Step 2 (`03-…`): segmented value cell + pills + toolbar + row gutter; `afterId` insert;
+  `ADD_SECTION`.
+- Step 3 (`04-…`): review & harden Steps 1–2 (comment-only fixes; not-fixed items →
+  "Step 3 Follow-ups").
+- Step 4 (`05-…`): single contenteditable value surface — linear caret model
+  (`valueParts.ts` + `valueDom.ts`); inline pills; `LINE_BREAK`; `INSERT_VALUE_PART_AT`.
 - Step 5 (`06-…`): "Insert field" modal shell + caret save/restore (App Bridge `shopify.modal`).
-- Step 6 (`07-…`): native Shopify fields list (`shopifyFields.ts`) + create/edit modal; `SET_VALUE_PART`.
+- Step 6 (`07-…`): native Shopify fields list (`shopifyFields.ts`) + create/edit modal;
+  `SET_VALUE_PART`.
 - Step 7 (`08-…`): modal search/filter (`filterNativeFields`); deferred auto-focus.
-- Step 8 (`09-…`): fetch product metafield definitions (`metafieldDefinitions.server.ts` + resource route); shop isolation.
-- Step 9 (`10-…`): selectable metafield section → real `METAFIELD` pill (`filterMetafieldDefinitions`).
-- Step 9.5 (`11-…`): Save → Postgres → app-owned metaobject sync → read-back. `rowsSerialize.ts` (server-authoritative key finalization); `metaobjects.server.ts` (`$app:appx_spec_table`, PUBLIC_READ); contextual SaveBar + dirty baseline.
+- Step 8 (`09-…`): fetch product metafield definitions (`metafieldDefinitions.server.ts` +
+  resource route); shop isolation.
+- Step 9 (`10-…`): selectable metafield section → real `METAFIELD` pill
+  (`filterMetafieldDefinitions`).
+- Step 9.5 (`11-…`): Save → Postgres → app-owned metaobject sync → read-back.
+  `rowsSerialize.ts` (server-authoritative key finalization); `metaobjects.server.ts`
+  (`$app:appx_spec_table`, PUBLIC_READ); contextual SaveBar + dirty baseline.
 - Step 10 (`12-…`): mouse drag reorder (`@dnd-kit`; pure `MOVE_ROW`).
-- Step 11 (`13-…`): keyboard reorder + a11y (`KeyboardSensor`, SR announcements). Closes reorder.
-- Step 12 (`14-…`): parse pasted clipboard tables (`clipboardTable.ts` + `clipboardTableDom.ts`); log only.
-- Step 13 (`15-…`): bulk-insert rows from paste (`gridToPastedRows` + `PASTE_ROWS`, cap-truncated). Closes clipboard paste.
+- Step 11 (`13-…`): keyboard reorder + a11y (`KeyboardSensor`, SR announcements).
+- Step 12 (`14-…`): parse pasted clipboard tables (`clipboardTable.ts` +
+  `clipboardTableDom.ts`); log only.
+- Step 13 (`15-…`): bulk-insert rows from paste (`gridToPastedRows` + `PASTE_ROWS`,
+  cap-truncated).
 
-**Reshell to the mockup — Phase A (features 16–18)**
+### Reshell to the mockup — Phase A (features 16–18)
 
-- A2 (`16-…`): presentational `EditorShell` chrome (segmented tabs + device toggle + sidebar slots).
-- A3 (`17-…`): bounded inner-scroll — only the rows list scrolls (`useScrollRegionHeight` + sticky header).
-- A1 (`18-…`): extracted `useRowEngine` + presentational `ContentTab`/`RowGrid`/`RowActionsToolbar`/`InsertFieldModal`; `SpecTableEditor` now a thin wrapper. Behavior-preserving. **Closes Phase A.**
+- A2 (`16-…`): presentational `EditorShell` chrome (segmented tabs + device toggle + sidebar
+  slots).
+- A3 (`17-…`): bounded inner-scroll — only the rows list scrolls (`useScrollRegionHeight` +
+  sticky header).
+- A1 (`18-…`): extracted `useRowEngine` + presentational
+  `ContentTab`/`RowGrid`/`RowActionsToolbar`/`InsertFieldModal`; `SpecTableEditor` now a thin
+  wrapper. Behavior-preserving. **Closes Phase A.**
 
-**Template lifecycle + templates-list (features 19–28 + trims)**
+### Template lifecycle + templates-list (features 19–28 + trims)
 
-- Create-on-first-save (`19-…`): "Create template" opens the editor seeded with a starter scaffold; Postgres row created on first Save.
-- Lifecycle actions (`20-…`): header ⋯ Rename/Duplicate/Delete + status badge; `duplicate`/`delete` server fns; metaobject deleted before Postgres.
-- Paste refinements 1–4 (`21-…`–`24-…`): content-first intent, insert-after-active, replace-pristine-scaffold, confirm-before-cap.
-- List polish (`25-…`–`28-…`): 2-line name clamp, per-row ⋯ menu, immediate Rename, client-side status filter (`templateFilter.ts` + `shouldRevalidate`).
+- Create-on-first-save (`19-…`): "Create template" opens the editor seeded with a starter
+  scaffold; Postgres row created on first Save.
+- Lifecycle actions (`20-…`): header ⋯ Rename/Duplicate/Delete + status badge;
+  `duplicate`/`delete` server fns; metaobject deleted before Postgres.
+- Paste refinements 1–4 (`21-…`–`24-…`): content-first intent, insert-after-active,
+  replace-pristine-scaffold, confirm-before-cap.
+- List polish (`25-…`–`28-…`): 2-line name clamp, per-row ⋯ menu, immediate Rename,
+  client-side status filter (`templateFilter.ts` + `shouldRevalidate`).
 - Name cap raised 100 → 255 (internal-only, not synced to storefront).
-- Duplicate in-flight feedback (App Bridge global loading), shared-fetcher `busy` race gate, SaveBar-hide before Delete redirect.
+- Duplicate in-flight feedback (App Bridge global loading), shared-fetcher `busy` race gate,
+  SaveBar-hide before Delete redirect.
 
-**Editor bulk delete (`29-…`, `33-…`)**
+### Editor bulk delete (`29-…`, `33-…`)
 
-- Per-row select checkbox + contextual bulk bar + count-gated confirm modal; pure `DELETE_ROWS`; tristate "select all" header checkbox; selected-row highlight.
-- Undo toast (`33-…`): pure `RESTORE_ROWS` restores the exact pre-delete snapshot; 10s "Undo"; `savingRef` guard so Undo can't mutate during a save.
+- Per-row select checkbox + contextual bulk bar + count-gated confirm modal; pure
+  `DELETE_ROWS`; tristate "select all" header checkbox; selected-row highlight.
+- Undo toast (`33-…`): pure `RESTORE_ROWS` restores the exact pre-delete snapshot; 10s
+  "Undo"; `savingRef` guard so Undo can't mutate during a save.
 
-**Keyboard cell navigation (`30-…`–`32-…`)**
+### Keyboard cell navigation (`30-…`–`32-…`)
 
-- Pure vertical-nav resolver `gridNav.ts` → keyboard/DOM wiring `useGridKeyboardNav.ts` (`Ctrl/Cmd + Arrow`) → manual-advance editor tips footer (WCAG-safe, no auto-rotate).
+- Pure vertical-nav resolver `gridNav.ts` → keyboard/DOM wiring `useGridKeyboardNav.ts`
+  (`Ctrl/Cmd + Arrow`) → manual-advance editor tips footer (WCAG-safe, no auto-rotate).
 
-**Template status change (`36-…`)**
+### Template status change (`36-…`)
 
-- Status (DRAFT/ACTIVE/ARCHIVED) changeable from two surfaces (list ⋯ modal + editor Settings tab); both re-sync the storefront metaobject. Shared `validateTemplateStatus`, `setTemplateStatusForShop`, extracted `templateSync.server.ts`.
+- Status (DRAFT/ACTIVE/ARCHIVED) changeable from two surfaces (list ⋯ modal + editor Settings
+  tab); both re-sync the storefront metaobject. Shared `validateTemplateStatus`,
+  `setTemplateStatusForShop`, extracted `templateSync.server.ts`.
 
-**MVP UI trims (2026-07-11/12, UI-only projections)**
+### MVP UI trims (2026-07-11/12, UI-only projections)
 
-- Scope picker offers only No products / All products / A specific product (`HIDDEN_SCOPE_KINDS` + `VISIBLE_SCOPE_OPTIONS`; full source of truth unchanged).
-- Status picker + list filter offer only Draft / Active (`HIDDEN_STATUS_VALUES`, `STATUS_FILTER_OPTIONS`); `ARCHIVED` re-enable is a one-line removal; badge tone kept.
+- Scope picker offers only No products / All products / A specific product
+  (`HIDDEN_SCOPE_KINDS` + `VISIBLE_SCOPE_OPTIONS`; full source of truth unchanged).
+- Status picker + list filter offer only Draft / Active (`HIDDEN_STATUS_VALUES`,
+  `STATUS_FILTER_OPTIONS`); `ARCHIVED` re-enable is a one-line removal; badge tone kept.
 - Editor page width → `inlineSize="large"` to match the templates list.
 
-**Foundation**
+### Foundation
 
-- Shopify app template (React Router / TS) + PostgreSQL (Neon) + Prisma; app installed on the dev store; session + shop record in Neon.
-- Shop-scoped `app/models/template.server.ts` (`shopId` in every where/data); `/app/templates` read-only list; single dynamic editor route `app.templates_.$id`.
+- Shopify app template (React Router / TS) + PostgreSQL (Neon) + Prisma; app installed on
+  the dev store; session + shop record in Neon.
+- Shop-scoped `app/models/template.server.ts` (`shopId` in every where/data);
+  `/app/templates` read-only list; single dynamic editor route `app.templates_.$id`.
 
-**Testing & tooling**
+### Testing & tooling
 
-- Phase 1 unit tests (Vitest, standalone `vitest.config.ts`); Phase 2 shop-isolation tests (mocked Prisma).
-- CI gate (`.github/workflows/ci.yml`: typecheck → lint → format:check → test → build), Dependabot, `context/app-store-review-checklist.md`.
-- Dependency security pass (`npm audit` → 0); CodeRabbit review fixes (shop-scoped writes, `:focus-visible` ring, `updateMany`→`update`).
+- Phase 1 unit tests (Vitest, standalone `vitest.config.ts`); Phase 2 shop-isolation tests
+  (mocked Prisma).
+- CI gate (`.github/workflows/ci.yml`: typecheck → lint → format:check → test → build),
+  Dependabot, `context/app-store-review-checklist.md`.
+- Dependency security pass (`npm audit` → 0); CodeRabbit review fixes (shop-scoped writes,
+  `:focus-visible` ring, `updateMany`→`update`).
 
 ---
 
 ## Next Up
 
-1. **Reshell Phase B2** — built-in preset gallery (Style tab steps 13–14), **specced
-   2026-07-27 as feature 88, doc `88-…`**. Every blocker is cleared and there is **no
-   migration** (`basedOnPreset` already exists, unwritten since Step 4).
-   **The plan is derived from SEVEN merchant-supplied reference tables**, not invented:
-   four axes define a pattern (pair layout · section headers · row separation · frame)
-   plus one behavioural axis (collapsible); everything else in `STYLING_FIELD_NAMES` is
-   tuning _within_ a pattern.
-   ⚠️ **This overturns the "must land in the preset bundles" note repeated across 78–85.**
-   A bundle sets **structure only** — no colour, no typography, no density, no width — so
-   bundles are 0–3 fields, all nine swatches stay null after a pick, and the zero-config
-   theme-inherit promise survives a preset pick intact. Five cards: **Banded `{}`** (the
-   app's default already IS the dominant retail pattern, so it merges with the planned
-   "use my theme's styles" option) · Simple · Minimal · Multi-column (`GRID`) · Accordion.
-   **No bundle ships `GRID` + `STRIPES`** still holds — now for free, since no bundle
-   names a divider style other than `NONE`.
-   Two decisions that must be built in Step 13 rather than retrofitted: the gallery is a
-   **route** (`/app/templates/styles`), not a modal, and the "Customized" hint compares a
-   **fixed `PRESET_SCOPED_FIELDS` set**, NOT `stylingEquals` over all 34 fields (which
-   would break the moment Step 89's accent themes write a colour) and NOT the bundle's own
-   keys (Banded's `{}` would compare nothing). **Feature 89 = accent / colour themes**,
-   deferred by merchant decision with its six seams cut in 88.
-   (**Feature 88**; 82/83/84 stay reserved, 86 = Style tab reorganization, 87 = plain
-   section header. Before those: 70 = stacked-semantics, 71 = sidebar inner-scroll,
-   72 = device-preview mockups, 73 = desktop preview inner scroll, 74 = content-free
-   tables, 75 = full-size preview modal (removed), 76 = collapsible Style rail,
-   77 = container stretch, 78 = width + outer border, 79 = column divider, 80 = section
-   separation + gap, 81 = section header typography, 85 = multi-column row flow — a
-   retired number is still spent.) Then C (Settings display rules) → E (assignment into
-   the reshell) → F (top-bar status/save + cleanup).
-2. **Section band radius / chevron position / animated open-close (proposed 82 / 83 / 84).**
-   The rest of the same merchant report feature 81 answered. Each is its own unit for a
-   recorded reason — see "Deliberately out of scope" in `81-…`: a radius behaves differently
-   on a `th` under `border-collapse` than on a `<summary>` and needs a gap to look right; a
-   right-aligned chevron means abandoning `list-style-type` for a pseudo-element, which
-   already broke once against Horizon's `summary { list-style: none }`; and height animation
-   needs `::details-content` + `interpolate-size`, so it is progressive-enhancement only and
-   must be reduced-motion guarded. 🚫 Not the JS `grid-template-rows` trick — that breaks the
-   zero-JS `<details>` invariant.
-3. **Storefront table semantics in stacked layouts (feature 70)** — code shipped;
-   screen-reader pass still owed (see Open Questions). ⚠️ **Now blocking feature 85**
-   (below), which would be the third `display`-departure riding on the same unverified
-   ARIA chain. Run the pass before building it.
-4. **Feature 85 sign-off — one blocker left.** The build is done and fully live-verified
-   (see Completed; both deferred checks closed 2026-07-26), but it is deliberately NOT
-   marked shipped: ⚠️ the **feature-70 screen-reader pass** (item 3) was its stated
-   blocker and was skipped at the merchant's instruction. Run it — and if the roles are
-   wrong, feature 70's own instruction is "revert, do not patch", which now costs three
-   consumers rather than two. One data point in its favour: Chrome's accessibility tree
-   under `display: grid` still exposes table/rowgroup/row/rowheader/cell on the live
-   storefront, but that is not the same as a screen reader ANNOUNCING the pairs.
-   Also decide whether to clear the DJI template's saved minimum of 400: **240 measured
-   511px shorter** on that table.
-5. **Editor page should not scroll at the document level** — the app document overflows the
+1. 🔴 **Production `application_url` + `redirect_urls`, then re-deploy** — the App Store
+   blocker. See Current Goal item 1 and `app-store-review-checklist.md` §3.
+2. 🔴 **Billing** — the other hard blocker for a paid listing (`prd.md`,
+   `app-store-review-checklist.md`).
+3. **Storefront table semantics in stacked layouts (feature 70)** — code shipped
+   2026-07-20 (`f6ac4aa`); the **screen-reader pass is still owed** (see Open Questions).
+   ⚠️ Blocking feature 85 sign-off — GRID is the third `display`-departure riding on the same
+   unverified ARIA chain. Run the pass before building a fourth.
+4. **Feature 85 sign-off — one blocker left.** Built and fully live-verified, deliberately
+   NOT marked shipped: its stated blocker is item 3, skipped at the merchant's instruction.
+   ⚠️ If the roles are wrong, feature 70's own instruction is **revert, do not patch**, which
+   now costs three consumers. Also decide whether to clear the DJI template's saved minimum
+   of 400 — **240 measured 511px shorter** on that table.
+5. **Feature 93 §Open question 2 — the dark-theme decision.** Step 102 measured it: the
+   accent title fails at **1.21–2.35** and the stripe at **1.02–1.07** (text vanishes) on a
+   dark ground. Banded presets are safe (6.98–13.15). The response is a palette-or-scope
+   call that belongs to the merchant; 🚫 not contrast-checking code (Binding rules).
+   🔴 **It must not be closed by silence.**
+6. **Section band radius / chevron position / animated open-close (proposed 82 / 83 / 84).**
+   The rest of the merchant report feature 81 answered; each is its own unit for a recorded
+   reason (see "Deliberately out of scope" in `81-…`). 🚫 Not the JS `grid-template-rows`
+   trick — that breaks the zero-JS `<details>` invariant.
+7. **Editor page should not scroll at the document level** — the app document overflows the
    iframe by roughly the `.tipsFooter` height (it renders BELOW the card, outside
    `useScrollRegionHeight`'s flat `BOTTOM_PAD_REM = 3` budget), producing a stray outer
-   scrollbar stranded beside admin's reserved 16px scrollbar gutter. Fix = measure the actual
-   footer/card bottom instead of the hardcoded 3rem. Touches the measurer both scrollers share,
-   so it is its own unit.
-6. **Templates-list Phase 2** — search / sort / pagination (server-side, with pagination) when the list can grow large; multi-select bulk actions later.
-7. **Pre-submission — mandatory privacy webhooks: ✅ DONE (steps 105 + 106, deployed
-   and registered 2026-08-02). 🔴 One NEW blocker in their place: `application_url`
-   is still the template placeholder `https://example.com`,** so the three
-   registered compliance endpoints resolve to a domain we do not own — and these
-   are the one class of webhook Shopify delivers with no dev session running.
-   Fix = stand up the production host, put it in `application_url` **and**
-   `redirect_urls`, re-deploy. See `app-store-review-checklist.md` §3 and the
-   step-106 doc. **Then Billing**, the other hard blocker for a paid listing.
-   *(Superseded detail below, kept for the reasoning:)*
-   **Pre-submission — mandatory privacy webhooks: ~~CODE COMPLETE, DEPLOY + LIVE PASS OWED~~.**
-   Both steps' code landed 2026-08-02 — step 105 the domain
-   (`app/utils/complianceWebhook.ts`) and erase path (`eraseShopData`), step 106
-   the three routes, the tests and the subscriptions
-   (`106-privacy-webhook-routes-and-subscriptions.md`, gate **6 of 10**).
-   🔴 **Nothing has reached Shopify yet.** The subscriptions exist only in a local
-   `shopify.app.toml`; the routes answer, but Shopify does not know to call them,
-   so **the App Store blocker is NOT cleared** until `shopify app deploy` runs —
-   which is the merchant's to run, along with the live pass (gate items 7–9).
-   ⚠️ **Check `application_url` immediately before deploying** — it reads
-   `https://example.com` on disk and `shopify app dev` rewrites it to the live
-   tunnel; whatever is present at deploy time becomes the app's URL.
-   Then **Billing** (`prd.md`, `context/app-store-review-checklist.md`), which is
-   the other hard blocker for a paid listing.
+   scrollbar beside admin's reserved 16px gutter. Fix = measure the actual footer/card
+   bottom. Touches the measurer both scrollers share, so it is its own unit.
+8. **Templates-list Phase 2** — search / sort / pagination (server-side) when the list can
+   grow large; multi-select bulk actions later. Related: step 103 finding F3 —
+   `listTemplatesForShop` uses no `select`, so every template's full `rows` JSON is read and
+   shipped to the browser to render a row **count**.
+9. **Reshell Phase C** (Settings display rules) → **E** (assignment into the reshell) →
+   **F** (top-bar status/save + cleanup).
 
-**Deferred:** editor bulk-delete range-select (Shift+click) + Delete/Backspace shortcut; per-product overflow materialization + a bulk apply-to-all styling route.
+**Deferred:** editor bulk-delete range-select (Shift+click) + Delete/Backspace shortcut;
+per-product overflow materialization + a bulk apply-to-all styling route.
 
 ---
 
 ## Step 3 Follow-ups (tracked)
 
-- **[Later, low priority] `insertActive` optimism at the cap.** `insertActive` sets `scrollTargetRef`/`activeRowId` before the reducer runs; at the cap the reducer no-ops, so they can point at a never-added row. Unreachable today (buttons disabled at cap); guard on `!atCap` if a future keyboard/programmatic add bypasses the disabled button.
+- **[Later, low priority] `insertActive` optimism at the cap.** `insertActive` sets
+  `scrollTargetRef`/`activeRowId` before the reducer runs; at the cap the reducer no-ops, so
+  they can point at a never-added row. Unreachable today (buttons disabled at cap); guard on
+  `!atCap` if a future keyboard/programmatic add bypasses the disabled button.
 
 ---
 
@@ -2984,8 +506,8 @@ Multi-value applies to PRODUCT + COLLECTION only. No migrations needed for the 4
   already needed `connect_timeout=30`, so this app has met the "the pool is not free"
   class of problem once. **Not** step 103's to fix — 103 wrote no code.
 - ~~**OQ-103-B — unchunked `nodes(ids:)` past the 250-id cap.**~~ ✅ **CLOSED 2026-08-01
-  by chunking** — see the §Completed entry below, which is the record. Kept as a stub
-  because F4 in `data-model.md` §13 points here.
+  by chunking** — see Recently Shipped, which is the record. Kept as a stub because F4 in
+  `data-model.md` §13 points here.
 - **OQ-103-C — the activation gate's probe count is O(pairs) and sequential, not O(rules).**
   (raised 2026-08-01 by step 103, finding F5; `data-model.md` §13 R6.) §Key Decisions
   "Assignment model" claims "O(rules) Postgres set-algebra + `products(query,first:1)`
@@ -3011,8 +533,8 @@ Multi-value applies to PRODUCT + COLLECTION only. No migrations needed for the 4
   of the model — so this needs a decision about the design, not just a schema edit. See
   also the vestigial `Shop.metaobjectDefinitionGid` (§10), already deferred as "a later
   cleanup" — these want to land as one migration, not four.
-- **Can `TWO_COLUMN` express a section gap via `border-collapse: separate`? (raised
-  2026-07-28 while speccing feature 94 — the one option nobody has costed.)** The existing
+- **Can `TWO_COLUMN` express a section gap via `border-collapse: separate`?** (raised
+  2026-07-28 while speccing feature 94 — the one option nobody has costed.) The existing
   in-repo rejection at `stylingControls.ts:463` rules out a transparent
   `border-block-start` on the section `th` because collapsed-border width resolution eats
   the previous row's 1px divider — sound, but it assumes `border-collapse: collapse`, which
@@ -3027,27 +549,30 @@ Multi-value applies to PRODUCT + COLLECTION only. No migrations needed for the 4
   `border-spacing: 0`, the `LINES` rule on a section's last row, the label/value seam, and
   the outer border, across all three header styles. Feature 94 ships `STACKED` + `GRID`
   without it; this decides whether the default layout ever gets the knob.
-- **Collapsible section titles do not inherit the table's typography (found 2026-07-26 while
-  specing feature 81; pre-existing since Step 9a).** `--appx-spec-font-size` / `-font-style` /
-  `-line-height` are declared on `.appx-spec-table__table` (`spec-table.css:141–143`), and the
-  collapsible shape is `<details><summary>…</summary><table>…</table></details>` — the summary
-  is a **sibling** of the table, not a descendant. So Text size = Large grows flat section
-  titles and leaves collapsible ones untouched. Closing it means adding the three vars to the
-  summary rule, which repaints every live collapsible table with a non-null `fontSize` — a
-  no-repaint-law decision of its own, not a rider on 81. (Feature 81 is unaffected either way:
+- **Collapsible section titles do not inherit the table's typography** (found 2026-07-26
+  while speccing feature 81; pre-existing since Step 9a). `--appx-spec-font-size` /
+  `-font-style` / `-line-height` are declared on `.appx-spec-table__table`
+  (`spec-table.css:141–143`), and the collapsible shape is
+  `<details><summary>…</summary><table>…</table></details>` — the summary is a **sibling** of
+  the table, not a descendant. So Text size = Large grows flat section titles and leaves
+  collapsible ones untouched. Closing it means adding the three vars to the summary rule,
+  which repaints every live collapsible table with a non-null `fontSize` — a no-repaint-law
+  decision of its own, not a rider on 81. (Feature 81 is unaffected either way:
   `headerFontSizePx` is absolute px on the summary's own rule, which is precisely _why_ it is
-  px and not an em-scale keyword — an em multiplier would resolve against two different bases
-  depending on the shape.)
+  px and not an em-scale keyword.)
 - 🔴 **Stacked-mode `<table>` semantics — screen-reader pass NOT run (feature 70).**
   `rowLayout=STACKED` and the mobile stacked layout apply `display: block`, dropping implicit
   table semantics. Code shipped 2026-07-20 (`f6ac4aa`): a static unconditional ARIA role chain
-  (`role="table"/"row"/"cell"`) in both hand-mirrored markup sites, plus `specTableAriaContract.test.ts`
-  which parses `spec-table.css` for `display: block` rules and fails if any such class lacks a role.
-  Attributes are present and inert live (zero visual change by construction). **Done-when #4 of
-  `70-…` is unmet:** no assistive tech has confirmed the pairs are announced, and the spec's
-  **falsifier** is unchecked — explicit ARIA can _suppress_ native table affordances, so the
-  two-column control case must be compared before/after. Needs NVDA or VoiceOver at desktop **and**
-  ≤749px. **If it regresses, revert (`<dl>` back on the table) — do not patch.**
+  (`role="table"/"row"/"cell"`) in both hand-mirrored markup sites, plus
+  `specTableAriaContract.test.ts` which parses `spec-table.css` for `display: block` rules and
+  fails if any such class lacks a role. Attributes are present and inert live (zero visual
+  change by construction). **Done-when #4 of `70-…` is unmet:** no assistive tech has confirmed
+  the pairs are announced, and the spec's **falsifier** is unchecked — explicit ARIA can
+  _suppress_ native table affordances, so the two-column control case must be compared
+  before/after. Needs NVDA or VoiceOver at desktop **and** ≤749px. **If it regresses, revert
+  (`<dl>` back on the table) — do not patch.** One data point in its favour: Chrome's
+  accessibility tree under `display: grid` still exposes table/rowgroup/row/rowheader/cell on
+  the live storefront — not the same as a screen reader ANNOUNCING the pairs.
 - **R3 — orphan titled sections (feature 74, deferred).** A section header with a REAL label
   whose rows are all hidden still renders as a lone titled band. Authored content, so it was
   deliberately left alone: suppressing it would contradict the locked Step 9a decision
@@ -3058,10 +583,17 @@ Multi-value applies to PRODUCT + COLLECTION only. No migrations needed for the 4
   an empty template ACTIVE and assign it, and it renders nothing, silently. A DRAFT→ACTIVE
   advisory would be friendlier, but today's activation gate is a hard _block_ mechanism for
   conflicts; adding a soft warning lane is its own unit.
-- **Settings-tab "Display rules"** (mockup's `hide rows with empty values` / `show section dividers` / `show on mobile`) are dummy — each needs a real definition + reconciliation with the per-row `hideWhenEmpty` flag before building (Phase C).
-- **Style tab B2/B3 build-time details to lock:** the knob-value bundles for the five built-in presets (Classic / Striped / Banded / Stacked / Accordion); the `density` padding-scale values; save-as-preset overwrite UX + copy; whether the creation gallery gets a "don't show again" escape.
-- **Top-bar name-edit affordance:** inline title edit vs a Rename ⋯ item — settle when the top bar (Phase F) is built.
+- **Settings-tab "Display rules"** (mockup's `hide rows with empty values` / `show section
+  dividers` / `show on mobile`) are dummy — each needs a real definition + reconciliation with
+  the per-row `hideWhenEmpty` flag before building (Phase C).
+- **Style tab B3 build-time details to lock:** save-as-preset overwrite UX + copy; whether the
+  creation gallery ever gets a "don't show again" escape (today it is deliberately
+  unskippable); the `density` padding-scale values.
+- **Top-bar name-edit affordance:** inline title edit vs a Rename ⋯ item — settle when the top
+  bar (Phase F) is built.
 - Best storefront event strategy for selected-variant changes across themes.
+- **Owed from step 103:** the read-pattern catalog's row-by-row review must be run by a
+  session that did not write the catalog.
 
 ---
 
@@ -3072,12 +604,13 @@ Multi-value applies to PRODUCT + COLLECTION only. No migrations needed for the 4
 
 - **Custom React editor — no AG Grid** (2-column, ≤200 rows, `valueParts` token editor). DnD via `@dnd-kit`. Pill model is **pick-then-insert** (modal outside the contenteditable; never an empty placeholder pill). Row cap is the single shared `MAX_TEMPLATE_ROWS` (UI + server).
 - **Value model:** `LINE_BREAK` value part for hard breaks (no inline rich formatting/links in MVP). `hideWhenEmpty` is whole-row, never per-line.
-- **View toggle:** Edit is the only editable segment; Desktop/Mobile are **read-only storefront previews** (Phase D), no separate WYSIWYG panel. **Tablet removed 2026-07-22.** **Shared preview device (2026-07-22):** the chosen device (Desktop/Mobile) is one value shared across all three tabs; edit-vs-preview is per-tab (`tabViewMemory.ts` `ViewMemory = { device, modes }`) — Content opens on the grid, Style/Settings auto-open a preview, picking a device on any tab moves every _previewing_ tab to it; dropping a tab to Edit affects only that tab and retains the shared device. **Collapsible rail (2026-07-25, feature 76) is the ONE answer to the width problem:** because the inline Desktop preview is narrower than the storefront's 749px breakpoint on a laptop, a toggle beside the tab group collapses the Style/Settings rail to zero width, handing the stage the full card (never an icon stub: the tight case clears 749 by only 18px). ONE boolean shared by Style and Settings, in-memory, resets on reload; hidden not unmounted so the rail's scroll position survives; absent on Content. A **full-size preview modal** (feature 75) shipped as a second answer the same day and was **REMOVED 2026-07-25** — the merchant kept only the rail, so `PreviewModal`, `PREVIEW_MODAL_ID`, `modalPreviewHeight`, and `setPreviewDevice` are gone and the `preview` render prop is back to one argument. Under ~1420px the Style tab still cannot show a truthful desktop table and the knobs simultaneously; the only fix for that is a fixed-1100px `transform: scale()` preview, which is deliberately NOT built and is NOT a re-added modal (see `76-…`).
+- **View toggle:** Edit is the only editable segment; Desktop/Mobile are **read-only storefront previews** (Phase D), no separate WYSIWYG panel. **Tablet removed 2026-07-22.** **Shared preview device (2026-07-22):** the chosen device (Desktop/Mobile) is one value shared across all three tabs; edit-vs-preview is per-tab (`tabViewMemory.ts` `ViewMemory = { device, modes }`) — Content opens on the grid, Style/Settings auto-open a preview, picking a device on any tab moves every _previewing_ tab to it; dropping a tab to Edit affects only that tab and retains the shared device. **Collapsible rail (2026-07-25, feature 76) is the ONE answer to the width problem:** because the inline Desktop preview is narrower than the storefront's 749px breakpoint on a laptop, a toggle beside the tab group collapses the Style/Settings rail to zero width, handing the stage the full card (never an icon stub: the tight case clears 749 by only 18px). ONE boolean shared by Style and Settings, in-memory, resets on reload; hidden not unmounted so the rail's scroll position survives; absent on Content. A **full-size preview modal** (feature 75) shipped as a second answer the same day and was **REMOVED 2026-07-25**. Under ~1420px the Style tab still cannot show a truthful desktop table and the knobs simultaneously; the only fix for that is a fixed-1100px `transform: scale()` preview, which is deliberately NOT built and is NOT a re-added modal (see `76-…`).
 - **Color policy:** the app _uses_ color via CSS variables as one source of truth (admin mirrors Polaris; storefront inherits theme but is merchant-overridable). The "no hardcoded hex literal" rule is CSS hygiene — use Polaris tokens / `currentColor` / custom properties (e.g. runtime-captured `--appx-token-color` for the pill blue). This rule does **not** encode the Edit-grid-never-styled binding rule (see Binding rules above).
-- **Save/status model (mockup):** App Bridge contextual SaveBar (Save/Discard) + header status dropdown + ⋯ menu; no separate "Save as draft". Save freezes the editor (`inert`) in-flight; baseline reset uses the **submitted** snapshot (data-safety race fix).
+- **Save/status model (mockup):** App Bridge contextual SaveBar (Save/Discard) + header status dropdown + ⋯ menu; no separate "Save as draft". Save freezes the editor (`inert`) in-flight; baseline reset uses the **submitted** snapshot (data-safety race fix). ⚠️ The Save button is a **native** `<button>` — see the React 18 boolean-attribute rule in Binding rules.
 - **Persistence/keys:** key finalization is **server-authoritative** ("is this row id already persisted?"), never re-derived. Metaobject is **app-reserved** (`$app:appx_spec_table`); deleted _before_ Postgres on delete so a storefront-readable entry can't outlive its template.
 - **App-owned definitions are declarative TOML** (slice 1): the `$app:appx_spec_table` metaobject and the `$app:spec_table` product `metaobject_reference` are declared in `shopify.app.toml`, distributed on deploy/install. Runtime `metaobjectDefinitionCreate` removed; `Shop.metaobjectDefinitionGid` vestigial. Metaobject _entries_ are still written at runtime via `metaobjectUpsert`.
-- **Assignment model — rigid block-on-conflict + shop-level routing (2026-07-07, `data-model.md` §5/§9).** One scope per template (`scope`+`scopeValue`+`mode`); overlaps between ACTIVE templates are **blocked at DRAFT→ACTIVE** (merchant decides — no silent precedence, no priority knob; `priority` column dormant). Overlap check is O(rules) Postgres set-algebra + `products(query,first:1)` existence tests, never a catalog scan. Broad rules deliver as O(1) entries in one `[shop.metafields.app.routing]` json metafield, resolved in Liquid via `metaobjects["$app:appx_spec_table"][handle]`. Per-product `metaobject_reference` survives only for bounded overrides; `ProductAssignmentIndex` is sparse.
-- **Style tab design (2026-07-18 — `admin-screen-plan.md` §Tab 2, `data-model.md` §5/§10, PRD, code-standards).** One spec-table primitive with **orthogonal style knobs** (row layout, mobile behavior, section headers, collapsible sections via native `<details>` zero-JS, row dividers incl. zebra `stripeBgColor`, density). Modal/drawer containers + multi-column flow rejected. **Presets = COPY semantics** (built-ins as code constants; phase-2 merchant-saved `StylePreset`) copy values into per-template `TableStyling` **real columns**, not `extraStyles`; `basedOnPreset` is provenance only. **No shop-level default styling record** (copy keeps edits side-effect-free on live storefronts). Storefront delivery via the metaobject `styling` json field (no TOML change): layout knobs → wrapper modifier classes, colors/typography → CSS variables. **Typography:** `fontSize` = S/M/L theme-relative presets or bounded Custom px (10–184, clamped; JSON number on the wire, digit-string in the DB); `lineHeight` (TIGHT/NORMAL/LOOSE) + `labelCase` (DEFAULT/UPPERCASE, labels only) + `fontStyle` kept; font-family/letter-spacing/wrap/per-side padding rejected.
-- **Testing strategy:** Vitest; Phases 1–2 done (unit + shop-isolation, mocked Prisma); reach Phase 4 (route loaders/actions + GDPR webhooks) before App Store submission, E2E (Playwright) fast-follow. Polaris web components don't render in jsdom → editor UI is browser-verified, pure logic unit-tested. ⚠️ **The pointer to a fuller doc was DROPPED 2026-08-01 (step 103's fold-in fix):** it cited `~/.claude/plans/there-is-no-automated-encapsulated-yeti.md`, which **no longer exists** (only `style-tab-phase-b-implementation-plan.md` remains in that directory), and it could not be restored. This entry is now the whole record of the testing strategy — a dangling reference in the one entry that defines the testing phases is worse than no reference. If the phases need more detail than this line carries, write it here or in a `context/` file, not in an untracked plans directory outside the repo.
-- **Embedded-app verification:** the editor is a cross-origin iframe (top frame can't read its DOM/AOM/console); verify via Claude-in-Chrome on the `shopify app dev` preview + direct Postgres/Neon checks. Polaris CDN-build gotchas → `polaris-web-component-gotchas` memory. Admin GraphQL runtime is 2025-10 — validate against that, not the TOML's 2026-07.
+- **Assignment model — rigid block-on-conflict + shop-level routing (2026-07-07, `data-model.md` §5/§9).** One scope per template (`scope`+`scopeValue`+`mode`); overlaps between ACTIVE templates are **blocked at DRAFT→ACTIVE** (merchant decides — no silent precedence, no priority knob; `priority` column dormant). Overlap check is O(rules) Postgres set-algebra + `products(query,first:1)` existence tests, never a catalog scan. ⚠️ **The probe half of that claim is half-falsified — see OQ-103-C.** Broad rules deliver as O(1) entries in one `[shop.metafields.app.routing]` json metafield, resolved in Liquid via `metaobjects["$app:appx_spec_table"][handle]`. Per-product `metaobject_reference` survives only for bounded overrides; `ProductAssignmentIndex` is sparse — and, per OQ-103-D, currently unreferenced.
+- **Style tab design (2026-07-18 — `admin-screen-plan.md` §Tab 2, `data-model.md` §5/§10, PRD, code-standards).** One spec-table primitive with **orthogonal style knobs** (row layout, mobile behavior, section headers, collapsible sections via native `<details>` zero-JS, row dividers incl. zebra `stripeBgColor`, density). Modal/drawer containers rejected. **Presets = COPY semantics** (built-ins as code constants; phase-2 merchant-saved `StylePreset`) copy values into per-template `TableStyling` **real columns**, not `extraStyles`; `basedOnPreset` is provenance only. **No shop-level default styling record** (copy keeps edits side-effect-free on live storefronts). Storefront delivery via the metaobject `styling` json field: layout knobs → wrapper modifier classes, colors/typography → CSS variables. **Typography:** `fontSize` = S/M/L theme-relative presets or bounded Custom px (10–184, clamped; JSON number on the wire, digit-string in the DB); `lineHeight` (TIGHT/NORMAL/LOOSE) + `labelCase` (DEFAULT/UPPERCASE, labels only) + `fontStyle` kept; font-family/letter-spacing/wrap/per-side padding rejected.
+- **Scale ceilings (steps 103–104, `data-model.md` §13/§14).** The 128KB `json` metafield **write** limit applies — the app is **NOT grandfathered** (first commit 2026-06-09, first `type = "json"` 2026-07-02, both after the 2026-04-01 cutoff). It is dormant **only** because the runtime Admin client is pinned to `ApiVersion.October25`; `app/shopify.server.test.ts` is a tripwire that fails on a version bump. Capacity: **3,446** `excludedProductGids`, 1,745 `byProduct` entries, 1,769 `byCollection`. 🚫 Step 104 measures and warns — it does **not** block; refusing / truncating / surfacing a merchant error is a future decision. ⚠️ `Metafield.sizeInBytes` is unstable-only; measurement is app-side and pre-write.
+- **Testing strategy:** Vitest; Phases 1–2 done (unit + shop-isolation, mocked Prisma); reach Phase 4 (route loaders/actions + GDPR webhooks) before App Store submission, E2E (Playwright) fast-follow. Polaris web components don't render in jsdom → editor UI is browser-verified, pure logic unit-tested. 🔴 **A mocked Prisma cannot enforce a `WHERE` clause** (step 105 M2) — it returns what it was told regardless of the query, so a test named for a query condition can pass while the condition is deleted. Assert the exact `where`, and say which half is which. ⚠️ **The pointer to a fuller doc was DROPPED 2026-08-01:** it cited a plans file that no longer exists and could not be restored. This entry is the whole record of the testing strategy; if the phases need more detail, write it here or in a `context/` file, not in an untracked plans directory outside the repo.
+- **Embedded-app verification:** the editor is a cross-origin iframe (top frame can't read its DOM/AOM/console); verify via Claude-in-Chrome on the `shopify app dev` preview + direct Postgres/Neon checks. Polaris CDN-build gotchas → `polaris-web-component-gotchas` memory. Admin GraphQL runtime is **2025-10** — validate against that, not the TOML's 2026-07 (which is the **webhook payload** version, `shopify.app.toml:12`, and does not govern the Admin client).
