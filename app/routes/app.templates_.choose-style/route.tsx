@@ -16,10 +16,13 @@ import styles from "./route.module.css";
 // This page reads NO shop data. The bundles are frozen constants, the sample is
 // a fixture, and the five preview documents are built in the browser from both.
 // A loader here would buy an Admin auth round trip and a shop upsert to render a
-// page of constants. Session-token auth and the shop upsert belong to the parent
-// `app.tsx` loader — `app.additional.tsx` is the precedent for a loaderless
-// child, and the rule the codebase actually follows is that a child exports
-// `headers` + `ErrorBoundary` when it has a loader or action that can THROW.
+// page of constants. This route therefore has NO loader: session-token auth and
+// the shop upsert belong to the parent `app.tsx` loader, which runs for every
+// `/app/*` request, and the rule the codebase actually follows is that a child
+// exports `headers` + `ErrorBoundary` when it has a loader or action that can
+// THROW. (Step 107 deleted `app.additional.tsx`, which this comment used to cite
+// as the precedent; the property is stated directly so there is nothing to
+// dangle.)
 //
 // ✅ Doc 88 promised the gallery writes nothing. Loaderless, it also reads
 // nothing: there is no shop-scoped query on this route to get isolation wrong

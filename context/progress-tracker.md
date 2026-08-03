@@ -22,9 +22,9 @@ Update this file after every meaningful implementation change.
 
 **Building the MVP — feature work is at the App Store pre-submission gate.**
 
-Test suite **1353 tests / 51 files**; full gate (typecheck · lint · format · test · build)
-green as of 2026-08-02 (step 106). Last unit shipped: step 106, privacy webhook routes +
-subscriptions, deployed and confirmed registered.
+Test suite **1361 tests / 52 files**; full gate (typecheck · lint · format · test · build)
+green as of 2026-08-03 (step 107). Last unit shipped: step 107 Unit A, boilerplate removal +
+the app-home shell.
 
 ---
 
@@ -133,6 +133,26 @@ saved presets, cuttable).
 
 > Rolling window, newest first. Older units roll into Completed.
 
+- **Step 107 Unit A — boilerplate removal + the app-home shell** — ✅ 2026-08-03, gate 10/10,
+  tests → **1361 / 52** (+8, +1 — the delta exactly as predicted; doc 107's "→ 1360" was an
+  arithmetic slip, 1353 + 8 = 1361); 6/6 mutations matched their predictions; **7/7 live
+  checks on `appx-dev` with Postgres identical before and after**. ⚠️ One finding (**L1**):
+  `/app/additional` renders a bare 404, **not** the app's `ErrorBoundary` — an unmatched URL
+  never enters `app.tsx`'s subtree, so no export of its could catch it. Not a crash and not a
+  blank iframe, so the check's requirement holds; fixing it means *adding* a route, which
+  belongs to Unit B.
+  🔴 The load-bearing removal is not tidying: `app._index.tsx`'s `action` ran `productCreate`
+  against the merchant's **live catalog** from the first button a merchant sees. Gone, and
+  guarded as a **whole-tree absence** under `app/` — no file may mention `productCreate` or
+  `productVariantsBulkUpdate` (`app/routes/boilerplateRemovalContract.test.ts`).
+  **`app/routes/app.additional.tsx` was DELETED here** — docs `90-…:295` and `91-…:60/:438`
+  still cite it as the loaderless-route precedent and were deliberately left intact (they
+  were true when written); the live code comment at `choose-style/route.tsx` was repointed to
+  state the property directly instead. ⚠️ The two demo definitions were removed from
+  `shopify.app.toml` but **NOT deployed** (D5) — they remain live on `appx-dev` until the
+  production-host deploy, and the edit rides that deploy with `application_url`. 🚫
+  `[access_scopes]` deliberately untouched → **OQ-107-A**. Unit B (the Screen 1 dashboard) is
+  blocked on **OQ-107-B**. [`107-…`](features/107-boilerplate-removal-and-app-home-shell.md)
 - **Step 106 — privacy webhook routes + subscriptions** — ✅ 2026-08-02, gate 10/10,
   **deployed and confirmed registered** (version `appx-product-specs-table-7`). 9 live
   checks green; `appx-dev` unchanged. 🔴 Not submission-ready — see Current Goal item 1.
@@ -449,34 +469,47 @@ Multi-value applies to PRODUCT + COLLECTION only. No migrations needed for the 4
    blocker. See Current Goal item 1 and `app-store-review-checklist.md` §3.
 2. 🔴 **Billing** — the other hard blocker for a paid listing (`prd.md`,
    `app-store-review-checklist.md`).
-3. **Storefront table semantics in stacked layouts (feature 70)** — code shipped
+3. **Step 107 Unit B — the onboarding dashboard** (`admin-screen-plan.md` §Screen 1). Where
+   `/app` gets its real content: three states, the four-step checklist, and — the one that
+   matters for the App Store theme-extension requirement — **the theme-editor deep link**.
+   The extension is an app **block**, so an ACTIVE, assigned, perfectly authored template
+   renders **nothing, silently** until the merchant adds it by hand; that is the app's worst
+   failure mode and Unit A deliberately left it unsaid rather than say it without the link.
+   **No migration needed** — `Shop.onboardingStatus`, `isAppBlockActive` and
+   `appBlockLastCheckedAt` have existed since the init migration and have zero references in
+   application code. 🔴 **Checklist step 3 is blocked on OQ-107-B**; the other three are not.
+   📌 Also carries step 107 **Finding L1**: `/app/additional` (and any stale `/app/*` URL)
+   renders a bare, unstyled 404 with no app nav, because an unmatched URL never reaches
+   `app.tsx`'s `ErrorBoundary`. The fix is an `/app/*` splat rendering inside the app shell —
+   an addition, which is why Unit A left it.
+4. **Storefront table semantics in stacked layouts (feature 70)** — code shipped
    2026-07-20 (`f6ac4aa`); the **screen-reader pass is still owed** (see Open Questions).
    ⚠️ Blocking feature 85 sign-off — GRID is the third `display`-departure riding on the same
    unverified ARIA chain. Run the pass before building a fourth.
-4. **Feature 85 sign-off — one blocker left.** Built and fully live-verified, deliberately
-   NOT marked shipped: its stated blocker is item 3, skipped at the merchant's instruction.
+5. **Feature 85 sign-off — one blocker left.** Built and fully live-verified, deliberately
+   NOT marked shipped: its stated blocker is item 4, skipped at the merchant's instruction.
    ⚠️ If the roles are wrong, feature 70's own instruction is **revert, do not patch**, which
    now costs three consumers. Also decide whether to clear the DJI template's saved minimum
    of 400 — **240 measured 511px shorter** on that table.
-5. **Feature 93 §Open question 2 — the dark-theme decision.** Step 102 measured it: the
+6. **Feature 93 §Open question 2 — the dark-theme decision.** Step 102 measured it: the
    accent title fails at **1.21–2.35** and the stripe at **1.02–1.07** (text vanishes) on a
    dark ground. Banded presets are safe (6.98–13.15). The response is a palette-or-scope
    call that belongs to the merchant; 🚫 not contrast-checking code (Binding rules).
    🔴 **It must not be closed by silence.**
-6. **Section band radius / chevron position / animated open-close (proposed 82 / 83 / 84).**
+7. **Section band radius / chevron position / animated open-close (proposed 82 / 83 / 84).**
    The rest of the merchant report feature 81 answered; each is its own unit for a recorded
    reason (see "Deliberately out of scope" in `81-…`). 🚫 Not the JS `grid-template-rows`
    trick — that breaks the zero-JS `<details>` invariant.
-7. **Editor page should not scroll at the document level** — the app document overflows the
+8. **Editor page should not scroll at the document level** — the app document overflows the
    iframe by roughly the `.tipsFooter` height (it renders BELOW the card, outside
    `useScrollRegionHeight`'s flat `BOTTOM_PAD_REM = 3` budget), producing a stray outer
    scrollbar beside admin's reserved 16px gutter. Fix = measure the actual footer/card
    bottom. Touches the measurer both scrollers share, so it is its own unit.
-8. **Templates-list Phase 2** — search / sort / pagination (server-side) when the list can
+9. **Templates-list Phase 2** — search / sort / pagination (server-side) when the list can
    grow large; multi-select bulk actions later. Related: step 103 finding F3 —
    `listTemplatesForShop` uses no `select`, so every template's full `rows` JSON is read and
    shipped to the browser to render a row **count**.
-9. **Reshell Phase C** (Settings display rules) → **E** (assignment into the reshell) →
+10. **Reshell Phase C** (Settings display rules) → **E** (assignment into the reshell) →
    **F** (top-bar status/save + cleanup).
 
 **Deferred:** editor bulk-delete range-select (Shift+click) + Delete/Backspace shortcut;
@@ -495,6 +528,39 @@ per-product overflow materialization + a bulk apply-to-all styling route.
 
 ## Open Questions
 
+- 🔴 **OQ-107-A — which access scopes does the app actually need?** (raised 2026-08-03 by
+  step 107.) With `app._index.tsx`'s demo action deleted, **no product write remains
+  anywhere in the app** — the entire Admin API surface is five reads
+  (`metafieldDefinitions`, the `products(first:1, query:)` conflict probe,
+  `AssignedProductCounts`, `ScopeResourceDetails` `nodes(ids:)`, `ShopId`) plus two writes
+  (`metafieldsSet` for the shop `$app:routing` metafield, and
+  `metaobjectUpsert`/`metaobjectDelete`). So `write_products` is **plausibly** wider than
+  needed, and `write_metaobject_definitions` **plausibly** dead now that definitions are
+  declarative TOML and the runtime `metaobjectDefinitionCreate` is gone (§Key Decisions
+  "App-owned definitions are declarative TOML"). ⚠️ **Plausibly is not verified**, and two
+  unchecked things could make the wider scopes correct: what `metafieldsSet` requires for a
+  **Shop**-owner metafield, and whether deploying the declarative
+  `[product.metafields.app.spec_table]` definition needs `write_products` at deploy time.
+  🚫 **Not changed in step 107** (D4) — a config change with its own blast radius does not
+  belong in a unit whose value is being obviously safe; same precedent as step 106 D5
+  refusing to touch `api_version`. Why it matters now: `app-store-review-checklist.md` §8
+  requires that only scopes actually used are requested, and **narrowing a scope after
+  launch is a re-consent event across every installed shop** — cheap now, expensive later.
+  Settle it before the production-host deploy, since that deploy is already carrying the
+  step-107 TOML edit.
+- 🔴 **OQ-107-B — Screen 1's checklist step 3 points at a model proposed for deletion.**
+  (raised 2026-08-03 by step 107; blocks Unit B.) `admin-screen-plan.md` §Screen 1 marks
+  "Assign the template to a product" complete when a `ProductAssignmentIndex` row has
+  `status = APPLIED`. **OQ-103-D** records that `ProductAssignmentIndex` has **zero
+  references in application code** — the 2026-07-07 shop-level routing redesign removed the
+  need to materialize per-product overrides — and proposes dropping the table and its four
+  indexes. Both cannot be right. The likely resolution is that the signal should key off
+  `ProductAssignment` (the live model) instead, but that is a decision about the onboarding
+  spec, not a rename: it also decides whether OQ-103-D's migration is free to proceed.
+  🔴 **Unit B is blocked on this for checklist step 3 only** — the other three steps
+  (`onboardingStatus` advance, `Template` count ≥ 1, `Shop.isAppBlockActive`) are
+  unaffected and are all schema-backed since the init migration. The `admin-screen-plan.md`
+  row now carries a blocked marker so Unit B cannot build from it by accident.
 - 🔴 **OQ-103-A — what does a webhook retry burst do to the Neon connection pool?**
   (raised 2026-08-01 by step 103; `data-model.md` §13 R8a/R8b.) Both webhook actions are
   tiny and idempotent, but Shopify **retries** them, and no `connection_limit` / pool size
