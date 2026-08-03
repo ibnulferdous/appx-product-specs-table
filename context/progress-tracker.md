@@ -179,6 +179,28 @@ saved presets, cuttable).
 
 > One line per unit. Detail → the linked `context/features/` doc + git history.
 
+### Templates-list loader — read-path perf (2026-08-03)
+
+- **The list loader stopped shipping the `rows` blob, took Shopify + the shop.id
+  lookup off the critical path** — ✅ 2026-08-03, tests → 1361, gate green (typecheck
+  · lint · format · build). Addresses **step 103 finding F3** and the R2 read pattern.
+  Four changes, all contained to `app/models/template.server.ts` + the
+  `app.templates.tsx` loader: (1) `listTemplatesForShop` → **`listTemplateSummariesForDomain`**,
+  a `$queryRaw` that selects only `id/name/status/updatedAt` and computes the row
+  **count** in Postgres via `jsonb_array_length` (guarded by `jsonb_typeof` for the
+  non-array case) — the old `findMany` read every template's full `rows` JSON (~230KB
+  for ~34 templates) just to render one integer per row; (2) the read is keyed off
+  the session **`myshopifyDomain`** via a `Shop` JOIN, so it no longer waits on
+  `upsertShop`; (3) `upsertShop` runs as a background side effect (install-flip),
+  off the critical path; (4) **`resolveAssignedProductCounts` is now deferred** — the
+  loader returns the promise UNAWAITED and each "Assigned Products" cell streams in
+  under `<Suspense>`/`<Await>` (placeholder → number, "—" on failure), taking a live
+  Admin round trip off first paint. Shop isolation intact (WHERE pins the unique
+  domain; domain is a bound param). No migration. No feature doc. 🚫 Did **not**
+  denormalize the counts into stored columns — row count is already free via
+  `jsonb_array_length`, and the product count is partly Shopify-owned so a cache
+  would go stale silently without webhook invalidation (considered + rejected).
+
 ### Style tab — presets, accents & polish (2026-07-26 → 2026-07-31)
 
 - **Gallery cards gained a derived "what's different" line** — ✅ 2026-07-31, tests → 1270.
@@ -506,9 +528,12 @@ Multi-value applies to PRODUCT + COLLECTION only. No migrations needed for the 4
    scrollbar beside admin's reserved 16px gutter. Fix = measure the actual footer/card
    bottom. Touches the measurer both scrollers share, so it is its own unit.
 9. **Templates-list Phase 2** — search / sort / pagination (server-side) when the list can
-   grow large; multi-select bulk actions later. Related: step 103 finding F3 —
-   `listTemplatesForShop` uses no `select`, so every template's full `rows` JSON is read and
-   shipped to the browser to render a row **count**.
+   grow large; multi-select bulk actions later. ✅ Step 103 finding **F3 is now closed**
+   (2026-08-03, see Completed): the loader reads a lightweight summary via
+   `listTemplateSummariesForDomain` (`jsonb_array_length`, no `rows` blob) and streams the
+   assigned-product counts. What remains here is the actual Phase-2 scope — server-side
+   search/sort/**pagination** (the read is still unbounded — returns ALL of a shop's
+   templates) and bulk actions.
 10. **Reshell Phase C** (Settings display rules) → **E** (assignment into the reshell) →
    **F** (top-bar status/save + cleanup).
 

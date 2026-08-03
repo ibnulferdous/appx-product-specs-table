@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import {
-  listTemplatesForShop,
+  listTemplateSummariesForDomain,
   createTemplateForShop,
   deleteTemplateForShop,
   duplicateTemplateForShop,
@@ -105,6 +105,10 @@ const ALL_DEFAULT_COLUMNS = {
 // model's #1 invariant; whether Postgres then enforces it is the DB's job.
 const { prismaMock } = vi.hoisted(() => ({
   prismaMock: {
+    // `listTemplateSummariesForDomain` reads via a raw tagged-template query
+    // (the row count is computed in Postgres with `jsonb_array_length`), so the
+    // list-read tests spy on `$queryRaw` rather than `template.findMany`.
+    $queryRaw: vi.fn(),
     template: {
       findMany: vi.fn(),
       count: vi.fn(),
@@ -123,31 +127,71 @@ beforeEach(() => {
   vi.resetAllMocks();
 });
 
-describe("listTemplatesForShop", () => {
-  it("scopes the query to the shop and orders by most recently updated", async () => {
-    prismaMock.template.findMany.mockResolvedValue([]);
+describe("listTemplateSummariesForDomain", () => {
+  it("issues a domain-scoped, newest-first raw read that counts rows in SQL", async () => {
+    prismaMock.$queryRaw.mockResolvedValue([]);
 
-    await listTemplatesForShop("shop_A");
+    await listTemplateSummariesForDomain("shop-a.myshopify.com");
 
-    expect(prismaMock.template.findMany).toHaveBeenCalledWith({
-      where: { shopId: "shop_A" },
-      orderBy: { updatedAt: "desc" },
-    });
+    expect(prismaMock.$queryRaw).toHaveBeenCalledTimes(1);
+    // A tagged-template call: first arg is the SQL string fragments, the rest are
+    // the bound parameters. Assert the query our code builds is shop-scoped (by
+    // the UNIQUE domain — the #1 isolation invariant), newest-first, and counts
+    // rows in Postgres rather than shipping the `rows` blob.
+    const [strings, ...values] = prismaMock.$queryRaw.mock.calls[0];
+    const sql = (strings as string[]).join("?");
+    expect(sql).toContain("jsonb_array_length");
+    expect(sql).toContain('WHERE s."myshopifyDomain"');
+    expect(sql).toContain('ORDER BY t."updatedAt" DESC');
+    // The domain is passed as a BOUND parameter, never concatenated into the SQL.
+    expect(values).toEqual(["shop-a.myshopify.com"]);
   });
 
-  it("derives rowCount from the rows array (non-arrays count as 0)", async () => {
-    prismaMock.template.findMany.mockResolvedValue([
-      { id: "t1", rows: [{}, {}, {}] },
-      { id: "t2", rows: "not-an-array" },
+  it("maps rows to numeric rowCount summaries (coerces bigint, no rows blob)", async () => {
+    const t1Updated = new Date("2026-08-02T00:00:00Z");
+    const t2Updated = new Date("2026-08-01T00:00:00Z");
+    prismaMock.$queryRaw.mockResolvedValue([
+      // The pg driver may hand `jsonb_array_length` back as a bigint; the mapper
+      // must coerce it to a JS number so it serializes cleanly to the client.
+      {
+        id: "t1",
+        name: "A",
+        status: "DRAFT",
+        updatedAt: t1Updated,
+        rowCount: 3n,
+      },
+      {
+        id: "t2",
+        name: "B",
+        status: "ACTIVE",
+        updatedAt: t2Updated,
+        rowCount: 0,
+      },
     ]);
 
-    const result = await listTemplatesForShop("shop_A");
+    const result = await listTemplateSummariesForDomain("shop-a.myshopify.com");
 
-    expect(result.map((t) => t.rowCount)).toEqual([3, 0]);
-    // The "Assigned Products" count is no longer this function's concern (it needs
-    // live Shopify data) — the list loader enriches it via
-    // `resolveAssignedProductCounts` (feature 48), so it isn't returned here.
+    expect(result).toEqual([
+      {
+        id: "t1",
+        name: "A",
+        status: "DRAFT",
+        updatedAt: t1Updated,
+        rowCount: 3,
+      },
+      {
+        id: "t2",
+        name: "B",
+        status: "ACTIVE",
+        updatedAt: t2Updated,
+        rowCount: 0,
+      },
+    ]);
+    // The lightweight summary must never carry the `rows` blob (the whole point of
+    // the SQL-side count) or an assigned-count (that streams separately now).
+    expect(result[0]).not.toHaveProperty("rows");
     expect(result[0]).not.toHaveProperty("assignedProductCount");
+    expect(typeof result[0].rowCount).toBe("number");
   });
 });
 

@@ -21,10 +21,6 @@ import { validateTemplateStatus } from "../utils/templateStatus";
 // `context/features/19-template-create-on-first-save.md`.
 export const DEFAULT_TEMPLATE_NAME = "Untitled template";
 
-function getRowCount(rows: unknown): number {
-  return Array.isArray(rows) ? rows.length : 0;
-}
-
 // Shared row-payload handling for create and save: narrow the untrusted `rows`
 // into the typed EditorRow[] contract (`parseRows`) and enforce the shared
 // MAX_TEMPLATE_ROWS cap server-side (the editor's UI cap is UX; this is the real
@@ -171,24 +167,76 @@ function resolveStatus(status: unknown): TemplateStatus {
   return result.ok ? result.status : TemplateStatus.DRAFT;
 }
 
-// Always returns ALL of the shop's templates (ordered most-recently-updated
-// first). Status filtering is a client-side concern now — the list page loads
-// the full shop list once and filters in the browser (feature 28), so this no
-// longer takes a status option.
-//
-// Stays pure Postgres (no Admin client): the "Assigned Products" count needs live
-// Shopify data for broad scopes, so the list loader enriches each row with it
-// separately via `resolveAssignedProductCounts` (feature 48) — this function only
-// owns the DB read and the cheap `rowCount`.
-export async function listTemplatesForShop(shopId: string) {
-  const templates = await prisma.template.findMany({
-    where: { shopId },
-    orderBy: { updatedAt: "desc" },
-  });
+// The lightweight per-row shape the templates LIST page renders: name, status,
+// row count, last-updated. Deliberately NOT the full Template — the list never
+// touches `rows`, styling, metaobject handles, etc.
+export type TemplateListSummary = {
+  id: string;
+  name: string;
+  status: TemplateStatus;
+  updatedAt: Date;
+  rowCount: number;
+};
 
-  return templates.map((template) => ({
-    ...template,
-    rowCount: getRowCount(template.rows),
+// The list read for `app/routes/app.templates.tsx` (step 103 read-pattern R2).
+// Returns ALL of the shop's templates, most-recently-updated first (status
+// filtering is a client concern now — feature 28 — so there's no status option).
+//
+// Two deliberate shapes here, both perf fixes for a slow list loader:
+//
+//  1. It NEVER selects the `rows` JSON blob. The list shows only a row COUNT, so
+//     this asks Postgres to compute `jsonb_array_length(rows)` and returns just
+//     that integer per template. The old `findMany` read every template's full
+//     `rows` and inlined it into the loader payload (~230KB for ~34 templates)
+//     purely to render one number per row — step 103 finding F3. `jsonb_typeof`
+//     guards the count so a non-array `rows` yields 0, mirroring the old
+//     `Array.isArray(rows) ? rows.length : 0`.
+//
+//  2. It keys off the shop's `myshopifyDomain` (a server-authoritative session
+//     value) via a JOIN, NOT a pre-resolved `shop.id`. That lets the list loader
+//     issue this read WITHOUT first awaiting the shop-row lookup/upsert, taking
+//     one Neon round trip off the critical path (the install-flip write in
+//     `upsertShop` is a side effect that doesn't need to gate the read).
+//
+// Shop isolation (priority #1) is total: the WHERE pins the shop by its UNIQUE
+// domain, so one shop can never read another's templates. The domain is
+// interpolated as a bound parameter (never string-concatenated) — no injection
+// surface. Stays pure Postgres (no Admin client): the "Assigned Products" count
+// needs live Shopify data and is resolved separately by the loader
+// (`resolveAssignedProductCounts`, feature 48).
+export async function listTemplateSummariesForDomain(
+  myshopifyDomain: string,
+): Promise<TemplateListSummary[]> {
+  const rows = await prisma.$queryRaw<
+    Array<{
+      id: string;
+      name: string;
+      status: TemplateStatus;
+      updatedAt: Date;
+      // int4 from `jsonb_array_length`; the pg driver hands int4 back as a JS
+      // number, but the union keeps a bigint driver from silently leaking one
+      // into the client payload (coerced with `Number` below).
+      rowCount: number | bigint;
+    }>
+  >`
+    SELECT t."id", t."name", t."status", t."updatedAt",
+           CASE
+             WHEN jsonb_typeof(t."rows") = 'array'
+             THEN jsonb_array_length(t."rows")
+             ELSE 0
+           END AS "rowCount"
+    FROM "Template" t
+    JOIN "Shop" s ON s."id" = t."shopId"
+    WHERE s."myshopifyDomain" = ${myshopifyDomain}
+    ORDER BY t."updatedAt" DESC
+  `;
+
+  return rows.map((row) => ({
+    id: row.id,
+    name: row.name,
+    status: row.status,
+    updatedAt: row.updatedAt,
+    rowCount: Number(row.rowCount),
   }));
 }
 

@@ -1,11 +1,16 @@
-import { useEffect, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
 import type {
   ActionFunctionArgs,
   HeadersFunction,
   LoaderFunctionArgs,
   ShouldRevalidateFunctionArgs,
 } from "react-router";
-import { useFetcher, useLoaderData, useSearchParams } from "react-router";
+import {
+  Await,
+  useFetcher,
+  useLoaderData,
+  useSearchParams,
+} from "react-router";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import { useAppBridge } from "@shopify/app-bridge-react";
 import { authenticate } from "../shopify.server";
@@ -14,9 +19,10 @@ import {
   deleteTemplateForShop,
   duplicateTemplateForShop,
   getTemplateByIdForShop,
-  listTemplatesForShop,
+  listTemplateSummariesForDomain,
   renameTemplateForShop,
   setTemplateStatusForShop,
+  type TemplateListSummary,
 } from "../models/template.server";
 import { deleteSpecTableMetaobject } from "../shopify/metaobjects.server";
 import { resolveAssignedProductCounts } from "../shopify/assignedProductCounts.server";
@@ -51,13 +57,16 @@ const RENAME_MODAL_ID = "templates-list-rename-modal";
 // <s-select> value is seeded from that row's current status on open.
 const STATUS_MODAL_ID = "templates-list-status-modal";
 
-// The list row = a persisted template + its cheap `rowCount` (from
-// `listTemplatesForShop`) enriched with the live `assignedProductCount` the loader
-// resolves separately (feature 48). `null` means the count couldn't be determined
-// live (Admin API failure) and renders as "—".
-type TemplateListItem = Awaited<
-  ReturnType<typeof listTemplatesForShop>
->[number] & { assignedProductCount: number | null };
+// The list row is the lightweight summary (name / status / rowCount / updatedAt)
+// from `listTemplateSummariesForDomain`. The "Assigned Products" count is no
+// longer carried on the row — it streams in separately as a templateId → count
+// map (feature 48, now deferred; see the loader), which each row reads under
+// <Suspense>.
+type TemplateListItem = TemplateListSummary;
+
+// The streamed "Assigned Products" map: templateId → resolved count, or `null`
+// when the live Admin lookup couldn't determine it (rendered "—").
+type AssignedCounts = Record<string, number | null>;
 
 // The "Assigned Products" cell: a plain integer (thousands-separated for large
 // "All products" catalogs), or "—" when the live count is unavailable.
@@ -114,6 +123,7 @@ const EmptyTemplatesState = () => (
 // state; the row only renders and calls the handlers it gets as props.
 const TemplateTableRow = ({
   template,
+  assignedCounts,
   busy,
   onRequestRename,
   onRequestStatus,
@@ -121,6 +131,9 @@ const TemplateTableRow = ({
   onRequestDelete,
 }: {
   template: TemplateListItem;
+  // The streamed assigned-count map (deferred). Shared across every row; each
+  // reads its own count under <Suspense> once it resolves.
+  assignedCounts: Promise<AssignedCounts>;
   // Disables this row's actions trigger while any mutation is in flight, so a
   // second row action can't be opened on the shared fetcher mid-mutation.
   busy: boolean;
@@ -154,7 +167,17 @@ const TemplateTableRow = ({
       </s-table-cell>
       <s-table-cell>{template.rowCount}</s-table-cell>
       <s-table-cell>
-        {formatAssignedCount(template.assignedProductCount)}
+        {/* Streamed column (Fix #4): the table paints immediately; each cell
+            shows a subdued placeholder until the deferred count map resolves,
+            then swaps in the number. A streamed failure degrades to "—" via the
+            errorElement — never a broken row. */}
+        <Suspense fallback={<s-text color="subdued">…</s-text>}>
+          <Await resolve={assignedCounts} errorElement={<>—</>}>
+            {(counts: AssignedCounts) => (
+              <>{formatAssignedCount(counts[template.id] ?? null)}</>
+            )}
+          </Await>
+        </Suspense>
       </s-table-cell>
       <s-table-cell>{formatDate(template.updatedAt)}</s-table-cell>
       <s-table-cell>
@@ -197,6 +220,7 @@ const TemplateTableRow = ({
 
 const TemplateTable = ({
   templates,
+  assignedCounts,
   busy,
   selectedStatus,
   onSelectStatus,
@@ -206,6 +230,7 @@ const TemplateTable = ({
   onRequestDelete,
 }: {
   templates: TemplateListItem[];
+  assignedCounts: Promise<AssignedCounts>;
   busy: boolean;
   selectedStatus: StatusFilter;
   onSelectStatus: (status: StatusFilter) => void;
@@ -259,6 +284,7 @@ const TemplateTable = ({
               <TemplateTableRow
                 key={template.id}
                 template={template}
+                assignedCounts={assignedCounts}
                 busy={busy}
                 onRequestRename={onRequestRename}
                 onRequestStatus={onRequestStatus}
@@ -275,28 +301,45 @@ const TemplateTable = ({
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   const { admin, session } = await authenticate.admin(request);
-  const shop = await upsertShop(session);
-  // One query: ALL of the shop's templates. Status filtering happens on the
-  // client now (feature 28), so the loader ignores ?status= entirely and
-  // `hasTemplates` derives from the returned list (no separate count query).
-  const templates = await listTemplatesForShop(shop.id);
 
-  // Enrich each row with its real "Assigned Products" count (feature 48). One
-  // batched, shop-scoped lookup resolves every scope's product total (broad scopes
-  // read live from Shopify); a template with no assignment rows is absent from the
-  // map → 0. Fail-soft: a live-lookup failure yields `null` for the affected
-  // rows ("—"), never a broken list.
-  const assignedCounts = await resolveAssignedProductCounts(admin, shop.id);
-  const templatesWithCounts = templates.map((template) => ({
-    ...template,
-    assignedProductCount: assignedCounts.has(template.id)
-      ? assignedCounts.get(template.id)!
-      : 0,
-  }));
+  // The shop-row upsert marks install/reinstall (a side effect) and yields
+  // shop.id for the assigned-count lookup — but it does NOT gate the list read.
+  // Kick it off and let it settle in the background so the shop.id round trip is
+  // off the critical path; only the deferred count enrichment below awaits it.
+  const shopPromise = upsertShop(session);
+
+  // The ONLY query on the critical path: ALL of the shop's templates, keyed by
+  // the session domain (so it doesn't wait on `shopPromise`) and WITHOUT the
+  // `rows` blob — the row count is computed in Postgres (step 103 finding F3).
+  // Status filtering happens on the client (feature 28), so the loader ignores
+  // ?status= entirely and `hasTemplates` derives from the returned list.
+  const templates = await listTemplateSummariesForDomain(session.shop);
+
+  // "Assigned Products" (feature 48) needs a live Admin API round trip and is
+  // fail-soft / cosmetic ("—" on failure), so it must NOT block first paint.
+  // Return the promise UNAWAITED — React Router streams it and each cell fills in
+  // under <Suspense>. It resolves to a templateId → count map: a template with no
+  // assignment rows is 0 (a NONE match), a live-lookup failure is null ("—"). The
+  // chain is wrapped so any failure (including the shop upsert throwing) degrades
+  // every cell to "—" rather than tripping the streamed error boundary.
+  const assignedCounts: Promise<AssignedCounts> = shopPromise
+    .then((shop) => resolveAssignedProductCounts(admin, shop.id))
+    .then((counts) =>
+      Object.fromEntries(
+        templates.map((template) => [
+          template.id,
+          counts.has(template.id) ? counts.get(template.id)! : 0,
+        ]),
+      ),
+    )
+    .catch(() =>
+      Object.fromEntries(templates.map((template) => [template.id, null])),
+    );
 
   return {
-    templates: templatesWithCounts,
-    hasTemplates: templatesWithCounts.length > 0,
+    templates,
+    hasTemplates: templates.length > 0,
+    assignedCounts,
   };
 };
 
@@ -453,7 +496,8 @@ export const action = async ({ request }: ActionFunctionArgs) => {
 };
 
 export default function TemplatesPage() {
-  const { templates, hasTemplates } = useLoaderData<typeof loader>();
+  const { templates, hasTemplates, assignedCounts } =
+    useLoaderData<typeof loader>();
   const shopify = useAppBridge();
 
   // The selected filter lives in the URL (?status=) so it stays bookmarkable and
@@ -666,6 +710,7 @@ export default function TemplatesPage() {
       ) : (
         <TemplateTable
           templates={visibleTemplates}
+          assignedCounts={assignedCounts}
           busy={busy}
           selectedStatus={selectedStatus}
           onSelectStatus={handleSelectStatus}
