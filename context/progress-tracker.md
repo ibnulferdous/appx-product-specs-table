@@ -133,6 +133,21 @@ saved presets, cuttable).
 
 > Rolling window, newest first. Older units roll into Completed.
 
+- **Template Save latency — remove wasted Admin round-trips + parallelize reads** — ✅
+  2026-08-03, tests → **1363 / 52** (+2, the two new routing cache tests), build green. Three
+  cuts to the editor Save action's critical path, no behavior change:
+  **(1)** dropped the metaobject **read-back verification** in `syncTemplateToMetaobject` — a
+  full second Admin round-trip on *every* save whose only output (`roundTripOk`) was never
+  surfaced to the merchant and could flip a good save into a false warning; `metaobjectUpsert`'s
+  `userErrors` is the real failure signal, and a dropped write self-heals next Save.
+  **(2)** `rebuildShopRouting` now **caches the shop GID** on `Shop.shopGid` (column existed,
+  was never populated) via a new `resolveShopGid` — removes the `{ shop { id } }` Admin call
+  from every scope/status save after the first; cache write is best-effort.
+  **(3)** the edit-save branch now runs its three independent shop-scoped reads
+  (`getTemplateByIdForShop` / `getTemplateIncludeSelectors` / `getExcludesForTemplate`) in a
+  single `Promise.all`, and does the pure payload parses first so a bad payload fails before
+  any DB hit. Files: `templateSync.server.ts`, `routing.server.ts`, `app.templates_.$id/route.tsx`
+  (+ the two test files). No schema/migration. Not yet live-verified on the dev store.
 - **Step 107 Unit A — boilerplate removal + the app-home shell** — ✅ 2026-08-03, gate 10/10,
   tests → **1361 / 52** (+8, +1 — the delta exactly as predicted; doc 107's "→ 1360" was an
   arithmetic slip, 1353 + 8 = 1361); 6/6 mutations matched their predictions; **7/7 live
@@ -586,16 +601,36 @@ per-product overflow materialization + a bulk apply-to-all styling route.
   (`onboardingStatus` advance, `Template` count ≥ 1, `Shop.isAppBlockActive`) are
   unaffected and are all schema-backed since the init migration. The `admin-screen-plan.md`
   row now carries a blocked marker so Unit B cannot build from it by accident.
-- 🔴 **OQ-103-A — what does a webhook retry burst do to the Neon connection pool?**
-  (raised 2026-08-01 by step 103; `data-model.md` §13 R8a/R8b.) Both webhook actions are
-  tiny and idempotent, but Shopify **retries** them, and no `connection_limit` / pool size
-  is set anywhere trackable: not in `prisma/schema.prisma`, not in `app/db.server.ts` —
-  the parameters live in `DATABASE_URL` in an **untracked `.env`**. So the bound is not
-  determinable by reading the repo, which is why it is here rather than in a §13 cell.
-  Two things would settle it: read the live `DATABASE_URL` for `connection_limit` /
-  `pgbouncer`, and check the Neon project's compute pool size. Related: Neon cold starts
-  already needed `connect_timeout=30`, so this app has met the "the pool is not free"
-  class of problem once. **Not** step 103's to fix — 103 wrote no code.
+- ✅ **OQ-103-A — what does a webhook retry burst do to the Neon connection pool? — RESOLVED
+  2026-08-03 (low risk).** (raised 2026-08-01 by step 103; `data-model.md` §13 R8a/R8b.)
+  Both things the OQ said would settle it were checked on 2026-08-03:
+  - **Live `DATABASE_URL` (runtime, credentials masked):** on the **`-pooler`** host,
+    `connect_timeout=30`, `pool_timeout=30`, `sslmode/channel_binding=require`. **No
+    `connection_limit` and no `pgbouncer=true`.** `DIRECT_URL` is the non-pooled host
+    (migrations only). `app/db.server.ts` is a bare `new PrismaClient()` — zero pool config
+    in code, so the string is the whole story.
+  - **Neon compute (project `proud-hat-02103652`, branch `production`):** autoscaling
+    **0.25–2 CU**, single compute, `us-east-1`, **`pooler_mode: "transaction"`**,
+    `suspend_timeout_seconds: 0` (default scale-to-zero — the cold-start source the
+    `connect_timeout=30` already covers).
+
+  **Verdict — the pool is not at meaningful risk**, on three compounding grounds: (1) the
+  runtime string is the **transaction-mode pooler**, so PgBouncer fronts client connections
+  and protects Postgres `max_connections` (~112 direct at the 0.25 CU floor); (2) the webhook
+  handlers are tiny idempotent 1–2-query writes; (3) 🔴 **the deciding input — hosting is a
+  single long-running server** (merchant decision, 2026-08-03), NOT serverless, so Prisma
+  keeps **one** pool of `num_cpus*2+1` — a small bounded number, never a per-request fan-out.
+  `connection_limit` being unset is therefore harmless; leaving the default is fine (an
+  explicit `connection_limit=10` is optional clarity, not a fix). The serverless failure mode
+  (one pool *per cold instance* → burst blowup, which would have needed `connection_limit=1`)
+  **does not apply** given the hosting decision.
+
+  📌 **One before-production follow-up, low urgency:** `pooler_mode` is *transaction* and the
+  app uses plain Prisma-over-TCP, which can hit `prepared statement "s0" already exists` under
+  concurrency. Not observed (single process, low concurrency), and Neon's current Prisma guide
+  omits the flag — but before real traffic, either add **`pgbouncer=true`** to the pooled
+  `DATABASE_URL` or move to the **`@prisma/adapter-neon`** driver adapter (Neon's now-recommended
+  path). Folds into the production-host deploy (Next Up item 1), not a standalone unit.
 - ~~**OQ-103-B — unchunked `nodes(ids:)` past the 250-id cap.**~~ ✅ **CLOSED 2026-08-01
   by chunking** — see Recently Shipped, which is the record. Kept as a stub because F4 in
   `data-model.md` §13 points here.
