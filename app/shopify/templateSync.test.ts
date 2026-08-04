@@ -15,25 +15,19 @@ beforeEach(() => {
   vi.clearAllMocks();
 });
 
-// The sync makes two Admin calls: the upsert, then the rows read-back.
+// The sync makes a single Admin call: the metaobject upsert. (There is no
+// read-back round-trip — see `syncTemplateToMetaobject`.)
 function mockAdmin() {
-  const graphql = vi
-    .fn()
-    .mockResolvedValueOnce({
-      json: async () => ({
-        data: {
-          metaobjectUpsert: {
-            metaobject: { id: "gid://x/1", handle: "template-t1" },
-            userErrors: [],
-          },
+  const graphql = vi.fn().mockResolvedValue({
+    json: async () => ({
+      data: {
+        metaobjectUpsert: {
+          metaobject: { id: "gid://x/1", handle: "template-t1" },
+          userErrors: [],
         },
-      }),
-    })
-    .mockResolvedValueOnce({
-      json: async () => ({
-        data: { metaobjectByHandle: { rows: { value: "[]" } } },
-      }),
-    });
+      },
+    }),
+  });
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   return { admin: { graphql } as any, graphql };
 }

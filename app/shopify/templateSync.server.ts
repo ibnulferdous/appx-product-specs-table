@@ -14,10 +14,7 @@ import type { TemplateStatus } from "@prisma/client";
 import { setTemplateMetaobjectRef } from "../models/template.server";
 import { parseRows } from "../utils/rowsSerialize";
 import { parseStylingValues } from "../utils/tableStyling";
-import {
-  readSpecTableMetaobjectRows,
-  upsertSpecTableMetaobject,
-} from "./metaobjects.server";
+import { upsertSpecTableMetaobject } from "./metaobjects.server";
 
 /**
  * Sync a template's storefront delivery copy to its app-owned Shopify metaobject,
@@ -25,9 +22,14 @@ import {
  * write — Postgres is the source of truth, so a failure here warns but never loses
  * the saved data. Behavior is identical to the former inline `route.tsx` helper.
  *
- * `syncError` is a merchant-facing warning string (or null on success);
- * `roundTripOk` reports whether the metaobject read-back matched what we wrote (or
- * null when the sync threw before the read).
+ * `syncError` is a merchant-facing warning string (or null on success).
+ *
+ * The upsert's `userErrors` (surfaced as a throw by `upsertSpecTableMetaobject`)
+ * is the failure signal. We deliberately do NOT read the metaobject back to
+ * verify — Postgres is the source of truth, the read-back result was never
+ * surfaced to the merchant, and the extra Admin round-trip doubled every save's
+ * sync latency (and could turn a good save into a false warning if the read
+ * flaked). A genuinely dropped write self-heals on the next Save.
  *
  * `template.styling` (feature 57 Step 7) is the template's PERSISTED `TableStyling`
  * row — `unknown` because it arrives straight from Prisma (or as `null` when the
@@ -47,9 +49,8 @@ export async function syncTemplateToMetaobject(
     rows: unknown;
     styling: unknown;
   },
-): Promise<{ syncError: string | null; roundTripOk: boolean | null }> {
+): Promise<{ syncError: string | null }> {
   let syncError: string | null = null;
-  let roundTripOk: boolean | null = null;
   try {
     // The `$app:appx_spec_table` metaobject definition is declared in
     // shopify.app.toml and distributed on deploy/install, so we only upsert the
@@ -66,15 +67,10 @@ export async function syncTemplateToMetaobject(
       updatedAt: new Date().toISOString(),
     });
     await setTemplateMetaobjectRef(shop.id, template.id, gid, handle);
-
-    const readback = await readSpecTableMetaobjectRows(admin, template.id);
-    roundTripOk =
-      readback !== null &&
-      JSON.stringify(readback) === JSON.stringify(savedRows);
   } catch (error) {
     console.error("[template sync] metaobject sync failed", error);
     syncError =
       "Saved, but we couldn't update your storefront. Please save again.";
   }
-  return { syncError, roundTripOk };
+  return { syncError };
 }

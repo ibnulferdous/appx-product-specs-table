@@ -364,9 +364,29 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
     return redirect("/app/templates");
   }
 
-  // Read the current status + persisted scope shop-scoped (priority #1) so the gate
-  // and rebuild decisions are made against the durable state, not the payload.
-  const existing = await getTemplateByIdForShop(shop.id, templateId);
+  // Parse the pending scope SET + EXCLUDE carve-outs (feature 44/45/46). Both are
+  // PURE (no DB), so run them BEFORE any read: a malformed payload fails fast here
+  // without paying for the reads below. `provided:false` means a caller that
+  // doesn't touch that facet (leave it).
+  const pending = parsePendingScope(payload);
+  if (!pending.ok) {
+    return { ok: false as const, error: pending.error };
+  }
+  const pendingExcludes = parsePendingExcludes(payload);
+  if (!pendingExcludes.ok) {
+    return { ok: false as const, error: pendingExcludes.error };
+  }
+
+  // Read the current status + persisted scope + persisted excludes shop-scoped
+  // (priority #1) so the gate and rebuild decisions are made against the durable
+  // state, not the payload. The three reads are independent, so fetch them
+  // concurrently — they were three serial round-trips, which dominated a save's DB
+  // time on a cold Neon connection.
+  const [existing, persistedSelectors, persistedExcludes] = await Promise.all([
+    getTemplateByIdForShop(shop.id, templateId),
+    getTemplateIncludeSelectors(shop.id, templateId),
+    getExcludesForTemplate(shop.id, templateId),
+  ]);
   if (!existing) {
     return { ok: false as const, error: "Template not found" };
   }
@@ -374,16 +394,7 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
   const wasActive = currentStatus === "ACTIVE";
   const willBeActive = payload.status === "ACTIVE";
 
-  // Parse the pending scope SET (feature 44/46) and diff it against the persisted
-  // set. `provided:false` means a caller that doesn't touch scope (leave it).
-  const pending = parsePendingScope(payload);
-  if (!pending.ok) {
-    return { ok: false as const, error: pending.error };
-  }
-  const persistedSelectors = await getTemplateIncludeSelectors(
-    shop.id,
-    templateId,
-  );
+  // Diff the pending scope set against the persisted set.
   const pendingSelectors: ScopeSelector[] = pending.provided
     ? pending.selectors
     : persistedSelectors;
@@ -391,15 +402,10 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
     pending.provided &&
     selectorSetKey(pendingSelectors) !== selectorSetKey(persistedSelectors);
 
-  // Parse + diff the pending EXCLUDE carve-outs against the persisted set (feature
-  // 45). Then reconcile them against the pending INCLUDE PRODUCT set (Decision C):
-  // a product the template now INCLUDEs can't also be EXCLUDE'd (byProduct beats the
+  // Diff the pending EXCLUDE carve-outs against the persisted set (feature 45).
+  // Then reconcile them against the pending INCLUDE PRODUCT set (Decision C): a
+  // product the template now INCLUDEs can't also be EXCLUDE'd (byProduct beats the
   // exclude gate; a lingering exclude would fool the gate's exclude-subtraction).
-  const pendingExcludes = parsePendingExcludes(payload);
-  if (!pendingExcludes.ok) {
-    return { ok: false as const, error: pendingExcludes.error };
-  }
-  const persistedExcludes = await getExcludesForTemplate(shop.id, templateId);
   const pendingExcludeGids = reconcileExcludes(
     pendingExcludes.provided ? pendingExcludes.gids : persistedExcludes,
     pendingSelectors,
@@ -480,7 +486,7 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
 
   // Sync the storefront delivery copy to the app-owned metaobject. This runs
   // AFTER the durable Postgres write; a failure warns but never loses the rows.
-  const { syncError, roundTripOk } = await syncTemplateToMetaobject(
+  const { syncError } = await syncTemplateToMetaobject(
     admin,
     shop,
     result.data,
@@ -510,7 +516,6 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
     ok: true as const,
     status: result.data.status,
     syncError,
-    roundTripOk,
     routingError,
   };
 };

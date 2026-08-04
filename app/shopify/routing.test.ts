@@ -6,6 +6,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 vi.mock("../db.server", () => ({
   default: {
     template: { findMany: vi.fn() },
+    shop: { findUnique: vi.fn(), update: vi.fn() },
     shopStorefrontRouting: { upsert: vi.fn(), update: vi.fn() },
   },
 }));
@@ -25,6 +26,10 @@ import {
 
 const prismaMock = prisma as unknown as {
   template: { findMany: ReturnType<typeof vi.fn> };
+  shop: {
+    findUnique: ReturnType<typeof vi.fn>;
+    update: ReturnType<typeof vi.fn>;
+  };
   shopStorefrontRouting: {
     upsert: ReturnType<typeof vi.fn>;
     update: ReturnType<typeof vi.fn>;
@@ -246,8 +251,14 @@ describe("rebuildShopRouting", () => {
 
   beforeEach(() => {
     prismaMock.template.findMany.mockReset();
+    prismaMock.shop.findUnique.mockReset();
+    prismaMock.shop.update.mockReset();
     prismaMock.shopStorefrontRouting.upsert.mockReset();
     prismaMock.shopStorefrontRouting.update.mockReset();
+    // Default to a cache MISS so these tests exercise the `{ shop { id } }`
+    // fetch path; the cache-hit path has its own test below.
+    prismaMock.shop.findUnique.mockResolvedValue({ shopGid: null });
+    prismaMock.shop.update.mockResolvedValue({});
     prismaMock.shopStorefrontRouting.upsert.mockResolvedValue({});
     prismaMock.shopStorefrontRouting.update.mockResolvedValue({});
   });
@@ -340,6 +351,50 @@ describe("rebuildShopRouting", () => {
     expect(result.ok).toBe(false);
     expect(prismaMock.shopStorefrontRouting.update).not.toHaveBeenCalled();
   });
+
+  it("uses the cached shop GID and skips the ShopId query on a cache hit", async () => {
+    prismaMock.template.findMany.mockResolvedValue([]);
+    prismaMock.shop.findUnique.mockResolvedValue({
+      shopGid: "gid://shopify/Shop/CACHED",
+    });
+    const admin = okAdmin();
+
+    const result = await rebuildShopRouting(admin, "shop_1");
+
+    expect(result).toEqual({
+      ok: true,
+      metafieldGid: "gid://shopify/Metafield/1",
+    });
+    // No `{ shop { id } }` round-trip — the GID came from Postgres.
+    const ops = (admin.graphql as ReturnType<typeof vi.fn>).mock.calls.map(
+      (c) => c[0] as string,
+    );
+    expect(ops.some((op) => op.includes("ShopId"))).toBe(false);
+    // And nothing was written back to the cache (it was already warm).
+    expect(prismaMock.shop.update).not.toHaveBeenCalled();
+    // The cached GID is what got written as the metafield owner.
+    const metafieldsCall = (
+      admin.graphql as ReturnType<typeof vi.fn>
+    ).mock.calls.find((c) => (c[0] as string).includes("metafieldsSet"));
+    const ownerId = (
+      metafieldsCall?.[1] as {
+        variables: { metafields: { ownerId: string }[] };
+      }
+    ).variables.metafields[0].ownerId;
+    expect(ownerId).toBe("gid://shopify/Shop/CACHED");
+  });
+
+  it("caches the shop GID on a miss so the next rebuild can skip the query", async () => {
+    prismaMock.template.findMany.mockResolvedValue([]);
+    prismaMock.shop.findUnique.mockResolvedValue({ shopGid: null });
+
+    await rebuildShopRouting(okAdmin(), "shop_1");
+
+    expect(prismaMock.shop.update).toHaveBeenCalledWith({
+      where: { id: "shop_1" },
+      data: { shopGid: "gid://shopify/Shop/7" },
+    });
+  });
 });
 
 // --- Byte budget observation (step 104 / data-model.md §14) ------------------
@@ -395,6 +450,10 @@ describe("rebuildShopRouting — routing payload budget", () => {
 
   beforeEach(() => {
     prismaMock.template.findMany.mockReset();
+    prismaMock.shop.findUnique.mockReset();
+    prismaMock.shop.update.mockReset();
+    prismaMock.shop.findUnique.mockResolvedValue({ shopGid: null });
+    prismaMock.shop.update.mockResolvedValue({});
     prismaMock.shopStorefrontRouting.upsert.mockReset();
     prismaMock.shopStorefrontRouting.update.mockReset();
     prismaMock.shopStorefrontRouting.upsert.mockResolvedValue({});

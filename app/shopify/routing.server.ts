@@ -223,6 +223,37 @@ async function fetchShopGid(admin: AdminApiContext): Promise<string> {
   return gid;
 }
 
+/**
+ * Resolve this shop's GID, preferring the value cached on the `Shop` row so a
+ * routing rebuild costs zero Admin round-trips for the GID after the first time.
+ * The GID is stable for the life of a shop, so a `{ shop { id } }` query on every
+ * rebuild was pure waste. On a cache MISS (a shop that has never rebuilt routing)
+ * we fetch it once via the Admin API and write it back — best-effort, so a failed
+ * cache write never turns a good routing publish into an error; the next rebuild
+ * simply re-fetches. Reading the miss path costs one cheap Postgres round-trip in
+ * exchange for removing a Shopify round-trip from every subsequent rebuild.
+ */
+async function resolveShopGid(
+  admin: AdminApiContext,
+  shopId: string,
+): Promise<string> {
+  const shop = await prisma.shop.findUnique({
+    where: { id: shopId },
+    select: { shopGid: true },
+  });
+  if (shop?.shopGid) return shop.shopGid;
+
+  const gid = await fetchShopGid(admin);
+  try {
+    await prisma.shop.update({ where: { id: shopId }, data: { shopGid: gid } });
+  } catch (error) {
+    // A cache-write failure is not a publish failure — log and carry the fetched
+    // GID through so this rebuild still completes.
+    console.error("[routing] failed to cache shop GID", error);
+  }
+  return gid;
+}
+
 // --- Live orchestrator ------------------------------------------------------
 
 /**
@@ -271,7 +302,7 @@ export async function rebuildShopRouting(
 
   // 3. Write the delivery copy (shop metafield), then stamp sync state.
   try {
-    const shopGid = await fetchShopGid(admin);
+    const shopGid = await resolveShopGid(admin, shopId);
     const variables = buildRoutingMetafieldInput(shopGid, projection);
     // Measure the exact value we are about to send (104 §D2). Observation only —
     // the write proceeds at any size; see `reportRoutingBudget`.
