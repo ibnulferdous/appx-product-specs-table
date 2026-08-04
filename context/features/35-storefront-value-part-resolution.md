@@ -149,6 +149,14 @@ in which display property they carry. The chain, most specific first:
 A scalar answers `nil` to every property test and falls through — which is the
 correct rendering for it, not an accident.
 
+**Live-verified 2026-08-04** on `appx-dev` with a purpose-built fixture:
+`custom.appx_list_check` (`list.number_integer`, Storefront API access on) set to
+`12 / 71 / 350` on the DJI product and pilled into the NPU row renders
+**`12, 71, 350`**, with 184 data rows and 0 blank value cells. ⚠️ That exercises
+the loop, the chunking, the `", "` join and the `{{ item }}` fallthrough — the
+**`.unit` measurement branch is still unexercised** and needs a `list.dimension`
+fixture. Nothing above the fallthrough row of the table has been run live.
+
 **Length:** reference lists are CONNECTIONS and answer `.count`; non-reference
 lists are arrays and answer `.size` (metafield object docs, "Determining the
 length of a list metafield"), hence `count | default: size | default: 0`. Lists

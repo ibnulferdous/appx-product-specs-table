@@ -160,10 +160,14 @@ saved presets, cuttable).
   outside the module graph; the admin preview renders METAFIELD parts as inert pills, so it
   was never affected). `context/features/35-…` §Correction.
 - **Storefront — every OTHER list metafield type rendered empty too** — ✅ 2026-08-04, gate
-  green (typecheck · lint · format · **test 1397 / 53** · build) + `validate_theme` clean.
-  ⚠️ **Not live-verified** — needs a deploy, and the dev store has no template using a
-  non-metaobject list metafield, so confirming it means adding one. Closes the gap the entry
-  above left open: `metafield_text` supports **no** list type except
+  green (typecheck · lint · format · **test 1397 / 53** · build) + `validate_theme` clean,
+  **and live-verified on `appx-dev`**: a purpose-built `custom.appx_list_check`
+  (`list.number_integer`, Storefront API access on) set to `12 / 71 / 350` on the DJI product
+  and pilled into the NPU row renders **`12, 71, 350`** — the exact `", "` separator — with
+  184 data rows and 0 blank value cells, i.e. no regression on the metaobject path either.
+  ⚠️ **That proves the loop, the chunking, the join and the `{{ item }}` scalar fallthrough —
+  NOT the duck-typed `.unit` measurement branch**, which needs a `list.dimension` fixture and
+  is still unexercised. Closes the gap the entry above left open: `metafield_text` supports **no** list type except
   `list.single_line_text_field` and `list.metaobject_reference`, so `list.number_integer`,
   `list.dimension`, `list.product_reference`, `list.color` … all rendered a blank cell. They
   are now rendered item by item in `spec-table-value.liquid`, joined with `", "`.
