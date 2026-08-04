@@ -194,6 +194,29 @@ saved presets, cuttable).
 
 > One line per unit. Detail → the linked `context/features/` doc + git history.
 
+### Templates-list — name links open-in-new-tab fix (2026-08-04)
+
+- **Template-name links open in the same tab on a normal click AND in a working new tab on
+  "Open in new tab"** — ✅ 2026-08-04, typecheck · lint · build green, live-verified on the
+  dev store. Bug: the row's `s-link href={`/app/templates/${id}`}` was app-origin-relative;
+  the browser's "Open in new tab" (a context-menu action App Bridge can't intercept) resolved
+  it against the app's **own** origin (the tunnel), loading the app standalone with no Shopify
+  session — the broken page. Fix, all in `app.templates.tsx`:
+  (1) the loader builds `adminAppBase = https://admin.shopify.com/store/<store>/apps/<CLIENT_ID>`
+  from `session.shop` (stripped of `.myshopify.com`) + `SHOPIFY_API_KEY`; the name link's
+  **href** is now `${adminAppBase}/app/templates/${id}`, so the context-menu "Open in new tab"
+  (which uses the raw href) lands in the admin, which re-embeds the app. Client id (not the
+  derived handle) keeps it environment-independent — verified live: admin resolves
+  `apps/<client_id>` → the handle URL and loads the embedded editor.
+  ⚠️ (2) **A cross-origin admin href makes App Bridge open EVERY click in a new tab** — the
+  first cut shipped that regression. So the link now carries an `onClick`: App Bridge
+  preventDefaults the cross-origin link in a capture-phase listener (killing the unwanted new
+  tab) but doesn't stopPropagation, so our bubble handler still runs — a plain primary click
+  `navigate()`s in place (same-tab SPA), a ⌘/Ctrl/Shift/middle click `window.open`s the
+  absolute href in a new tab. Do NOT bail the handler on `event.defaultPrevented` (it's
+  already true from App Bridge) — that skips the in-place nav and the click does nothing.
+  Added `useNavigate`; no schema/route/test change.
+
 ### Editor Save — `saveTemplateForShop` round-trip cut (2026-08-03)
 
 - **The editor Save write dropped from ~5 DB round-trips to 2 on the common path** —
