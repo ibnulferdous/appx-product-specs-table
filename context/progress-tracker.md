@@ -133,6 +133,35 @@ saved presets, cuttable).
 
 > Rolling window, newest first. Older units roll into Completed.
 
+- **Value cell — fix "last character won't delete" + dead Ctrl+Z** — ✅ 2026-08-04, full gate
+  green (typecheck · lint · format · **test 1364 / 52** · build) **and live-verified on
+  `appx-dev`**: typing `abc` → three Backspaces empties the cell; `hello world` → Ctrl+Z
+  undoes the whole burst; Enter still inserts a hard break, the empty last line stays
+  addressable (filler `<br>`), Backspace still removes the break, and the cell clears back to
+  one empty line. 🔴 **Root cause: the browser authors `<br>`s of its own.** Chrome inserts a
+  placeholder `<br>` the instant a `contenteditable` host becomes empty — i.e. on deleting the
+  cell's **last** character (reproduced in real Chrome: `"a"` → delete → `"<br>"`).
+  `isLineBreakElement` counted *any* non-filler `<br>` as a real `LINE_BREAK`, so
+  `readPartsFromHost` returned 3 parts against state's 1, `sameStructure` failed, and
+  `handleInput` took its "structure drifted" branch — **re-rendering the surface from stale
+  state and writing the deleted character straight back**. Ctrl+Z was the same bug twice:
+  Chrome undoes a typing burst to empty → placeholder `<br>` → same restore, and the restore's
+  `host.textContent = ""` **wipes Chrome's native undo stack** (also verified: a scripted
+  wholesale rebuild kills undo; a scripted `<br>` add/remove does not), so every later Ctrl+Z
+  was dead too. Select-all + Delete always worked because `handleKeyDown` intercepts a
+  non-collapsed range and dispatches through the reducer, never touching the DOM. Label /
+  Section header were never affected — they are real controlled `<input>`s.
+  **Fix (`valueDom.ts` only):** a `LINE_BREAK` must carry the `data-line-break` tag
+  `createAtomicElement` writes; every walk (`readPartsFromHost`, `partIndexOfElement`,
+  `childLinearLength`, `setCaretLinear`) now skips **any** untagged `<br>` — our filler *or* a
+  browser placeholder — via one `isIgnoredBreak` predicate. Safe because Enter and paste are
+  both `preventDefault`ed, so the cell never legitimately receives a browser-authored `<br>`;
+  it also covers Firefox's untagged break. ⚠️ **Known limit, unchanged:** Ctrl+Z after a
+  *structural* edit (pill insert, line break, atomic delete) is still dead — `renderPartsToHost`
+  rebuilds the host by design. A real app-level undo is separate work.
+  ⚠️ **Coverage gap:** `valueDom.ts` has no test file (Vitest runs `environment: "node"`; no
+  jsdom dep), so this regressed silently. `readPartsFromHost` needs no selection API and would
+  be testable under a jsdom project — see [[testing-strategy]].
 - **Templates-list — server-side pagination (Phase 2, first slice)** — ✅ 2026-08-04, full
   gate green (typecheck · lint · format · **test 1364 / 52** · build) **and live-verified on
   `appx-dev`** against Neon ground truth (60 templates → 3 pages of 25/25/10): page 3 renders

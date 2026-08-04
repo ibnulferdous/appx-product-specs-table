@@ -57,8 +57,28 @@ function isFiller(node: Node): boolean {
   );
 }
 
+// A LINE_BREAK part is only ever a `<br>` this module authored, tagged with
+// `data-line-break` by `createAtomicElement`. The tag is required (not merely
+// "any <br> that is not our filler") because the browser authors `<br>`s of its
+// own: Chrome inserts a placeholder `<br>` the moment the editing host becomes
+// empty — i.e. on deleting the cell's last character — and Firefox does the same
+// with its own untagged break. Reading those back as real LINE_BREAKs made the
+// readback structure differ from state, so `handleInput` took its "structure
+// drifted" branch and re-rendered the surface from stale state, resurrecting the
+// just-deleted character (and, because that re-render rebuilds the host, killing
+// the native undo stack so Ctrl+Z died too).
 function isLineBreakElement(node: Node): boolean {
-  return node.nodeName === "BR" && !isFiller(node);
+  return (
+    node.nodeName === "BR" &&
+    (node as HTMLElement).dataset?.lineBreak !== undefined
+  );
+}
+
+// Any `<br>` that is not a value part: our own trailing filler, or a placeholder
+// the browser injected. Neither carries a caret slot, so every walk below skips
+// them exactly as it skips the filler.
+function isIgnoredBreak(node: Node): boolean {
+  return node.nodeName === "BR" && !isLineBreakElement(node);
 }
 
 function isAtomicElement(node: Node): boolean {
@@ -154,7 +174,7 @@ export function readPartsFromHost(host: HTMLElement): ValuePart[] {
     text = "";
   };
   for (const node of Array.from(host.childNodes)) {
-    if (isFiller(node)) {
+    if (isIgnoredBreak(node)) {
       continue;
     } else if (node.nodeType === TEXT_NODE) {
       text += (node as Text).data;
@@ -190,9 +210,9 @@ export function partIndexOfElement(
 ): number | null {
   let index = 0; // index the next emitted part would take
   for (const node of Array.from(host.childNodes)) {
-    if (isFiller(node) || node.nodeType === TEXT_NODE) {
-      // Filler is skipped; a text node accumulates into the current TEXT run and
-      // emits no part on its own.
+    if (isIgnoredBreak(node) || node.nodeType === TEXT_NODE) {
+      // Filler / browser-injected breaks are skipped; a text node accumulates
+      // into the current TEXT run and emits no part on its own.
       continue;
     }
     if (isAtomicElement(node)) {
@@ -242,7 +262,7 @@ export function sameStructure(a: ValuePart[], b: ValuePart[]): boolean {
 }
 
 function childLinearLength(node: Node): number {
-  if (isFiller(node)) return 0; // the trailing filler is not part of the value.
+  if (isIgnoredBreak(node)) return 0; // filler / browser break: not in the value.
   if (node.nodeType === TEXT_NODE) return (node as Text).data.length;
   return isAtomicElement(node) ? 1 : (node.textContent ?? "").length;
 }
@@ -320,12 +340,10 @@ export function setCaretLinear(host: HTMLElement, linear: number): void {
     selection.addRange(range);
   };
   let acc = 0;
-  let fillerIndex = -1;
   const children = host.childNodes;
   for (let i = 0; i < children.length; i += 1) {
     const node = children[i];
-    if (isFiller(node)) {
-      fillerIndex = i;
+    if (isIgnoredBreak(node)) {
       continue;
     }
     if (node.nodeType === TEXT_NODE) {
@@ -343,9 +361,14 @@ export function setCaretLinear(host: HTMLElement, linear: number): void {
       acc += 1;
     }
   }
-  // Past the last addressable slot: sit just before the filler (on the empty last
-  // line) when one exists, otherwise at the very end of the host.
-  place(host, fillerIndex >= 0 ? fillerIndex : children.length);
+  // Past the last addressable slot: sit just BEFORE a trailing non-value `<br>`
+  // (our filler on an empty last line, or a browser placeholder in an empty
+  // cell), otherwise at the very end of the host.
+  const last = children[children.length - 1];
+  place(
+    host,
+    last && isIgnoredBreak(last) ? children.length - 1 : children.length,
+  );
 }
 
 /** True when the value's last visual line carries no content (caret needs a filler). */
