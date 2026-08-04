@@ -133,6 +133,26 @@ saved presets, cuttable).
 
 > Rolling window, newest first. Older units roll into Completed.
 
+- **jsdom carve-out + `valueDom.test.ts` (33 tests)** — ✅ 2026-08-04, full gate green
+  (typecheck · lint · format · **test 1397 / 53** · build). Closes the coverage gap that let the
+  value-cell bug below ship silently. **Assessed before adding** (`jsdom` probed in-repo, not
+  assumed): jsdom faithfully supports everything `valueDom.ts` touches — `dataset`, attribute
+  selectors, `window.getSelection()`, a caret round-trip in a text node **and** on the host at a
+  child index (the atomic-boundary case `setCaretLinear` uses). So the whole module is testable,
+  not just the readback half I had expected.
+  🔴 **The guard was proven by breaking it:** reverting `isLineBreakElement` to its pre-fix form
+  fails exactly the two placeholder-`<br>` tests, then passes again on restore (`valueDom.ts`
+  byte-identical to `f2876d2`). A regression test that has never failed proves nothing.
+  **No second Vitest project and no second run:** the runner default stays `node` and the one
+  DOM file opts in with `// @vitest-environment jsdom` on line 1 — one line in the file that
+  needs it, versus config machinery for every file that does not. Revisit if DOM files outgrow
+  a handful. 🚫 **This is not an opening for component tests** — the existing rule stands
+  unchanged: Polaris `<s-…>` do not render in jsdom, and neither does contenteditable *editing
+  behaviour* (the browser injecting a placeholder `<br>`, caret normalisation, the native undo
+  stack). The rule that makes the carve-out pay: **encode browser behaviour as a FIXTURE** —
+  build the host the way Chrome leaves it, assert our reading of it. Files: `valueDom.test.ts`
+  (new), `vitest.config.ts` (comment), `code-standards.md` → Testing (the carve-out, written
+  down so it is not re-litigated), `package.json` (`jsdom` devDependency).
 - **Value cell — fix "last character won't delete" + dead Ctrl+Z** — ✅ 2026-08-04, full gate
   green (typecheck · lint · format · **test 1364 / 52** · build) **and live-verified on
   `appx-dev`**: typing `abc` → three Backspaces empties the cell; `hello world` → Ctrl+Z
@@ -159,9 +179,7 @@ saved presets, cuttable).
   it also covers Firefox's untagged break. ⚠️ **Known limit, unchanged:** Ctrl+Z after a
   *structural* edit (pill insert, line break, atomic delete) is still dead — `renderPartsToHost`
   rebuilds the host by design. A real app-level undo is separate work.
-  ⚠️ **Coverage gap:** `valueDom.ts` has no test file (Vitest runs `environment: "node"`; no
-  jsdom dep), so this regressed silently. `readPartsFromHost` needs no selection API and would
-  be testable under a jsdom project — see [[testing-strategy]].
+  ✅ **The coverage gap that let this ship silently is now closed** — see the jsdom entry above.
 - **Templates-list — server-side pagination (Phase 2, first slice)** — ✅ 2026-08-04, full
   gate green (typecheck · lint · format · **test 1364 / 52** · build) **and live-verified on
   `appx-dev`** against Neon ground truth (60 templates → 3 pages of 25/25/10): page 3 renders
@@ -847,5 +865,5 @@ per-product overflow materialization + a bulk apply-to-all styling route.
 - **Assignment model — rigid block-on-conflict + shop-level routing (2026-07-07, `data-model.md` §5/§9).** One scope per template (`scope`+`scopeValue`+`mode`); overlaps between ACTIVE templates are **blocked at DRAFT→ACTIVE** (merchant decides — no silent precedence, no priority knob; `priority` column dormant). Overlap check is O(rules) Postgres set-algebra + `products(query,first:1)` existence tests, never a catalog scan. ⚠️ **The probe half of that claim is half-falsified — see OQ-103-C.** Broad rules deliver as O(1) entries in one `[shop.metafields.app.routing]` json metafield, resolved in Liquid via `metaobjects["$app:appx_spec_table"][handle]`. Per-product `metaobject_reference` survives only for bounded overrides; `ProductAssignmentIndex` is sparse — and, per OQ-103-D, currently unreferenced.
 - **Style tab design (2026-07-18 — `admin-screen-plan.md` §Tab 2, `data-model.md` §5/§10, PRD, code-standards).** One spec-table primitive with **orthogonal style knobs** (row layout, mobile behavior, section headers, collapsible sections via native `<details>` zero-JS, row dividers incl. zebra `stripeBgColor`, density). Modal/drawer containers rejected. **Presets = COPY semantics** (built-ins as code constants; phase-2 merchant-saved `StylePreset`) copy values into per-template `TableStyling` **real columns**, not `extraStyles`; `basedOnPreset` is provenance only. **No shop-level default styling record** (copy keeps edits side-effect-free on live storefronts). Storefront delivery via the metaobject `styling` json field: layout knobs → wrapper modifier classes, colors/typography → CSS variables. **Typography:** `fontSize` = S/M/L theme-relative presets or bounded Custom px (10–184, clamped; JSON number on the wire, digit-string in the DB); `lineHeight` (TIGHT/NORMAL/LOOSE) + `labelCase` (DEFAULT/UPPERCASE, labels only) + `fontStyle` kept; font-family/letter-spacing/wrap/per-side padding rejected.
 - **Scale ceilings (steps 103–104, `data-model.md` §13/§14).** The 128KB `json` metafield **write** limit applies — the app is **NOT grandfathered** (first commit 2026-06-09, first `type = "json"` 2026-07-02, both after the 2026-04-01 cutoff). It is dormant **only** because the runtime Admin client is pinned to `ApiVersion.October25`; `app/shopify.server.test.ts` is a tripwire that fails on a version bump. Capacity: **3,446** `excludedProductGids`, 1,745 `byProduct` entries, 1,769 `byCollection`. 🚫 Step 104 measures and warns — it does **not** block; refusing / truncating / surfacing a merchant error is a future decision. ⚠️ `Metafield.sizeInBytes` is unstable-only; measurement is app-side and pre-write.
-- **Testing strategy:** Vitest; Phases 1–2 done (unit + shop-isolation, mocked Prisma); reach Phase 4 (route loaders/actions + GDPR webhooks) before App Store submission, E2E (Playwright) fast-follow. Polaris web components don't render in jsdom → editor UI is browser-verified, pure logic unit-tested. 🔴 **A mocked Prisma cannot enforce a `WHERE` clause** (step 105 M2) — it returns what it was told regardless of the query, so a test named for a query condition can pass while the condition is deleted. Assert the exact `where`, and say which half is which. ⚠️ **The pointer to a fuller doc was DROPPED 2026-08-01:** it cited a plans file that no longer exists and could not be restored. This entry is the whole record of the testing strategy; if the phases need more detail, write it here or in a `context/` file, not in an untracked plans directory outside the repo.
+- **Testing strategy:** Vitest; Phases 1–2 done (unit + shop-isolation, mocked Prisma); reach Phase 4 (route loaders/actions + GDPR webhooks) before App Store submission, E2E (Playwright) fast-follow. Polaris web components don't render in jsdom → editor UI is browser-verified, pure logic unit-tested. ⚠️ **One narrow jsdom carve-out (2026-08-04):** framework-free DOM *glue* (`app/utils/valueDom.ts`) IS jsdom-tested — the file opts in with `// @vitest-environment jsdom` on line 1; the runner default stays `node`, so there is no second project. Component tests remain excluded, as does contenteditable *editing behaviour* — encode that as a fixture and assert our reading of it (`code-standards.md` → Testing). 🔴 **A mocked Prisma cannot enforce a `WHERE` clause** (step 105 M2) — it returns what it was told regardless of the query, so a test named for a query condition can pass while the condition is deleted. Assert the exact `where`, and say which half is which. ⚠️ **The pointer to a fuller doc was DROPPED 2026-08-01:** it cited a plans file that no longer exists and could not be restored. This entry is the whole record of the testing strategy; if the phases need more detail, write it here or in a `context/` file, not in an untracked plans directory outside the repo.
 - **Embedded-app verification:** the editor is a cross-origin iframe (top frame can't read its DOM/AOM/console); verify via Claude-in-Chrome on the `shopify app dev` preview + direct Postgres/Neon checks. Polaris CDN-build gotchas → `polaris-web-component-gotchas` memory. Admin GraphQL runtime is **2025-10** — validate against that, not the TOML's 2026-07 (which is the **webhook payload** version, `shopify.app.toml:12`, and does not govern the Admin client).
