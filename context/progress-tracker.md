@@ -158,10 +158,31 @@ saved presets, cuttable).
   lists render in sentence format and never meet the 50-iteration `for` cap. All three blank
   stays silent, per the unknown-token rule. No schema, no TS, no test change (Liquid is
   outside the module graph; the admin preview renders METAFIELD parts as inert pills, so it
-  was never affected). ⚠️ **Adjacent gap deliberately NOT fixed:** list types other than
-  `list.single_line_text_field` and `list.metaobject_reference` (`list.number_integer`,
-  `list.dimension`, …) have no `metafield_text` support and still render empty — a fallback
-  would have to hand-format each type's value object. `context/features/35-…` §Correction.
+  was never affected). `context/features/35-…` §Correction.
+- **Storefront — every OTHER list metafield type rendered empty too** — ✅ 2026-08-04, gate
+  green (typecheck · lint · format · **test 1397 / 53** · build) + `validate_theme` clean.
+  ⚠️ **Not live-verified** — needs a deploy, and the dev store has no template using a
+  non-metaobject list metafield, so confirming it means adding one. Closes the gap the entry
+  above left open: `metafield_text` supports **no** list type except
+  `list.single_line_text_field` and `list.metaobject_reference`, so `list.number_integer`,
+  `list.dimension`, `list.product_reference`, `list.color` … all rendered a blank cell. They
+  are now rendered item by item in `spec-table-value.liquid`, joined with `", "`.
+  🔴 **The per-item shape is DUCK-TYPED, not switched on the metafield type.** Shopify's
+  measurement family is open and still growing (`dimension`, `weight`, `volume`, `voltage`,
+  `temperature`, `speed`, `antenna_gain`, `volumetric_flow_rate`, …) and every member is the
+  same `measurement` object (`.value` + `.unit`), so a `case` over type names would silently
+  drop each new member the day Shopify ships it — a test for `.unit` cannot. Chain, most
+  specific first: `.unit` → `.rating` → `.title` → `.name` → `.url` → `.src` → `{{ item }}`;
+  a scalar answers nil to every test and correctly falls through.
+  🔴 **Reference lists are CONNECTIONS (`.count`); non-reference lists are arrays
+  (`.size`)** — hence `count | default: size | default: 0`. Lists run to 128 items (256 for
+  metaobject references) against Liquid's 50-iteration `for` cap, so the branch chunks by 50
+  like the parts loop. ⚠️ **Accepted divergence:** Shopify's two supported list types render
+  in *localized* sentence format ("A, B, and C"); this joins with `", "`. Matching it means
+  hardcoding an English "and" (an i18n bug on a translated storefront) or a locale key plus a
+  last-item lookahead the blank-skip makes unreliable — and the two Shopify-rendered types
+  keep their sentence format rather than regress a live-verified path for cosmetic
+  consistency. `context/features/35-…` §Follow-up.
 - **jsdom carve-out + `valueDom.test.ts` (33 tests)** — ✅ 2026-08-04, full gate green
   (typecheck · lint · format · **test 1397 / 53** · build). Closes the coverage gap that let the
   value-cell bug below ship silently. **Assessed before adding** (`jsdom` probed in-repo, not

@@ -120,10 +120,48 @@ Routed through the filter rather than walking `metafield.value` by hand, so the
 single/list split stays inside Shopify's implementation: a list renders in
 sentence format ("A, B, and C") and never meets the 50-iteration `for` cap.
 
-⚠️ **Still true:** list types other than `list.single_line_text_field` and
-`list.metaobject_reference` (e.g. `list.number_integer`, `list.dimension`) have
-no `metafield_text` support at all and render empty. Not fixed here — a generic
-fallback would have to format each type's value object by hand.
+### Follow-up (2026-08-04) — the generic list branch
+
+The remaining hole is now closed. `metafield_text` supports **no** list type
+except `list.single_line_text_field` and `list.metaobject_reference`, so
+`list.number_integer`, `list.dimension`, `list.product_reference`,
+`list.color` … all rendered an empty cell. They are now rendered item by item
+in the snippet, joined with `", "`.
+
+🔴 **The per-item shape is DUCK-TYPED, not switched on the metafield type.**
+Shopify's *measurement* family is open and still growing — the published type
+list already carries `dimension`, `weight`, `volume`, `voltage`, `temperature`,
+`speed`, `antenna_gain`, `volumetric_flow_rate` and more — and every member is
+the same `measurement` object (`.value` + `.unit`). A `case` over type names
+would silently drop each new member on the day Shopify ships it; a test for
+`.unit` cannot. The same argument covers the reference types, which differ only
+in which display property they carry. The chain, most specific first:
+
+| test | output | covers |
+|---|---|---|
+| `item.unit` | `value unit` | every measurement type, present and future |
+| `item.rating` | `rating` | `rating` |
+| `item.title` | `title` | product / variant / collection / page / article / blog / link |
+| `item.name` | `name` | company / customer / order / taxonomy value |
+| `item.url` → `item.src` | the URL | `file_reference` (generic_file, then media) |
+| *(fallthrough)* | `{{ item }}` | strings, numbers, dates, colors, urls, booleans |
+
+A scalar answers `nil` to every property test and falls through — which is the
+correct rendering for it, not an accident.
+
+**Length:** reference lists are CONNECTIONS and answer `.count`; non-reference
+lists are arrays and answer `.size` (metafield object docs, "Determining the
+length of a list metafield"), hence `count | default: size | default: 0`. Lists
+run to 128 items (256 for metaobject references) against Liquid's 50-iteration
+`for` cap, so the branch chunks by 50 exactly like the parts loop.
+
+⚠️ **Accepted divergence:** Shopify renders its two supported list types in
+*localized sentence format* ("A, B, and C"); this branch joins with `", "`.
+Matching it means either hardcoding an English "and" — an i18n bug the moment
+the storefront is translated — or a locale key plus a last-item lookahead that
+the blank-item skip makes unreliable. A comma list also reads better in a spec
+table. The two Shopify-rendered types keep their sentence format rather than
+regress a live-verified path for cosmetic consistency.
 - Filter order matters: `escape` **before** `newline_to_br` so the `<br>` for
   `multi_line_text_field` values survives escaping.
 - Unknown namespace/key resolves to `nil` → empty string. Silent by design.
