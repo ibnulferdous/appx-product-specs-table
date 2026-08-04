@@ -133,6 +133,37 @@ saved presets, cuttable).
 
 > Rolling window, newest first. Older units roll into Completed.
 
+- **Templates-list — server-side pagination (Phase 2, first slice)** — ✅ 2026-08-04, full
+  gate green (typecheck · lint · format · **test 1364 / 52** · build) **and live-verified on
+  `appx-dev`** against Neon ground truth (60 templates → 3 pages of 25/25/10): page 3 renders
+  exactly rn 51–60 in `updatedAt DESC, id DESC` order (no overlap/skip vs page 2); `?page=99`
+  **clamps** to the last page (not empty); `?status=ACTIVE` returns exactly the 9 ACTIVE rows
+  on a single page with no pagination bar (COUNT(*) FILTER → pageCount 1) and the Active tab
+  lit from the loader. ⚠️ The prev/next **button click** itself was NOT confirmable through
+  the Claude-in-Chrome harness (embedded-iframe coordinate scaling — a harness limit, not an
+  app bug; the controls render with correct enabled/disabled from `hasPreviousPage`/
+  `hasNextPage`, and the `?page=` navigation they trigger is URL-verified). Page size **25**
+  (`TEMPLATES_PAGE_SIZE`), driven by `?page=` in the URL;
+  uses `s-table`'s built-in `paginate`/`hasNextPage`/`hasPreviousPage`/`onNextPage`/
+  `onPreviousPage`/`loading` (native prev/next, no numbered pages). Scope was **pagination
+  only** (merchant decision) — search/sort deferred to the same loader later.
+  **`listTemplateSummariesForDomain(domain, {status, page, pageSize})`** now runs a COUNT
+  (`totalAll` + `totalFiltered` via `COUNT(*) FILTER`) then a windowed data read
+  (`LIMIT/OFFSET`), returning a `TemplateListPage`. 🔴 Two load-bearing details:
+  **(1)** order is `updatedAt DESC, id DESC` — the `id` tiebreaker makes paging **stable**
+  over the non-unique `updatedAt` (without it a same-second pair could swap pages → a row
+  skipped or shown twice). **(2)** `hasTemplates` keys off `totalAll`, not the page length,
+  so a shop with templates but zero matches under a status filter still gets the table chrome
+  + "no match" row, never the first-run splash. The page is **clamped** to `[1, pageCount]`
+  server-side so a stale `?page=99` lands on the last real page.
+  ⚠️ **Reverses feature 28** (client-side status filter): a client filter over a paginated
+  read only filters the current page, so filtering moved back onto the WHERE + COUNT
+  (status bound + cast to `"TemplateStatus"`). Deleted `filterTemplatesByStatus` + its 5
+  tests and the custom `shouldRevalidate` skip; kept `normalizeStatusFilter` /
+  `STATUS_FILTER_OPTIONS`. A status-tab click now resets to page 1 and re-runs the loader.
+  Files: `template.server.ts` (+`.test.ts`), `app.templates.tsx`, `templateFilter.ts`
+  (+`.test.ts`). No schema/migration. Shop isolation unchanged (every query pins the UNIQUE
+  bound domain). Assigned-product counts still stream deferred, now over just the page's rows.
 - **Template Save latency — remove wasted Admin round-trips + parallelize reads** — ✅
   2026-08-03, tests → **1363 / 52** (+2, the two new routing cache tests), build green. Three
   cuts to the editor Save action's critical path, no behavior change:
@@ -588,13 +619,16 @@ Multi-value applies to PRODUCT + COLLECTION only. No migrations needed for the 4
    `useScrollRegionHeight`'s flat `BOTTOM_PAD_REM = 3` budget), producing a stray outer
    scrollbar beside admin's reserved 16px gutter. Fix = measure the actual footer/card
    bottom. Touches the measurer both scrollers share, so it is its own unit.
-9. **Templates-list Phase 2** — search / sort / pagination (server-side) when the list can
-   grow large; multi-select bulk actions later. ✅ Step 103 finding **F3 is now closed**
-   (2026-08-03, see Completed): the loader reads a lightweight summary via
-   `listTemplateSummariesForDomain` (`jsonb_array_length`, no `rows` blob) and streams the
-   assigned-product counts. What remains here is the actual Phase-2 scope — server-side
-   search/sort/**pagination** (the read is still unbounded — returns ALL of a shop's
-   templates) and bulk actions.
+9. **Templates-list Phase 2** — ✅ **server-side pagination shipped 2026-08-04** (see
+   Recently Shipped). What remains here is **search / sort** (server-side, same loader +
+   URL-param plumbing) and **multi-select bulk actions**. The read is no longer unbounded.
+   🔴 Note the pagination change **reversed feature 28** (client status filter → server
+   WHERE): a client filter over a paginated read only filters the current page, so status
+   filtering had to move back onto the query. `filterTemplatesByStatus` + its tests were
+   deleted; `normalizeStatusFilter`/`STATUS_FILTER_OPTIONS` stay (they normalize the
+   `?status=` URL param the loader reads). Search/sort should extend the same
+   `listTemplateSummariesForDomain({status, page, pageSize})` options object, not add a
+   parallel read path.
 10. **Reshell Phase C** (Settings display rules) → **E** (assignment into the reshell) →
    **F** (top-bar status/save + cleanup).
 

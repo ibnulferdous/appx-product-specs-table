@@ -1,15 +1,16 @@
-import { Suspense, useEffect, useMemo, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import type {
   ActionFunctionArgs,
   HeadersFunction,
   LoaderFunctionArgs,
-  ShouldRevalidateFunctionArgs,
 } from "react-router";
+import type { TemplateStatus } from "@prisma/client";
 import {
   Await,
   useFetcher,
   useLoaderData,
   useNavigate,
+  useNavigation,
   useSearchParams,
 } from "react-router";
 import { boundary } from "@shopify/shopify-app-react-router/server";
@@ -40,7 +41,6 @@ import {
 } from "../utils/templateStatus";
 import { NAME_MAX_LENGTH, validateTemplateName } from "../utils/templateName";
 import {
-  filterTemplatesByStatus,
   normalizeStatusFilter,
   STATUS_FILTER_OPTIONS,
   type StatusFilter,
@@ -174,10 +174,7 @@ const TemplateTableRow = ({
     // href in a new tab (which re-embeds the app), matching what the browser's
     // own "Open link in new tab" context item does with the same href.
     const wantsNewTab =
-      mouse.metaKey ||
-      mouse.ctrlKey ||
-      mouse.shiftKey ||
-      mouse.button === 1;
+      mouse.metaKey || mouse.ctrlKey || mouse.shiftKey || mouse.button === 1;
     event.preventDefault();
     if (wantsNewTab) {
       window.open(`${adminAppBase}${appPath}`, "_blank", "noopener");
@@ -189,10 +186,7 @@ const TemplateTableRow = ({
   return (
     <s-table-row id={template.id}>
       <s-table-cell>
-        <s-link
-          href={`${adminAppBase}${appPath}`}
-          onClick={handleNameClick}
-        >
+        <s-link href={`${adminAppBase}${appPath}`} onClick={handleNameClick}>
           <span
             title={template.name}
             style={{
@@ -268,6 +262,12 @@ const TemplateTable = ({
   busy,
   selectedStatus,
   onSelectStatus,
+  paginate,
+  hasNextPage,
+  hasPreviousPage,
+  onNextPage,
+  onPreviousPage,
+  listLoading,
   onRequestRename,
   onRequestStatus,
   onDuplicate,
@@ -279,6 +279,16 @@ const TemplateTable = ({
   busy: boolean;
   selectedStatus: StatusFilter;
   onSelectStatus: (status: StatusFilter) => void;
+  // Pagination (Phase 2): `paginate` shows the s-table's built-in prev/next
+  // controls (only when there's more than one page); the has*/on* props drive
+  // them. `listLoading` puts the table in its inert loading state while a
+  // page/status navigation is fetching.
+  paginate: boolean;
+  hasNextPage: boolean;
+  hasPreviousPage: boolean;
+  onNextPage: () => void;
+  onPreviousPage: () => void;
+  listLoading: boolean;
   onRequestRename: (id: string, name: string) => void;
   onRequestStatus: (id: string, name: string, status: string) => void;
   onDuplicate: (id: string) => void;
@@ -314,7 +324,15 @@ const TemplateTable = ({
           <s-paragraph>No templates match this status.</s-paragraph>
         </s-box>
       ) : (
-        <s-table variant="auto">
+        <s-table
+          variant="auto"
+          paginate={paginate}
+          hasNextPage={hasNextPage}
+          hasPreviousPage={hasPreviousPage}
+          onNextPage={onNextPage}
+          onPreviousPage={onPreviousPage}
+          loading={listLoading}
+        >
           <s-table-header-row>
             <s-table-header listSlot="primary">Template Name</s-table-header>
             <s-table-header>Status</s-table-header>
@@ -355,12 +373,31 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   // off the critical path; only the deferred count enrichment below awaits it.
   const shopPromise = upsertShop(session);
 
-  // The ONLY query on the critical path: ALL of the shop's templates, keyed by
-  // the session domain (so it doesn't wait on `shopPromise`) and WITHOUT the
-  // `rows` blob — the row count is computed in Postgres (step 103 finding F3).
-  // Status filtering happens on the client (feature 28), so the loader ignores
-  // ?status= entirely and `hasTemplates` derives from the returned list.
-  const templates = await listTemplateSummariesForDomain(session.shop);
+  // Pagination + status filter are now SERVER-SIDE (Phase 2, reversing feature
+  // 28's client filter — a client filter over a paginated read would only filter
+  // the current page). Both live in the URL so a page/filter is bookmarkable and
+  // survives reload. `normalizeStatusFilter` rejects anything not a real tab
+  // (ALL/ACTIVE/DRAFT); `page` is sanitized to a finite 1-based int and then
+  // re-clamped to a real page inside the model.
+  const url = new URL(request.url);
+  const selectedStatus = normalizeStatusFilter(url.searchParams.get("status"));
+  const modelStatus: TemplateStatus | null =
+    selectedStatus === "ALL" ? null : selectedStatus;
+  const requestedPage = Number.parseInt(
+    url.searchParams.get("page") ?? "1",
+    10,
+  );
+  const page = Number.isFinite(requestedPage) ? requestedPage : 1;
+
+  // The critical-path read: ONE page of the shop's templates, keyed by the
+  // session domain (so it doesn't wait on `shopPromise`) and WITHOUT the `rows`
+  // blob — the row count is computed in Postgres (step 103 finding F3). Returns
+  // the page plus `totalAll` (drives the first-run empty state) and `pageCount`.
+  const pageResult = await listTemplateSummariesForDomain(session.shop, {
+    status: modelStatus,
+    page,
+  });
+  const templates = pageResult.templates;
 
   // "Assigned Products" (feature 48) needs a live Admin API round trip and is
   // fail-soft / cosmetic ("—" on failure), so it must NOT block first paint.
@@ -397,36 +434,25 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
 
   return {
     templates,
-    hasTemplates: templates.length > 0,
+    // `totalAll`, NOT the current page length: a shop with templates that don't
+    // match the active status filter must still see the table chrome + a "no
+    // match" row, never the first-run "create your first template" splash.
+    hasTemplates: pageResult.totalAll > 0,
+    selectedStatus,
+    page: pageResult.page,
+    pageCount: pageResult.pageCount,
+    hasNextPage: pageResult.page < pageResult.pageCount,
+    hasPreviousPage: pageResult.page > 1,
     assignedCounts,
     adminAppBase,
   };
 };
 
-// Skip the loader (and its server round trip) when only the ?status= filter
-// changed — that's a client-side concern now, so re-running the loader would be
-// pure latency. A status-tab click is a GET navigation (no formMethod) on the
-// same path that only flips ?status=. Everything else still revalidates: the
-// initial load (not subject to this), a row-action fetcher submission (carries
-// formMethod: "POST", so Duplicate/Delete still refresh the table in place), and
-// any path change.
-export function shouldRevalidate({
-  currentUrl,
-  nextUrl,
-  formMethod,
-  defaultShouldRevalidate,
-}: ShouldRevalidateFunctionArgs) {
-  if (!formMethod && currentUrl.pathname === nextUrl.pathname) {
-    const current = new URLSearchParams(currentUrl.search);
-    const next = new URLSearchParams(nextUrl.search);
-    current.delete("status");
-    next.delete("status");
-    if (current.toString() === next.toString()) {
-      return false;
-    }
-  }
-  return defaultShouldRevalidate;
-}
+// No custom `shouldRevalidate`: status filtering + pagination are server-side
+// (Phase 2), so a ?status= or ?page= change MUST re-run the loader to fetch that
+// page. The default revalidation (every navigation + after every action) is
+// exactly what's wanted — feature 28's skip-on-status-change optimization is gone
+// with the client filter it served.
 
 // Row actions (feature 26). Same auth surface as the loader. Every branch is
 // shop-scoped through `shop.id` (priority #1 — the reused functions all filter on
@@ -556,27 +582,51 @@ export const action = async ({ request }: ActionFunctionArgs) => {
 };
 
 export default function TemplatesPage() {
-  const { templates, hasTemplates, assignedCounts, adminAppBase } =
-    useLoaderData<typeof loader>();
+  const {
+    templates,
+    hasTemplates,
+    selectedStatus,
+    page,
+    pageCount,
+    hasNextPage,
+    hasPreviousPage,
+    assignedCounts,
+    adminAppBase,
+  } = useLoaderData<typeof loader>();
   const shopify = useAppBridge();
 
-  // The selected filter lives in the URL (?status=) so it stays bookmarkable and
-  // survives reload, but switching it filters the already-loaded list in the
-  // browser — `shouldRevalidate` skips the loader for a status-only change, so
-  // there's no server round trip.
+  // Status filter + page both live in the URL (?status=, ?page=) so the view is
+  // bookmarkable and survives reload. Both are now server-driven: changing either
+  // re-runs the loader (no custom shouldRevalidate). `selectedStatus`/`page` come
+  // from the loader (server-normalized + clamped) so the UI always reflects the
+  // page actually rendered, even if the URL param was stale.
   const [searchParams, setSearchParams] = useSearchParams();
-  const selectedStatus = normalizeStatusFilter(searchParams.get("status"));
-  const visibleTemplates = useMemo(
-    () => filterTemplatesByStatus(templates, selectedStatus),
-    [templates, selectedStatus],
-  );
+  const navigation = useNavigation();
+  // The table is briefly inert while a status/page navigation loads its data.
+  const listLoading = navigation.state === "loading";
 
   const handleSelectStatus = (status: StatusFilter) => {
+    // Changing the filter resets to page 1 (omitting ?page= is page 1) — the old
+    // page number is meaningless against a different result set.
     setSearchParams(status === "ALL" ? {} : { status }, {
       replace: true,
       preventScrollReset: true,
     });
   };
+
+  // Page turns preserve the current status filter and push history (so Back walks
+  // back through pages). Page 1 drops the ?page= param to keep URLs clean.
+  const goToPage = (nextPage: number) => {
+    const params = new URLSearchParams(searchParams);
+    if (nextPage <= 1) {
+      params.delete("page");
+    } else {
+      params.set("page", String(nextPage));
+    }
+    setSearchParams(params, { preventScrollReset: true });
+  };
+  const handleNextPage = () => goToPage(page + 1);
+  const handlePreviousPage = () => goToPage(page - 1);
 
   // One shared fetcher for every row mutation (rename / change-status / duplicate
   // / delete). They MUST stay mutually exclusive in time — a second submit would
@@ -769,11 +819,17 @@ export default function TemplatesPage() {
         <EmptyTemplatesState />
       ) : (
         <TemplateTable
-          templates={visibleTemplates}
+          templates={templates}
           assignedCounts={assignedCounts}
           busy={busy}
           selectedStatus={selectedStatus}
           onSelectStatus={handleSelectStatus}
+          paginate={pageCount > 1}
+          hasNextPage={hasNextPage}
+          hasPreviousPage={hasPreviousPage}
+          onNextPage={handleNextPage}
+          onPreviousPage={handlePreviousPage}
+          listLoading={listLoading}
           onRequestRename={handleRequestRename}
           onRequestStatus={handleRequestStatus}
           onDuplicate={handleDuplicate}

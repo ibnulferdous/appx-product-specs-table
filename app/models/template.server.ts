@@ -196,35 +196,105 @@ export type TemplateListSummary = {
   rowCount: number;
 };
 
-// The list read for `app/routes/app.templates.tsx` (step 103 read-pattern R2).
-// Returns ALL of the shop's templates, most-recently-updated first (status
-// filtering is a client concern now — feature 28 — so there's no status option).
+// The templates list is paginated server-side (Phase 2). 25 matches Shopify's own
+// admin index tables and keeps first paint light. Exported so the loader and its
+// tests share one source of truth for the page size.
+export const TEMPLATES_PAGE_SIZE = 25;
+
+// One page of the templates list plus the counts the UI needs. `totalAll` is the
+// shop's UNFILTERED template count — it (not `totalFiltered`) decides the
+// first-run empty state, so a shop with drafts but zero Active still shows the
+// table chrome + a "no match" row under the Active filter, never the big
+// "create your first template" splash. `totalFiltered` drives `pageCount`.
+export type TemplateListPage = {
+  templates: TemplateListSummary[];
+  page: number;
+  pageSize: number;
+  pageCount: number;
+  totalFiltered: number;
+  totalAll: number;
+};
+
+// The list read for `app/routes/app.templates.tsx` (step 103 read-pattern R2),
+// now paginated + status-filtered SERVER-SIDE (Phase 2). Returns ONE page of the
+// shop's templates, most-recently-updated first, plus the counts the UI needs.
 //
-// Two deliberate shapes here, both perf fixes for a slow list loader:
+// ⚠️ This reverses feature 28's "filter on the client" model. Once the read is
+// paginated, a client-side status filter is wrong by construction — it would
+// filter only the rows on the current page, so an "Active" tab could show a
+// different count on every page. So the status filter moved back onto the WHERE
+// (and the COUNT), and the loader no longer ships the whole list.
+//
+// Deliberate shapes:
 //
 //  1. It NEVER selects the `rows` JSON blob. The list shows only a row COUNT, so
 //     this asks Postgres to compute `jsonb_array_length(rows)` and returns just
-//     that integer per template. The old `findMany` read every template's full
-//     `rows` and inlined it into the loader payload (~230KB for ~34 templates)
-//     purely to render one number per row — step 103 finding F3. `jsonb_typeof`
-//     guards the count so a non-array `rows` yields 0, mirroring the old
-//     `Array.isArray(rows) ? rows.length : 0`.
+//     that integer per template (step 103 finding F3). `jsonb_typeof` guards the
+//     count so a non-array `rows` yields 0.
 //
 //  2. It keys off the shop's `myshopifyDomain` (a server-authoritative session
-//     value) via a JOIN, NOT a pre-resolved `shop.id`. That lets the list loader
-//     issue this read WITHOUT first awaiting the shop-row lookup/upsert, taking
-//     one Neon round trip off the critical path (the install-flip write in
-//     `upsertShop` is a side effect that doesn't need to gate the read).
+//     value) via a JOIN, NOT a pre-resolved `shop.id`, so the loader can issue
+//     this WITHOUT first awaiting the shop-row upsert (one Neon round trip off
+//     the critical path).
 //
-// Shop isolation (priority #1) is total: the WHERE pins the shop by its UNIQUE
-// domain, so one shop can never read another's templates. The domain is
-// interpolated as a bound parameter (never string-concatenated) — no injection
-// surface. Stays pure Postgres (no Admin client): the "Assigned Products" count
-// needs live Shopify data and is resolved separately by the loader
-// (`resolveAssignedProductCounts`, feature 48).
+//  3. Order is `updatedAt DESC, id DESC` — the `id` tiebreaker makes paging
+//     STABLE across the non-unique `updatedAt` (without it, two templates saved
+//     in the same second could swap places between pages and a row could be
+//     skipped or shown twice).
+//
+//  4. `page` and `pageSize` come from us (URL-derived then clamped by the caller,
+//     re-clamped here to `[1, pageCount]`), so LIMIT/OFFSET are safe integers;
+//     they're bound parameters regardless.
+//
+// Shop isolation (priority #1) is total: every query pins the shop by its UNIQUE
+// domain, bound (never concatenated) — no injection surface. Stays pure Postgres:
+// the "Assigned Products" count needs live Shopify data and is resolved
+// separately by the loader (`resolveAssignedProductCounts`, feature 48).
 export async function listTemplateSummariesForDomain(
   myshopifyDomain: string,
-): Promise<TemplateListSummary[]> {
+  options: {
+    // The status to filter to, or null/undefined for "all statuses" (the ALL tab).
+    status?: TemplateStatus | null;
+    // 1-based requested page; clamped to a real page below.
+    page?: number;
+    pageSize?: number;
+  } = {},
+): Promise<TemplateListPage> {
+  const pageSize = options.pageSize ?? TEMPLATES_PAGE_SIZE;
+  const status = options.status ?? null;
+
+  // Counts in one round trip: `totalAll` is the shop's whole template count (drives
+  // the first-run empty state), `totalFiltered` respects the status filter (drives
+  // pageCount). When `status` is null the FILTER predicate is all-true, so
+  // totalFiltered === totalAll. `status` is bound twice (both NULL in the ALL case)
+  // and cast to the "TemplateStatus" enum to compare against the enum column.
+  const counts = await prisma.$queryRaw<
+    Array<{ totalAll: number | bigint; totalFiltered: number | bigint }>
+  >`
+    SELECT
+      COUNT(*) AS "totalAll",
+      COUNT(*) FILTER (
+        WHERE ${status}::text IS NULL
+           OR t."status" = ${status}::"TemplateStatus"
+      ) AS "totalFiltered"
+    FROM "Template" t
+    JOIN "Shop" s ON s."id" = t."shopId"
+    WHERE s."myshopifyDomain" = ${myshopifyDomain}
+  `;
+  const totalAll = Number(counts[0]?.totalAll ?? 0);
+  const totalFiltered = Number(counts[0]?.totalFiltered ?? 0);
+
+  const pageCount = Math.max(1, Math.ceil(totalFiltered / pageSize));
+  // Clamp the requested page into range: a stale `?page=99` lands on the last real
+  // page rather than an empty one, and a bogus/negative value floors to 1.
+  const page = Math.min(Math.max(1, Math.floor(options.page ?? 1)), pageCount);
+  const offset = (page - 1) * pageSize;
+
+  // Reuse the same status predicate on the data read (as a WHERE, not a FILTER).
+  const statusClause = status
+    ? Prisma.sql`AND t."status" = ${status}::"TemplateStatus"`
+    : Prisma.empty;
+
   const rows = await prisma.$queryRaw<
     Array<{
       id: string;
@@ -246,16 +316,25 @@ export async function listTemplateSummariesForDomain(
     FROM "Template" t
     JOIN "Shop" s ON s."id" = t."shopId"
     WHERE s."myshopifyDomain" = ${myshopifyDomain}
-    ORDER BY t."updatedAt" DESC
+    ${statusClause}
+    ORDER BY t."updatedAt" DESC, t."id" DESC
+    LIMIT ${pageSize} OFFSET ${offset}
   `;
 
-  return rows.map((row) => ({
-    id: row.id,
-    name: row.name,
-    status: row.status,
-    updatedAt: row.updatedAt,
-    rowCount: Number(row.rowCount),
-  }));
+  return {
+    templates: rows.map((row) => ({
+      id: row.id,
+      name: row.name,
+      status: row.status,
+      updatedAt: row.updatedAt,
+      rowCount: Number(row.rowCount),
+    })),
+    page,
+    pageSize,
+    pageCount,
+    totalFiltered,
+    totalAll,
+  };
 }
 
 export async function createTemplateForShop(

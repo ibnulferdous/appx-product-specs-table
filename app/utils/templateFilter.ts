@@ -1,8 +1,10 @@
 // The status filter shown on the templates list: the three real statuses plus
-// the synthetic "ALL" (no filter). Kept on the client side — filtering now
-// happens in the browser, not via a server round trip (feature 28). The type
-// still admits ARCHIVED (it is a real status, and `filterTemplatesByStatus` keeps
-// supporting it) even though ARCHIVED has no tab — see `STATUS_FILTER_OPTIONS`.
+// the synthetic "ALL" (no filter). Filtering is now SERVER-SIDE (Phase 2, once
+// the list is paginated a client filter would only filter the current page —
+// reversing feature 28); these helpers just normalize the ?status= URL param the
+// loader reads. The type still admits ARCHIVED (a real status the loader still
+// filters by if asked) even though ARCHIVED has no tab — see
+// `STATUS_FILTER_OPTIONS`.
 export type StatusFilter = "ALL" | "ACTIVE" | "DRAFT" | "ARCHIVED";
 
 // The status filter tabs rendered on the templates list, in tab order — the single
@@ -27,23 +29,10 @@ const SELECTABLE_FILTERS = new Set<string>(
 // Normalize an untrusted URL value (?status=…) into a selectable filter. Anything
 // unrecognized — absent, empty, "ALL", a bogus value, or a value with no tab (e.g. a
 // stale `?status=ARCHIVED` bookmark) — falls back to "ALL", so the list never shows a
-// filtered view with no matching active tab. Mirrors the old server-side
-// getStatusFromRequest guard, now on the client.
+// filtered view with no matching active tab. The loader calls this and translates
+// the result to a `TemplateStatus | null` for the paginated query.
 export function normalizeStatusFilter(
   raw: string | null | undefined,
 ): StatusFilter {
   return raw && SELECTABLE_FILTERS.has(raw) ? (raw as StatusFilter) : "ALL";
-}
-
-// Pure subset of the templates for a given filter. "ALL" returns the list
-// unchanged; otherwise the rows whose status matches, order preserved. Generic
-// over `{ status }` so it needs no route/loader types and never mutates input.
-export function filterTemplatesByStatus<T extends { status: string }>(
-  templates: T[],
-  filter: StatusFilter,
-): T[] {
-  if (filter === "ALL") {
-    return templates;
-  }
-  return templates.filter((template) => template.status === filter);
 }

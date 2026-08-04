@@ -128,31 +128,64 @@ beforeEach(() => {
 });
 
 describe("listTemplateSummariesForDomain", () => {
-  it("issues a domain-scoped, newest-first raw read that counts rows in SQL", async () => {
-    prismaMock.$queryRaw.mockResolvedValue([]);
+  // The paginated read (Phase 2) issues TWO raw queries: a COUNT (totalAll +
+  // totalFiltered) then a windowed data read. The mock feeds them in order.
+  function mockCountThenData(
+    counts: { totalAll: number | bigint; totalFiltered: number | bigint },
+    rows: unknown[],
+  ) {
+    prismaMock.$queryRaw
+      .mockResolvedValueOnce([counts])
+      .mockResolvedValueOnce(rows);
+  }
+  // A tagged-template call is (strings, ...values); rebuild the SQL skeleton and
+  // pull the bound params for assertions.
+  function callSql(callIndex: number) {
+    const [strings] = prismaMock.$queryRaw.mock.calls[callIndex];
+    return (strings as string[]).join("?");
+  }
+  function callValues(callIndex: number) {
+    const [, ...values] = prismaMock.$queryRaw.mock.calls[callIndex];
+    return values;
+  }
+
+  it("counts then reads ONE windowed page, both shop-scoped by the bound domain", async () => {
+    mockCountThenData({ totalAll: 3, totalFiltered: 3 }, []);
 
     await listTemplateSummariesForDomain("shop-a.myshopify.com");
 
-    expect(prismaMock.$queryRaw).toHaveBeenCalledTimes(1);
-    // A tagged-template call: first arg is the SQL string fragments, the rest are
-    // the bound parameters. Assert the query our code builds is shop-scoped (by
-    // the UNIQUE domain — the #1 isolation invariant), newest-first, and counts
-    // rows in Postgres rather than shipping the `rows` blob.
-    const [strings, ...values] = prismaMock.$queryRaw.mock.calls[0];
-    const sql = (strings as string[]).join("?");
-    expect(sql).toContain("jsonb_array_length");
-    expect(sql).toContain('WHERE s."myshopifyDomain"');
-    expect(sql).toContain('ORDER BY t."updatedAt" DESC');
-    // The domain is passed as a BOUND parameter, never concatenated into the SQL.
-    expect(values).toEqual(["shop-a.myshopify.com"]);
+    expect(prismaMock.$queryRaw).toHaveBeenCalledTimes(2);
+
+    // Call 0 — the COUNT: shop-scoped by the UNIQUE domain (the #1 isolation
+    // invariant), reporting both the whole-shop and status-filtered totals.
+    const countSql = callSql(0);
+    expect(countSql).toContain("COUNT(*)");
+    expect(countSql).toContain("FILTER");
+    expect(countSql).toContain('WHERE s."myshopifyDomain"');
+
+    // Call 1 — the DATA read: counts rows in Postgres (no `rows` blob), STABLE
+    // ordered by (updatedAt, id) so paging can't skip/duplicate, and WINDOWED.
+    const dataSql = callSql(1);
+    expect(dataSql).toContain("jsonb_array_length");
+    expect(dataSql).toContain('WHERE s."myshopifyDomain"');
+    expect(dataSql).toContain('ORDER BY t."updatedAt" DESC, t."id" DESC');
+    expect(dataSql).toContain("LIMIT");
+    expect(dataSql).toContain("OFFSET");
+
+    // The domain is BOUND, never concatenated, in both queries.
+    expect(callValues(0)).toContain("shop-a.myshopify.com");
+    expect(callValues(1)).toContain("shop-a.myshopify.com");
+    // The window params are bound too: default page size 25, offset 0 on page 1.
+    const dataNumbers = callValues(1).filter((v) => typeof v === "number");
+    expect(dataNumbers).toEqual([25, 0]);
   });
 
-  it("maps rows to numeric rowCount summaries (coerces bigint, no rows blob)", async () => {
+  it("returns a page object mapping rows to numeric rowCount (coerces bigint, no rows blob)", async () => {
     const t1Updated = new Date("2026-08-02T00:00:00Z");
     const t2Updated = new Date("2026-08-01T00:00:00Z");
-    prismaMock.$queryRaw.mockResolvedValue([
-      // The pg driver may hand `jsonb_array_length` back as a bigint; the mapper
-      // must coerce it to a JS number so it serializes cleanly to the client.
+    // The pg driver may hand `jsonb_array_length`/`COUNT` back as bigints; the
+    // mapper must coerce them to JS numbers so they serialize cleanly.
+    mockCountThenData({ totalAll: 2n, totalFiltered: 2n }, [
       {
         id: "t1",
         name: "A",
@@ -171,27 +204,111 @@ describe("listTemplateSummariesForDomain", () => {
 
     const result = await listTemplateSummariesForDomain("shop-a.myshopify.com");
 
-    expect(result).toEqual([
-      {
-        id: "t1",
-        name: "A",
-        status: "DRAFT",
-        updatedAt: t1Updated,
-        rowCount: 3,
-      },
-      {
-        id: "t2",
-        name: "B",
-        status: "ACTIVE",
-        updatedAt: t2Updated,
-        rowCount: 0,
-      },
-    ]);
+    expect(result).toEqual({
+      templates: [
+        {
+          id: "t1",
+          name: "A",
+          status: "DRAFT",
+          updatedAt: t1Updated,
+          rowCount: 3,
+        },
+        {
+          id: "t2",
+          name: "B",
+          status: "ACTIVE",
+          updatedAt: t2Updated,
+          rowCount: 0,
+        },
+      ],
+      page: 1,
+      pageSize: 25,
+      pageCount: 1,
+      totalFiltered: 2,
+      totalAll: 2,
+    });
     // The lightweight summary must never carry the `rows` blob (the whole point of
     // the SQL-side count) or an assigned-count (that streams separately now).
-    expect(result[0]).not.toHaveProperty("rows");
-    expect(result[0]).not.toHaveProperty("assignedProductCount");
-    expect(typeof result[0].rowCount).toBe("number");
+    expect(result.templates[0]).not.toHaveProperty("rows");
+    expect(result.templates[0]).not.toHaveProperty("assignedProductCount");
+    expect(typeof result.templates[0].rowCount).toBe("number");
+    expect(typeof result.totalAll).toBe("number");
+  });
+
+  it("clamps an out-of-range page to the last real page and offsets accordingly", async () => {
+    // 60 filtered rows / 25 per page = 3 pages; a stale ?page=99 must land on 3.
+    mockCountThenData({ totalAll: 60, totalFiltered: 60 }, []);
+
+    const result = await listTemplateSummariesForDomain(
+      "shop-a.myshopify.com",
+      {
+        page: 99,
+      },
+    );
+
+    expect(result.pageCount).toBe(3);
+    expect(result.page).toBe(3);
+    // offset = (3 - 1) * 25 = 50.
+    const dataNumbers = callValues(1).filter((v) => typeof v === "number");
+    expect(dataNumbers).toEqual([25, 50]);
+  });
+
+  it("floors a bogus/negative page to 1 (offset 0)", async () => {
+    mockCountThenData({ totalAll: 10, totalFiltered: 10 }, []);
+
+    const result = await listTemplateSummariesForDomain(
+      "shop-a.myshopify.com",
+      {
+        page: -5,
+      },
+    );
+
+    expect(result.page).toBe(1);
+    const dataNumbers = callValues(1).filter((v) => typeof v === "number");
+    expect(dataNumbers).toEqual([25, 0]);
+  });
+
+  it("applies a status filter to the data read and narrows totalFiltered", async () => {
+    // 5 total, 2 Active: the filter narrows totalFiltered (drives pageCount) but
+    // leaves totalAll whole (drives the first-run empty state).
+    mockCountThenData({ totalAll: 5, totalFiltered: 2 }, []);
+
+    const result = await listTemplateSummariesForDomain(
+      "shop-a.myshopify.com",
+      {
+        status: "ACTIVE",
+      },
+    );
+
+    expect(result.totalAll).toBe(5);
+    expect(result.totalFiltered).toBe(2);
+    // The data read carries a non-empty status fragment binding 'ACTIVE' (a
+    // Prisma.Sql value, whose own bound params include the status). The ALL case
+    // interpolates Prisma.empty instead, so no status value leaks — asserted below.
+    const carriesActive = callValues(1).some(
+      (v) =>
+        v != null &&
+        typeof v === "object" &&
+        Array.isArray((v as { values?: unknown[] }).values) &&
+        (v as { values: unknown[] }).values.includes("ACTIVE"),
+    );
+    expect(carriesActive).toBe(true);
+  });
+
+  it("interpolates no status fragment for the ALL view", async () => {
+    mockCountThenData({ totalAll: 4, totalFiltered: 4 }, []);
+
+    await listTemplateSummariesForDomain("shop-a.myshopify.com");
+
+    // The ALL data read binds only the domain + the two window numbers — no status.
+    const nonEmptyFragment = callValues(1).some(
+      (v) =>
+        v != null &&
+        typeof v === "object" &&
+        Array.isArray((v as { values?: unknown[] }).values) &&
+        (v as { values: unknown[] }).values.length > 0,
+    );
+    expect(nonEmptyFragment).toBe(false);
   });
 });
 
