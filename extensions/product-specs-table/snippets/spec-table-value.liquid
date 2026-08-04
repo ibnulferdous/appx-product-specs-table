@@ -22,6 +22,12 @@
     50-part chunks (a long multiline value alone can exceed 50 parts).
   - Unknown/unresolvable tokens emit nothing (silent by design), including
     `total_inventory` (no clean product-level Liquid property).
+  - METAFIELD parts take `metafield_text` for every basic type, but
+    metaobject-backed ones (`metaobject_reference`, `list.metaobject_reference`
+    — which is what ALL of Shopify's standard `shopify.*` taxonomy choice-list
+    attributes are) need the filter's `field:` parameter; see the branch below.
+    ⚠️ STILL UNSUPPORTED BY `metafield_text`: list types other than
+    `list.single_line_text_field` and `list.metaobject_reference` render empty.
   - `selected_options` renders `variant.title` (the option values joined with
     " / ", guaranteed string) and emits nothing for single-variant products —
     shoppers must never see "Default Title".
@@ -39,7 +45,39 @@
     {%- case part.type -%}
       {%- when "TEXT" -%}{{ part.text | escape }}
       {%- when "LINE_BREAK" -%}<br>
-      {%- when "METAFIELD" -%}{{ product.metafields[part.namespace][part.key] | metafield_text | escape | newline_to_br }}
+      {%- when "METAFIELD" -%}
+        {%- assign mf = product.metafields[part.namespace][part.key] -%}
+        {%- assign mf_type = mf.type | default: "" -%}
+        {%- if mf_type contains "metaobject_reference" -%}
+          {%- comment -%}
+            `metafield_text` renders NOTHING for `metaobject_reference` /
+            `list.metaobject_reference` unless it is given the `field:` parameter
+            naming which field of the referenced metaobject to print — the filter
+            has no default field. That is not an edge case: every choice-list
+            attribute in Shopify's standard product taxonomy (the whole `shopify`
+            namespace — `shopify.battery-type`, `shopify.power-source`,
+            `shopify.color-pattern`, …) is metaobject-backed, and the metafield
+            picker offers those definitions like any other. So the un-parameterised
+            call silently emitted an empty cell for them.
+
+            Shopify's taxonomy metaobjects name their display field `label`; custom
+            merchant definitions commonly use `name` or `title`. Try them in that
+            order and take the first non-blank — `field:` may only reference a
+            `single_line_text_field`, and a miss renders blank rather than raising.
+            All three blank stays SILENT, consistent with the unknown-token rule.
+
+            Going through the filter (rather than walking `mf.value` by hand) keeps
+            the single/list split inside Shopify's implementation: a list renders in
+            sentence format ("A, B, and C") and is not subject to the 50-iteration
+            `for` cap.
+          {%- endcomment -%}
+          {%- assign mo_text = mf | metafield_text: field: "label" -%}
+          {%- if mo_text == blank -%}{%- assign mo_text = mf | metafield_text: field: "name" -%}{%- endif -%}
+          {%- if mo_text == blank -%}{%- assign mo_text = mf | metafield_text: field: "title" -%}{%- endif -%}
+          {{- mo_text | escape -}}
+        {%- else -%}
+          {{- mf | metafield_text | escape | newline_to_br -}}
+        {%- endif -%}
       {%- when "SHOPIFY_FIELD" -%}
         {%- case part.field -%}
           {%- when "vendor" -%}{{ product.vendor | escape }}

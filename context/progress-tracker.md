@@ -133,6 +133,35 @@ saved presets, cuttable).
 
 > Rolling window, newest first. Older units roll into Completed.
 
+- **Storefront — METAFIELD parts backed by metaobjects rendered EMPTY** — ✅ fixed
+  2026-08-04, full gate green (typecheck · lint · format · **test 1397 / 53** · build) +
+  `validate_theme` clean, **and live-verified on `appx-dev`** after deploy: the DJI product
+  carrying template `cmsebiatx001dvpr0o9mcx8x2` (ACTIVE, 199 rows, 10 METAFIELD parts) renders
+  **184 data rows with 0 blank value cells**, and the `list.metaobject_reference`
+  `shopify.power-source` prints in sentence format — `Rechargeable, USB, and AC-powered` —
+  which is the filter branch doing exactly what the fix intends. Symptom before: on an
+  assigned product, `SHOPIFY_FIELD` parts rendered and every `METAFIELD` part was blank.
+  🔴 **Root cause: `metafield_text` has NO default field for a metaobject reference.** For
+  `metaobject_reference` / `list.metaobject_reference` the filter requires the `field:`
+  parameter naming which metaobject field to print; called bare it returns an empty string.
+  The doc caveat written at feature 35 said those two list types *were* supported, which is
+  true only with `field:` — that half-truth is what let it ship. 🔴 It is not an edge case:
+  **every choice-list attribute in Shopify's standard product taxonomy is metaobject-backed**,
+  i.e. the whole `shopify.*` namespace, and `metafieldDefinitions.server.ts` offers those in
+  the picker like any merchant definition. The dev-store repro used
+  `shopify.battery-type` / `battery-size` / `power-source`.
+  **Fix (`spec-table-value.liquid` only):** branch on
+  `metafield.type contains "metaobject_reference"` and take the first non-blank of
+  `metafield_text: field: "label"` → `"name"` → `"title"` (`label` is Shopify's taxonomy
+  convention; the other two are the common custom-definition keys). Routed through the filter
+  rather than walking `metafield.value`, so the single/list split stays Shopify's problem —
+  lists render in sentence format and never meet the 50-iteration `for` cap. All three blank
+  stays silent, per the unknown-token rule. No schema, no TS, no test change (Liquid is
+  outside the module graph; the admin preview renders METAFIELD parts as inert pills, so it
+  was never affected). ⚠️ **Adjacent gap deliberately NOT fixed:** list types other than
+  `list.single_line_text_field` and `list.metaobject_reference` (`list.number_integer`,
+  `list.dimension`, …) have no `metafield_text` support and still render empty — a fallback
+  would have to hand-format each type's value object. `context/features/35-…` §Correction.
 - **jsdom carve-out + `valueDom.test.ts` (33 tests)** — ✅ 2026-08-04, full gate green
   (typecheck · lint · format · **test 1397 / 53** · build). Closes the coverage gap that let the
   value-cell bug below ship silently. **Assessed before adding** (`jsdom` probed in-repo, not

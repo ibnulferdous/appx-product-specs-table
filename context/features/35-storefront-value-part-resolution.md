@@ -91,6 +91,39 @@ committed).
   Known caveat: list types other than `list.single_line_text_field` and
   `list.metaobject_reference` are unsupported (render empty) — acceptable for
   MVP.
+
+### 🔴 Correction (2026-08-04) — the metaobject-reference branch
+
+The line above is **not** sufficient, and the caveat as written was wrong in a
+load-bearing way. `metafield_text` does support `metaobject_reference` and
+`list.metaobject_reference`, **but only when passed the `field:` parameter**
+naming which field of the referenced metaobject to print — the filter has no
+default field, so the un-parameterised call renders an **empty string**.
+
+That is not a corner: **every choice-list attribute in Shopify's standard
+product taxonomy is metaobject-backed**, and those are the entire `shopify.*`
+namespace (`shopify.battery-type`, `shopify.power-source`,
+`shopify.color-pattern`, …). `metafieldDefinitions.server.ts` lists them
+alongside merchant definitions, so the picker offers them like anything else —
+and every one resolved to a blank cell on the storefront. Live symptom:
+`SHOPIFY_FIELD` parts rendered, `METAFIELD` parts did not.
+
+The snippet now branches on `metafield.type contains "metaobject_reference"`
+and takes the first non-blank of
+`metafield_text: field: "label"` → `"name"` → `"title"`
+(`label` is what Shopify's taxonomy metaobjects use; `name`/`title` are the
+common custom-definition keys). `field:` may only reference a
+`single_line_text_field`; a miss renders blank rather than raising, so the chain
+is safe and all-three-blank stays silent per the unknown-token rule.
+
+Routed through the filter rather than walking `metafield.value` by hand, so the
+single/list split stays inside Shopify's implementation: a list renders in
+sentence format ("A, B, and C") and never meets the 50-iteration `for` cap.
+
+⚠️ **Still true:** list types other than `list.single_line_text_field` and
+`list.metaobject_reference` (e.g. `list.number_integer`, `list.dimension`) have
+no `metafield_text` support at all and render empty. Not fixed here — a generic
+fallback would have to format each type's value object by hand.
 - Filter order matters: `escape` **before** `newline_to_br` so the `<br>` for
   `multi_line_text_field` values survives escaping.
 - Unknown namespace/key resolves to `nil` → empty string. Silent by design.
