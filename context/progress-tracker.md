@@ -134,8 +134,8 @@ saved presets, cuttable).
   (total per-product capacity `N × 128KB`), and the shop `$app:routing` metafield (wire **v3**) now
   carries only the broad tiers. Plan + decisions: [`108-…`](features/108-routing-metaobject-sharding.md).
   🔴 **N (=1024) can never change after launch** — it is the storage format; a change re-buckets every
-  product (same law as the styling defaults). ⏭️ Only **Unit F (live verification)** remains — it rides
-  the production-host `shopify app deploy` that anchors the shard definition (deferred).
+  product (same law as the styling defaults). ✅ **Fully shipped + live-verified on appx-dev after the
+  version-11 deploy** (Units A–F complete, 2026-08-05) — see Recently Shipped.
 - **Every GraphQL input array is capped at 250** (Admin and Storefront, since API 2020-01)
   and Shopify rejects the **whole request**, not the overflow. `nodes(ids:)` chunks at
   `NODES_MAX_IDS = 250`; failure is per-chunk by construction.
@@ -152,13 +152,28 @@ saved presets, cuttable).
 
 > Rolling window, newest first. Older units roll into Completed.
 
+- **Routing metaobject sharding (Option 2) — Unit F: LIVE VERIFIED on appx-dev** — ✅ 2026-08-05,
+  after deploying app **version 11** (anchors the `appx_routing_shard` definition). Verified end-to-end
+  on the deployed storefront (dev preview active): (1) **positive render via shard** — two different
+  products, each with its own PRODUCT-scoped ACTIVE template, render their OWN distinct template content
+  on their storefront product pages (`dji-mini-4k-stardard` → new template's M5 Pro/18-core; `dk-w1-pros-4k-toy-drone`
+  → edited template's M5/13.6-inch full table). Different products → different `product.id mod 1024`
+  buckets → two DISTINCT `routing-shard-<k>` metaobjects written by the live writer and read by the block
+  (`metaobjects["$app:appx_routing_shard"]["routing-shard-<k>"]`) + snippet (`shard.by_product.value[pid]`).
+  (2) **D5 empty-on-remove** — setting a product's template to Draft/unassigned rebuilt routing, upsert-to-emptied
+  its shard bucket, and the storefront table correctly disappeared (sparse shard → nil → falls through to the
+  empty broad tiers). Content was FRESH (matched current admin state), confirming the deployed writer reconciles
+  shards correctly. Co-location (byProduct beats exclude gate) + zero-write status toggle (D5) remain covered by
+  the unit/contract suite. **Feature 108 (Units A–F) COMPLETE.** ⚠️ The v11 deploy re-anchored step 106's
+  compliance-webhook URIs onto `example.com` (known; refreshes when the production host is set — see Current Goal).
 - **Routing metaobject sharding (Option 2) — Unit E: docs** — ✅ 2026-08-05. `data-model.md`
   updated: §9 (Option 2 built; resolver now reads `shard.by_product`/`shard.excluded`, broad tiers
   from the shop wire; two private wire contracts), §10 (new "Routing shard metaobject" definition
   entry — fields, writer, reader), §14 (shop wire is broad-only: envelope 104→75, byProduct/excluded
   rows gone, byCollection 9,354 fit; per-shard `N × 128KB` capacity + D4/D5/D6 invariants), §15
   (uninstall removes the shard metaobjects too — no new erase code). `shopify.app.toml` shard comment
-  already complete from Unit A. Binding rule above flipped to "designed + built". Docs-only.
+  already complete from Unit A. Binding rule above flipped to "designed + built". Docs-only. (Unit F live
+  verification followed — see the Unit F entry above.)
 - **Routing metaobject sharding (Option 2) — Unit D: the atomic wire flip + Liquid rewrite** — ✅
   2026-08-05, full gate green (typecheck · lint · format · **test 1443 / 56** (+6, +1 file) · build);
   both edited Liquid files re-validated (`validate_theme`): snippet clean, block carries only its 13
