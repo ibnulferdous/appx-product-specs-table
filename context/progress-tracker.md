@@ -130,7 +130,10 @@ saved presets, cuttable).
   is a **down-payment, not a fix** — `byProduct` and `excluded` still share one 128KB budget,
   and the failure mode is still a rejected `metafieldsSet`, not silent truncation. The
   structural answer is **Option 2 — shard those two maps into per-bucket metaobjects** (keyed
-  `product.id mod N`, 1M entries/definition), scoped but **not yet designed**. Re-adding the
+  `product.id mod N`, 1M entries/definition), now **designed as a full build plan** (build-before-launch):
+  [`108-…`](features/108-routing-metaobject-sharding.md). 🔴 **N (=1024) can never change after
+  launch** — it is the storage format; a change re-buckets every product (same law as the styling
+  defaults). Re-adding the
   old per-product definition and back-filling thousands of products is a migration, not a
   config edit.
 - **Every GraphQL input array is capped at 250** (Admin and Storefront, since API 2020-01)
@@ -149,6 +152,96 @@ saved presets, cuttable).
 
 > Rolling window, newest first. Older units roll into Completed.
 
+- **Routing metaobject sharding (Option 2) — Unit D: the atomic wire flip + Liquid rewrite** — ✅
+  2026-08-05, full gate green (typecheck · lint · format · **test 1443 / 56** (+6, +1 file) · build);
+  both edited Liquid files re-validated (`validate_theme`): snippet clean, block carries only its 13
+  pre-existing `capture` warnings (zero new). This is the CUTOVER — the wire producer and reader move
+  together in one unit ([`108-…`](features/108-routing-metaobject-sharding.md) §6 Unit D). **`ROUTING_WIRE_VERSION`
+  2 → 3**; `compactRoutingForDelivery` + `CompactRouting` DROP `byProduct` / `excluded` (the shop
+  `$app:routing` metafield is now BROAD tiers only — v, handles, def, byType, byVendor, byCollection).
+  **Liquid (OQ-108-A resolved → block-passes-in):** `blocks/spec_table.liquid` computes
+  `product.id | modulo: 1024`, resolves `metaobjects["$app:appx_routing_shard"]["routing-shard-<k>"]`,
+  and passes the shard into `spec-table-resolve.liquid`, which now reads per-product from
+  `shard.by_product.value[pid]` (a handle STRING, D3) + the exclude gate from `shard.excluded.value[pid]`,
+  broad tiers still from `routing`. Semantics identical to before; only the per-product source moved.
+  **Budget re-derived for the broad-only shop wire:** envelope 104 → 75 bytes; `byProduct`/`excluded`
+  shop-wire budget tests removed (those budgets are now per-shard, each with its own 128KB); `byCollection`
+  is the representative unbounded shop-wire map (9,354 fit); `reportRoutingBudget`'s diagnostic now names
+  only broad tiers. **Contract tests:** new `routingShardWireContract.test.ts` (derives modulo/type/handle
+  from `ROUTING_SHARD_COUNT`/`ROUTING_SHARD_TYPE`/`shardHandle`, field keys from `shardFieldValues`; guards
+  the block's modulo+type+handle and the snippet's shard-field reads + no reverted `routing.byProduct/excluded`
+  + no gid token); `routingWireContract.test.ts` still green unchanged (fully derived — both ends dropped
+  the two maps in lockstep). The transitional double-write is over: the storefront now reads shards. No
+  schema, no migration. ⏭️ Live verification (Unit F) still waits on the production-host deploy that anchors
+  the shard definition.
+- **Routing metaobject sharding (Option 2) — Unit C: writer reconciliation** — ✅ 2026-08-05,
+  full gate green (typecheck · lint · format · **test 1437 / 55** (+4) · build) + shard
+  `metaobjectUpsert` validated @ 2025-10 (`write_metaobjects`, already granted). `rebuildShopRouting`
+  (`app/shopify/routing.server.ts`) now ALSO reconciles per-product shards: after the (unchanged)
+  Postgres upsert it captures the row's existing `shardState`, calls `reconcileRoutingShards`
+  (buildShardPayloads → diffShards → `metaobjectUpsert` only the changed buckets, upsert-to-empty the
+  cleared ones), writes the shop metafield (extracted to `writeRoutingMetafield`), then does ONE
+  combined stamp. 🔴 **Stamp is conditional** — `shardState` written only when a shard actually
+  changed, `syncedToShopifyAt` only on FULL success (metafield + every shard); a failed shard keeps
+  its old hash (retried next rebuild) and returns the honest "couldn't publish" error. This preserves
+  the pre-shard contract (an unchanged rebuild whose metafield fails writes nothing — the userErrors
+  test still passes). ⚠️ **Transitional double-write (by design, until Unit D):** the shop `$app:routing`
+  metafield is STILL v2 (carries byProduct/excluded), so the storefront reads it and the shards are
+  **written-but-unread**; per-product data lives in both places during C→D. Harmless (tiny dev-store
+  data), and it keeps Unit D a pure reader flip. New shard mutation reuses the exact validated
+  `metaobjectUpsert` shape + the exported `readUpsertResult`/`readUserErrors` narrowers from
+  `metaobjects.server.ts`. +4 tests: shard write+stamp, D5 zero-write on unchanged content,
+  upsert-to-empty a cleared bucket, partial-failure stamps only successes + returns error. The
+  budget tests now also exercise ~1024 shard writes (excludes shard) — mocks updated. No schema, no
+  migration.
+- **Routing metaobject sharding (Option 2) — Unit B: pure `routingShards.ts` transform** — ✅
+  2026-08-05, full gate green (typecheck · lint · format · **test 1433 / 55** (+25, +1 file) ·
+  build). Purely additive ([`108-…`](features/108-routing-metaobject-sharding.md) §6 Unit B). New
+  `app/utils/routingShards.ts` (pure, client-safe, mirrors `routingProjection.ts`): `ROUTING_SHARD_COUNT`
+  (1024), `ROUTING_SHARD_TYPE`, `shardHandle`, `bucketOf`, `buildShardPayloads`, `shardFieldValues`,
+  `serializeShard`, `hashShard` (cyrb53, pure — no `Date.now`/`Math.random`), `diffShards`.
+  🔴 **`bucketOf` uses BigInt modulo, not `Number % N`** — it must agree with Liquid's
+  `product.id | modulo: 1024` (Ruby, arbitrary precision) for every id; `Number` loses precision
+  above 2^53. A test pins id `2^53+1` where the `Number` path is provably wrong (buckets to 0
+  instead of 1). Shards store handle STRINGS directly (D3); a product in BOTH `byProduct` and
+  `excluded` co-locates in one shard (feature 45 Decision B) — tested. `wire_version` is tied to
+  `ROUTING_WIRE_VERSION` (one version source for the whole delivery wire), asserted, not a literal.
+  `idTail` exported from `routingProjection.ts` so shard keys and shop-wire keys can never diverge.
+  🔴 **Resequenced from doc 108's original split:** the v3 wire flip (bump `ROUTING_WIRE_VERSION`,
+  drop `byProduct`/`excluded` from `compactRoutingForDelivery`) canNOT land here —
+  `routingWireContract.test.ts` derives the wire key set from the real compactor and asserts the
+  Liquid reads exactly those keys, so dropping the two maps while the snippet still reads them turns
+  it red. The wire + its reader move together, so the flip moved to **Unit D** (with the snippet
+  rewrite); Unit C does a harmless transitional double-write (shards written-but-unread while the
+  shop metafield is still v2). Doc §6 updated to reflect this. No schema, no migration, no runtime
+  behavior change yet (nothing calls `routingShards` until Unit C).
+- **Routing metaobject sharding (Option 2) — Unit A: shard definition + tracking column** — 🛠️
+  2026-08-05, code gate green (TOML `shopify app config validate` → `valid: true` · migration
+  applied · build · typecheck · **test 1408 / 54** unchanged). The deploy-independent half of
+  Unit A ([`108-…`](features/108-routing-metaobject-sharding.md) §6). Two changes:
+  **(1)** new app-owned metaobject definition `[metaobjects.app.appx_routing_shard]` in
+  `shopify.app.toml` — fields `by_product` (json), `excluded` (json), `wire_version`
+  (single_line_text_field, debug-only version tag; storefront never parses it, shards are always
+  the current wire version under the hard cutover), `storefront = public_read`. Handle
+  `routing-shard-<k>`, `k = product.id mod ROUTING_SHARD_COUNT` (1024). ⚠️ `wire_version` is TEXT
+  not a number field — matches the existing `appx_spec_table` `status`/`updated_at` convention and
+  needs no storefront parse (minor deviation from doc 108 §4's illustrative `"v": 3`). 🔴 **A
+  metaobject field KEY must be ≥2 chars** — the first cut named it `v` and `shopify app config
+  validate` passed it (`valid: true`), but the `shopify app dev` PREVIEW registration rejected it
+  (`Key is too short (minimum is 2 characters)`), which is where it surfaced. Config-validate does
+  NOT catch short metaobject field keys; the dev-preview / deploy metaobject registration does.
+  **(2)** migration `add-routing-shard-state`
+  adds `ShopStorefrontRouting.shardState Json @default("{}")` (bucketKey → content hash, the D5
+  reconciliation ledger; delivery-only, never sent to the storefront). No new model — `metaobjectUpsert`
+  addresses shards by handle, so no per-shard GID is stored; cascade from `Shop` already covers
+  `shop/redact`. 🔴 **Existing scopes cover it** — `write_metaobjects,write_metaobject_definitions`
+  are already granted, so no new consent screen. ⚠️ **Steps 3–4 of Unit A are DEFERRED:** the
+  `shopify app deploy` that ANCHORS the definition re-anchors step 106's compliance URIs onto
+  `example.com`, so it rides the production-host deploy (same D5 staging as step 107); until then the
+  definition is not live on `appx-dev` and Units B–E build + unit-test against it without it existing.
+  ⚠️ **The migration makes any running `shopify app dev` server stale** ([[prisma-migration-stale-dev-server]])
+  — Saves fail silently until it is restarted. `prisma generate` hit the usual Windows EPERM on the
+  locked query-engine dll but rewrote the client types (verified `shardState` present).
 - **Routing delivery wire compacted (Option 1 — the byte-budget down-payment)** — ✅
   2026-08-05, full gate green (typecheck · lint · format · **test 1408 / 54** · build) +
   `validate_theme` clean on the rewritten resolver, **and live-verified on `appx-dev`** after

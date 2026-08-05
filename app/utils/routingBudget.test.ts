@@ -109,8 +109,6 @@ describe("measurePayload — the ceiling boundary", () => {
 
 describe("routing projection byte budgets", () => {
   const HANDLE = `template-${"cl9ebqhxk00003b600tymydho"}`; // cuid() is 25 chars
-  const productGid = (n: number) =>
-    `gid://shopify/Product/${7000000000000 + n}`;
   const collectionGid = (n: number) =>
     `gid://shopify/Collection/${400000000 + n}`;
 
@@ -121,22 +119,6 @@ describe("routing projection byte budgets", () => {
   const perEntry = (make: (n: number) => RoutingRule[]) =>
     byteLength(serialize(make(2))) - byteLength(serialize(make(1)));
 
-  const excludes = (n: number): RoutingRule[] =>
-    Array.from({ length: n }, (_, i) => ({
-      scope: "PRODUCT" as const,
-      scopeValue: productGid(i),
-      mode: "EXCLUDE" as const,
-      templateHandle: HANDLE,
-    }));
-
-  const products = (n: number): RoutingRule[] =>
-    Array.from({ length: n }, (_, i) => ({
-      scope: "PRODUCT" as const,
-      scopeValue: productGid(i),
-      mode: "INCLUDE" as const,
-      templateHandle: HANDLE,
-    }));
-
   const collections = (n: number): RoutingRule[] =>
     Array.from({ length: n }, (_, i) => ({
       scope: "COLLECTION" as const,
@@ -145,12 +127,14 @@ describe("routing projection byte budgets", () => {
       templateHandle: HANDLE,
     }));
 
-  it("HANDLE is the real 34-char shape (the byProduct numbers depend on it)", () => {
+  it("HANDLE is the real 34-char shape (the byCollection interning depends on it)", () => {
     expect(HANDLE).toHaveLength(34);
   });
 
-  it("an empty compact wire costs 104 bytes of envelope", () => {
-    expect(byteLength(serialize([]))).toBe(104);
+  it("an empty broad-only compact wire costs 75 bytes of envelope", () => {
+    // Wire v3 (feature 108): `byProduct`/`excluded` left this metafield for the shards,
+    // shrinking the envelope from 104 -> 75 bytes (two `,"key":{}` pairs, 29 bytes, gone).
+    expect(byteLength(serialize([]))).toBe(75);
   });
 
   /**
@@ -174,35 +158,29 @@ describe("routing projection byte budgets", () => {
     return lo;
   };
 
-  it("🔴 a compact excluded entry costs 18 bytes, and 7,276 fit", () => {
-    expect(perEntry(excludes)).toBe(18);
-    expect(maxFit(excludes)).toBe(7276);
-    expect(measurePayload(serialize(excludes(7276))).bytes).toBeLessThanOrEqual(
-      JSON_METAFIELD_MAX_BYTES,
-    );
-    expect(measurePayload(serialize(excludes(7277))).level).toBe("over");
-  });
+  // 🔴 byProduct / excluded budgets moved to the SHARDS (feature 108). Those two
+  // unbounded per-product maps no longer ride this metafield, so they no longer have a
+  // shop-wire per-entry cost or ceiling — each shard carries its own 128KB budget for
+  // its `catalog/N` slice (data-model.md §14). `byCollection` is now the representative
+  // unbounded map pressuring the broad-only shop wire, so it is the one pinned here.
 
-  it("a compact byProduct entry costs 18 bytes, and 7,274 fit", () => {
-    // ~4.2x the pre-Option-1 ceiling of 1,745: the full handle written on every
-    // entry (75 bytes) collapses to an interned index (18 bytes).
-    expect(perEntry(products)).toBe(18);
-    expect(maxFit(products)).toBe(7274);
-    expect(measurePayload(serialize(products(7275))).level).toBe("over");
-  });
-
-  it("a compact byCollection entry costs 14 bytes, and 9,352 fit", () => {
+  it("a compact byCollection entry costs 14 bytes, and 9,354 fit (broad-only wire)", () => {
+    // Two more than the pre-sharding 9,352: the 29 bytes freed from the envelope
+    // (byProduct/excluded gone) buys ~two more 14-byte collection entries.
     expect(perEntry(collections)).toBe(14);
-    expect(maxFit(collections)).toBe(9352);
-    expect(measurePayload(serialize(collections(9353))).level).toBe("over");
+    expect(maxFit(collections)).toBe(9354);
+    expect(
+      measurePayload(serialize(collections(9354))).bytes,
+    ).toBeLessThanOrEqual(JSON_METAFIELD_MAX_BYTES);
+    expect(measurePayload(serialize(collections(9355))).level).toBe("over");
   });
 
-  it("warns with ~1,456 carve-outs of runway left — §D6's justification", () => {
-    // The warn threshold is only defensible if it leaves room to ACT. Pin the
-    // actual runway so retuning BUDGET_WARN_RATIO has to face the consequence.
-    expect(measurePayload(serialize(excludes(5819))).level).toBe("ok");
-    expect(measurePayload(serialize(excludes(5820))).level).toBe("warn");
-    expect(maxFit(excludes) - 5820).toBe(1456);
+  it("warns with runway left before the byCollection ceiling — §D6's justification", () => {
+    // The warn threshold is only defensible if it leaves room to ACT. Pin the actual
+    // runway so retuning BUDGET_WARN_RATIO has to face the consequence.
+    expect(measurePayload(serialize(collections(7481))).level).toBe("ok");
+    expect(measurePayload(serialize(collections(7482))).level).toBe("warn");
+    expect(maxFit(collections) - 7482).toBeGreaterThan(0);
   });
 
   it("byType/byVendor have no per-entry number — the key is unbounded merchant text", () => {

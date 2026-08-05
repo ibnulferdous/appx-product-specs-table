@@ -310,6 +310,17 @@ model ShopStorefrontRouting {
   shopMetafieldGid  String?
   syncedToShopifyAt DateTime?
 
+  // Routing shard reconciliation state (Option 2, feature 108). Maps an occupied
+  // bucket key ("<product.id mod ROUTING_SHARD_COUNT>") -> the content hash of the
+  // shard payload last written to the `$app:appx_routing_shard` metaobject for that
+  // bucket. Lets a rebuild upsert ONLY shards whose content changed (D5): a status
+  // toggle that leaves per-product assignments untouched writes zero shards. Keys
+  // absent here that appear in a rebuild are new shards to write; keys here absent
+  // from the rebuild are emptied shards to upsert to `{}`. Delivery-only bookkeeping
+  // — the source-of-truth byProduct/excludedProductGids maps above stay GID-faithful
+  // and un-sharded (D6). NOT delivered to the storefront.
+  shardState        Json    @default("{}")
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }

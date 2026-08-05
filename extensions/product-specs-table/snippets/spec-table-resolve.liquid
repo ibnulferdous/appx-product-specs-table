@@ -1,47 +1,59 @@
 {% comment %}
   Appx — Product Specs Table
-  Resolves the current product to its assigned template HANDLE via the shop-level
-  routing map (feature 43, context/features/43-storefront-routing-resolution.md).
+  Resolves the current product to its assigned template HANDLE from the shop-level
+  routing map + this product's routing shard (feature 43 + feature 108,
+  context/features/43-storefront-routing-resolution.md,
+  context/features/108-routing-metaobject-sharding.md).
 
-  Params (render scope is isolated — both passed explicitly):
-  - product: the current product
+  Params (render scope is isolated — all passed explicitly):
+  - product: the current product.
   - routing: the parsed `shop.metafields["$app"].routing.value` json object, in the
              COMPACT delivery shape written by `compactRoutingForDelivery`
-             (app/utils/routingProjection.ts):
-               { v, handles[], def, byType, byVendor, byCollection, byProduct,
-                 excluded }
-             Every by*/def value is an INDEX into `handles`; `excluded` is a
-             membership set `{ "<id>": 1 }`. This is a private wire contract between
-             that function and this snippet — the two must move together.
+             (app/utils/routingProjection.ts). WIRE v3 — BROAD TIERS ONLY:
+               { v, handles[], def, byType, byVendor, byCollection }
+             Every by*/def value is an INDEX into `handles`. This is a private wire
+             contract with that function; the two move together.
+  - shard:   THIS product's `$app:appx_routing_shard` metaobject (feature 108),
+             resolved and passed in by `blocks/spec_table.liquid` as
+             `metaobjects["$app:appx_routing_shard"]["routing-shard-<product.id mod N>"]`.
+             Two json fields, read as `.value`:
+               by_product : { "<product id>": "<template handle STRING>" }  (D3)
+               excluded   : { "<product id>": 1 }                           (membership)
+             The per-product maps that used to sit in `routing.byProduct` /
+             `routing.excluded` moved HERE, so each product page reads only its own
+             small shard instead of the whole map. A product in a sparse (unoccupied)
+             bucket gets `shard == nil`, so both lookups are nil — a clean miss that
+             falls through to the broad tiers.
 
   Emits: the resolved template handle STRING, or nothing. Liquid render scope is
   isolated (a snippet cannot return a value), so the block CAPTURES this output.
 
   Resolution order (data-model §9, feature 45 Decision B). The ACTIVE rule set is
   disjoint (feature 42), so at most one key matches — the order is efficiency, never
-  precedence. An EXPLICIT single-product assignment (`byProduct`) is checked BEFORE
-  the exclude gate, so an excluded product still reaches its own dedicated table
+  precedence. An EXPLICIT single-product assignment (`shard.by_product`) is checked
+  BEFORE the exclude gate, so an excluded product still reaches its own dedicated table
   (the "all products EXCEPT X, and X gets its own table" story); the exclude gate
-  then only carves products out of the BROAD tiers:
-    byProduct[<product id>]
-      -> excluded? -> nothing
+  (`shard.excluded`) then only carves products out of the BROAD tiers:
+    shard.by_product[<product id>]
+      -> shard.excluded? -> nothing
       -> byType[type] -> byVendor[vendor]
         -> byCollection[<collection id>] (scan) -> def
-  Each tier resolves to a handle INDEX (`hidx`); `handles[hidx]` is dereferenced
-  ONCE at the end. This map is now the ONLY source of an assignment. The per-product
-  override metafield that used to sit ahead of it in the block was removed 2026-08-04
-  (see `blocks/spec_table.liquid`), so `byProduct` is the whole of the
-  explicit-single-product story.
+  The per-product tier resolves to a handle STRING directly (D3 — shards store handles,
+  not indices); each BROAD tier resolves to a handle INDEX (`hidx`) dereferenced through
+  `routing.handles` once, only if the exclude gate let us in. This is now the ONLY source
+  of an assignment. The per-product override metafield that used to sit ahead of it in the
+  block was removed 2026-08-04 (see `blocks/spec_table.liquid`).
 
-  COMPACT-SHAPE NOTES (Option 1, data-model §9/§14):
+  SHAPE NOTES:
   - Keys are the BARE numeric id, so we build `'' | append: product.id` (forces a
-    string key to match the JSON object keys) — NOT the old `gid://...` token. The
-    `'' | append:` idiom is what the old code already relied on for its GID keys.
-  - A tier lookup returns a handle INDEX. The test is `!= blank`, never truthiness:
+    string key to match the JSON object keys) — NOT a `gid://...` token. The same
+    `'' | append:` idiom builds the collection key.
+  - A BROAD tier lookup returns a handle INDEX. The test is `!= blank`, never truthiness:
     index 0 is a valid handle and `0 == blank` is false in Liquid, but an absent key
-    is nil (blank). Resolving to an index first and dereferencing `handles` once, at
-    the end, guards against `handles[nil]` coercing nil -> 0 and returning the wrong
-    table on a miss.
+    is nil (blank). Resolving to an index first and dereferencing `handles` once guards
+    against `handles[nil]` coercing nil -> 0 and returning the wrong table on a miss.
+    The per-product tier needs no such guard — `shard.by_product.value[pid]` is already
+    the final handle string (or nil).
   - byType / byVendor keys are raw selector strings (a blank product type/vendor
     indexes a key that never exists, so it falls through). TAG routing is intentionally
     NOT read — the compact shape omits `byTag` entirely (post-MVP; always empty).
@@ -51,18 +63,20 @@
 {% endcomment %}
 {%- liquid
   assign hidx = ''
+  assign handle = ''
 
   if routing != blank
     assign pid = '' | append: product.id
 
     # An explicit single-product assignment wins even for an excluded product
-    # (feature 45 Decision B) — it is checked BEFORE the exclude gate.
-    assign hidx = routing.byProduct[pid]
+    # (feature 45 Decision B) — it is checked BEFORE the exclude gate. Sourced from
+    # this product's shard (feature 108); the value is the final handle STRING (D3).
+    assign handle = shard.by_product.value[pid]
 
-    # The broad tiers are carved out by `excluded`: an excluded product matches none
-    # of them (renders nothing unless byProduct claimed it above).
-    if hidx == blank
-      unless routing.excluded[pid] != blank
+    # The broad tiers are carved out by the shard's `excluded` set: an excluded product
+    # matches none of them (renders nothing unless byProduct claimed it above).
+    if handle == blank
+      unless shard.excluded.value[pid] != blank
         assign hidx = routing.byType[product.type]
 
         if hidx == blank
@@ -90,15 +104,14 @@
         if hidx == blank
           assign hidx = routing.def
         endif
+
+        # Dereference the broad-tier handle table ONCE, guarded so a miss (nil hidx)
+        # never indexes handles[0] by nil-coercion.
+        if hidx != blank
+          assign handle = routing.handles[hidx]
+        endif
       endunless
     endif
-  endif
-
-  # Dereference the handle table ONCE, guarded so a miss (nil hidx) never indexes
-  # handles[0] by nil-coercion.
-  assign handle = ''
-  if hidx != blank
-    assign handle = routing.handles[hidx]
   endif
 
   echo handle

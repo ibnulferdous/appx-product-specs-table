@@ -18,6 +18,12 @@ import {
   type RoutingProjection,
 } from "../utils/routingProjection";
 import {
+  hashShard,
+  shardHandle,
+  bucketOf,
+  type ShardPayload,
+} from "../utils/routingShards";
+import {
   flattenActiveRulesToRoutingRules,
   buildRoutingMetafieldInput,
   readMetafieldsSetResult,
@@ -171,15 +177,14 @@ describe("buildRoutingMetafieldInput", () => {
       ],
     });
     // Value round-trips to the compact delivery shape: interned handle, index value.
+    // Wire v3 (feature 108) — broad tiers only; byProduct/excluded shard elsewhere.
     expect(JSON.parse(input.metafields[0].value)).toEqual({
-      v: 2,
+      v: 3,
       handles: ["template-phones"],
       def: null,
       byType: { Phones: 0 },
       byVendor: {},
       byCollection: {},
-      byProduct: {},
-      excluded: {},
     });
   });
 
@@ -245,6 +250,22 @@ describe("rebuildShopRouting", () => {
           ok: true,
           json: async () => ({
             data: { shop: { id: "gid://shopify/Shop/7" } },
+          }),
+        };
+      }
+      if (op.includes("RoutingShard")) {
+        return {
+          ok: true,
+          json: async () => ({
+            data: {
+              metaobjectUpsert: {
+                metaobject: {
+                  id: "gid://shopify/Metaobject/1",
+                  handle: "routing-shard",
+                },
+                userErrors: [],
+              },
+            },
           }),
         };
       }
@@ -331,6 +352,22 @@ describe("rebuildShopRouting", () => {
           }),
         };
       }
+      if (op.includes("RoutingShard")) {
+        return {
+          ok: true,
+          json: async () => ({
+            data: {
+              metaobjectUpsert: {
+                metaobject: {
+                  id: "gid://shopify/Metaobject/1",
+                  handle: "routing-shard",
+                },
+                userErrors: [],
+              },
+            },
+          }),
+        };
+      }
       return {
         ok: true,
         json: async () => ({
@@ -410,6 +447,223 @@ describe("rebuildShopRouting", () => {
   });
 });
 
+// --- Routing shard reconciliation (Option 2, feature 108) -------------------
+// The writer splits the per-product maps into per-bucket `$app:appx_routing_shard`
+// metaobjects, upserting only the buckets whose content changed (D5) and stamping the
+// `shardState` hash ledger from the write OUTCOMES.
+
+describe("rebuildShopRouting — routing shards (feature 108)", () => {
+  function mockAdmin(
+    graphqlImpl: (op: string, opts?: unknown) => Promise<unknown>,
+  ): AdminApiContext {
+    return { graphql: vi.fn(graphqlImpl) } as unknown as AdminApiContext;
+  }
+
+  // ShopId + metafieldsSet always succeed; each shard's outcome is decided per handle
+  // so a single shard can be made to fail.
+  function shardAdmin(shardOk: (handle: string) => boolean) {
+    return mockAdmin(async (op: string, opts?: unknown) => {
+      if (op.includes("ShopId")) {
+        return {
+          ok: true,
+          json: async () => ({
+            data: { shop: { id: "gid://shopify/Shop/7" } },
+          }),
+        };
+      }
+      if (op.includes("RoutingShard")) {
+        const handle = (opts as { variables: { handle: { handle: string } } })
+          .variables.handle.handle;
+        const ok = shardOk(handle);
+        return {
+          ok: true,
+          json: async () => ({
+            data: {
+              metaobjectUpsert: ok
+                ? {
+                    metaobject: { id: "gid://shopify/Metaobject/1", handle },
+                    userErrors: [],
+                  }
+                : { metaobject: null, userErrors: [{ message: "boom" }] },
+            },
+          }),
+        };
+      }
+      return {
+        ok: true,
+        json: async () => ({
+          data: {
+            metafieldsSet: {
+              metafields: [{ id: "gid://shopify/Metafield/1" }],
+              userErrors: [],
+            },
+          },
+        }),
+      };
+    });
+  }
+
+  function productTemplate(
+    handle: string,
+    ...gids: string[]
+  ): ActiveTemplateForRouting {
+    return {
+      shopifyMetaobjectHandle: handle,
+      assignments: gids.map((scopeValue) => ({
+        scope: "PRODUCT" as const,
+        scopeValue,
+        mode: "INCLUDE" as const,
+      })),
+    };
+  }
+
+  const shardCalls = (admin: AdminApiContext) =>
+    (admin.graphql as ReturnType<typeof vi.fn>).mock.calls.filter((c) =>
+      (c[0] as string).includes("RoutingShard"),
+    );
+
+  const fieldValue = (call: unknown[], key: string) => {
+    const fields = (
+      call[1] as {
+        variables: {
+          metaobject: { fields: Array<{ key: string; value: string }> };
+        };
+      }
+    ).variables.metaobject.fields;
+    return fields.find((f) => f.key === key)?.value;
+  };
+
+  let errorSpy: ReturnType<typeof vi.spyOn>;
+
+  beforeEach(() => {
+    prismaMock.template.findMany.mockReset();
+    prismaMock.shop.findUnique.mockReset();
+    prismaMock.shop.update.mockReset();
+    prismaMock.shopStorefrontRouting.upsert.mockReset();
+    prismaMock.shopStorefrontRouting.update.mockReset();
+    // Warm GID cache so these focus on shards, not the ShopId round-trip.
+    prismaMock.shop.findUnique.mockResolvedValue({
+      shopGid: "gid://shopify/Shop/CACHED",
+    });
+    prismaMock.shop.update.mockResolvedValue({});
+    prismaMock.shopStorefrontRouting.update.mockResolvedValue({});
+    errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    errorSpy.mockRestore();
+  });
+
+  it("writes a shard for a byProduct assignment and stamps its content hash", async () => {
+    prismaMock.template.findMany.mockResolvedValue([
+      productTemplate("template-a", "gid://shopify/Product/123"),
+    ]);
+    prismaMock.shopStorefrontRouting.upsert.mockResolvedValue({
+      shardState: {},
+    });
+    const admin = shardAdmin(() => true);
+
+    const result = await rebuildShopRouting(admin, "shop_1");
+    expect(result.ok).toBe(true);
+
+    const calls = shardCalls(admin);
+    expect(calls).toHaveLength(1);
+    // Addressed by the bucket handle, correct type.
+    expect(
+      (calls[0][1] as { variables: { handle: unknown } }).variables.handle,
+    ).toEqual({
+      type: "$app:appx_routing_shard",
+      handle: shardHandle(bucketOf("gid://shopify/Product/123")),
+    });
+    // by_product carries the BARE id -> handle string (D3).
+    expect(fieldValue(calls[0], "by_product")).toBe('{"123":"template-a"}');
+
+    // shardState stamped with the bucket's content hash.
+    const updateArg = prismaMock.shopStorefrontRouting.update.mock.calls[0][0];
+    const bucket = String(bucketOf("gid://shopify/Product/123"));
+    const payload: ShardPayload = {
+      byProduct: { "123": "template-a" },
+      excluded: {},
+    };
+    expect(updateArg.data.shardState[bucket]).toBe(hashShard(payload));
+  });
+
+  it("skips the shard write when its content is unchanged (D5 zero-write)", async () => {
+    const gid = "gid://shopify/Product/123";
+    const bucket = String(bucketOf(gid));
+    const hash = hashShard({
+      byProduct: { "123": "template-a" },
+      excluded: {},
+    });
+    prismaMock.template.findMany.mockResolvedValue([
+      productTemplate("template-a", gid),
+    ]);
+    prismaMock.shopStorefrontRouting.upsert.mockResolvedValue({
+      shardState: { [bucket]: hash },
+    });
+    const admin = shardAdmin(() => true);
+
+    const result = await rebuildShopRouting(admin, "shop_1");
+    expect(result.ok).toBe(true);
+    // No shard mutation issued — the hash matched.
+    expect(shardCalls(admin)).toHaveLength(0);
+    // The final stamp does not rewrite shardState (nothing changed).
+    const updateArg = prismaMock.shopStorefrontRouting.update.mock.calls[0][0];
+    expect(updateArg.data.shardState).toBeUndefined();
+    expect(updateArg.data.shopMetafieldGid).toBe("gid://shopify/Metafield/1");
+  });
+
+  it("empties a shard whose bucket is no longer occupied (upsert-to-empty, not delete)", async () => {
+    prismaMock.template.findMany.mockResolvedValue([]); // no ACTIVE per-product rules
+    prismaMock.shopStorefrontRouting.upsert.mockResolvedValue({
+      shardState: { "5": "oldhash" },
+    });
+    const admin = shardAdmin(() => true);
+
+    const result = await rebuildShopRouting(admin, "shop_1");
+    expect(result.ok).toBe(true);
+
+    const calls = shardCalls(admin);
+    expect(calls).toHaveLength(1);
+    expect(
+      (calls[0][1] as { variables: { handle: { handle: string } } }).variables
+        .handle.handle,
+    ).toBe("routing-shard-5");
+    // Emptied, not deleted: both maps are `{}`.
+    expect(fieldValue(calls[0], "by_product")).toBe("{}");
+    expect(fieldValue(calls[0], "excluded")).toBe("{}");
+    // Bucket dropped from the ledger.
+    const updateArg = prismaMock.shopStorefrontRouting.update.mock.calls[0][0];
+    expect(updateArg.data.shardState).toEqual({});
+  });
+
+  it("returns an error on a shard failure but stamps the shards that succeeded", async () => {
+    const g1 = "gid://shopify/Product/1"; // bucket 1
+    const g2 = "gid://shopify/Product/2"; // bucket 2
+    prismaMock.template.findMany.mockResolvedValue([
+      productTemplate("template-a", g1, g2),
+    ]);
+    prismaMock.shopStorefrontRouting.upsert.mockResolvedValue({
+      shardState: {},
+    });
+    // Bucket 2's shard write fails; bucket 1 succeeds.
+    const admin = shardAdmin((handle) => handle !== "routing-shard-2");
+
+    const result = await rebuildShopRouting(admin, "shop_1");
+    expect(result.ok).toBe(false);
+
+    const updateArg = prismaMock.shopStorefrontRouting.update.mock.calls[0][0];
+    // Only the succeeded bucket is stamped; the failed one keeps its (absent) hash so
+    // the next rebuild retries it.
+    expect(updateArg.data.shardState).toEqual({
+      "1": hashShard({ byProduct: { "1": "template-a" }, excluded: {} }),
+    });
+    // Partial failure: metafield gid still stamped, but sync NOT marked complete.
+    expect(updateArg.data.shopMetafieldGid).toBe("gid://shopify/Metafield/1");
+    expect(updateArg.data.syncedToShopifyAt).toBeUndefined();
+  });
+});
+
 // --- Byte budget observation (step 104 / data-model.md §14) ------------------
 // 🚫 The single most important test here is that an OVER-budget projection still
 // reaches `metafieldsSet`. 104 measures and warns; refusing a write is step 105's
@@ -433,6 +687,22 @@ describe("rebuildShopRouting — routing payload budget", () => {
           }),
         };
       }
+      if (op.includes("RoutingShard")) {
+        return {
+          ok: true,
+          json: async () => ({
+            data: {
+              metaobjectUpsert: {
+                metaobject: {
+                  id: "gid://shopify/Metaobject/1",
+                  handle: "routing-shard",
+                },
+                userErrors: [],
+              },
+            },
+          }),
+        };
+      }
       return {
         ok: true,
         json: async () => ({
@@ -447,15 +717,17 @@ describe("rebuildShopRouting — routing payload budget", () => {
     });
   }
 
-  /** N EXCLUDE carve-outs — the cheapest way to a large map (§14: 18 bytes each in
-   *  the compact delivery wire the budget measures). */
-  function excludeTemplate(count: number): ActiveTemplateForRouting {
+  /** N COLLECTION assignments — the representative unbounded map on the BROAD-only
+   *  shop wire (feature 108: byProduct/excluded shard elsewhere, so a large shop
+   *  metafield is now driven by collections, 14 bytes each in the compact wire the
+   *  budget measures — see routingBudget.test.ts). */
+  function collectionTemplate(count: number): ActiveTemplateForRouting {
     return {
       shopifyMetaobjectHandle: "template-cl9ebqhxk00003b600tymydho",
       assignments: Array.from({ length: count }, (_, i) => ({
-        scope: "PRODUCT" as const,
-        scopeValue: `gid://shopify/Product/${7000000000000 + i}`,
-        mode: "EXCLUDE" as const,
+        scope: "COLLECTION" as const,
+        scopeValue: `gid://shopify/Collection/${400000000 + i}`,
+        mode: "INCLUDE" as const,
       })),
     };
   }
@@ -480,8 +752,8 @@ describe("rebuildShopRouting — routing payload budget", () => {
   });
 
   it("🔴 STILL WRITES an over-budget payload — 104 observes, 105 decides", async () => {
-    // 7,277 carve-outs is one past the compact ceiling (§14). The write must go through.
-    prismaMock.template.findMany.mockResolvedValue([excludeTemplate(7277)]);
+    // 9,355 collections is one past the broad-only compact ceiling (§14). Write proceeds.
+    prismaMock.template.findMany.mockResolvedValue([collectionTemplate(9355)]);
     const admin = okAdmin();
 
     const result = await rebuildShopRouting(admin, "shop_1");
@@ -500,19 +772,19 @@ describe("rebuildShopRouting — routing payload budget", () => {
   });
 
   it("warns at `over`, naming the map that is carrying the payload", async () => {
-    prismaMock.template.findMany.mockResolvedValue([excludeTemplate(7277)]);
+    prismaMock.template.findMany.mockResolvedValue([collectionTemplate(9355)]);
 
     await rebuildShopRouting(okAdmin(), "shop_1");
 
     expect(warn).toHaveBeenCalledTimes(1);
     const message = String(warn.mock.calls[0][0]);
     expect(message).toContain("over budget");
-    expect(message).toContain("excluded 7277");
+    expect(message).toContain("byCollection 9355");
     expect(message).toContain("§14");
   });
 
   it("warns at `warn` — before the ceiling, while there is still runway", async () => {
-    prismaMock.template.findMany.mockResolvedValue([excludeTemplate(5820)]);
+    prismaMock.template.findMany.mockResolvedValue([collectionTemplate(7482)]);
 
     await rebuildShopRouting(okAdmin(), "shop_1");
 
@@ -521,7 +793,7 @@ describe("rebuildShopRouting — routing payload budget", () => {
   });
 
   it("stays SILENT at ok — a warning on every routine write is a warning nobody reads", async () => {
-    prismaMock.template.findMany.mockResolvedValue([excludeTemplate(10)]);
+    prismaMock.template.findMany.mockResolvedValue([collectionTemplate(10)]);
 
     await rebuildShopRouting(okAdmin(), "shop_1");
 

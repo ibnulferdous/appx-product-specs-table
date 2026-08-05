@@ -98,6 +98,44 @@ type = "json"
 name = "Updated At"
 type = "single_line_text_field"
 
+# --- Appx routing shard (storefront delivery — Option 2, feature 108) --------
+# App-owned metaobject holding the PER-PRODUCT portion of the routing map for one
+# bucket, keyed `product.id mod ROUTING_SHARD_COUNT` (1024). One shard per occupied
+# bucket, handle `routing-shard-<k>`. This is the structural fix to the shared 128KB
+# `$app:routing` budget (data-model.md §14): `byProduct` + `excluded` moved OUT of
+# that one metafield and INTO these shards, so each bucket carries its own 128KB and
+# a product page reads only its own shard. Resolved on the storefront by constructed
+# handle — `metaobjects["$app:appx_routing_shard"]['routing-shard-' | append: k]`
+# (proven pattern, same as appx_spec_table above). `storefront = public_read` makes
+# the two json fields Liquid-readable in the Theme App Extension.
+#   by_product : json  { "<bare product id>": "<template handle>" }  (explicit picks)
+#   excluded   : json  { "<bare product id>": 1 }                    (carve-outs)
+#   wire_version : version tag (text, matches status/updated_at above) — debug only;
+#                  shards are always the current wire version (hard cutover, D7).
+#                  Key must be >=2 chars (Shopify metaobject field-key rule), so this
+#                  is `wire_version`, not `v` (the shop `$app:routing` json uses `v`).
+# 🔴 ROUTING_SHARD_COUNT (the modulus) is the STORAGE FORMAT and can never change
+# after launch — a change re-buckets every product. See feature 108 D4.
+[metaobjects.app.appx_routing_shard]
+name = "Appx Routing Shard"
+description = "Per-bucket slice of the shop routing map (per-product assignments + carve-outs)."
+
+  [metaobjects.app.appx_routing_shard.access]
+  admin = "merchant_read_write"
+  storefront = "public_read"
+
+[metaobjects.app.appx_routing_shard.fields.by_product]
+name = "By Product"
+type = "json"
+
+[metaobjects.app.appx_routing_shard.fields.excluded]
+name = "Excluded"
+type = "json"
+
+[metaobjects.app.appx_routing_shard.fields.wire_version]
+name = "Wire Version"
+type = "single_line_text_field"
+
 # Shop-level routing map (attribute -> template handle). One json metafield per
 # shop, rebuilt from the ACTIVE disjoint ProductAssignment rows (data-model.md §9)
 # by `app/shopify/routing.server.ts`. `storefront = public_read` makes it

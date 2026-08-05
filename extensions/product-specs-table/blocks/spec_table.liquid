@@ -58,11 +58,27 @@
   attributes, then look up its metaobject by handle. The resolver emits nothing for
   an excluded / unmatched product, so `spec` stays blank and nothing renders
   (tier 2).
+
+  Feature 108 (metaobject sharding). The two per-product maps (`byProduct` /
+  `excluded`) no longer ride the `$app:routing` metafield — they live in per-bucket
+  shard metaobjects keyed by `product.id mod N`. We resolve THIS product's single
+  shard here and pass it into the resolver alongside `routing`, keeping the snippet a
+  pure function of its inputs (symmetry with the `routing:` param).
+
+  🔴 The `modulo: 1024` literal and the `$app:appx_routing_shard` type string are a
+  CROSS-LANGUAGE CONTRACT with `ROUTING_SHARD_COUNT` / `ROUTING_SHARD_TYPE` in
+  app/utils/routingShards.ts — they MUST match, and `routingShardWireContract.test.ts`
+  reads this file off disk and fails if they drift. `append` coerces the integer
+  bucket key to the handle string (`routing-shard-<k>`); a bucket with no shard
+  resolves `shard` to nil, which the snippet treats as a clean miss.
 {%- endcomment -%}
 {%- liquid
   assign routing = shop.metafields["$app"].routing.value
+  assign shard_key = product.id | modulo: 1024
+  assign shard_handle = "routing-shard-" | append: shard_key
+  assign shard = metaobjects["$app:appx_routing_shard"][shard_handle]
 -%}
-{%- capture routed_handle -%}{%- render "spec-table-resolve", product: product, routing: routing -%}{%- endcapture -%}
+{%- capture routed_handle -%}{%- render "spec-table-resolve", product: product, routing: routing, shard: shard -%}{%- endcapture -%}
 {%- comment -%}
   Shopify wraps app-extension snippet output in `<!-- BEGIN/END app snippet -->`
   comments; strip_html removes those (and any stray tags) so only the plain

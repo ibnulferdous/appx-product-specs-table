@@ -177,12 +177,12 @@ describe("multi-value scope (feature 46) — N rows from one template", () => {
 // but reshapes it: bare-id keys, interned handle indices, `excluded` as a membership
 // set, `byTag` dropped. These pin the shape the storefront resolver decodes.
 describe("compactRoutingForDelivery", () => {
-  it("stamps the wire version", () => {
-    expect(ROUTING_WIRE_VERSION).toBe(2);
-    expect(compactRoutingForDelivery(buildRoutingProjection([])).v).toBe(2);
+  it("stamps the wire version (v3 — byProduct/excluded moved to shards)", () => {
+    expect(ROUTING_WIRE_VERSION).toBe(3);
+    expect(compactRoutingForDelivery(buildRoutingProjection([])).v).toBe(3);
   });
 
-  it("compacts an empty projection to the versioned empty wire (no byTag key)", () => {
+  it("compacts an empty projection to the versioned broad-only empty wire", () => {
     const c = compactRoutingForDelivery(buildRoutingProjection([]));
     expect(c).toEqual({
       v: ROUTING_WIRE_VERSION,
@@ -191,24 +191,37 @@ describe("compactRoutingForDelivery", () => {
       byType: {},
       byVendor: {},
       byCollection: {},
-      byProduct: {},
-      excluded: {},
     });
-    // byTag is omitted entirely — the storefront never reads it.
+    // byTag omitted (always empty); byProduct/excluded omitted (sharded, feature 108).
+    // The storefront reads those two from the per-product shard, never from this wire.
     expect(c).not.toHaveProperty("byTag");
+    expect(c).not.toHaveProperty("byProduct");
+    expect(c).not.toHaveProperty("excluded");
   });
 
-  it("strips GIDs to bare numeric ids for product/collection/excluded keys", () => {
+  it("strips COLLECTION GIDs to bare numeric ids (the only per-id map left here)", () => {
+    const c = compactRoutingForDelivery(
+      buildRoutingProjection([
+        rule("COLLECTION", "gid://shopify/Collection/678", "template-a"),
+      ]),
+    );
+    expect(c.byCollection).toEqual({ "678": 0 });
+  });
+
+  it("does NOT carry PRODUCT or EXCLUDE rules — those shard (feature 108)", () => {
+    // The projection still holds them GID-faithfully (D6, tested above); the DELIVERY
+    // wire must not. A PRODUCT INCLUDE and a PRODUCT EXCLUDE both leave the shop
+    // metafield entirely — routed instead through `$app:appx_routing_shard`.
     const c = compactRoutingForDelivery(
       buildRoutingProjection([
         rule("PRODUCT", "gid://shopify/Product/12345", "template-a"),
-        rule("COLLECTION", "gid://shopify/Collection/678", "template-a"),
         rule("PRODUCT", "gid://shopify/Product/999", "template-a", "EXCLUDE"),
       ]),
     );
-    expect(c.byProduct).toEqual({ "12345": 0 });
-    expect(c.byCollection).toEqual({ "678": 0 });
-    expect(c.excluded).toEqual({ "999": 1 });
+    expect(c).not.toHaveProperty("byProduct");
+    expect(c).not.toHaveProperty("excluded");
+    // Neither rule interned a handle into the broad-tier table.
+    expect(c.handles).toEqual([]);
   });
 
   it("keeps byType/byVendor keys raw (they match product.type/vendor directly)", () => {

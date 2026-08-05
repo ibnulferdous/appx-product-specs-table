@@ -127,22 +127,28 @@ export function buildRoutingProjection(
   return projection;
 }
 
-// --- Delivery wire compaction (Option 1 — the byte-budget down-payment) -------
+// --- Delivery wire compaction (broad tiers only) ------------------------------
 //
 // The `RoutingProjection` above is the INTERNAL shape: GID-faithful, human-readable,
 // and stored verbatim in the `ShopStorefrontRouting` Postgres row (jsonb, effectively
 // unbounded). The DELIVERY copy — the `$app:routing` json metafield Liquid reads — is
 // a different, COMPACT encoding of the same information, because that copy alone hits
-// Shopify's 128KB `json` ceiling (data-model.md §14). Three lossless transforms cut
-// the two unbounded maps (`byProduct`, `excludedProductGids`) to ~1/4 the bytes:
+// Shopify's 128KB `json` ceiling (data-model.md §14).
 //
-//   1. Keys are the BARE numeric id, not the full GID. Liquid only exposes
-//      `product.id` / `collection.id` anyway, so the storefront reconstructs nothing
-//      — it drops the `gid://shopify/Product/` construction entirely.
+// 🔴 WIRE v3 — the two UNBOUNDED per-product maps have LEFT this metafield. As of
+// Option 2 (metaobject sharding, feature 108) `byProduct` and `excluded` are no longer
+// carried here: they are split across N per-bucket `$app:appx_routing_shard` metaobjects
+// keyed by `product.id mod N`, each with its OWN 128KB budget (`app/utils/routingShards.ts`).
+// A product page reads exactly one small shard, not the whole map. This metafield now
+// carries ONLY the broad, count-bounded tiers (`byType` / `byVendor` / `byCollection` /
+// `def`) — the tiers that were never the byte problem (data-model.md §14). Two lossless
+// transforms still apply to what remains:
+//
+//   1. Keys are the BARE numeric id, not the full GID (the only per-id map left here is
+//      `byCollection`). Liquid only exposes `collection.id` anyway, so the storefront
+//      reconstructs nothing — it drops the `gid://shopify/Collection/` construction.
 //   2. Template handles are INTERNED into `handles[]`; every map value is an integer
-//      index. A 34-byte `template-{cuid}` shared by 2,000 products is written once.
-//   3. `excluded` is an OBJECT (membership hash), not an array — O(1) `x[id]` lookup
-//      on the storefront instead of a linear `contains` scan on every product view.
+//      index. A 34-byte `template-{cuid}` shared across many collections is written once.
 //
 // `byTag` is omitted (always empty; the storefront never reads it). `byType` /
 // `byVendor` keys stay raw — they are merchant product-type / vendor strings that
@@ -151,17 +157,27 @@ export function buildRoutingProjection(
 // 🔴 This is DELIVERY-ONLY. Postgres and `buildRoutingProjection` are untouched, so
 // the source of truth stays debuggable and the budget instrumentation
 // (`reportRoutingBudget`) measures the exact compact string it sends. The storefront
-// reader is `snippets/spec-table-resolve.liquid`; the two must move together (the
-// wire is a private contract between this function and that snippet).
-
-/** Wire-format version. Bumped on any incompatible change to `CompactRouting`. */
-export const ROUTING_WIRE_VERSION = 2;
+// reader is `snippets/spec-table-resolve.liquid` (broad tiers) plus the shard it is
+// handed by `blocks/spec_table.liquid` (per-product); the wire is a private contract
+// between this function + `routingShards.ts` and those Liquid files — they move together,
+// guarded by `routingWireContract.test.ts` and `routingShardWireContract.test.ts`.
 
 /**
- * The compact delivery shape written to the `$app:routing` metafield. Every `by*`
- * value and `def` is an index into `handles`; `excluded` is a membership set
- * (`{ "<id>": 1 }`). Keys are bare numeric ids for product/collection maps, raw
- * strings for type/vendor.
+ * Wire-format version. Bumped on any incompatible change to the delivery wire.
+ * 🔴 v3 (feature 108): `byProduct` / `excluded` moved OUT of `$app:routing` into the
+ * shard metaobjects. A v2 reader against v3 data (or vice-versa) is a redeploy mismatch,
+ * caught by the wire-contract tests. Shared by the shop wire AND the shards
+ * (`routingShards.ts` ties each shard's `wire_version` field to this), so a bump moves
+ * both ends of the wire together.
+ */
+export const ROUTING_WIRE_VERSION = 3;
+
+/**
+ * The compact delivery shape written to the `$app:routing` metafield (wire v3 —
+ * BROAD TIERS ONLY). Every `by*` value and `def` is an index into `handles`. Keys are
+ * bare numeric ids for `byCollection`, raw strings for type/vendor. The unbounded
+ * per-product maps (`byProduct` / `excluded`) are NOT here — they live in the shard
+ * metaobjects (`routingShards.ts`, `ShardPayload`).
  */
 export type CompactRouting = {
   v: number;
@@ -170,13 +186,13 @@ export type CompactRouting = {
   byType: Record<string, number>;
   byVendor: Record<string, number>;
   byCollection: Record<string, number>;
-  byProduct: Record<string, number>;
-  excluded: Record<string, 1>;
 };
 
 /** Bare numeric id from a GID tail: `gid://shopify/Product/123` -> `"123"`. A value
- *  with no slash (already bare, or malformed) passes through unchanged — lossless. */
-function idTail(gid: string): string {
+ *  with no slash (already bare, or malformed) passes through unchanged — lossless.
+ *  Exported so `routingShards.ts` (Option 2) buckets on the EXACT same bare id this
+ *  compactor keys by — the shard key and the shop-wire key must never diverge. */
+export function idTail(gid: string): string {
   const slash = gid.lastIndexOf("/");
   return slash === -1 ? gid : gid.slice(slash + 1);
 }
@@ -212,11 +228,6 @@ export function compactRoutingForDelivery(
     return out;
   };
 
-  const excluded: Record<string, 1> = {};
-  for (const gid of projection.excludedProductGids) {
-    excluded[idTail(gid)] = 1;
-  }
-
   return {
     v: ROUTING_WIRE_VERSION,
     handles,
@@ -227,8 +238,7 @@ export function compactRoutingForDelivery(
     byType: compactMap(projection.byType, (key) => key),
     byVendor: compactMap(projection.byVendor, (key) => key),
     byCollection: compactMap(projection.byCollection, idTail),
-    byProduct: compactMap(projection.byProduct, idTail),
-    excluded,
-    // byTag intentionally omitted — always empty, never read on the storefront.
+    // byProduct / excluded intentionally omitted — sharded (feature 108). byTag
+    // omitted too — always empty, never read on the storefront.
   };
 }

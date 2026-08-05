@@ -1,13 +1,16 @@
-// The compact routing WIRE, held against the one file the rest of the suite
-// cannot see.
+// The compact routing WIRE (v3, BROAD tiers only), held against the one file the rest
+// of the suite cannot see.
 //
 // `compactRoutingForDelivery` (routingProjection.ts) writes the `$app:routing`
 // metafield, and `spec-table-resolve.liquid` reads it back. The two are a private
-// contract: bare-id keys, `by*`/`def` values as indices into `handles[]`, and
-// `excluded` as a membership object. Nothing enforces that they agree, because Liquid
-// is outside the TypeScript module graph — a keyword rename on one side (or a revert
-// to the old GID-keyed `RoutingProjection` names) leaves both files internally valid
-// and the storefront resolving NOTHING on every product. Silent, and merchant-facing.
+// contract: bare-id keys, `by*`/`def` values as indices into `handles[]`. As of wire v3
+// (feature 108) the two per-product maps `byProduct` / `excluded` have LEFT this wire for
+// the shard metaobjects — the snippet reads them from the `shard` param instead, and
+// `routingShardWireContract.test.ts` guards THAT half of the contract. This test covers
+// the broad tiers only. Nothing enforces that the two ends agree, because Liquid is
+// outside the TypeScript module graph — a keyword rename on one side (or a revert to the
+// old GID-keyed `RoutingProjection` names) leaves both files internally valid and the
+// storefront resolving NOTHING on every product. Silent, and merchant-facing.
 //
 // This is the routing analog of `specTableLiquidDefaultsContract.test.ts`: a
 // source-text test is the only place a TS shape and a Liquid file can be held
