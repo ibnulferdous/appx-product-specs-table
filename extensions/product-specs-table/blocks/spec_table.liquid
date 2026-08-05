@@ -2,19 +2,22 @@
   Appx — Product Specs Table
   Storefront app block. Renders the spec table assigned to the current product.
 
-  - Resolves the assigned template metaobject `spec` in THREE tiers (feature 43,
+  - Resolves the assigned template metaobject `spec` in TWO tiers (feature 43,
     data-model §9); the disjoint ACTIVE set guarantees <=1 table per product:
-      1. Per-product override (highest precedence, features 34/35): the app-owned
-         `metaobject_reference` metafield `product.metafields["$app"].spec_table.value`
-         (reserved-prefix BRACKET form; dot form does not resolve the reserved
-         namespace). An explicit single-product assignment always wins.
-      2. Else the shop routing map: `snippets/spec-table-resolve.liquid` reads
+      1. The shop routing map: `snippets/spec-table-resolve.liquid` reads
          `shop.metafields["$app"].routing.value` and emits the matched template
          HANDLE (or nothing, incl. when the product is in `excludedProductGids`);
          the handle resolves to the metaobject via
          `metaobjects["$app:appx_spec_table"][handle]` (raw-handle lookup, proven
-         live — data-model §9).
-      3. No match -> `spec` stays blank -> nothing renders.
+         live — data-model §9). Explicit single-product assignments arrive the
+         same way, as `routing.byProduct` entries.
+      2. No match -> `spec` stays blank -> nothing renders.
+    🚫 There was a tier ahead of these: the per-product `metaobject_reference`
+    metafield `product.metafields["$app"].spec_table.value` (features 34/35),
+    REMOVED 2026-08-04 along with its definition. No app code ever wrote it, so
+    it could only ever be set by hand in Admin. Do not reinstate the read without
+    reinstating the definition in `shopify.app.toml` — a metafield with no
+    definition resolves to nil and the branch would be silently dead.
   - `.status`/`.rows` are read as `.status.value` / `.rows.value` (json -> array).
   - SECTION_HEADER rows span both columns; DATA rows are label/value pairs.
   - Value cells (all part types, incl. SHOPIFY_FIELD / METAFIELD resolution
@@ -51,30 +54,24 @@
 {% endcomment %}
 
 {%- comment -%}
-  Tier 1 — per-product override metafield (an explicit single-product assignment).
+  Tier 1 — shop routing map. Resolve a template handle from the product's
+  attributes, then look up its metaobject by handle. The resolver emits nothing for
+  an excluded / unmatched product, so `spec` stays blank and nothing renders
+  (tier 2).
 {%- endcomment -%}
 {%- liquid
-  assign spec = product.metafields["$app"].spec_table.value
   assign routing = shop.metafields["$app"].routing.value
 -%}
+{%- capture routed_handle -%}{%- render "spec-table-resolve", product: product, routing: routing -%}{%- endcapture -%}
 {%- comment -%}
-  Tier 2 — shop routing map. Only when there is no per-product override: resolve a
-  template handle from the product's attributes, then look up its metaobject by
-  handle. The resolver emits nothing for an excluded / unmatched product, so `spec`
-  stays blank and nothing renders (tier 3).
+  Shopify wraps app-extension snippet output in `<!-- BEGIN/END app snippet -->`
+  comments; strip_html removes those (and any stray tags) so only the plain
+  handle slug remains, then strip trims whitespace. A metaobject handle has no
+  HTML characters, so strip_html is lossless here.
 {%- endcomment -%}
-{%- if spec == blank -%}
-  {%- capture routed_handle -%}{%- render "spec-table-resolve", product: product, routing: routing -%}{%- endcapture -%}
-  {%- comment -%}
-    Shopify wraps app-extension snippet output in `<!-- BEGIN/END app snippet -->`
-    comments; strip_html removes those (and any stray tags) so only the plain
-    handle slug remains, then strip trims whitespace. A metaobject handle has no
-    HTML characters, so strip_html is lossless here.
-  {%- endcomment -%}
-  {%- assign routed_handle = routed_handle | strip_html | strip -%}
-  {%- if routed_handle != blank -%}
-    {%- assign spec = metaobjects["$app:appx_spec_table"][routed_handle] -%}
-  {%- endif -%}
+{%- assign routed_handle = routed_handle | strip_html | strip -%}
+{%- if routed_handle != blank -%}
+  {%- assign spec = metaobjects["$app:appx_spec_table"][routed_handle] -%}
 {%- endif -%}
 {%- liquid
   assign rows = spec.rows.value

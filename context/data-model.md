@@ -190,7 +190,7 @@ model Shop {
   templates          Template[]
   // Polymorphic assignment rules (scope + value) that bind templates to products/attributes.
   assignments        ProductAssignment[]
-  // Sparse per-product override state (materialized single-product overrides only).
+  // Sparse per-product override state — DORMANT since 2026-08-04, nothing writes it.
   assignmentIndexes  ProductAssignmentIndex[]
   // Projected shop-level routing map mirrored to the shop routing metafield.
   storefrontRouting  ShopStorefrontRouting?
@@ -304,11 +304,15 @@ enum AssignmentMode {
   EXCLUDE
 }
 
-// SPARSE per-product override cache. Populated ONLY for explicit single-product
-// overrides materialized as a per-product metafield (the bounded fallback), plus
-// any hard PRODUCT-vs-PRODUCT conflict. Broad rules (type/vendor/collection/tag/
-// all-products) are delivered via the shop routing map and are NEVER indexed here —
-// this table is never O(catalog).
+// 🔴 DORMANT since 2026-08-04 — NOTHING WRITES THIS TABLE (see §9).
+// It was the SPARSE per-product override cache, populated only for single-product
+// overrides materialized as a per-product `$app:spec_table` metafield (the bounded
+// fallback) plus any hard PRODUCT-vs-PRODUCT conflict. That metafield definition was
+// removed, so the case cannot arise. Kept, not dropped: dropping it is a migration
+// with no benefit while the `byProduct` 128KB replacement is undesigned, and
+// `shop/redact` already deletes from it (step 105). Broad rules
+// (type/vendor/collection/tag/all-products) were never indexed here — the shop
+// routing map delivers them, so this table was never O(catalog).
 model ProductAssignmentIndex {
   id     String @id @default(cuid())
   shopId String
@@ -332,7 +336,8 @@ model ProductAssignmentIndex {
   status         AssignmentIndexStatus @default(APPLIED)
   conflictReason String?
 
-  // Storefront pointer written to the product's `$app:spec_table` metaobject_reference.
+  // Storefront pointer that WAS written to the product's `$app:spec_table`
+  // metaobject_reference — that metafield no longer exists (see the model comment).
   appliedTemplateHandle String?
   syncedToShopifyAt     DateTime?
 
@@ -738,7 +743,14 @@ That is acceptable for MVP because it matches the simple Shopify product-style s
 > **Update (2026-07-07) — rigid model + shop-level routing. Supersedes the per-product-materialization and priority-precedence design originally described in this section.**
 >
 > 1. **Assignment is rigid and merchant-controlled (Moon-Bundles style), not priority-resolved.** Each template targets **one scope** (all products / selected products / product type / vendor / selected collections). A dry-run checks that scope against every **other ACTIVE** template; any overlap **blocks activation** (`DRAFT → ACTIVE`). A template may be **saved `DRAFT` with a conflict**, never `ACTIVE`. The published rule set is therefore **disjoint** — the storefront never resolves precedence, so there is no merchant-facing `priority`.
-> 2. **Broad rules deliver through ONE shop-level routing metafield, not per-product writes.** `[shop.metafields.app.routing]` (json, `access.storefront = "public_read"`) holds `{ default, byType, byVendor, byCollection, byTag, byProduct, excludedProductGids }` mapping attribute → template metaobject **handle**. Liquid reads `shop.metafields["$app"].routing.value`, matches the current product's fields, and resolves the handle **directly** to the template metaobject. O(1) writes per rule; future products are covered with no re-materialization. A per-product `metaobject_reference` metafield remains only for bounded single-product overrides.
+> 2. **Broad rules deliver through ONE shop-level routing metafield, not per-product writes.** `[shop.metafields.app.routing]` (json, `access.storefront = "public_read"`) holds `{ default, byType, byVendor, byCollection, byTag, byProduct, excludedProductGids }` mapping attribute → template metaobject **handle**. Liquid reads `shop.metafields["$app"].routing.value`, matches the current product's fields, and resolves the handle **directly** to the template metaobject. O(1) writes per rule; future products are covered with no re-materialization. ~~A per-product `metaobject_reference` metafield remains only for bounded single-product overrides.~~ **[SUPERSEDED 2026-08-04 — see the update immediately below.]**
+>
+> **Update (2026-08-04) — 🔴 the per-product override metafield is GONE. The routing map is the ONLY delivery mechanism.** `[product.metafields.app.spec_table]` was deleted from `shopify.app.toml` and the deploy took every stored value with it (declarative definitions are read-only through the Admin API — the TOML *is* the delete). It shipped in feature 34 as the product → template pointer, was demoted to "bounded single-product override" here on 2026-07-07, and **no app code ever wrote it** in either role: `PRODUCT`-scope assignments have always gone into `routing.byProduct`. It was therefore a live storefront **read** path with no writer, settable only by hand in Admin. Consequences, all of them load-bearing:
+>
+> - Storefront resolution is **two tiers**, not three (`blocks/spec_table.liquid`): routing map → nothing. `byProduct` is the whole of the explicit-single-product story.
+> - **The `byProduct` 128KB escape hatch no longer exists.** The old plan (materialize per-product metafields via `bulkOperationRunMutation` once a template's `byProduct` set neared the json cap) died with the definition. If that ceiling is ever approached, the fix must be re-designed — do not assume the metafield can simply be re-added, because re-adding a definition and re-populating ~2,500 products is a migration, not a config edit.
+> - `ProductAssignmentIndex` loses its only populated case (see "Product assignment index" below). The table is retained but is now **entirely unused**; it was already sparse-to-empty, and no code path writes it.
+> - 🚫 **Reinstating the Liquid read without reinstating the TOML definition is silently dead** — an undefined metafield resolves to nil, so the branch would never fire and would look like a routing bug.
 >
 > **Metaobject-by-handle is PROVEN (live storefront, 2026-07-07).** `metaobjects["$app:appx_spec_table"][handle]` resolves an app-owned metaobject from a **handle string** and exposes `.status.value` / `.rows.value` — overturning the 2026-06-19 caveat below (which pushed reference metafields out of caution). Both `$app:appx_spec_table` and the resolved `app--<app-id>--appx_spec_table` type forms work; use the `$app:` form. Observed live: `system.type = app--378906640385--appx_spec_table`, `status = ACTIVE`, `rows = 19`. (App-owned metafields/metaobjects require `access.storefront = "public_read"` to be Liquid-readable — theme app extensions are storefront surfaces.)
 >
@@ -748,9 +760,9 @@ Liquid cannot read Appx Postgres data directly. Therefore, assignment resolution
 
 ### MVP strategy
 
-The current product is matched to its one effective template through the **shop-level routing map** (`shop.metafields["$app"].routing`), with a per-product `metaobject_reference` metafield for bounded single-product overrides. MVP intentionally renders one spec table per product, and the rigid block-on-conflict model (top-of-section update) guarantees exactly one match.
+The current product is matched to its one effective template through the **shop-level routing map** (`shop.metafields["$app"].routing`) — the only mechanism, since the 2026-08-04 removal. MVP intentionally renders one spec table per product, and the rigid block-on-conflict model (top-of-section update) guarantees exactly one match.
 
-`ProductAssignment` stores the merchant's assignment **rules** (Postgres, source of truth). `ShopStorefrontRouting` is the projected map pushed to Shopify. `ProductAssignmentIndex` is the sparse record of materialized single-product overrides only (see below).
+`ProductAssignment` stores the merchant's assignment **rules** (Postgres, source of truth). `ShopStorefrontRouting` is the projected map pushed to Shopify. `ProductAssignmentIndex` is dormant (see below).
 
 > **The `single_line_text_field` example and Liquid flow immediately below are HISTORICAL** (the original 2026 sketch). They are superseded twice — first by the `metaobject_reference` metafield (2026-07-01 note), then by the shop routing map + direct handle resolution (2026-07-07 top-of-section update). Retained for provenance; do not implement from them.
 
@@ -787,11 +799,15 @@ Exact Liquid syntax should be verified during Theme App Extension implementation
 > `shop.metaobjects.appx_spec_table[handle]` sketch above will need the resolved
 > app type. **[SUPERSEDED 2026-07-07]** — proven false on the live storefront:
 > `metaobjects["$app:appx_spec_table"][handle]` resolves a raw handle string
-> directly (see the top-of-§9 update). The `metaobject_reference` product metafield
+> directly (see the top-of-§9 update). ~~The `metaobject_reference` product metafield
 > shipped in feature 34 is retained, but only as the bounded single-product override
-> path — broad rules use the shop routing map + direct handle lookup.
+> path~~ — **[SUPERSEDED 2026-08-04: that metafield was removed entirely.]** All
+> assignment uses the shop routing map + direct handle lookup.
 
 > **Update (2026-07-01, storefront slice 1 — `context/features/34-storefront-theme-app-extension-first-pixel.md`).**
+> 🔴 **HISTORICAL — the definition described here was DELETED on 2026-08-04** (top-of-§9
+> update). Retained because it records *why* a `metaobject_reference` beats a handle
+> string, which still governs any future product → metaobject pointer.
 > Confirmed against Shopify docs and **implemented**: the product → template pointer
 > is a **`metaobject_reference` product metafield**, **not** the
 > `single_line_text_field` handle sketched in the example below (docs: never store
@@ -830,18 +846,19 @@ The merchant gives a template **one scope** (a single selector, Kaching-style): 
 On every activate/deactivate (or ACTIVE-scope edit), the app rebuilds `ShopStorefrontRouting` from the ACTIVE, disjoint rules and pushes it to the `[shop.metafields.app.routing]` json metafield:
 
 - Broad scopes each become **one map entry** — `PRODUCT_TYPE` → `byType`, `VENDOR` → `byVendor`, `COLLECTION` → `byCollection`, `TAG` → `byTag`, `ALL_PRODUCTS` → `default` — so a rule matching 20k products is still **O(1) writes**. **No per-product metafields; future matching products are covered automatically at render time.**
-- Selected single products (`PRODUCT`) go into `byProduct`; `EXCLUDE` carve-outs go into `excludedProductGids`. If one template's `byProduct` set ever approaches the 128KB json cap (~2,500 full-GID entries), materialize those products as per-product `$app:spec_table` `metaobject_reference` metafields instead — via `bulkOperationRunMutation` (rate-limit-exempt) — and record them in `ProductAssignmentIndex`.
+- Selected single products (`PRODUCT`) go into `byProduct`; `EXCLUDE` carve-outs go into `excludedProductGids`. ~~If one template's `byProduct` set ever approaches the 128KB json cap (~2,500 full-GID entries), materialize those products as per-product `$app:spec_table` `metaobject_reference` metafields instead — via `bulkOperationRunMutation` (rate-limit-exempt) — and record them in `ProductAssignmentIndex`.~~ 🔴 **That escape hatch was removed with the metafield on 2026-08-04** (top-of-§9 update) and there is currently **no** answer to `byProduct` reaching the cap. Step 104 measured the real ceiling — **3,446 excluded GIDs** before the 128KB `json` write fails at `metafieldsSet` — so the failure mode is a rejected routing write, not silent truncation. Designing the replacement is open work, not a config edit.
 
 ### Storefront (Liquid) — resolve the one match
 
 The theme app extension resolves the current product against the routing map top-down (order is efficiency only — disjointness guarantees ≤1 match):
 
-1. `product.metafields["$app"].spec_table.value` — bounded per-product override, if materialized (tier 1, highest precedence).
-2. `routing.byProduct[<product GID>]` — an **explicit single-product assignment**. Checked **before** the exclude gate (feature 45 Decision B) so an excluded product still reaches its own dedicated table (the "all products EXCEPT X, and X gets its own table" story).
-3. `excludedProductGids` containing the product's GID ⇒ the **broad** tiers below are carved out for it (render nothing **from the map**; the per-product override in step 1 and the explicit `byProduct` in step 2 both still win). The exclude gate only suppresses the broad tiers.
-4. `byType[product.type]` → `byVendor[product.vendor]` → first hit scanning `product.collections` against `byCollection` (by collection GID) → `routing.defaultTemplateHandle`.
+1. `routing.byProduct[<product GID>]` — an **explicit single-product assignment**. Checked **before** the exclude gate (feature 45 Decision B) so an excluded product still reaches its own dedicated table (the "all products EXCEPT X, and X gets its own table" story).
+2. `excludedProductGids` containing the product's GID ⇒ the **broad** tiers below are carved out for it (render nothing **from the map**; the explicit `byProduct` in step 1 still wins). The exclude gate only suppresses the broad tiers.
+3. `byType[product.type]` → `byVendor[product.vendor]` → first hit scanning `product.collections` against `byCollection` (by collection GID) → `routing.defaultTemplateHandle`.
 
-> **Implemented (feature 43 + 45, `context/features/43-…`, `45-…`).** The live projection json key for the shop default is **`defaultTemplateHandle`** (feature 40's `RoutingProjection`, written verbatim by 41) — not the loose `default` earlier in this section. `byTag` is intentionally **not read** in the Liquid: TAG is post-MVP (absent from the `AssignmentScope` enum), so `byTag` is always `{}` and scanning `product.tags` would be dead work (and risks Liquid's 50-iteration `for` cap on tag-heavy products). **Resolver order (feature 45 Decision B):** override → `byProduct` → exclude gate → broad tiers — so neither the per-product override nor an explicit `byProduct` assignment can be suppressed by a carve-out; only the broad tiers are gated. (Before feature 45, the exclude gate wrapped `byProduct` too, so an excluded product could never reach its own explicit assignment — a real storefront bug the reorder fixes.) Resolution lives in `snippets/spec-table-resolve.liquid` (emits the matched handle); the block resolves the metaobject and renders.
+> **Removed 2026-08-04:** the list above used to open with `product.metafields["$app"].spec_table.value` — a per-product override checked ahead of everything. Both the read and its definition are gone (top-of-§9 update), so the map is the whole resolver.
+
+> **Implemented (feature 43 + 45, `context/features/43-…`, `45-…`).** The live projection json key for the shop default is **`defaultTemplateHandle`** (feature 40's `RoutingProjection`, written verbatim by 41) — not the loose `default` earlier in this section. `byTag` is intentionally **not read** in the Liquid: TAG is post-MVP (absent from the `AssignmentScope` enum), so `byTag` is always `{}` and scanning `product.tags` would be dead work (and risks Liquid's 50-iteration `for` cap on tag-heavy products). **Resolver order (feature 45 Decision B, minus the removed override tier):** `byProduct` → exclude gate → broad tiers — so an explicit `byProduct` assignment cannot be suppressed by a carve-out; only the broad tiers are gated. (Before feature 45, the exclude gate wrapped `byProduct` too, so an excluded product could never reach its own explicit assignment — a real storefront bug the reorder fixes.) Resolution lives in `snippets/spec-table-resolve.liquid` (emits the matched handle); the block resolves the metaobject and renders.
 
 > **Routing-map key format — GID-faithful (locked feature 40, `context/features/40-…`).** `byProduct` / `byCollection` keys and `excludedProductGids` entries are the **raw `scopeValue` GID** (`gid://shopify/Product/…` / `…/Collection/…`), copied verbatim from `ProductAssignment.scopeValue`; `byType` / `byVendor` keys are the raw selector strings. Liquid only exposes numeric `product.id` / `collection.id`, so the theme app extension **constructs the GID token** before the lookup — `{% assign pgid = 'gid://shopify/Product/' | append: product.id %}` then `routing.byProduct[pgid]`, and likewise per `product.collections`. The `product.id` forms shown above are the *illustrative* originals; feature 43 uses the GID-constructed key and browser-verifies it. (Trade documented in feature 40: keeps the projection builder lossless with no GID parsing; if 43's live test favors numeric keys, revisit the builder **and** this section together.)
 
@@ -849,12 +866,9 @@ The matched value is a template **handle**; resolve it with `metaobjects["$app:a
 
 ### Product assignment index (sparse)
 
-`ProductAssignmentIndex` is **not** a per-catalog cache anymore. Broad rules live in the shop routing map, so most products have **no** index row. It is populated only for:
+🔴 **DORMANT since 2026-08-04 — nothing writes this table.** It was never a per-catalog cache (broad rules live in the shop routing map, so most products had **no** index row); its one populated case was the **materialized single-product override** — a `PRODUCT`-scope entry written as a per-product `$app:spec_table` metafield, with `appliedTemplateHandle` + `syncedToShopifyAt`, plus `STALE` rows when such an override needed resync. That metafield is gone (top-of-§9 update), so the case cannot arise. The table and its columns are **retained, not dropped**: removing them is a migration with no benefit while the `byProduct` cap replacement is undesigned, and `shop/redact` already deletes from it (step 105).
 
-- **materialized single-product overrides** — the bounded `PRODUCT`-scope entries written as per-product `$app:spec_table` metafields (the fallback path), with `appliedTemplateHandle` + `syncedToShopifyAt`; and
-- **`STALE`** rows when a materialized override's product data changed and needs resync.
-
-`status = APPLIED` means a per-product override metafield is set (`templateId`, `sourceAssignmentId`, `scope = PRODUCT`). `status = CONFLICT` is reserved for the rare hard `PRODUCT`-vs-`PRODUCT` override collision. **Rule-vs-rule conflicts are not stored here** — they are computed by the dry-run at activation and surfaced to the merchant immediately (blocking). The `[shopId, shopifyProductGid]` unique still guarantees one override row per product.
+The original semantics, for whoever revives it: `status = APPLIED` meant a per-product override metafield is set (`templateId`, `sourceAssignmentId`, `scope = PRODUCT`); `status = CONFLICT` is reserved for the rare hard `PRODUCT`-vs-`PRODUCT` override collision. **Rule-vs-rule conflicts are not stored here** — they are computed by the dry-run at activation and surfaced to the merchant immediately (blocking). The `[shopId, shopifyProductGid]` unique guarantees one override row per product.
 
 ### Conflict handling
 

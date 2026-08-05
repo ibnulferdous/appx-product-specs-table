@@ -237,11 +237,15 @@ enum AssignmentMode {
   EXCLUDE
 }
 
-// SPARSE per-product override cache. Populated ONLY for explicit single-product
-// overrides materialized as a per-product metafield (the bounded fallback), plus
-// any hard PRODUCT-vs-PRODUCT conflict. Broad rules (type/vendor/collection/tag/
-// all-products) are delivered via the shop routing map and are NEVER indexed here —
-// this table is never O(catalog).
+// 🔴 DORMANT since 2026-08-04 — NOTHING WRITES THIS TABLE (data-model.md §9).
+// It was the SPARSE per-product override cache, populated only for single-product
+// overrides materialized as a per-product `$app:spec_table` metafield (the bounded
+// fallback) plus any hard PRODUCT-vs-PRODUCT conflict. That metafield definition was
+// removed, so the case cannot arise. Kept, not dropped: dropping it is a migration
+// with no benefit while the `byProduct` 128KB replacement is undesigned, and
+// `shop/redact` already deletes from it (step 105). Broad rules
+// (type/vendor/collection/tag/all-products) were never indexed here — the shop
+// routing map delivers them, so this table was never O(catalog).
 model ProductAssignmentIndex {
   id     String @id @default(cuid())
   shopId String
@@ -265,7 +269,8 @@ model ProductAssignmentIndex {
   status         AssignmentIndexStatus @default(APPLIED)
   conflictReason String?
 
-  // Storefront pointer written to the product's `$app:spec_table` metaobject_reference.
+  // Storefront pointer that WAS written to the product's `$app:spec_table`
+  // metaobject_reference — that metafield no longer exists (see the model comment).
   appliedTemplateHandle String?
   syncedToShopifyAt     DateTime?
 

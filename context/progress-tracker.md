@@ -117,6 +117,17 @@ saved presets, cuttable).
 - **`aria-describedby` concatenates the referenced element's TEXT CONTENT with no
   separator** — `<span>A</span><span>B</span>` announces `"AB"`. Any multi-phrase
   description must be one text node with real DOM separators.
+- 🚫 **There is no per-product override metafield, and the routing map has no overflow
+  escape hatch.** `[product.metafields.app.spec_table]` was deleted 2026-08-04. Two things
+  follow and neither is obvious from the code: **(1)** reinstating the Liquid read without
+  also reinstating the TOML definition is **silently dead** — an undefined metafield resolves
+  to nil, so the branch never fires and reads as a routing bug. **(2)** The old answer to
+  "what if one template's `byProduct` set nears the 128KB json cap" was *materialize those
+  products as per-product metafields via `bulkOperationRunMutation`*. That answer died with
+  the definition and **has no replacement**; step 104's measured ceiling (**3,446** excluded
+  GIDs) now has nothing behind it, and the failure mode is a rejected `metafieldsSet`, not
+  silent truncation. Re-adding the definition and back-filling thousands of products is a
+  migration, not a config edit — design the replacement before promising the capacity.
 - **Every GraphQL input array is capped at 250** (Admin and Storefront, since API 2020-01)
   and Shopify rejects the **whole request**, not the overflow. `nodes(ids:)` chunks at
   `NODES_MAX_IDS = 250`; failure is per-chunk by construction.
@@ -133,6 +144,31 @@ saved presets, cuttable).
 
 > Rolling window, newest first. Older units roll into Completed.
 
+- **Per-product `$app:spec_table` override metafield REMOVED — storefront resolution is now
+  two tiers** — 🛠️ 2026-08-04, full gate green (typecheck · lint · format · **test 1397 / 53**
+  · build) + `validate_theme` on the edited block **byte-identical to HEAD's 13 pre-existing
+  warnings** (all in the feature-74 `capture` gate, none in the resolution preamble).
+  ⚠️ **NOT DEPLOYED and NOT live-verified** — a `shopify app deploy` is what actually deletes
+  the definition, and it is deliberately left to ride the production-host deploy alongside
+  step 107's staged demo-definition removals (same D5 reasoning: a deploy from here re-anchors
+  step 106's three compliance uris onto `example.com`). Until then the definition is still live
+  on `appx-dev` and the Liquid no longer reads it — a **harmless** intermediate state, because
+  no app code ever wrote the metafield.
+  🔴 **The premise that made this safe: it was a live storefront READ path with no writer.**
+  It shipped in feature 34 as the product → template pointer, was demoted to "bounded
+  single-product override" by the 40/43 routing redesign, and in neither role did anything in
+  `app/` write it — `PRODUCT`-scope assignments have always gone into `routing.byProduct`.
+  So the only values that could exist were hand-set in Admin, and the delete costs nothing the
+  routing map does not already cover. 🔴 **Declarative definitions are read-only through the
+  Admin API** — `metafieldDefinitionDelete` errors on them; deleting the TOML block **is** the
+  delete, and it takes every stored value with it.
+  Files: `shopify.app.toml` (block gone, replaced by a 🚫 do-not-re-add comment),
+  `blocks/spec_table.liquid` (tier 1 dropped; the tier-2 branch becomes unconditional — note
+  `spec` is now simply never assigned on a miss, and nil `!= blank` is false, so the
+  render gate at `:133` behaves exactly as before), `snippets/spec-table-resolve.liquid`
+  (its "tier-1 sits ahead of this" note), `context/data-model.md` §9 (new top-of-section
+  update + the resolution list, delivery, and index subsections), `prisma/schema.prisma`
+  (comments only — **no migration**). No TS touched, so no test moved.
 - **Storefront — METAFIELD parts backed by metaobjects rendered EMPTY** — ✅ fixed
   2026-08-04, full gate green (typecheck · lint · format · **test 1397 / 53** · build) +
   `validate_theme` clean, **and live-verified on `appx-dev`** after deploy: the DJI product
@@ -760,8 +796,11 @@ per-product overflow materialization + a bulk apply-to-all styling route.
   declarative TOML and the runtime `metaobjectDefinitionCreate` is gone (§Key Decisions
   "App-owned definitions are declarative TOML"). ⚠️ **Plausibly is not verified**, and two
   unchecked things could make the wider scopes correct: what `metafieldsSet` requires for a
-  **Shop**-owner metafield, and whether deploying the declarative
-  `[product.metafields.app.spec_table]` definition needs `write_products` at deploy time.
+  **Shop**-owner metafield, and ~~whether deploying the declarative
+  `[product.metafields.app.spec_table]` definition needs `write_products` at deploy time~~
+  — ✅ **the second is MOOT since 2026-08-04**: that definition was deleted, so no product-
+  owner definition is deployed at all and `write_products` has one fewer possible
+  justification. The Shop-metafield question is the only one left standing.
   🚫 **Not changed in step 107** (D4) — a config change with its own blast radius does not
   belong in a unit whose value is being obviously safe; same precedent as step 106 D5
   refusing to touch `api_version`. Why it matters now: `app-store-review-checklist.md` §8
@@ -836,8 +875,13 @@ per-product overflow materialization + a bulk apply-to-all styling route.
   (no query selects shops by install state), the `scopeValue` component of
   `ProductAssignment @@index([shopId, scope, scopeValue])`, and `Template @@index([shopId])`
   (redundant with the `@@unique` whose leading column is the same). ⚠️ Dropping any of
-  them is a **migration**, and §9 still describes `ProductAssignmentIndex` as a live part
-  of the model — so this needs a decision about the design, not just a schema edit. See
+  them is a **migration**. ✅ **The §9 half of the blocker cleared 2026-08-04**: §9 and
+  `schema.prisma` now both mark `ProductAssignmentIndex` **dormant** — its one populated
+  case was the per-product override metafield, which no longer exists, so the design
+  question "is this model live?" is answered *no*. What remains is purely the migration
+  call (and note `shop/redact` still deletes from the table, step 105, so a drop touches
+  that path too). Still blocked on **OQ-107-B**, which has onboarding checklist step 3
+  keying off an `APPLIED` row that can now never be written. See
   also the vestigial `Shop.metaobjectDefinitionGid` (§10), already deferred as "a later
   cleanup" — these want to land as one migration, not four.
 - **Can `TWO_COLUMN` express a section gap via `border-collapse: separate`?** (raised

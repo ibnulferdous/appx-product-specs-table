@@ -22,7 +22,10 @@
       -> excluded? -> nothing
       -> byType[type] -> byVendor[vendor]
         -> byCollection[<collection GID>] (scan) -> defaultTemplateHandle
-  (The block's tier-1 per-product override metafield sits ahead of all of this.)
+  This map is now the ONLY source of an assignment. The per-product override
+  metafield that used to sit ahead of it in the block was removed 2026-08-04
+  (see `blocks/spec_table.liquid`), so `byProduct` is the whole of the
+  explicit-single-product story.
 
   Keys are GID-faithful (feature 40): byProduct / byCollection keys are the raw
   `gid://shopify/...` token, but Liquid only exposes the numeric `.id`, so we
