@@ -846,19 +846,19 @@ The merchant gives a template **one scope** (a single selector, Kaching-style): 
 On every activate/deactivate (or ACTIVE-scope edit), the app rebuilds `ShopStorefrontRouting` from the ACTIVE, disjoint rules and pushes it to the `[shop.metafields.app.routing]` json metafield:
 
 - Broad scopes each become **one map entry** — `PRODUCT_TYPE` → `byType`, `VENDOR` → `byVendor`, `COLLECTION` → `byCollection`, `TAG` → `byTag`, `ALL_PRODUCTS` → `default` — so a rule matching 20k products is still **O(1) writes**. **No per-product metafields; future matching products are covered automatically at render time.**
-- Selected single products (`PRODUCT`) go into `byProduct`; `EXCLUDE` carve-outs go into `excludedProductGids`. ~~If one template's `byProduct` set ever approaches the 128KB json cap (~2,500 full-GID entries), materialize those products as per-product `$app:spec_table` `metaobject_reference` metafields instead — via `bulkOperationRunMutation` (rate-limit-exempt) — and record them in `ProductAssignmentIndex`.~~ 🔴 **That escape hatch was removed with the metafield on 2026-08-04** (top-of-§9 update). 🟢 **Option 1 (2026-08-05) bought headroom:** the delivery wire is now compacted (§14), so the write ceiling moved from **3,446** carve-outs (or 1,745 per-product picks) to **~7,276** (or ~7,274) — a ~2–4× down-payment, **not** a removal: `byProduct` and `excluded` still share one 128KB budget. The structural fix is **Option 2 — shard those two maps into per-bucket metaobjects** (unbounded entries, keyed by `product.id mod N`); it is scoped but not yet designed. Failure mode is unchanged: a rejected `metafieldsSet`, not silent truncation.
+- Selected single products (`PRODUCT`) go into `byProduct`; `EXCLUDE` carve-outs go into `excludedProductGids` (the Postgres projection, unchanged). 🟢 **Option 2 — metaobject sharding — is now BUILT (feature 108, 2026-08-05).** `byProduct` and `excluded` no longer ride the shop `$app:routing` metafield: at write time they are split across N `$app:appx_routing_shard` metaobjects keyed by `product.id mod 1024` (`app/utils/routingShards.ts`), each shard with its **own** 128KB budget, so total per-product capacity is `N × 128KB` and a product page reads only its own shard. The shop metafield (wire **v3**) now carries only the count-bounded broad tiers (`byType` / `byVendor` / `byCollection` / `def`). 🔴 **N = 1024 can never change after launch** (a different modulus re-buckets every product). See §14. Failure mode is unchanged: a rejected write, not silent truncation.
 
 ### Storefront (Liquid) — resolve the one match
 
 The theme app extension resolves the current product against the routing map top-down (order is efficiency only — disjointness guarantees ≤1 match):
 
-1. `routing.byProduct[<product GID>]` — an **explicit single-product assignment**. Checked **before** the exclude gate (feature 45 Decision B) so an excluded product still reaches its own dedicated table (the "all products EXCEPT X, and X gets its own table" story).
-2. `excludedProductGids` containing the product's GID ⇒ the **broad** tiers below are carved out for it (render nothing **from the map**; the explicit `byProduct` in step 1 still wins). The exclude gate only suppresses the broad tiers.
-3. `byType[product.type]` → `byVendor[product.vendor]` → first hit scanning `product.collections` against `byCollection` (by collection GID) → `routing.defaultTemplateHandle`.
+1. `shard.by_product[<product id>]` — an **explicit single-product assignment**, read from this product's routing shard (feature 108), not the shop map. Checked **before** the exclude gate (feature 45 Decision B) so an excluded product still reaches its own dedicated table (the "all products EXCEPT X, and X gets its own table" story). The shard value is the handle **string** directly (D3).
+2. `shard.excluded[<product id>]` present ⇒ the **broad** tiers below are carved out for it (render nothing **from the map**; the explicit `by_product` in step 1 still wins). The exclude gate only suppresses the broad tiers.
+3. `byType[product.type]` → `byVendor[product.vendor]` → first hit scanning `product.collections` against `byCollection` (by collection id) → `routing.def` — the broad tiers, still from the shop `$app:routing` metafield.
 
 > **Removed 2026-08-04:** the list above used to open with `product.metafields["$app"].spec_table.value` — a per-product override checked ahead of everything. Both the read and its definition are gone (top-of-§9 update), so the map is the whole resolver.
 
-> **Compact wire (Option 1, 2026-08-05):** the steps above say "product GID" / "collection GID" for continuity with the projection, but the **delivery** map is keyed by **bare numeric id** and its values are **handle indices** — the resolver looks up `routing.byProduct[pid]` (bare `pid`) → index → `routing.handles[index]`, and tests `excluded[pid]` as O(1) object membership (no array scan). See the key-format note below and §14.
+> **Compact wire (Option 1 + 2, 2026-08-05):** the steps above say "product id" / "collection id" — the delivery map is keyed by **bare numeric id** (not the full GID). Broad tiers (`byType`/`byVendor`/`byCollection`/`def`) live in the shop `$app:routing` metafield with **handle-index** values (`routing.handles[index]`). The two per-product maps live in the shard (feature 108): `shard.by_product[pid]` → handle **string** (D3), and `shard.excluded[pid]` as O(1) object membership. The block resolves the shard (`product.id | modulo: 1024` → `routing-shard-<k>`) and passes it into the resolver. See the key-format note below and §14.
 
 > **Implemented (feature 43 + 45, `context/features/43-…`, `45-…`).** The live projection json key for the shop default is **`defaultTemplateHandle`** (feature 40's `RoutingProjection`, written verbatim by 41) — not the loose `default` earlier in this section. `byTag` is intentionally **not read** in the Liquid: TAG is post-MVP (absent from the `AssignmentScope` enum), so `byTag` is always `{}` and scanning `product.tags` would be dead work (and risks Liquid's 50-iteration `for` cap on tag-heavy products). **Resolver order (feature 45 Decision B, minus the removed override tier):** `byProduct` → exclude gate → broad tiers — so an explicit `byProduct` assignment cannot be suppressed by a carve-out; only the broad tiers are gated. (Before feature 45, the exclude gate wrapped `byProduct` too, so an excluded product could never reach its own explicit assignment — a real storefront bug the reorder fixes.) Resolution lives in `snippets/spec-table-resolve.liquid` (emits the matched handle); the block resolves the metaobject and renders.
 
@@ -871,17 +871,19 @@ The theme app extension resolves the current product against the routing map top
 >   (`gid://shopify/Product/…`), copied verbatim from `ProductAssignment.scopeValue`;
 >   `byType` / `byVendor` keys are raw selector strings. Lossless, no GID parsing, and
 >   effectively unbounded (jsonb). This is unchanged.
-> - The **delivery wire** (the `$app:routing` metafield, since Option 1 on 2026-08-05)
->   is the **compact** shape `compactRoutingForDelivery` produces: keys are the **bare
->   numeric id** (`123`, not the full GID), `by*` / `def` values are **indices into
->   `handles[]`**, and `excluded` is a membership object `{ "<id>": 1 }`. See §14.
+> - The **delivery wire** splits in two (since Option 2 on 2026-08-05). The `$app:routing`
+>   metafield (wire **v3**) is broad tiers only: bare-id `byCollection` keys, `by*` / `def`
+>   values as **indices into `handles[]`**. The two per-product maps moved to the
+>   `$app:appx_routing_shard` metaobjects — `by_product` is `{ "<id>": "<handle string>" }`
+>   (D3, not an index), `excluded` is a membership object `{ "<id>": 1 }`. See §14.
 >
-> The storefront therefore does **not** construct a GID token any more. It builds a
-> bare string key — `{% assign pid = '' | append: product.id %}` then
-> `routing.byProduct[pid]` — and dereferences the handle index once
-> (`routing.handles[hidx]`). The old `'gid://shopify/Product/' | append:` construction
-> was removed with the compaction. `spec-table-resolve.liquid` and
-> `compactRoutingForDelivery` are a **private wire contract** — change one, change both.
+> The storefront builds no GID token: it uses a bare string key
+> `{% assign pid = '' | append: product.id %}`, reads `shard.by_product.value[pid]` /
+> `shard.excluded.value[pid]`, and dereferences the broad handle index once
+> (`routing.handles[hidx]`). Two **private wire contracts** now: `spec-table-resolve.liquid`
+> ↔ `compactRoutingForDelivery` (broad, `routingWireContract.test.ts`) and
+> `spec_table.liquid`/`spec-table-resolve.liquid` ↔ `routingShards.ts` (shard,
+> `routingShardWireContract.test.ts`) — change one side, change both.
 
 The matched value is a template **handle**; resolve it with `metaobjects["$app:appx_spec_table"][handle]` (proven — see top-of-section update), then render only if `status.value == "ACTIVE"` and rows exist.
 
@@ -950,6 +952,19 @@ shop on install/deploy. **Implemented and round-trip-tested live (Editor Step
 
 - **Definition:** declared in `shopify.app.toml`, not created at runtime (see the update note above). The definition is read-only through the Admin API.
 - **Entry mutations** (validated with `validate_graphql_codeblocks` @ 2025-10, in `app/shopify/metaobjects.server.ts`): `metaobjectUpsert` per template by handle `template-{templateId}` (store the returned GID + handle on the `Template`); `metaobjectByHandle` to read back; `metaobjectDelete` on template delete. Sync runs for every status; the storefront gates visibility on `status == ACTIVE`.
+
+### Routing shard metaobject (feature 108)
+
+A **second** app-owned definition, `[metaobjects.app.appx_routing_shard]` in `shopify.app.toml` (type `$app:appx_routing_shard`, `access: { admin: merchant_read_write, storefront: public_read }`). It carries the two unbounded per-product routing maps, sharded by `product.id mod 1024` so each shard has its own 128KB budget (§9, §14). One metaobject per **occupied** bucket, handle `routing-shard-<k>`.
+
+  | Key | Type | Purpose |
+  | --- | --- | --- |
+  | `by_product` | `json` | `{ "<bare product id>": "<template handle string>" }` (D3 — the handle string directly, not an interned index). |
+  | `excluded` | `json` | `{ "<bare product id>": 1 }` — EXCLUDE carve-out membership. |
+  | `wire_version` | `single_line_text_field` | Debug-only wire tag (`"3"`); a metaobject field key must be ≥2 chars, so not `v`. The storefront never reads it. |
+
+- **Writer** (`app/shopify/routing.server.ts`): reconciles by content hash — `metaobjectUpsert` only buckets whose hash changed, upsert-to-**empty** (never delete) buckets that emptied. The `{bucketKey → hash}` ledger lives in `ShopStorefrontRouting.shardState` (delivery-only, never sent to the storefront). D5.
+- **Reader:** the block resolves `metaobjects["$app:appx_routing_shard"]["routing-shard-<product.id mod 1024>"]` and passes it into `spec-table-resolve.liquid`. 🔴 The modulus (1024) and type string are a cross-language contract with `routingShards.ts`, guarded by `routingShardWireContract.test.ts`.
 
 ### Store both GID and handle
 
@@ -1219,44 +1234,46 @@ difference is one whole `byProduct` entry.
 > **compact** encoding — the only one the 128KB ceiling gates, because it is the one
 > actually written. The pre-compaction numbers are kept below it for the record.
 
-Three lossless transforms cut the two unbounded maps to ~¼–½ their bytes:
+> 🟢 **Updated 2026-08-05 (Option 2 — metaobject sharding, feature 108).** `byProduct`
+> and `excluded` **left this metafield** for the shard metaobjects (§9, §10). The shop
+> `$app:routing` metafield (wire **v3**, `ROUTING_WIRE_VERSION = 3`) now carries only the
+> broad, count-bounded tiers; the table below is the broad-only shop wire.
 
-1. **Bare-id keys.** `byProduct` / `byCollection` / `excluded` keys are the numeric
-   id (`123`), not the full GID (`gid://shopify/Product/123`) — 22 bytes saved per
-   key. Liquid only exposes `product.id` / `collection.id`, so the storefront
-   reconstructs nothing.
-2. **Interned handle indices.** Handles are collected into `handles[]`; every `by*` /
-   `def` value is an integer index. A 34-byte `template-{cuid}` shared by 2,000
-   products is written **once**.
-3. **`excluded` is a membership object** `{ "<id>": 1 }`, not an array — O(1) lookup
-   on the storefront (was a linear `contains` scan, R1b) for ~2 extra bytes/entry.
+Two lossless transforms apply to the broad wire (`byCollection` is the only per-id map
+left in it):
 
-`byTag` is dropped from the wire entirely (always empty). A `v` version int rides
-along (`ROUTING_WIRE_VERSION = 2`). Measured against the real serializer, 13-digit
-product ids, 9-digit collection ids, `template-{cuid}` handles — every number below
-is **re-derived from the live serializer** in `app/utils/routingBudget.test.ts`.
+1. **Bare-id keys.** `byCollection` keys are the numeric id (`123`), not the full GID —
+   22 bytes saved per key. Liquid only exposes `collection.id`.
+2. **Interned handle indices.** Handles collect into `handles[]`; every `by*` / `def`
+   value is an integer index. A 34-byte `template-{cuid}` shared across many collections
+   is written **once**.
 
-| Component | Bytes each (compact) | Entries that fit | was |
-| --- | --- | --- | --- |
-| Empty compact envelope | 104 (fixed) | — | 125 |
-| `excluded` entry | **18** | **7,276** | 38 / 3,446 |
-| `byProduct` entry | **18** | **7,274** | 75 / 1,745 |
-| `byCollection` entry | **14** | **9,352** | 74 / 1,769 |
-| `byType` / `byVendor` entry | key + 3 | **count-bounded only** | key + handle + 6 |
+`byTag` is dropped (always empty). A `v` version int rides along. Numbers are
+**re-derived from the live serializer** in `app/utils/routingBudget.test.ts`.
 
-`byProduct` gains the full ~4.2× (it carried a 34-byte handle on every entry, now an
-index); `excluded` gains ~2.1× (prefix drop only — it never carried a handle);
-`byCollection` ~5.3× (prefix drop + intern + shorter ids). `byType` / `byVendor` get
-no per-entry number, honestly: the key is a merchant-authored product type or vendor
-name with no length limit. Their *count* is bounded by the shop's distinct
-types/vendors; their *size* is not.
+| Component (broad-only shop wire) | Bytes each | Entries that fit |
+| --- | --- | --- |
+| Empty envelope | 75 (fixed) | — |
+| `byCollection` entry | **14** | **9,354** |
+| `byType` / `byVendor` entry | key + 3 | **count-bounded only** |
 
-🔴 **Compaction DELAYS the ceiling; it does not remove it.** `byProduct` and
-`excluded` still **share one 128KB budget**, so a shop with ~3,600 per-product picks
-plus ~3,600 carve-outs still overflows even though neither map is near its solo
-number. Option 1 is the cheap ~4× down-payment; the structural fix is **Option 2 —
-shard `byProduct` / `excluded` into per-bucket metaobjects** (unbounded, keyed by
-`product.id mod N`), which also cuts per-page weight. Not yet designed.
+`byType` / `byVendor` get no per-entry number: the key is a merchant-authored type or
+vendor name with no length limit — *count*-bounded by the shop's distinct values, not
+*size*-bounded.
+
+🟢 **Option 2 removes the shared per-product ceiling.** `byProduct` / `excluded` are now
+split across **N = 1024** `$app:appx_routing_shard` metaobjects keyed by
+`product.id mod 1024`, each with its **own** 128KB budget — total per-product capacity is
+`N × 128KB` (and a product page reads only its own shard, cutting per-page weight). A
+shard holds `catalog/N` entries — at 1M products that is ~977 entries/shard, ~50KB, well
+under 128KB. Inside a shard, `by_product` stores the handle **string** directly (D3, no
+`handles[]` — a shard is small) and `excluded` is a membership object `{ "<id>": 1 }`.
+🔴 **D4 — N can never change after launch** (a different modulus re-buckets every product
+and orphans every stored shard). 🔴 **D5 — reconcile by content hash, never delete:** the
+writer upserts only changed buckets and upserts-to-empty the cleared ones (an empty shard
+reads as a miss), so a status toggle that leaves per-product assignments untouched writes
+**zero** shards. **D6** — Postgres stays GID-faithful and un-sharded; sharding is a
+delivery-only reshape at write time.
 
 📌 **Capacity is not `floor((limit − envelope) / perEntry)`.** That division is off
 by one — the first entry of a map carries no leading comma. (Under the pre-Option-1
@@ -1408,7 +1425,8 @@ The metaobject entries, the shop routing metafield and the per-product metafield
 all live in the merchant's store. By the time `shop/redact` fires there is no
 access token, so the Admin API cannot be called — and it does not need to be:
 Shopify removes app-owned metaobjects and reserved-namespace metafields when the
-app is uninstalled. 🚫 Do not write code that tries.
+app is uninstalled — this covers the `$app:appx_routing_shard` shard metaobjects too
+(feature 108), so no new erase code. 🚫 Do not write code that tries.
 
 ---
 

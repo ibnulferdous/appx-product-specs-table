@@ -127,15 +127,15 @@ saved presets, cuttable).
   with the definition. 🟢 **Option 1 (2026-08-05) bought ~2–4×:** the delivery wire is now
   compacted (bare-id keys, interned handle indices, `excluded` as an object), pushing the
   ceiling from **3,446** excludes / 1,745 per-product picks to **~7,276 / ~7,274** (§14). This
-  is a **down-payment, not a fix** — `byProduct` and `excluded` still share one 128KB budget,
-  and the failure mode is still a rejected `metafieldsSet`, not silent truncation. The
-  structural answer is **Option 2 — shard those two maps into per-bucket metaobjects** (keyed
-  `product.id mod N`, 1M entries/definition), now **designed as a full build plan** (build-before-launch):
-  [`108-…`](features/108-routing-metaobject-sharding.md). 🔴 **N (=1024) can never change after
-  launch** — it is the storage format; a change re-buckets every product (same law as the styling
-  defaults). Re-adding the
-  old per-product definition and back-filling thousands of products is a migration, not a
-  config edit.
+  was a **down-payment, not a fix** — under Option 1 `byProduct` and `excluded` still shared one
+  128KB budget. 🟢 **Option 2 (metaobject sharding) is now DESIGNED + BUILT (feature 108,
+  Units A–E complete, 2026-08-05):** those two maps are sharded across N = 1024
+  `$app:appx_routing_shard` metaobjects keyed `product.id mod 1024`, each with its own 128KB budget
+  (total per-product capacity `N × 128KB`), and the shop `$app:routing` metafield (wire **v3**) now
+  carries only the broad tiers. Plan + decisions: [`108-…`](features/108-routing-metaobject-sharding.md).
+  🔴 **N (=1024) can never change after launch** — it is the storage format; a change re-buckets every
+  product (same law as the styling defaults). ⏭️ Only **Unit F (live verification)** remains — it rides
+  the production-host `shopify app deploy` that anchors the shard definition (deferred).
 - **Every GraphQL input array is capped at 250** (Admin and Storefront, since API 2020-01)
   and Shopify rejects the **whole request**, not the overflow. `nodes(ids:)` chunks at
   `NODES_MAX_IDS = 250`; failure is per-chunk by construction.
@@ -152,6 +152,13 @@ saved presets, cuttable).
 
 > Rolling window, newest first. Older units roll into Completed.
 
+- **Routing metaobject sharding (Option 2) — Unit E: docs** — ✅ 2026-08-05. `data-model.md`
+  updated: §9 (Option 2 built; resolver now reads `shard.by_product`/`shard.excluded`, broad tiers
+  from the shop wire; two private wire contracts), §10 (new "Routing shard metaobject" definition
+  entry — fields, writer, reader), §14 (shop wire is broad-only: envelope 104→75, byProduct/excluded
+  rows gone, byCollection 9,354 fit; per-shard `N × 128KB` capacity + D4/D5/D6 invariants), §15
+  (uninstall removes the shard metaobjects too — no new erase code). `shopify.app.toml` shard comment
+  already complete from Unit A. Binding rule above flipped to "designed + built". Docs-only.
 - **Routing metaobject sharding (Option 2) — Unit D: the atomic wire flip + Liquid rewrite** — ✅
   2026-08-05, full gate green (typecheck · lint · format · **test 1443 / 56** (+6, +1 file) · build);
   both edited Liquid files re-validated (`validate_theme`): snippet clean, block carries only its 13
