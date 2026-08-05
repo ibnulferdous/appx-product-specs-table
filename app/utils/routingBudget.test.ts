@@ -5,7 +5,11 @@ import {
   JSON_METAFIELD_MAX_BYTES,
   BUDGET_WARN_RATIO,
 } from "./routingBudget";
-import { buildRoutingProjection, type RoutingRule } from "./routingProjection";
+import {
+  buildRoutingProjection,
+  compactRoutingForDelivery,
+  type RoutingRule,
+} from "./routingProjection";
 
 // Step 104. Two jobs here:
 //   1. Pin the arithmetic — bytes (not code units), and the exactly-at-the-ceiling
@@ -97,6 +101,11 @@ describe("measurePayload — the ceiling boundary", () => {
 // ids are currently 13 digits and collection ids 9-10; the handle is
 // `template-{cuid}` (34 chars). Those three facts are what make the numbers below
 // true, so they are spelled out rather than buried in a fixture.
+//
+// 🔴 These measure the DELIVERY WIRE — `compactRoutingForDelivery(projection)` — not
+// the raw projection. The compact copy is the one written to the `json` metafield, so
+// it is the only encoding the 128KB ceiling gates (Option 1, data-model §9/§14). The
+// un-compacted projection lives in Postgres jsonb, which is effectively unbounded.
 
 describe("routing projection byte budgets", () => {
   const HANDLE = `template-${"cl9ebqhxk00003b600tymydho"}`; // cuid() is 25 chars
@@ -106,7 +115,7 @@ describe("routing projection byte budgets", () => {
     `gid://shopify/Collection/${400000000 + n}`;
 
   const serialize = (rules: RoutingRule[]) =>
-    JSON.stringify(buildRoutingProjection(rules));
+    JSON.stringify(compactRoutingForDelivery(buildRoutingProjection(rules)));
 
   /** Marginal bytes added by the Nth entry, measured on the real builder. */
   const perEntry = (make: (n: number) => RoutingRule[]) =>
@@ -140,22 +149,22 @@ describe("routing projection byte budgets", () => {
     expect(HANDLE).toHaveLength(34);
   });
 
-  it("an empty projection costs 125 bytes of envelope", () => {
-    expect(byteLength(serialize([]))).toBe(125);
+  it("an empty compact wire costs 104 bytes of envelope", () => {
+    expect(byteLength(serialize([]))).toBe(104);
   });
 
   /**
-   * Largest entry count whose FULL serialized projection still fits.
+   * Largest entry count whose FULL serialized wire still fits.
    *
    * 🔴 Deliberately a search over the real serializer, not
-   * `floor((limit - envelope) / perEntry)`. That division is off by one for the
-   * array maps, because the first element carries no leading comma — it is how
-   * 104's spec predicted 3,445 excludes when the true answer is 3,446. The
-   * marginal cost and the total capacity are different questions.
+   * `floor((limit - envelope) / perEntry)`. That division is off by one, because
+   * the first entry of a map carries no leading comma — marginal cost and total
+   * capacity are different questions. (Under the pre-Option-1 array encoding this is
+   * how 104's spec predicted 3,445 excludes when the true answer was 3,446.)
    */
   const maxFit = (make: (n: number) => RoutingRule[]) => {
     let lo = 0;
-    let hi = 10000;
+    let hi = 20000;
     while (lo < hi) {
       const mid = (lo + hi + 1) >> 1;
       if (byteLength(serialize(make(mid))) <= JSON_METAFIELD_MAX_BYTES)
@@ -165,34 +174,35 @@ describe("routing projection byte budgets", () => {
     return lo;
   };
 
-  it("🔴 an excludedProductGids entry costs 38 bytes, and 3,446 fit", () => {
-    expect(perEntry(excludes)).toBe(38);
-    expect(maxFit(excludes)).toBe(3446);
-    // The boundary is exact: 3,446 lands precisely ON the ceiling.
-    expect(measurePayload(serialize(excludes(3446))).bytes).toBe(
+  it("🔴 a compact excluded entry costs 18 bytes, and 7,276 fit", () => {
+    expect(perEntry(excludes)).toBe(18);
+    expect(maxFit(excludes)).toBe(7276);
+    expect(measurePayload(serialize(excludes(7276))).bytes).toBeLessThanOrEqual(
       JSON_METAFIELD_MAX_BYTES,
     );
-    expect(measurePayload(serialize(excludes(3447))).level).toBe("over");
+    expect(measurePayload(serialize(excludes(7277))).level).toBe("over");
   });
 
-  it("a byProduct entry costs 75 bytes, and 1,745 fit", () => {
-    expect(perEntry(products)).toBe(75);
-    expect(maxFit(products)).toBe(1745);
-    expect(measurePayload(serialize(products(1746))).level).toBe("over");
+  it("a compact byProduct entry costs 18 bytes, and 7,274 fit", () => {
+    // ~4.2x the pre-Option-1 ceiling of 1,745: the full handle written on every
+    // entry (75 bytes) collapses to an interned index (18 bytes).
+    expect(perEntry(products)).toBe(18);
+    expect(maxFit(products)).toBe(7274);
+    expect(measurePayload(serialize(products(7275))).level).toBe("over");
   });
 
-  it("a byCollection entry costs 74 bytes, and 1,769 fit", () => {
-    expect(perEntry(collections)).toBe(74);
-    expect(maxFit(collections)).toBe(1769);
-    expect(measurePayload(serialize(collections(1770))).level).toBe("over");
+  it("a compact byCollection entry costs 14 bytes, and 9,352 fit", () => {
+    expect(perEntry(collections)).toBe(14);
+    expect(maxFit(collections)).toBe(9352);
+    expect(measurePayload(serialize(collections(9353))).level).toBe("over");
   });
 
-  it("warns with ~689 carve-outs of runway left — §D6's justification", () => {
+  it("warns with ~1,456 carve-outs of runway left — §D6's justification", () => {
     // The warn threshold is only defensible if it leaves room to ACT. Pin the
     // actual runway so retuning BUDGET_WARN_RATIO has to face the consequence.
-    expect(measurePayload(serialize(excludes(2756))).level).toBe("ok");
-    expect(measurePayload(serialize(excludes(2757))).level).toBe("warn");
-    expect(maxFit(excludes) - 2757).toBe(689);
+    expect(measurePayload(serialize(excludes(5819))).level).toBe("ok");
+    expect(measurePayload(serialize(excludes(5820))).level).toBe("warn");
+    expect(maxFit(excludes) - 5820).toBe(1456);
   });
 
   it("byType/byVendor have no per-entry number — the key is unbounded merchant text", () => {

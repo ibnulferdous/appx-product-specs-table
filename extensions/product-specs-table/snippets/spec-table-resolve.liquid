@@ -5,9 +5,14 @@
 
   Params (render scope is isolated — both passed explicitly):
   - product: the current product
-  - routing: the parsed `shop.metafields["$app"].routing.value` json object, i.e.
-             { defaultTemplateHandle, byType, byVendor, byCollection, byTag,
-               byProduct, excludedProductGids } (feature 40 shape, written by 41).
+  - routing: the parsed `shop.metafields["$app"].routing.value` json object, in the
+             COMPACT delivery shape written by `compactRoutingForDelivery`
+             (app/utils/routingProjection.ts):
+               { v, handles[], def, byType, byVendor, byCollection, byProduct,
+                 excluded }
+             Every by*/def value is an INDEX into `handles`; `excluded` is a
+             membership set `{ "<id>": 1 }`. This is a private wire contract between
+             that function and this snippet — the two must move together.
 
   Emits: the resolved template handle STRING, or nothing. Liquid render scope is
   isolated (a snippet cannot return a value), so the block CAPTURES this output.
@@ -18,68 +23,82 @@
   the exclude gate, so an excluded product still reaches its own dedicated table
   (the "all products EXCEPT X, and X gets its own table" story); the exclude gate
   then only carves products out of the BROAD tiers:
-    byProduct[<product GID>]
+    byProduct[<product id>]
       -> excluded? -> nothing
       -> byType[type] -> byVendor[vendor]
-        -> byCollection[<collection GID>] (scan) -> defaultTemplateHandle
-  This map is now the ONLY source of an assignment. The per-product override
-  metafield that used to sit ahead of it in the block was removed 2026-08-04
+        -> byCollection[<collection id>] (scan) -> def
+  Each tier resolves to a handle INDEX (`hidx`); `handles[hidx]` is dereferenced
+  ONCE at the end. This map is now the ONLY source of an assignment. The per-product
+  override metafield that used to sit ahead of it in the block was removed 2026-08-04
   (see `blocks/spec_table.liquid`), so `byProduct` is the whole of the
   explicit-single-product story.
 
-  Keys are GID-faithful (feature 40): byProduct / byCollection keys are the raw
-  `gid://shopify/...` token, but Liquid only exposes the numeric `.id`, so we
-  CONSTRUCT the GID token before each lookup. byType / byVendor keys are the raw
-  selector strings (a blank product type/vendor indexes a key that never exists,
-  so it simply falls through). TAG routing is intentionally NOT read — `byTag` is
-  always {} (post-MVP; absent from the AssignmentScope enum).
+  COMPACT-SHAPE NOTES (Option 1, data-model §9/§14):
+  - Keys are the BARE numeric id, so we build `'' | append: product.id` (forces a
+    string key to match the JSON object keys) — NOT the old `gid://...` token. The
+    `'' | append:` idiom is what the old code already relied on for its GID keys.
+  - A tier lookup returns a handle INDEX. The test is `!= blank`, never truthiness:
+    index 0 is a valid handle and `0 == blank` is false in Liquid, but an absent key
+    is nil (blank). Resolving to an index first and dereferencing `handles` once, at
+    the end, guards against `handles[nil]` coercing nil -> 0 and returning the wrong
+    table on a miss.
+  - byType / byVendor keys are raw selector strings (a blank product type/vendor
+    indexes a key that never exists, so it falls through). TAG routing is intentionally
+    NOT read — the compact shape omits `byTag` entirely (post-MVP; always empty).
 
   Collections are scanned in 50-item chunks (Shopify caps `for` at 50), breaking
   on the first hit — mirroring the block's rows loop.
 {% endcomment %}
 {%- liquid
-  assign handle = ''
+  assign hidx = ''
 
   if routing != blank
-    assign pgid = 'gid://shopify/Product/' | append: product.id
+    assign pid = '' | append: product.id
 
     # An explicit single-product assignment wins even for an excluded product
     # (feature 45 Decision B) — it is checked BEFORE the exclude gate.
-    assign handle = routing.byProduct[pgid]
+    assign hidx = routing.byProduct[pid]
 
-    # The broad tiers are carved out by excludedProductGids: an excluded product
-    # matches none of them (renders nothing unless byProduct claimed it above).
-    if handle == blank
-      unless routing.excludedProductGids contains pgid
-        assign handle = routing.byType[product.type]
+    # The broad tiers are carved out by `excluded`: an excluded product matches none
+    # of them (renders nothing unless byProduct claimed it above).
+    if hidx == blank
+      unless routing.excluded[pid] != blank
+        assign hidx = routing.byType[product.type]
 
-        if handle == blank
-          assign handle = routing.byVendor[product.vendor]
+        if hidx == blank
+          assign hidx = routing.byVendor[product.vendor]
         endif
 
-        if handle == blank
+        if hidx == blank
           assign coll_chunks = product.collections.size | plus: 49 | divided_by: 50
           for chunk in (1..coll_chunks)
             assign coll_offset = chunk | minus: 1 | times: 50
             for collection in product.collections offset: coll_offset limit: 50
-              assign cgid = 'gid://shopify/Collection/' | append: collection.id
-              assign coll_hit = routing.byCollection[cgid]
+              assign cid = '' | append: collection.id
+              assign coll_hit = routing.byCollection[cid]
               if coll_hit != blank
-                assign handle = coll_hit
+                assign hidx = coll_hit
                 break
               endif
             endfor
-            if handle != blank
+            if hidx != blank
               break
             endif
           endfor
         endif
 
-        if handle == blank
-          assign handle = routing.defaultTemplateHandle
+        if hidx == blank
+          assign hidx = routing.def
         endif
       endunless
     endif
+  endif
+
+  # Dereference the handle table ONCE, guarded so a miss (nil hidx) never indexes
+  # handles[0] by nil-coercion.
+  assign handle = ''
+  if hidx != blank
+    assign handle = routing.handles[hidx]
   endif
 
   echo handle

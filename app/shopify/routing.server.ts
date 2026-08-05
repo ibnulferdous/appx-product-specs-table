@@ -22,6 +22,7 @@ import prisma from "../db.server";
 import type { AssignmentScopeValue } from "../utils/assignmentScope";
 import {
   buildRoutingProjection,
+  compactRoutingForDelivery,
   type RoutingMode,
   type RoutingRule,
   type RoutingProjection,
@@ -83,8 +84,11 @@ export function flattenActiveRulesToRoutingRules(
 /**
  * The `metafieldsSet` variables for the shop routing metafield: one metafield on
  * the shop (`ownerId`), reserved `$app` / `routing`, `json` type, value = the
- * projection stringified verbatim (keys already mirror the columns + the Liquid
- * contract; no reshape). Pure.
+ * projection COMPACTED to the delivery wire (`compactRoutingForDelivery`, Option 1).
+ * The compaction is the ~4× byte down-payment against the 128KB `json` ceiling
+ * (data-model.md §14); the storefront reader `spec-table-resolve.liquid` decodes the
+ * same shape. Postgres still stores the un-compacted projection — this reshape is
+ * delivery-only. Pure.
  */
 export function buildRoutingMetafieldInput(
   shopGid: string,
@@ -97,7 +101,7 @@ export function buildRoutingMetafieldInput(
         namespace: ROUTING_METAFIELD_NAMESPACE,
         key: ROUTING_METAFIELD_KEY,
         type: ROUTING_METAFIELD_TYPE,
-        value: JSON.stringify(projection),
+        value: JSON.stringify(compactRoutingForDelivery(projection)),
       },
     ],
   };

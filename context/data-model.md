@@ -846,7 +846,7 @@ The merchant gives a template **one scope** (a single selector, Kaching-style): 
 On every activate/deactivate (or ACTIVE-scope edit), the app rebuilds `ShopStorefrontRouting` from the ACTIVE, disjoint rules and pushes it to the `[shop.metafields.app.routing]` json metafield:
 
 - Broad scopes each become **one map entry** — `PRODUCT_TYPE` → `byType`, `VENDOR` → `byVendor`, `COLLECTION` → `byCollection`, `TAG` → `byTag`, `ALL_PRODUCTS` → `default` — so a rule matching 20k products is still **O(1) writes**. **No per-product metafields; future matching products are covered automatically at render time.**
-- Selected single products (`PRODUCT`) go into `byProduct`; `EXCLUDE` carve-outs go into `excludedProductGids`. ~~If one template's `byProduct` set ever approaches the 128KB json cap (~2,500 full-GID entries), materialize those products as per-product `$app:spec_table` `metaobject_reference` metafields instead — via `bulkOperationRunMutation` (rate-limit-exempt) — and record them in `ProductAssignmentIndex`.~~ 🔴 **That escape hatch was removed with the metafield on 2026-08-04** (top-of-§9 update) and there is currently **no** answer to `byProduct` reaching the cap. Step 104 measured the real ceiling — **3,446 excluded GIDs** before the 128KB `json` write fails at `metafieldsSet` — so the failure mode is a rejected routing write, not silent truncation. Designing the replacement is open work, not a config edit.
+- Selected single products (`PRODUCT`) go into `byProduct`; `EXCLUDE` carve-outs go into `excludedProductGids`. ~~If one template's `byProduct` set ever approaches the 128KB json cap (~2,500 full-GID entries), materialize those products as per-product `$app:spec_table` `metaobject_reference` metafields instead — via `bulkOperationRunMutation` (rate-limit-exempt) — and record them in `ProductAssignmentIndex`.~~ 🔴 **That escape hatch was removed with the metafield on 2026-08-04** (top-of-§9 update). 🟢 **Option 1 (2026-08-05) bought headroom:** the delivery wire is now compacted (§14), so the write ceiling moved from **3,446** carve-outs (or 1,745 per-product picks) to **~7,276** (or ~7,274) — a ~2–4× down-payment, **not** a removal: `byProduct` and `excluded` still share one 128KB budget. The structural fix is **Option 2 — shard those two maps into per-bucket metaobjects** (unbounded entries, keyed by `product.id mod N`); it is scoped but not yet designed. Failure mode is unchanged: a rejected `metafieldsSet`, not silent truncation.
 
 ### Storefront (Liquid) — resolve the one match
 
@@ -858,9 +858,30 @@ The theme app extension resolves the current product against the routing map top
 
 > **Removed 2026-08-04:** the list above used to open with `product.metafields["$app"].spec_table.value` — a per-product override checked ahead of everything. Both the read and its definition are gone (top-of-§9 update), so the map is the whole resolver.
 
+> **Compact wire (Option 1, 2026-08-05):** the steps above say "product GID" / "collection GID" for continuity with the projection, but the **delivery** map is keyed by **bare numeric id** and its values are **handle indices** — the resolver looks up `routing.byProduct[pid]` (bare `pid`) → index → `routing.handles[index]`, and tests `excluded[pid]` as O(1) object membership (no array scan). See the key-format note below and §14.
+
 > **Implemented (feature 43 + 45, `context/features/43-…`, `45-…`).** The live projection json key for the shop default is **`defaultTemplateHandle`** (feature 40's `RoutingProjection`, written verbatim by 41) — not the loose `default` earlier in this section. `byTag` is intentionally **not read** in the Liquid: TAG is post-MVP (absent from the `AssignmentScope` enum), so `byTag` is always `{}` and scanning `product.tags` would be dead work (and risks Liquid's 50-iteration `for` cap on tag-heavy products). **Resolver order (feature 45 Decision B, minus the removed override tier):** `byProduct` → exclude gate → broad tiers — so an explicit `byProduct` assignment cannot be suppressed by a carve-out; only the broad tiers are gated. (Before feature 45, the exclude gate wrapped `byProduct` too, so an excluded product could never reach its own explicit assignment — a real storefront bug the reorder fixes.) Resolution lives in `snippets/spec-table-resolve.liquid` (emits the matched handle); the block resolves the metaobject and renders.
 
-> **Routing-map key format — GID-faithful (locked feature 40, `context/features/40-…`).** `byProduct` / `byCollection` keys and `excludedProductGids` entries are the **raw `scopeValue` GID** (`gid://shopify/Product/…` / `…/Collection/…`), copied verbatim from `ProductAssignment.scopeValue`; `byType` / `byVendor` keys are the raw selector strings. Liquid only exposes numeric `product.id` / `collection.id`, so the theme app extension **constructs the GID token** before the lookup — `{% assign pgid = 'gid://shopify/Product/' | append: product.id %}` then `routing.byProduct[pgid]`, and likewise per `product.collections`. The `product.id` forms shown above are the *illustrative* originals; feature 43 uses the GID-constructed key and browser-verifies it. (Trade documented in feature 40: keeps the projection builder lossless with no GID parsing; if 43's live test favors numeric keys, revisit the builder **and** this section together.)
+> **Routing-map key format — GID-faithful in the PROJECTION, bare-id in the WIRE.**
+> Two encodings, and the distinction is load-bearing:
+>
+> - The **internal `RoutingProjection`** (feature 40, the `ShopStorefrontRouting`
+>   Postgres row) is GID-faithful: `byProduct` / `byCollection` keys and
+>   `excludedProductGids` entries are the **raw `scopeValue` GID**
+>   (`gid://shopify/Product/…`), copied verbatim from `ProductAssignment.scopeValue`;
+>   `byType` / `byVendor` keys are raw selector strings. Lossless, no GID parsing, and
+>   effectively unbounded (jsonb). This is unchanged.
+> - The **delivery wire** (the `$app:routing` metafield, since Option 1 on 2026-08-05)
+>   is the **compact** shape `compactRoutingForDelivery` produces: keys are the **bare
+>   numeric id** (`123`, not the full GID), `by*` / `def` values are **indices into
+>   `handles[]`**, and `excluded` is a membership object `{ "<id>": 1 }`. See §14.
+>
+> The storefront therefore does **not** construct a GID token any more. It builds a
+> bare string key — `{% assign pid = '' | append: product.id %}` then
+> `routing.byProduct[pid]` — and dereferences the handle index once
+> (`routing.handles[hidx]`). The old `'gid://shopify/Product/' | append:` construction
+> was removed with the compaction. `spec-table-resolve.liquid` and
+> `compactRoutingForDelivery` are a **private wire contract** — change one, change both.
 
 The matched value is a template **handle**; resolve it with `metaobjects["$app:appx_spec_table"][handle]` (proven — see top-of-section update), then render only if `status.value == "ACTIVE"` and rows exist.
 
@@ -1040,7 +1061,7 @@ found (D5 said "at least four").
 | Read | Trigger | Volume | Served from | Bounded by |
 | --- | --- | --- | --- | --- |
 | **R1a** · Routing blob transfer + parse | Every product page view — `blocks/spec_table.liquid:58` | **Highest** — every product page, every shopper | **Shop metafield** (`shop.metafields["$app"].routing`) | Total entries across `byType` + `byVendor` + `byCollection` + `byProduct` + `excludedProductGids` — one entry per ACTIVE INCLUDE assignment row, one per ACTIVE EXCLUDE row (`app/utils/routingProjection.ts:69`). **Hard ceiling: 128KB** (json metafield write, API 2026-04+). ⚠️ **Not enforced today** — the runtime Admin client is `ApiVersion.October25` (`app/shopify.server.ts:13`), i.e. pre-2026-04, so writes currently sit at the legacy 2MB limit. See F1. |
-| **R1b** · The exclude gate | Every product page view that reaches the broad tiers — `snippets/spec-table-resolve.liquid:50` | **Highest** (same page views as R1a, minus `byProduct` hits) | **Shop metafield** (the same blob as R1a) | **NOTHING.** `routing.excludedProductGids contains pgid` is a linear scan of an array whose length is the shop's ACTIVE EXCLUDE PRODUCT row count. No cap in `setTemplateExcludes` (`app/models/assignment.server.ts:277`), none in the projection (`app/utils/routingProjection.ts:95`), none in the picker. The only indirect bound is R1a's 128KB write ceiling, once it applies. See F2. |
+| **R1b** · The exclude gate | Every product page view that reaches the broad tiers — `snippets/spec-table-resolve.liquid` | **Highest** (same page views as R1a, minus `byProduct` hits) | **Shop metafield** (the same blob as R1a) | **NOTHING caps the count.** 🟢 As of Option 1 (2026-08-05) the gate is `routing.excluded[pid]` — an **O(1) object-membership** lookup, no longer the linear array scan `contains` performed (the per-page cost stopped growing with the carve-out count). No cap in `setTemplateExcludes` (`app/models/assignment.server.ts`), none in the projection, none in the picker; the only indirect bound is R1a's 128KB write ceiling (now ~7,276 compact entries). See F2. |
 | **R1c** · The collection scan | Product page views reaching the collection tier — `snippets/spec-table-resolve.liquid:58–72` | High (page views with no `byProduct`/`byType`/`byVendor` hit, not excluded) | **Shop metafield** + the storefront `product.collections` object | The **product's own** collection membership — not the shop's collection count. Walked in 50-item chunks (Liquid's `for` cap) with one `byCollection` lookup per collection, breaking on first hit. No app-side cap; the effective ceiling is Shopify's own per-product collection limit. |
 | **R1d** · The rows render | Every product page view that resolves a template — `blocks/spec_table.liquid:200–268` | High (page views that render a table) | **Metaobject** (`spec.rows.value`) | `MAX_TEMPLATE_ROWS = 200` (`app/utils/rows.ts:14`), re-enforced server-side at `app/models/template.server.ts:39`. Walked in 50-row chunks; each DATA row renders `snippets/spec-table-value.liquid`. |
 | **R1e** · Per-product override metafield *(beyond D5)* | Every product page view, unconditionally — `blocks/spec_table.liquid:57` | **Highest** — same as R1a | **Product metafield** (`metaobject_reference`) | O(1) — a single reference resolving to one metaobject. A reference, not `json`, so no value-size ceiling applies. |
@@ -1127,7 +1148,7 @@ dropped — dropping it is a migration and a different unit.
 | # | Finding | Routed to |
 | --- | --- | --- |
 | **F1** | R1a's 128KB ceiling is real, is **not** currently enforced, and this app is **not grandfathered**. Shopify limits `json` metafield **writes** to 128KB from API 2026-04; apps using json fields *before 2026-04-01* keep the 2MB limit. This repo's first commit is **2026-06-09** and its first `type = "json"` declaration landed **2026-07-02** (`6d1cd3a`), both after the cutoff — so no grandfathering. It is masked only because the runtime Admin client is pinned to `ApiVersion.October25` (`app/shopify.server.ts:13`). **Moving the runtime client to 2026-04 or later activates the ceiling.** ✅ Quantified 2026-08-01 — see **§14**. | **104** (byte budgets) — ✅ **done** |
-| **F2** | `excludedProductGids` (R1b / R3d) is bounded by **nothing** — no cap at the picker, the writer, or the projection — and it is the most reachable route to F1's ceiling, since each entry is a full ~40-char product GID. It is also scanned linearly on every product page view. | **104 / 105** |
+| **F2** | `excludedProductGids` (R1b / R3d) is bounded by **nothing** app-side — no cap at the picker, the writer, or the projection. 🟢 **Partially mitigated by Option 1 (2026-08-05):** the delivery wire is now compacted, so an exclude entry costs 18 bytes not 38 (ceiling 3,446 → **7,276**) **and** the storefront gate became an O(1) object lookup instead of a linear array scan (§14). The count is still uncapped and still shares one 128KB budget with `byProduct` — the structural fix is Option 2 (metaobject sharding), scoped but undesigned. | **104 / 105 / Option 2** |
 | **F3** | ✅ **FIXED 2026-08-03** (its own unit, not in 103's diff). R2a read and shipped **every template's full `rows` JSON** to the browser to render a row *count*. Now `listTemplateSummariesForDomain` (`template.server.ts`) is a `$queryRaw` that selects only `id/name/status/updatedAt` and computes the count in Postgres via `jsonb_array_length` — no `rows` blob leaves the DB. Keyed off `myshopifyDomain` via a `Shop` JOIN so it no longer waits on `upsertShop`, and R2b is now deferred/streamed. ⚠️ **Still unpaginated** — the remaining `rows`-blob half is closed; the pagination half stays open. | **Next-Up item 9** (templates-list pagination) |
 | **F4** | ✅ **FIXED 2026-08-01** (the only 103 finding acted on, as its own unit — not in 103's diff). R3c / R3e sent an **unchunked** `nodes(ids:)` whose id count is bounded by nothing (R3d) or nothing app-side (R3b). Past the Admin API's 250-id cap the **whole batch** failed and fail-softed to raw GIDs — every chip silently degrading to `gid://shopify/Product/…`, no message anywhere. Now chunked at `NODES_MAX_IDS = 250` with **per-chunk** fail-soft, so a failure costs one chunk instead of the list. `scopeResourceLabel.server.ts:51/62/130/201`; 14 tests, 3 mutations. | **Closed** — was OQ-103-B |
 | **F5** | **Discrepancy against §Key Decisions.** The claim is "O(rules) Postgres set-algebra + `products(query,first:1)` existence tests, never a catalog scan." The Postgres half and the never-a-catalog-scan half **hold**. The probe count does **not**: probes are per **(candidate selector × other ACTIVE INCLUDE row)** *pair* and run **sequentially**, so a 200-product candidate against one VENDOR template issues 200 sequential Admin round-trips. O(pairs), not O(rules). | **New Open Question — OQ-103-C** |
@@ -1191,34 +1212,56 @@ difference is one whole `byProduct` entry.
 
 ### The routing map (R1a) — measured
 
-Measured against the real `buildRoutingProjection` output, real GID formats
-(13-digit product ids), and the real handle shape `template-{cuid}` (34 chars,
-`app/shopify/metaobjects.server.ts:39`). Every number below is **re-derived from
-the live serializer** in `app/utils/routingBudget.test.ts` — not a literal that can
-drift from the projection shape.
+> 🟢 **Updated 2026-08-05 (Option 1 — delivery-wire compaction).** The `$app:routing`
+> metafield no longer stores the raw projection. `compactRoutingForDelivery`
+> (`app/utils/routingProjection.ts`) reshapes it into a compact wire before the write,
+> and `snippets/spec-table-resolve.liquid` decodes that wire. The table below is the
+> **compact** encoding — the only one the 128KB ceiling gates, because it is the one
+> actually written. The pre-compaction numbers are kept below it for the record.
 
-| Component | Bytes each | Entries that fit |
-| --- | --- | --- |
-| Empty projection envelope | 125 (fixed) | — |
-| `excludedProductGids` entry | **38** | **3,446** |
-| `byProduct` entry | **75** | **1,745** |
-| `byCollection` entry | **74** | **1,769** |
-| `byType` / `byVendor` entry | key + handle + 6 | **count-bounded only** |
+Three lossless transforms cut the two unbounded maps to ~¼–½ their bytes:
 
-`byType` / `byVendor` get no per-entry number, honestly: the key is a
-merchant-authored product type or vendor name with no length limit anywhere. Their
-*count* is bounded by the shop's distinct types/vendors; their *size* is not.
+1. **Bare-id keys.** `byProduct` / `byCollection` / `excluded` keys are the numeric
+   id (`123`), not the full GID (`gid://shopify/Product/123`) — 22 bytes saved per
+   key. Liquid only exposes `product.id` / `collection.id`, so the storefront
+   reconstructs nothing.
+2. **Interned handle indices.** Handles are collected into `handles[]`; every `by*` /
+   `def` value is an integer index. A 34-byte `template-{cuid}` shared by 2,000
+   products is written **once**.
+3. **`excluded` is a membership object** `{ "<id>": 1 }`, not an array — O(1) lookup
+   on the storefront (was a linear `contains` scan, R1b) for ~2 extra bytes/entry.
 
-🔴 **This is the number §13 F2 was missing.** `excludedProductGids` is bounded by
-nothing app-side — no cap at the picker, the writer, or the projection — and it
-collides with the ceiling at **3,446 carve-outs**. That is the cheapest route to
-overflow, because an exclude entry is a bare GID (38 bytes) rather than a
-GID-plus-handle pair (75).
+`byTag` is dropped from the wire entirely (always empty). A `v` version int rides
+along (`ROUTING_WIRE_VERSION = 2`). Measured against the real serializer, 13-digit
+product ids, 9-digit collection ids, `template-{cuid}` handles — every number below
+is **re-derived from the live serializer** in `app/utils/routingBudget.test.ts`.
+
+| Component | Bytes each (compact) | Entries that fit | was |
+| --- | --- | --- | --- |
+| Empty compact envelope | 104 (fixed) | — | 125 |
+| `excluded` entry | **18** | **7,276** | 38 / 3,446 |
+| `byProduct` entry | **18** | **7,274** | 75 / 1,745 |
+| `byCollection` entry | **14** | **9,352** | 74 / 1,769 |
+| `byType` / `byVendor` entry | key + 3 | **count-bounded only** | key + handle + 6 |
+
+`byProduct` gains the full ~4.2× (it carried a 34-byte handle on every entry, now an
+index); `excluded` gains ~2.1× (prefix drop only — it never carried a handle);
+`byCollection` ~5.3× (prefix drop + intern + shorter ids). `byType` / `byVendor` get
+no per-entry number, honestly: the key is a merchant-authored product type or vendor
+name with no length limit. Their *count* is bounded by the shop's distinct
+types/vendors; their *size* is not.
+
+🔴 **Compaction DELAYS the ceiling; it does not remove it.** `byProduct` and
+`excluded` still **share one 128KB budget**, so a shop with ~3,600 per-product picks
+plus ~3,600 carve-outs still overflows even though neither map is near its solo
+number. Option 1 is the cheap ~4× down-payment; the structural fix is **Option 2 —
+shard `byProduct` / `excluded` into per-bucket metaobjects** (unbounded, keyed by
+`product.id mod N`), which also cuts per-page weight. Not yet designed.
 
 📌 **Capacity is not `floor((limit − envelope) / perEntry)`.** That division is off
-by one for the array maps — the first element carries no leading comma. It is how
-104's own spec predicted 3,445 excludes when the true answer is 3,446. The tests
-search the real serializer instead.
+by one — the first entry of a map carries no leading comma. (Under the pre-Option-1
+array encoding this is how 104's spec predicted 3,445 excludes when the true answer
+was 3,446.) The tests search the real serializer instead.
 
 ### What the writer does about it
 
@@ -1229,8 +1272,9 @@ budget, naming the entry count of every map so the line is actionable.
 🚫 **It does not block.** A payload of any size still reaches `metafieldsSet`,
 proven by a test. Refusing, truncating, or surfacing a merchant-facing error at the
 ceiling is **step 105's** decision; 104 exists to produce the number that decision
-needs. The warn threshold (80% = 104,857 bytes) leaves **689** further carve-outs of
-runway — the justification is lead time measured in merchant actions, not roundness.
+needs. The warn threshold (80% = 104,857 bytes) leaves **1,456** further carve-outs
+of runway under the compact wire (was 689 pre-Option-1) — the justification is lead
+time measured in merchant actions, not roundness.
 
 ⚠️ **Measurement is app-side by necessity, and that is better anyway.**
 `Metafield.sizeInBytes` is **unstable-only** — validated absent from 2025-10,

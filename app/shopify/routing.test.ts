@@ -13,7 +13,10 @@ vi.mock("../db.server", () => ({
 
 import type { AdminApiContext } from "@shopify/shopify-app-react-router/server";
 import prisma from "../db.server";
-import type { RoutingProjection } from "../utils/routingProjection";
+import {
+  compactRoutingForDelivery,
+  type RoutingProjection,
+} from "../utils/routingProjection";
 import {
   flattenActiveRulesToRoutingRules,
   buildRoutingMetafieldInput,
@@ -162,12 +165,22 @@ describe("buildRoutingMetafieldInput", () => {
           namespace: "$app",
           key: "routing",
           type: "json",
-          value: JSON.stringify(projection),
+          // Delivery is the COMPACT wire (Option 1), not the raw projection.
+          value: JSON.stringify(compactRoutingForDelivery(projection)),
         },
       ],
     });
-    // Value round-trips to the exact projection (no reshape).
-    expect(JSON.parse(input.metafields[0].value)).toEqual(projection);
+    // Value round-trips to the compact delivery shape: interned handle, index value.
+    expect(JSON.parse(input.metafields[0].value)).toEqual({
+      v: 2,
+      handles: ["template-phones"],
+      def: null,
+      byType: { Phones: 0 },
+      byVendor: {},
+      byCollection: {},
+      byProduct: {},
+      excluded: {},
+    });
   });
 
   it("uses the exported namespace/key constants", () => {
@@ -434,7 +447,8 @@ describe("rebuildShopRouting — routing payload budget", () => {
     });
   }
 
-  /** N EXCLUDE carve-outs — the cheapest way to a large map (§14: 38 bytes each). */
+  /** N EXCLUDE carve-outs — the cheapest way to a large map (§14: 18 bytes each in
+   *  the compact delivery wire the budget measures). */
   function excludeTemplate(count: number): ActiveTemplateForRouting {
     return {
       shopifyMetaobjectHandle: "template-cl9ebqhxk00003b600tymydho",
@@ -466,8 +480,8 @@ describe("rebuildShopRouting — routing payload budget", () => {
   });
 
   it("🔴 STILL WRITES an over-budget payload — 104 observes, 105 decides", async () => {
-    // 3,447 carve-outs is one past the ceiling (§14). The write must go through.
-    prismaMock.template.findMany.mockResolvedValue([excludeTemplate(3447)]);
+    // 7,277 carve-outs is one past the compact ceiling (§14). The write must go through.
+    prismaMock.template.findMany.mockResolvedValue([excludeTemplate(7277)]);
     const admin = okAdmin();
 
     const result = await rebuildShopRouting(admin, "shop_1");
@@ -486,19 +500,19 @@ describe("rebuildShopRouting — routing payload budget", () => {
   });
 
   it("warns at `over`, naming the map that is carrying the payload", async () => {
-    prismaMock.template.findMany.mockResolvedValue([excludeTemplate(3447)]);
+    prismaMock.template.findMany.mockResolvedValue([excludeTemplate(7277)]);
 
     await rebuildShopRouting(okAdmin(), "shop_1");
 
     expect(warn).toHaveBeenCalledTimes(1);
     const message = String(warn.mock.calls[0][0]);
     expect(message).toContain("over budget");
-    expect(message).toContain("excluded 3447");
+    expect(message).toContain("excluded 7277");
     expect(message).toContain("§14");
   });
 
   it("warns at `warn` — before the ceiling, while there is still runway", async () => {
-    prismaMock.template.findMany.mockResolvedValue([excludeTemplate(2757)]);
+    prismaMock.template.findMany.mockResolvedValue([excludeTemplate(5820)]);
 
     await rebuildShopRouting(okAdmin(), "shop_1");
 

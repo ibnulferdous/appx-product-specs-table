@@ -117,17 +117,22 @@ saved presets, cuttable).
 - **`aria-describedby` concatenates the referenced element's TEXT CONTENT with no
   separator** — `<span>A</span><span>B</span>` announces `"AB"`. Any multi-phrase
   description must be one text node with real DOM separators.
-- 🚫 **There is no per-product override metafield, and the routing map has no overflow
-  escape hatch.** `[product.metafields.app.spec_table]` was deleted 2026-08-04. Two things
-  follow and neither is obvious from the code: **(1)** reinstating the Liquid read without
-  also reinstating the TOML definition is **silently dead** — an undefined metafield resolves
-  to nil, so the branch never fires and reads as a routing bug. **(2)** The old answer to
-  "what if one template's `byProduct` set nears the 128KB json cap" was *materialize those
-  products as per-product metafields via `bulkOperationRunMutation`*. That answer died with
-  the definition and **has no replacement**; step 104's measured ceiling (**3,446** excluded
-  GIDs) now has nothing behind it, and the failure mode is a rejected `metafieldsSet`, not
-  silent truncation. Re-adding the definition and back-filling thousands of products is a
-  migration, not a config edit — design the replacement before promising the capacity.
+- 🚫 **There is no per-product override metafield, and the routing map has no unbounded
+  overflow escape hatch.** `[product.metafields.app.spec_table]` was deleted 2026-08-04. Two
+  things follow and neither is obvious from the code: **(1)** reinstating the Liquid read
+  without also reinstating the TOML definition is **silently dead** — an undefined metafield
+  resolves to nil, so the branch never fires and reads as a routing bug. **(2)** The old
+  answer to "what if one template's `byProduct` set nears the 128KB json cap" was *materialize
+  those products as per-product metafields via `bulkOperationRunMutation`*. That answer died
+  with the definition. 🟢 **Option 1 (2026-08-05) bought ~2–4×:** the delivery wire is now
+  compacted (bare-id keys, interned handle indices, `excluded` as an object), pushing the
+  ceiling from **3,446** excludes / 1,745 per-product picks to **~7,276 / ~7,274** (§14). This
+  is a **down-payment, not a fix** — `byProduct` and `excluded` still share one 128KB budget,
+  and the failure mode is still a rejected `metafieldsSet`, not silent truncation. The
+  structural answer is **Option 2 — shard those two maps into per-bucket metaobjects** (keyed
+  `product.id mod N`, 1M entries/definition), scoped but **not yet designed**. Re-adding the
+  old per-product definition and back-filling thousands of products is a migration, not a
+  config edit.
 - **Every GraphQL input array is capped at 250** (Admin and Storefront, since API 2020-01)
   and Shopify rejects the **whole request**, not the overflow. `nodes(ids:)` chunks at
   `NODES_MAX_IDS = 250`; failure is per-chunk by construction.
@@ -144,6 +149,37 @@ saved presets, cuttable).
 
 > Rolling window, newest first. Older units roll into Completed.
 
+- **Routing delivery wire compacted (Option 1 — the byte-budget down-payment)** — ✅
+  2026-08-05, full gate green (typecheck · lint · format · **test 1408 / 54** · build) +
+  `validate_theme` clean on the rewritten resolver, **and live-verified on `appx-dev`** after
+  the user's deploy: forced a full compact rebuild (toggled a 0-product ACTIVE template's
+  status, which rewrites the whole shop `$app:routing` map) — both saves succeeded with **no**
+  "couldn't publish to your storefront" error, i.e. the compact `metafieldsSet` went through —
+  then both DJI products assigned to one template (`byProduct`, 2 entries) render the **same**
+  spec table on the live storefront. That end-to-end confirms bare-id key lookup + handle
+  interning (2 distinct product-id keys → 1 shared `handles[]` index → 1 metaobject) + the
+  `handles[hidx]` deref, all decoded by the rewritten Liquid. The **hard cutover** (no dual-read,
+  `v: 2` wire version) is clean because pre-launch the only data was this one dev store; a single
+  rebuild converted the whole shop. 🔴 **Attacks the ~1,745-product `byProduct` ceiling** flagged
+  in the Binding rule above. `compactRoutingForDelivery` (`app/utils/routingProjection.ts`) reshapes
+  the projection into a compact wire at write time only — **Postgres and `buildRoutingProjection`
+  are untouched** (source of truth stays GID-faithful and debuggable). Three lossless transforms:
+  bare-id keys (drop `gid://shopify/Product/`), handle interning (values become indices into
+  `handles[]`), and `excluded` as an O(1) membership object (was a linear array scan on every
+  product page — R1b). `byTag` dropped from the wire. Ceilings: excludes **3,446 → 7,276**,
+  byProduct **1,745 → 7,274** (~4.2×), byCollection **1,769 → 9,352**. The budget instrumentation
+  (`reportRoutingBudget`) now measures the compact string automatically — no change needed there.
+  🔴 **Delays, does not remove:** the two maps still share one 128KB budget; **Option 2
+  (metaobject sharding)** is the structural fix, scoped but undesigned. `spec-table-resolve.liquid`
+  + `compactRoutingForDelivery` are a **private wire contract** (`v` version gates it) — change
+  one, change both — enforced by `routingWireContract.test.ts` (reads the snippet off disk,
+  derives the wire key set from the real compactor, and fails on a stale key / reintroduced GID
+  token / dropped `handles` deref; all four guards proven by breaking them). Files:
+  `routingProjection.ts` (+`.test.ts`), `routing.server.ts` (one-line swap in
+  `buildRoutingMetafieldInput` + `.test.ts`), `spec-table-resolve.liquid` (full rewrite),
+  `routingWireContract.test.ts` (new), `routingBudget.test.ts` (numbers re-derived off the
+  compact serializer), `data-model.md` §9/§13-R1b/§13-F2/§14. No schema, no migration, no
+  TS-runtime behavior change beyond the wire bytes.
 - **Per-product `$app:spec_table` override metafield REMOVED — storefront resolution is now
   two tiers** — 🛠️ 2026-08-04, full gate green (typecheck · lint · format · **test 1397 / 53**
   · build) + `validate_theme` on the edited block **byte-identical to HEAD's 13 pre-existing

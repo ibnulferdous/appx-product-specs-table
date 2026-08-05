@@ -126,3 +126,109 @@ export function buildRoutingProjection(
 
   return projection;
 }
+
+// --- Delivery wire compaction (Option 1 — the byte-budget down-payment) -------
+//
+// The `RoutingProjection` above is the INTERNAL shape: GID-faithful, human-readable,
+// and stored verbatim in the `ShopStorefrontRouting` Postgres row (jsonb, effectively
+// unbounded). The DELIVERY copy — the `$app:routing` json metafield Liquid reads — is
+// a different, COMPACT encoding of the same information, because that copy alone hits
+// Shopify's 128KB `json` ceiling (data-model.md §14). Three lossless transforms cut
+// the two unbounded maps (`byProduct`, `excludedProductGids`) to ~1/4 the bytes:
+//
+//   1. Keys are the BARE numeric id, not the full GID. Liquid only exposes
+//      `product.id` / `collection.id` anyway, so the storefront reconstructs nothing
+//      — it drops the `gid://shopify/Product/` construction entirely.
+//   2. Template handles are INTERNED into `handles[]`; every map value is an integer
+//      index. A 34-byte `template-{cuid}` shared by 2,000 products is written once.
+//   3. `excluded` is an OBJECT (membership hash), not an array — O(1) `x[id]` lookup
+//      on the storefront instead of a linear `contains` scan on every product view.
+//
+// `byTag` is omitted (always empty; the storefront never reads it). `byType` /
+// `byVendor` keys stay raw — they are merchant product-type / vendor strings that
+// match `product.type` / `product.vendor` directly, not GIDs.
+//
+// 🔴 This is DELIVERY-ONLY. Postgres and `buildRoutingProjection` are untouched, so
+// the source of truth stays debuggable and the budget instrumentation
+// (`reportRoutingBudget`) measures the exact compact string it sends. The storefront
+// reader is `snippets/spec-table-resolve.liquid`; the two must move together (the
+// wire is a private contract between this function and that snippet).
+
+/** Wire-format version. Bumped on any incompatible change to `CompactRouting`. */
+export const ROUTING_WIRE_VERSION = 2;
+
+/**
+ * The compact delivery shape written to the `$app:routing` metafield. Every `by*`
+ * value and `def` is an index into `handles`; `excluded` is a membership set
+ * (`{ "<id>": 1 }`). Keys are bare numeric ids for product/collection maps, raw
+ * strings for type/vendor.
+ */
+export type CompactRouting = {
+  v: number;
+  handles: string[];
+  def: number | null;
+  byType: Record<string, number>;
+  byVendor: Record<string, number>;
+  byCollection: Record<string, number>;
+  byProduct: Record<string, number>;
+  excluded: Record<string, 1>;
+};
+
+/** Bare numeric id from a GID tail: `gid://shopify/Product/123` -> `"123"`. A value
+ *  with no slash (already bare, or malformed) passes through unchanged — lossless. */
+function idTail(gid: string): string {
+  const slash = gid.lastIndexOf("/");
+  return slash === -1 ? gid : gid.slice(slash + 1);
+}
+
+/**
+ * Compact a `RoutingProjection` into the delivery wire (see the section note above).
+ * Pure: never mutates the input; same input → same output (interning order is
+ * deterministic — `def` first, then type/vendor/collection/product in map order).
+ */
+export function compactRoutingForDelivery(
+  projection: RoutingProjection,
+): CompactRouting {
+  const handles: string[] = [];
+  const indexOf = new Map<string, number>();
+  const intern = (handle: string): number => {
+    const existing = indexOf.get(handle);
+    if (existing !== undefined) return existing;
+    const next = handles.length;
+    handles.push(handle);
+    indexOf.set(handle, next);
+    return next;
+  };
+
+  // Compact one `{ key -> handle }` map: transform each key, intern each handle.
+  const compactMap = (
+    map: Record<string, string>,
+    keyFn: (key: string) => string,
+  ): Record<string, number> => {
+    const out: Record<string, number> = {};
+    for (const [key, handle] of Object.entries(map)) {
+      out[keyFn(key)] = intern(handle);
+    }
+    return out;
+  };
+
+  const excluded: Record<string, 1> = {};
+  for (const gid of projection.excludedProductGids) {
+    excluded[idTail(gid)] = 1;
+  }
+
+  return {
+    v: ROUTING_WIRE_VERSION,
+    handles,
+    def:
+      projection.defaultTemplateHandle === null
+        ? null
+        : intern(projection.defaultTemplateHandle),
+    byType: compactMap(projection.byType, (key) => key),
+    byVendor: compactMap(projection.byVendor, (key) => key),
+    byCollection: compactMap(projection.byCollection, idTail),
+    byProduct: compactMap(projection.byProduct, idTail),
+    excluded,
+    // byTag intentionally omitted — always empty, never read on the storefront.
+  };
+}
