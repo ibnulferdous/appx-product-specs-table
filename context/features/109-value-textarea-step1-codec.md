@@ -62,9 +62,16 @@ with **nothing wired into the editor yet**.
 
 - **Parse regex:** match `{%` + optional space + (`field`\|`mf`) + space +
   argument + optional space + `%}`. Argument for `field` is a single snake_case
-  token; for `mf` it is `namespace.key` split on the **first** `.` (Shopify
-  metafield namespaces/keys are `[a-z0-9_]+`, so a single `.` separator is
-  unambiguous).
+  token; for `mf` it is `namespace.key` split on the single `.`.
+  🔴 **CORRECTION (2026-08-07) — this bullet originally asserted "Shopify metafield
+  namespaces/keys are `[a-z0-9_]+`", and that claim is FALSE.** Shopify's documented
+  rule is **alphanumeric + hyphen + underscore** (key 2–64 chars, namespace 3–255).
+  The wrong claim was implemented literally, so every hyphenated metafield —
+  i.e. the *entire* standard taxonomy: `shopify.battery-size`, `shopify.power-source`,
+  … — failed the regex, fell through to the literal-`TEXT` branch, and the merchant
+  saw the raw `{% mf … %}` source printed on their live storefront. Fixed by widening
+  both halves to `[A-Za-z0-9_-]+`. What stays true is the useful half: a `.` is
+  excluded from both halves, so the single `.` separator IS unambiguous.
 - **Malformed / unknown token → literal `TEXT`.** `{% mf %}` (no arg),
   `{% mf a.b.c %}`-style junk after normalization, `{% field %}`, an unclosed
   `{%`, or any unrecognized keyword is emitted back as the literal characters the

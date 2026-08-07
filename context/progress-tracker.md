@@ -154,6 +154,38 @@ saved presets, cuttable).
 
 > Rolling window, newest first. Older units roll into Completed.
 
+- **Fix: hyphenated metafield tokens printed their RAW `{% mf … %}` source on the storefront** — ✅
+  2026-08-07, full gate green (typecheck · lint · format · **test 1412 / 57** (+4) · build).
+  Merchant-reported: on `dji-mini-4k-stardard`, `{% mf test_data.binding_mount %}` and
+  `{% field product_type %}` resolved, but `{% mf shopify.battery-size %}` / `battery-type` /
+  `power-source` rendered as literal editor text in the live spec table.
+  🔴 **Root cause — one character class in `valueText.ts`: `TOKEN_RE` matched a metafield
+  namespace/key as `[a-z0-9_]+`, which excludes the HYPHEN.** Shopify's actual rule is
+  alphanumeric **+ hyphen +** underscore (key 2–64, namespace 3–255), and hyphens are not an
+  edge case — the whole standard taxonomy uses them (`shopify.battery-size`, `power-source`,
+  …, the same namespace the 2026-08-04 metaobject-reference fix was built for) and so do
+  app-reserved namespaces (`app--123--foo`). A non-matching token falls through to the
+  literal-`TEXT` branch by design, and a TEXT part is delivered to the storefront verbatim —
+  so the merchant saw their own source. **This was a regression from the textarea migration
+  (features 109/111)**: those three tokens were live-verified rendering correctly on
+  2026-08-04 as real `METAFIELD` parts, then the first round-trip through the new textarea
+  demoted them. It also broke *fresh* picker inserts: `handleCommit` splices the token string
+  and immediately reparses it, so a hyphenated metafield chosen from the modal became TEXT on
+  the spot. 🔴 **The bug was written down as fact first** — `109-…` §Parse regex asserted
+  "Shopify metafield namespaces/keys are `[a-z0-9_]+`" and the code implemented the claim
+  faithfully; both are corrected, and `data-model.md` §7 now states the character rule
+  explicitly rather than leaving it implied by the grammar table.
+  **Fix:** widen both halves to `[A-Za-z0-9_-]+` (`.` still excluded, so the single `.`
+  separator stays unambiguous and `{% mf a.b.c %}` still stays literal). `field` keeps
+  `[a-z0-9_]+` — that catalog is static and snake_case. +4 regression tests (hyphenated
+  ns/key, `app--123--specs.power-source`, mixed case, hyphenated round-trip).
+  ⚠️ **Data already degraded is NOT auto-repaired** — a demoted token is stored as TEXT and is
+  indistinguishable from typed prose (the documented MVP limitation), so no load-time re-parse
+  was added. Verified in Neon: exactly **one** row in **one** template is affected
+  (`cmsiwabx80001vptsr02ydzhy` "Mini Turbo Fan (non brand)", row `others`) — one edit to that
+  cell + Save re-tokenizes all three, because the textarea reparses the whole string.
+  Files: `app/utils/valueText.ts` (+`.test.ts`), `context/data-model.md` §7,
+  `context/features/109-…`. No schema, no Liquid, no storefront change.
 - **Activation-conflict banner — the conflicting-template link now opens in a new tab** — ✅
   2026-08-07, live-verified on `appx-dev`; full gate green (typecheck · lint · format · **test 1409 / 57** (+4, +1 file) ·
   build). The banner's `s-link href="/app/templates/<id>"` (editor Settings tab, feature 44) was

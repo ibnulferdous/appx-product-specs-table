@@ -95,6 +95,33 @@ describe("textToParts", () => {
   it("maps an empty string to the always-editable TEXT seed", () => {
     expect(textToParts("")).toEqual([{ type: "TEXT", text: "" }]);
   });
+
+  // 🔴 REGRESSION GUARD: the ns/key class once omitted hyphens, so every standard
+  // taxonomy metafield parsed as literal TEXT and the raw `{% mf … %}` source was
+  // printed on the storefront. Shopify allows alphanumeric + hyphen + underscore
+  // in both halves; a narrower class here is a live storefront bug.
+  it("parses a hyphenated namespace and key (standard taxonomy metafields)", () => {
+    expect(textToParts("{% mf shopify.battery-size %}")).toEqual([
+      { type: "METAFIELD", namespace: "shopify", key: "battery-size" },
+      { type: "TEXT", text: "" },
+    ]);
+    expect(textToParts("{% mf app--123--specs.power-source %}")).toEqual([
+      { type: "METAFIELD", namespace: "app--123--specs", key: "power-source" },
+      { type: "TEXT", text: "" },
+    ]);
+  });
+
+  it("parses a mixed-case namespace and key", () => {
+    expect(textToParts("{% mf Custom.Battery_Life %}")).toEqual([
+      { type: "METAFIELD", namespace: "Custom", key: "Battery_Life" },
+      { type: "TEXT", text: "" },
+    ]);
+  });
+
+  it("round-trips a hyphenated token through both directions", () => {
+    const source = "battery size - {% mf shopify.battery-size %}";
+    expect(partsToText(textToParts(source))).toBe(source);
+  });
 });
 
 describe("textToParts — malformed tokens stay literal", () => {

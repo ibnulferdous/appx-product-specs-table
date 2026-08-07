@@ -17,8 +17,13 @@
 //   METAFIELD      → `{% mf <ns>.<key> %}`   e.g. `{% mf custom.battery_life %}`
 //   LINE_BREAK     → `\n`
 //
-// A `field` argument is a single snake_case token; an `mf` argument is
-// `namespace.key` (both `[a-z0-9_]+`, split on the single `.`). Anything that
+// A `field` argument is a single snake_case token (the locked, static
+// `NATIVE_SHOPIFY_FIELDS` set); an `mf` argument is `namespace.key`, split on the
+// single `.`. 🔴 A metafield namespace/key follows SHOPIFY's rule, not ours:
+// alphanumeric, HYPHEN and underscore (key 2–64, namespace 3–255). Hyphens are
+// not exotic — every standard-taxonomy attribute uses them (`shopify.battery-size`,
+// `shopify.power-source`), and app-reserved namespaces look like `app--123--foo`.
+// See the regression note on `TOKEN_RE`. Anything that
 // starts `{%` but is NOT a well-formed token — `{% mf %}`, `{% field %}`,
 // `{% mf a.b.c %}`, an unclosed `{%` — is emitted back as LITERAL TEXT: nothing
 // is silently dropped in the editor, and an unresolvable token simply renders
@@ -69,10 +74,25 @@ export function partsToText(parts: ValuePart[]): string {
 }
 
 // One well-formed token: `{% field <snake> %}` OR `{% mf <ns>.<key> %}`, with
-// flexible surrounding whitespace. Case-sensitive (tokens are lowercase). The
-// braces are escaped so `{` is never read as a quantifier.
-const TOKEN_RE =
-  /\{%\s*(?:field\s+([a-z0-9_]+)|mf\s+([a-z0-9_]+)\.([a-z0-9_]+))\s*%\}/g;
+// flexible surrounding whitespace. The braces are escaped so `{` is never read as
+// a quantifier.
+//
+// 🔴 THE REGRESSION THIS CHARACTER CLASS EXISTS FOR: the metafield halves were
+// first written `[a-z0-9_]+`, which silently excluded HYPHENS — so every standard
+// taxonomy metafield (`{% mf shopify.battery-size %}`, `power-source`, …) failed
+// to match and fell through to the literal-TEXT branch. The merchant then saw the
+// raw `{% mf … %}` source printed on the storefront, because a TEXT part is
+// delivered verbatim. It degraded a token the moment the cell round-tripped
+// through the textarea, including one inserted from the picker seconds earlier.
+// The class now mirrors Shopify's documented rule for a metafield namespace/key
+// (alphanumeric + hyphen + underscore) exactly — do not narrow it again. A `.` is
+// deliberately still excluded: it is the ns/key separator, so `{% mf a.b.c %}`
+// must stay literal rather than split ambiguously.
+const NS_KEY = "[A-Za-z0-9_-]+";
+const TOKEN_RE = new RegExp(
+  `\\{%\\s*(?:field\\s+([a-z0-9_]+)|mf\\s+(${NS_KEY})\\.(${NS_KEY}))\\s*%\\}`,
+  "g",
+);
 
 /**
  * Append a run of plain text to `parts`, converting each `\n` into a `LINE_BREAK`
