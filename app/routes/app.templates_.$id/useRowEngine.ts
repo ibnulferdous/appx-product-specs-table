@@ -29,7 +29,6 @@ import {
   type RowsAction,
   type ValuePart,
 } from "../../utils/rows";
-import { partOffsetToLinear } from "../../utils/valueParts";
 import {
   formatFieldToken,
   formatMetafieldToken,
@@ -62,8 +61,6 @@ import {
   MODAL_TRANSITION_MS,
   PASTE_CAP_MODAL_ID,
   metafieldChoiceValue,
-  partToSelection,
-  type EditTarget,
   type FieldSelection,
   type SavedCaret,
 } from "./editorShared";
@@ -146,12 +143,16 @@ export interface UseRowEngineArgs {
 // Polaris's `s-*` color tokens live inside each component's shadow DOM and are
 // NOT exposed as light-DOM CSS custom properties (confirmed in-browser:
 // `--p-color-*` / `--s-color-*` all resolve empty on the document, body, and even
-// on `s-*` hosts). So the inline value token — a plain light-DOM span — cannot
+// on `s-*` hosts). So the editor's scoped CSS — plain light-DOM rules — cannot
 // reference `--p-color-text-link` directly. Instead, capture Polaris's own link
 // color once from a throwaway `<s-link>`'s shadow and publish it as
-// `--appx-token-color` for the scoped token CSS (which derives its hover / caret-on
-// tints from the same value via color-mix). This keeps the blue a genuine Polaris
-// value with no hardcoded hex; it degrades to `currentColor` if the read fails.
+// `--appx-token-color`, the shared accent for the active-cell outline
+// (`.cellField`/`.surface` focus edge), the active-row highlight, and the
+// multi-select checkbox `accent-color` (each mixed from the same value via
+// color-mix). This keeps the blue a genuine Polaris value with no hardcoded hex;
+// it degrades to `currentColor` if the read fails. (The former inline value-token
+// pills that first needed this were removed with the textarea migration, feature
+// 113 — the captured accent outlived them.)
 function useCapturedTokenColor() {
   useEffect(() => {
     const root = document.documentElement;
@@ -624,13 +625,11 @@ export function useRowEngine({
   const savedCaretRef = useRef<SavedCaret | null>(null);
   const [hasActiveCaret, setHasActiveCaret] = useState(false);
   // The field the merchant has picked in the modal (Step 6 native, Step 9
-  // metafield). Insert/Update is disabled while this is null. The discriminated
-  // `kind` keeps the native and metafield choice lists mutually exclusive.
-  // `editTarget` is null in create mode and holds the clicked pill's coordinate in
-  // edit mode; together they drive the modal heading, the primary button label,
-  // and which commit path runs.
+  // metafield). Insert is disabled while this is null. The discriminated `kind`
+  // keeps the native and metafield choice lists mutually exclusive. The modal is
+  // create-only (feature 112 removed the edit-a-pill-in-place path): committing
+  // always splices a new token at the saved caret.
   const [selection, setSelection] = useState<FieldSelection | null>(null);
-  const [editTarget, setEditTarget] = useState<EditTarget | null>(null);
   // The modal's search query (Step 7). Pure UI: it filters which native fields
   // are rendered (`filterNativeFields`) and never touches `selectedField` — a
   // selected field filtered out of view stays selected and committable. Reset to
@@ -838,10 +837,10 @@ export function useRowEngine({
     [insertActive],
   );
 
-  // Open the modal in CREATE mode, snapshotting the current value-cell caret
-  // first. Runs on the button's click while the cell still holds the saved
-  // selection (value-cell blur does not clear activeCaretRef), so the snapshot is
-  // always valid. Resets editTarget + selectedField so a prior edit can't leak in.
+  // Open the modal, snapshotting the current value-cell caret first. Runs on the
+  // button's click while the cell still holds the saved selection (value-cell blur
+  // does not clear activeCaretRef), so the snapshot is always valid. Resets the
+  // selection so a prior pick can't leak in.
   // Focus the modal's search field after it is open. App Bridge plays a view
   // transition when the modal shows; calling .focus() while that transition is
   // mid-flight aborts it (an "InvalidStateError: Transition was aborted" surfaces
@@ -855,32 +854,12 @@ export function useRowEngine({
   const handleOpenInsertField = useCallback(() => {
     savedCaretRef.current = activeCaretRef.current;
     if (!savedCaretRef.current) return;
-    setEditTarget(null);
     setSelection(null);
     setSearchQuery("");
     ensureMetafieldDefinitions();
     shopify.modal.show(INSERT_FIELD_MODAL_ID);
     focusSearchField();
   }, [shopify, focusSearchField, ensureMetafieldDefinitions]);
-
-  // Open the same modal in EDIT mode for a clicked pill (Step 6.3). No saved
-  // caret — edit targets the pill's own slot, not an insertion point. Pre-select
-  // the clicked pill: a METAFIELD pre-selects its namespace/key, a native
-  // SHOPIFY_FIELD pre-selects its field (Step 9). An unknown native token opens
-  // unselected; the pre-selected metafield radio shows checked once the
-  // definitions have loaded (the selection is held regardless of render).
-  const handleEditPart = useCallback(
-    (rowId: string, partIndex: number, part: ValuePart) => {
-      savedCaretRef.current = null;
-      setEditTarget({ rowId, partIndex });
-      setSelection(partToSelection(part));
-      setSearchQuery("");
-      ensureMetafieldDefinitions();
-      shopify.modal.show(INSERT_FIELD_MODAL_ID);
-      focusSearchField();
-    },
-    [shopify, focusSearchField, ensureMetafieldDefinitions],
-  );
 
   // Track the merchant's search query (Step 7). `onInput` fires per keystroke,
   // before `onChange`, so the list filters live as they type.
@@ -926,79 +905,50 @@ export function useRowEngine({
     [metafieldsFetcher],
   );
 
-  // Commit the picked field. One handler serves both modes: edit swaps the
-  // clicked pill in place (SET_VALUE_PART), create inserts a new pill at the saved
-  // caret (INSERT_VALUE_PART_AT, the Step 5 path). Either way the post-commit
-  // caret lands just after the committed pill via pendingCaretByRowRef, and all
-  // modal state is reset so create and edit can't leak into each other.
+  // Commit the picked field (create-only since feature 112). Splice the field's
+  // TEXT token into the value string at the saved textarea offset, reparse the
+  // spliced string back to parts, and replace the whole value. The post-commit
+  // caret lands just after the inserted token via pendingCaretByRowRef, and all
+  // modal state is reset.
   const handleCommit = useCallback(() => {
     if (saving) return; // a save is in flight — the editor is frozen
     if (!selection) return; // primary button is disabled in this state
-    const part: ValuePart =
-      selection.kind === "native"
-        ? { type: "SHOPIFY_FIELD", field: selection.field }
-        : {
-            type: "METAFIELD",
-            namespace: selection.namespace,
-            key: selection.key,
-          };
     shopify.modal.hide(INSERT_FIELD_MODAL_ID);
 
-    if (editTarget) {
-      const row = rows.find((r) => r.id === editTarget.rowId);
+    const saved = savedCaretRef.current;
+    if (saved) {
+      const row = rows.find((r) => r.id === saved.rowId);
       if (row && row.rowType === "DATA") {
-        // In-place swap keeps the array length, so the caret index after the
-        // pill is the start of the next part on the current valueParts.
-        pendingCaretByRowRef.current.set(
-          editTarget.rowId,
-          partOffsetToLinear(row.valueParts, editTarget.partIndex + 1, 0),
-        );
+        // Splice the field's TEXT token into the value string at the saved
+        // textarea offset (feature 111). A trailing space (Claude-style
+        // smart-pill UX) lets the merchant keep typing without it abutting the
+        // token; the caret lands after both.
+        const token =
+          selection.kind === "native"
+            ? formatFieldToken(selection.field)
+            : formatMetafieldToken(selection.namespace, selection.key);
+        const current = partsToText(row.valueParts);
+        const offset = Math.min(saved.offset, current.length);
+        const insert = `${token} `;
+        const nextText =
+          current.slice(0, offset) + insert + current.slice(offset);
+        pendingCaretByRowRef.current.set(saved.rowId, offset + insert.length);
         dispatch({
-          type: "SET_VALUE_PART",
-          id: editTarget.rowId,
-          partIndex: editTarget.partIndex,
-          part,
+          type: "SET_VALUE_PARTS",
+          id: saved.rowId,
+          valueParts: textToParts(nextText),
         });
-      }
-    } else {
-      const saved = savedCaretRef.current;
-      if (saved) {
-        const row = rows.find((r) => r.id === saved.rowId);
-        if (row && row.rowType === "DATA") {
-          // Splice the field's TEXT token into the value string at the saved
-          // textarea offset (feature 111). A trailing space (Claude-style
-          // smart-pill UX) lets the merchant keep typing without it abutting the
-          // token; the caret lands after both. Reparse the spliced string back to
-          // parts and replace the whole value.
-          const token =
-            selection.kind === "native"
-              ? formatFieldToken(selection.field)
-              : formatMetafieldToken(selection.namespace, selection.key);
-          const current = partsToText(row.valueParts);
-          const offset = Math.min(saved.offset, current.length);
-          const insert = `${token} `;
-          const nextText =
-            current.slice(0, offset) + insert + current.slice(offset);
-          pendingCaretByRowRef.current.set(saved.rowId, offset + insert.length);
-          dispatch({
-            type: "SET_VALUE_PARTS",
-            id: saved.rowId,
-            valueParts: textToParts(nextText),
-          });
-        }
       }
     }
 
     savedCaretRef.current = null;
-    setEditTarget(null);
     setSelection(null);
     setSearchQuery("");
-  }, [editTarget, rows, saving, selection, shopify]);
+  }, [rows, saving, selection, shopify]);
 
   const handleCancelInsertField = useCallback(() => {
     shopify.modal.hide(INSERT_FIELD_MODAL_ID);
     savedCaretRef.current = null;
-    setEditTarget(null);
     setSelection(null);
     setSearchQuery("");
   }, [shopify]);
@@ -1248,7 +1198,6 @@ export function useRowEngine({
     // Caret bridge / modal state
     hasActiveCaret,
     selection,
-    editTarget,
     searchQuery,
     searchFieldRef,
     pendingCaret: pendingCaretByRowRef.current,
@@ -1272,7 +1221,6 @@ export function useRowEngine({
     handleCancelBulkDelete,
     // Modal handlers
     handleOpenInsertField,
-    handleEditPart,
     handleSearchInput,
     handleSelectNative,
     handleSelectMetafield,

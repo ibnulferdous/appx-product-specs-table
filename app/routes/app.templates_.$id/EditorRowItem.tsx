@@ -2,7 +2,7 @@ import type { ChangeEvent, Dispatch } from "react";
 import { memo, useCallback } from "react";
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import type { EditorRow, RowsAction, ValuePart } from "../../utils/rows";
+import type { EditorRow, RowsAction } from "../../utils/rows";
 import { describeRow } from "../../utils/reorderAnnouncements";
 import { DATA_COLUMNS, SECTION_COLUMNS } from "./editorShared";
 import { RowGutter } from "./RowGutter";
@@ -20,13 +20,12 @@ interface RowItemProps {
   onToggleSelected: (id: string) => void;
   dispatch: Dispatch<RowsAction>;
   onCaretChange: (rowId: string, linear: number | null) => void;
-  onEditPart: (rowId: string, partIndex: number, part: ValuePart) => void;
   onBulkPaste: (grid: string[][]) => void;
   pendingCaret: Map<string, number>;
 }
 
 // Memoized so a single cell edit re-renders only that row. `dispatch`,
-// `onActivate`, `onDelete`, `onToggleSelected`, `onCaretChange`, `onEditPart`,
+// `onActivate`, `onDelete`, `onToggleSelected`, `onCaretChange`,
 // and `onBulkPaste` are stable; `pendingCaret` is a stable ref-held Map;
 // `isActive` and `selected` are booleans, so non-edited, non-(de)activated,
 // non-(de)selected rows skip re-rendering entirely.
@@ -40,7 +39,6 @@ export const EditorRowItem = memo(function EditorRowItem({
   onToggleSelected,
   dispatch,
   onCaretChange,
-  onEditPart,
   onBulkPaste,
   pendingCaret,
 }: RowItemProps) {
@@ -169,7 +167,6 @@ export const EditorRowItem = memo(function EditorRowItem({
                 rowNumber={rowNumber}
                 dispatch={dispatch}
                 onCaretChange={onCaretChange}
-                onEditPart={onEditPart}
                 onBulkPaste={onBulkPaste}
                 pendingCaret={pendingCaret}
               />

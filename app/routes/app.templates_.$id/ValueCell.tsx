@@ -5,7 +5,7 @@ import type {
   SyntheticEvent,
 } from "react";
 import { useCallback, useRef } from "react";
-import type { DataRow, RowsAction, ValuePart } from "../../utils/rows";
+import type { DataRow, RowsAction } from "../../utils/rows";
 import { partsToText, textToParts } from "../../utils/valueText";
 import { cellCount } from "../../utils/clipboardTable";
 import { readClipboardGrid } from "../../utils/clipboardTableDom";
@@ -62,9 +62,6 @@ export function ValueCell({
   onBulkPaste: (grid: string[][]) => void;
   // Caret offsets queued by the modal Insert, keyed by row id. Consumed once.
   pendingCaret: Map<string, number>;
-  // Still threaded from EditorRowItem for now; unused since the textarea has no
-  // clickable pill. Removed with the edit-pill wiring in Step 112.
-  onEditPart: (rowId: string, partIndex: number, part: ValuePart) => void;
 }) {
   const rowName = row.label || `row ${rowNumber}`;
   const desired = partsToText(row.valueParts);

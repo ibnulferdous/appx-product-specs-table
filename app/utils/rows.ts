@@ -25,19 +25,9 @@ export type ValuePart =
   | { type: "METAFIELD"; namespace: string; key: string }
   // Author-intended hard line break (data-model.md §7). Carries no text and no
   // dynamic reference; renders as a `<br>` in the editor and the storefront. It
-  // is an atomic, non-TEXT part, so deletion reuses REMOVE_VALUE_PART and
-  // normalizeValueParts treats it as a TEXT-merge boundary like any token.
+  // is a non-TEXT part, so `normalizeValueParts` treats it as a TEXT-merge
+  // boundary like any token.
   | { type: "LINE_BREAK" };
-
-/**
- * True for any value part that is rendered as a single, non-editable unit in the
- * editor surface — a dynamic-field token (SHOPIFY_FIELD / METAFIELD) or a
- * LINE_BREAK. These are the parts deleted whole by Backspace/Delete and inserted
- * at the caret by INSERT_VALUE_PART_AT; only TEXT is free-typed.
- */
-export function isAtomicPart(part: ValuePart): boolean {
-  return part.type !== "TEXT";
-}
 
 export type RowType = "DATA" | "SECTION_HEADER";
 
@@ -249,33 +239,6 @@ export type RowsAction =
   // stored shape is identical to what the granular value actions produce (≥1 TEXT,
   // no adjacent TEXT), keeping dirty-tracking / serialize / preview unaffected.
   | { type: "SET_VALUE_PARTS"; id: string; valueParts: ValuePart[] }
-  // partIndex targets one TEXT segment of valueParts (Step 1 only had index 0).
-  | { type: "SET_VALUE_TEXT"; id: string; partIndex: number; text: string }
-  | { type: "REMOVE_VALUE_PART"; id: string; partIndex: number }
-  // Replace the value part at `partIndex` in place (Step 6). Edit-an-existing-pill:
-  // the merchant reopens the picker on a pill and swaps its field, so the atomic
-  // slot is replaced one-for-one — array length, surrounding parts, and the caret
-  // all stay put. No split, no merge needed (a pill→pill swap keeps types adjacent
-  // the same), so unlike REMOVE + INSERT_VALUE_PART_AT this never moves the caret.
-  | { type: "SET_VALUE_PART"; id: string; partIndex: number; part: ValuePart }
-  // Caret-aware insert/split (Step 4.4). Splits the TEXT at `partIndex` at
-  // character `offset` and drops `part` between the halves; when `partIndex`
-  // points at an atomic part (or past the end) the part is spliced in at that
-  // position instead. The editor computes (partIndex, offset) from the DOM caret
-  // and passes plain numbers, so the reducer stays pure and DOM-free. Used by
-  // 4.4's LINE_BREAK and reused by Step 5 to drop a picked pill at the caret.
-  // `spaceAfter` (Claude-style smart-pill UX) appends a single TEXT space right
-  // after the inserted part so the merchant can keep typing without it sticking
-  // to the pill; normalizeValueParts merges it with the trailing text. Used only
-  // by the modal's create-mode pill insert — the LINE_BREAK path leaves it off.
-  | {
-      type: "INSERT_VALUE_PART_AT";
-      id: string;
-      partIndex: number;
-      offset: number;
-      part: ValuePart;
-      spaceAfter?: boolean;
-    }
   // Reorder (Step 10): move the row with id `activeId` to the array position of
   // the row with id `overId`. Display order IS the array index (data-model §6/§11),
   // so reordering is a pure array-move and nothing else: row `key`/`id` are left
@@ -409,89 +372,6 @@ export function rowsReducer(
           return row;
         }
         return { ...row, valueParts: normalizeValueParts(action.valueParts) };
-      });
-
-    case "SET_VALUE_TEXT":
-      return rows.map((row) => {
-        if (row.id !== action.id || row.rowType !== "DATA") {
-          return row;
-        }
-        // Edit only the targeted TEXT segment; pills and other text are untouched.
-        const valueParts = row.valueParts.map((part, partIndex) =>
-          partIndex === action.partIndex && part.type === "TEXT"
-            ? { type: "TEXT" as const, text: action.text }
-            : part,
-        );
-        return { ...row, valueParts };
-      });
-
-    case "REMOVE_VALUE_PART":
-      return rows.map((row) => {
-        if (row.id !== action.id || row.rowType !== "DATA") {
-          return row;
-        }
-        // Drop the part, then merge adjacent TEXT so the cell re-joins cleanly
-        // and never accumulates empty fragments (≥1 TEXT is guaranteed).
-        const remaining = row.valueParts.filter(
-          (_, partIndex) => partIndex !== action.partIndex,
-        );
-        return { ...row, valueParts: normalizeValueParts(remaining) };
-      });
-
-    case "SET_VALUE_PART":
-      return rows.map((row) => {
-        if (row.id !== action.id || row.rowType !== "DATA") {
-          return row;
-        }
-        // In-place swap of one atomic slot (edit-an-existing-pill): replace the
-        // part at partIndex one-for-one. A pill→pill swap keeps the part types
-        // adjacent the same, so array length, surrounding parts, and the caret
-        // are all unchanged — no split, no merge, no normalize needed. No-op on
-        // an out-of-range index.
-        if (action.partIndex < 0 || action.partIndex >= row.valueParts.length) {
-          return row;
-        }
-        const valueParts = row.valueParts.map((part, partIndex) =>
-          partIndex === action.partIndex ? action.part : part,
-        );
-        return { ...row, valueParts };
-      });
-
-    case "INSERT_VALUE_PART_AT":
-      return rows.map((row) => {
-        if (row.id !== action.id || row.rowType !== "DATA") {
-          return row;
-        }
-        const { partIndex, offset, part, spaceAfter } = action;
-        const parts = row.valueParts;
-        const target = parts[partIndex];
-        // Optional trailing space dropped right after the inserted part (smart-pill
-        // UX); normalizeValueParts merges it with whatever TEXT follows.
-        const tail: ValuePart[] = spaceAfter
-          ? [{ type: "TEXT" as const, text: " " }]
-          : [];
-        // Split the targeted TEXT run at the caret offset and drop the new part
-        // between the halves; if the caret sits at an atomic boundary (or past
-        // the last part) there is no TEXT to split, so splice the part in place.
-        const next =
-          target?.type === "TEXT"
-            ? [
-                ...parts.slice(0, partIndex),
-                { type: "TEXT" as const, text: target.text.slice(0, offset) },
-                part,
-                ...tail,
-                { type: "TEXT" as const, text: target.text.slice(offset) },
-                ...parts.slice(partIndex + 1),
-              ]
-            : [
-                ...parts.slice(0, partIndex),
-                part,
-                ...tail,
-                ...parts.slice(partIndex),
-              ];
-        // normalizeValueParts merges any adjacent TEXT the split produced and
-        // keeps the ≥1-TEXT guarantee; it never strips the new atomic part.
-        return { ...row, valueParts: normalizeValueParts(next) };
       });
 
     case "MOVE_ROW": {

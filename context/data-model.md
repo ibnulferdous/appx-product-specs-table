@@ -662,6 +662,32 @@ MVP validation: a template can contain at most 200 rows, including data rows and
 
 Admin UI may show Liquid-like tokens such as `{{ product.metafields.custom.battery_life.value }}`, but Appx should save structured `valueParts`, not merchant-authored raw Liquid.
 
+### Editor value surface — native `<textarea>` + `{% … %}` text codec (features 109–113)
+
+`valueParts` (the array above) is the **canonical value shape** and is unchanged by the textarea migration: it is what gets **persisted** (Postgres + the delivered metaobject), and what the **storefront** and the **inline preview** render — both switch on `part.type` exactly as before. The migration touched the **editor surface only**.
+
+The value cell is a native `<textarea>` (feature 111), not a `contenteditable`. The textarea edits a plain string; a small bidirectional codec (`app/utils/valueText.ts`, feature 109) converts **only at the editor boundary**:
+
+- `partsToText(parts)` → the string shown in the textarea.
+- `textToParts(raw)` → parses the string back to `valueParts`, then runs `normalizeValueParts`. The reducer stores the result via a single `SET_VALUE_PARTS` action.
+
+Parsing lives in the component, never in the reducer or the storefront — the reducer stays pure/DOM-free/grammar-free, and no Liquid-side token parsing exists.
+
+**Token grammar (locked — the codec's source of truth):**
+
+| In the textarea string          | `valueParts` part                                  |
+| ------------------------------- | -------------------------------------------------- |
+| `{% field <token> %}`           | `{ type: "SHOPIFY_FIELD", field: "<token>" }`      |
+| `{% mf <namespace>.<key> %}`    | `{ type: "METAFIELD", namespace, key }`            |
+| `\n` (newline)                  | `{ type: "LINE_BREAK" }`                            |
+| any other text                  | `{ type: "TEXT", text: … }` (verbatim)             |
+
+In-brace whitespace is flexible on parse; formatters emit the canonical single-space form. A malformed or unknown token (e.g. `{% mf %}`, `{% foo bar %}`) is **not** an error — it stays literal `TEXT`.
+
+**Accepted MVP limitation:** because the surface is plain text, a literal `{% mf x.y %}` a merchant *types as prose* is indistinguishable from an inserted token and is treated as a token. There is **no escape hatch** in the MVP; this is a deliberate, documented trade-off for the simpler surface.
+
+**Retired with the migration (features 112–113):** the inline link-styled **pill**, the **click-a-pill-to-edit** flow (the Insert-field modal is now create-only), and the entire **linear-caret / `contenteditable`** model (`valueParts.ts` caret math, `valueDom.ts` DOM glue, and the granular `SET_VALUE_TEXT` / `REMOVE_VALUE_PART` / `SET_VALUE_PART` / `INSERT_VALUE_PART_AT` reducer actions). The caret is now the textarea's native `selectionStart` character offset. Native browser undo/redo (the original defect that motivated the migration) works because the textarea is uncontrolled and reconciled only on genuine divergence.
+
 ### Multiline values
 
 A value may span multiple hard-break lines by placing `LINE_BREAK` parts between content parts. Soft-wrapping of long text happens automatically via CSS and needs no part — `LINE_BREAK` is only for **author-intended** breaks (e.g., a "Features" value with one item per line).

@@ -22,9 +22,10 @@ Update this file after every meaningful implementation change.
 
 **Building the MVP — feature work is at the App Store pre-submission gate.**
 
-Test suite **1361 tests / 52 files**; full gate (typecheck · lint · format · test · build)
-green as of 2026-08-03 (step 107). Last unit shipped: step 107 Unit A, boilerplate removal +
-the app-home shell.
+Test suite **1405 tests / 56 files**; full gate (typecheck · lint · format · test · build)
+green as of 2026-08-07. Last unit shipped: the **value-cell → `<textarea>` migration**
+(features 109–114) — `contenteditable` retired, broken Ctrl+Z fixed, `ValuePart[]` unchanged;
+live-verified on `appx-dev`.
 
 ---
 
@@ -152,6 +153,41 @@ saved presets, cuttable).
 
 > Rolling window, newest first. Older units roll into Completed.
 
+- **Value cell → textarea migration — Step 6: docs + live sign-off — 🎉 MIGRATION COMPLETE** — ✅ 2026-08-07,
+  `114-value-textarea-step6-docs-and-verification.md`. Recorded the new architecture in `data-model.md`
+  (§7: `ValuePart[]` stays canonical; the editor surface is a native `<textarea>` + the `{% … %}` text
+  codec `valueText.ts`; locked grammar table; the "typed `{% mf x.y %}` prose is treated as a token"
+  MVP limitation; retired pill/edit-pill/linear-caret pieces). **All live checks passed on `appx-dev`**
+  (Claude-in-Chrome, dev-previews build): native undo/redo, create-only Insert-field splicing
+  `{% field vendor %}` at the caret, multiline, preview rendering `tokenLabels` pills (no raw tokens),
+  save/reload round-trip, **and the owed Ctrl/Cmd+Arrow grid-nav** (both directions, caret-at-end —
+  the Step-111 regression the Step-113 fix repaired). Storefront a **definitional no-op** (git: zero
+  `extensions/` / `spec-table-value.liquid` changes across 112–113). Console clean (only Shopify
+  admin-shell telemetry). **Features 109–114 done — the `contenteditable` value surface and its broken
+  Ctrl+Z are gone; `ValuePart[]` unchanged end to end (no data migration, storefront untouched).**
+- **Value cell → textarea migration — Step 5: delete the dead contenteditable code** — ✅ 2026-08-07,
+  `113-value-textarea-step5-remove-dead-code.md`. Deleted `valueParts.ts` + `valueDom.ts` (+ tests)
+  and the four granular value reducer actions (`SET_VALUE_TEXT`, `REMOVE_VALUE_PART`, `SET_VALUE_PART`,
+  `INSERT_VALUE_PART_AT`) + `spaceAfter` + orphaned `isAtomicPart` and `.token*` CSS. **The grep gate
+  caught two wrong "it's all dead" assumptions:** (1) `tokenLabels`/`TokenLabels` were still used by the
+  inline preview → relocated to a new `app/utils/tokenLabels.ts` leaf (+ test) before deleting valueDom;
+  (2) `useGridKeyboardNav` still used the contenteditable caret model (`[role="textbox"]` +
+  `setCaretLinear`/`linearLength`), which **Step 111 had silently broken** (the textarea has no explicit
+  `role="textbox"`) — fixed to detect the `<textarea>` and use native `setSelectionRange`, *restoring*
+  Ctrl/Cmd+Arrow value-cell nav. Kept `--appx-token-color`/`useCapturedTokenColor` (still drives the
+  active-cell/active-row/checkbox accents). Full gate green (1405 tests); residual greps empty.
+  **⚠️ One browser check owed:** Ctrl/Cmd+Arrow nav to/from value cells (browser-only; folds into Step
+  114). **Step 114 (docs + live sign-off) unblocked.**
+- **Value cell → textarea migration — Step 4: prune the edit-pill wiring** — ✅ 2026-08-07,
+  `112-value-textarea-step4-prune-editpill-plumbing.md`. Deleted the now-unreachable
+  click-a-pill-to-edit path: `onEditPart` (+ its `RowGrid → EditorRowItem → ValueCell`
+  threading), `useRowEngine`'s `editTarget` state / `handleEditPart` / the `editTarget`
+  branch of `handleCommit` (the last `SET_VALUE_PART` dispatch), and the modal's edit-vs-create
+  copy → collapsed to **create-only** ("Insert field" / "Insert"). Also swept `partToSelection`
+  + the `EditTarget` interface from `editorShared.ts` (edit-pill-only, uncovered by later steps).
+  `SET_VALUE_PART` reducer action + its direct tests kept for Step 113; grep confirms nothing
+  dispatches it. Full gate green (1468 tests). **Step 113 (delete dead modules + reducer actions)
+  unblocked.**
 - **Value cell → textarea migration — Step 3: the surface swap** — ✅ shipped + browser-verified
   2026-08-07, `111-value-textarea-step3-surface-swap.md`. `ValueCell` is now a native `<textarea>`
   (uncontrolled, reconciled only on DOM/state divergence → native undo stack preserved, no IME
@@ -1129,7 +1165,7 @@ per-product overflow materialization + a bulk apply-to-all styling route.
 > Decisions that still constrain future work. Historical/superseded logs were removed in
 > compaction — see git history for the originals.
 
-- **Custom React editor — no AG Grid** (2-column, ≤200 rows, `valueParts` token editor). DnD via `@dnd-kit`. Pill model is **pick-then-insert** (modal outside the contenteditable; never an empty placeholder pill). Row cap is the single shared `MAX_TEMPLATE_ROWS` (UI + server).
+- **Custom React editor — no AG Grid** (2-column, ≤200 rows, `valueParts` token editor). DnD via `@dnd-kit`. Value surface is a native `<textarea>` editing a `{% … %}` text string via the `valueText.ts` codec (features 109–114); Insert-field is **pick-then-insert, create-only** (modal splices a token at the caret). Row cap is the single shared `MAX_TEMPLATE_ROWS` (UI + server). ⟨Superseded 2026-08-07: the former `contenteditable` + inline-pill + edit-pill + linear-caret model is retired — see `data-model.md` §7 "Editor value surface".⟩
 - **Value model:** `LINE_BREAK` value part for hard breaks (no inline rich formatting/links in MVP). `hideWhenEmpty` is whole-row, never per-line.
 - **View toggle:** Edit is the only editable segment; Desktop/Mobile are **read-only storefront previews** (Phase D), no separate WYSIWYG panel. **Tablet removed 2026-07-22.** **Shared preview device (2026-07-22):** the chosen device (Desktop/Mobile) is one value shared across all three tabs; edit-vs-preview is per-tab (`tabViewMemory.ts` `ViewMemory = { device, modes }`) — Content opens on the grid, Style/Settings auto-open a preview, picking a device on any tab moves every _previewing_ tab to it; dropping a tab to Edit affects only that tab and retains the shared device. **Collapsible rail (2026-07-25, feature 76) is the ONE answer to the width problem:** because the inline Desktop preview is narrower than the storefront's 749px breakpoint on a laptop, a toggle beside the tab group collapses the Style/Settings rail to zero width, handing the stage the full card (never an icon stub: the tight case clears 749 by only 18px). ONE boolean shared by Style and Settings, in-memory, resets on reload; hidden not unmounted so the rail's scroll position survives; absent on Content. A **full-size preview modal** (feature 75) shipped as a second answer the same day and was **REMOVED 2026-07-25**. Under ~1420px the Style tab still cannot show a truthful desktop table and the knobs simultaneously; the only fix for that is a fixed-1100px `transform: scale()` preview, which is deliberately NOT built and is NOT a re-added modal (see `76-…`).
 - **Color policy:** the app _uses_ color via CSS variables as one source of truth (admin mirrors Polaris; storefront inherits theme but is merchant-overridable). The "no hardcoded hex literal" rule is CSS hygiene — use Polaris tokens / `currentColor` / custom properties (e.g. runtime-captured `--appx-token-color` for the pill blue). This rule does **not** encode the Edit-grid-never-styled binding rule (see Binding rules above).

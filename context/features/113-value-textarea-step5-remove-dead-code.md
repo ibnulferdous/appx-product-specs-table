@@ -1,8 +1,60 @@
 # Value textarea — Step 5: delete the dead contenteditable code
 
-**Status: 📋 Planned.** Part 5 of 6 (features 109–114). Grep-gated removal of the
-linear-caret machinery and the granular reducer actions the textarea made
-obsolete. Pure subtraction — no behavior change if the earlier steps are correct.
+**Status: ✅ Shipped 2026-08-07 (one browser check owed — see below).** Part 5 of 6
+(features 109–114). Grep-gated removal of the linear-caret machinery and the
+granular reducer actions the textarea made obsolete.
+
+## Shipped (2026-08-07) — with two deviations the grep gate forced
+
+The grep gate did its job: it caught that the plan's "everything is dead"
+assumption was **wrong in two places**, so this was NOT pure subtraction.
+
+**Deviation 1 — `tokenLabels` / `TokenLabels` were NOT dead.** The plan's valueDom
+export list overlooked them; they are still used by the inline preview
+(`specTablePreviewHtml.ts`) to render each dynamic-field token as a labeled pill.
+Resolved by **relocating** them (pure, DOM-free) into a new leaf module
+`app/utils/tokenLabels.ts` (+ `tokenLabels.test.ts`, tests moved verbatim), then
+repointing the preview import. Only after that could `valueDom.ts` be deleted.
+
+**Deviation 2 — a live Step-111 regression.** `useGridKeyboardNav.ts` (the
+Ctrl/Cmd+Arrow spreadsheet nav) still located the value cell via `[role="textbox"]`
+and set the caret with `setCaretLinear`/`linearLength` — both contenteditable-era.
+The Step-111 textarea has no explicit `role="textbox"`, so Ctrl/Cmd+Arrow into/out
+of value cells had been **silently broken since Step 111 shipped** (jsdom can't test
+it; it wasn't in the six manual checks). Fixed by detecting the cell via `textarea`
+and placing the caret with the native `setSelectionRange(len, len)` — the same idiom
+the label branch already uses. This *restored* the nav and dropped the two imports.
+⚠️ **Browser check owed:** this behavior is browser-only; verify Ctrl/Cmd+Arrow
+navigation to/from value cells live (folds into Step 114's sign-off).
+
+**Deletions (all grep-gated empty first):**
+- `app/utils/valueParts.ts` + `valueParts.test.ts` — deleted.
+- `app/utils/valueDom.ts` + `valueDom.test.ts` — deleted (after `tokenLabels` moved out).
+- `rows.ts`: removed the `SET_VALUE_TEXT`, `REMOVE_VALUE_PART`, `SET_VALUE_PART`,
+  and `INSERT_VALUE_PART_AT` union members + reducer cases, and the `spaceAfter`
+  field. `isAtomicPart` was grep-proven orphaned (only its own test referenced it)
+  → removed with its test. Kept `SET_VALUE_PARTS`, `SET_LABEL`, all row-structure
+  actions, and `normalizeValueParts`.
+- `rows.test.ts`: deleted the four dead-action describe blocks + the `isAtomicPart`
+  block; repointed two `isPristineScaffold` tests that used dead actions as a value
+  vehicle onto `SET_VALUE_PARTS`.
+- `SpecTableEditor.module.css`: removed the orphaned `.token` / `.token:hover` /
+  `.token[data-caret-on]` rules. **Kept** `--appx-token-color` + `useCapturedTokenColor`
+  — still used by the active-cell outline, active-row highlight, and checkbox accent
+  (comment updated to match).
+
+**Static gates (all green):** `npm run typecheck`, `npm run lint`,
+`npm run test:run` (1405/1405), `npm run build` (97 modules). Final residual greps
+(`valueDom` / `valueParts` imports, deleted symbols, dead-action strings,
+`data-caret-on`) all empty in `app/`.
+
+---
+
+## Original plan (below) — retained for reference
+
+Grep-gated removal of the linear-caret machinery and the granular reducer actions
+the textarea made obsolete. Pure subtraction — no behavior change if the earlier
+steps are correct.
 
 ## Prerequisite
 

@@ -2,7 +2,6 @@ import { describe, it, expect } from "vitest";
 import {
   createInitialRows,
   INITIAL_DATA_ROW_COUNT,
-  isAtomicPart,
   isPristineScaffold,
   MAX_TEMPLATE_ROWS,
   newRowId,
@@ -82,19 +81,6 @@ describe("uniqueKey", () => {
   it("suffixes _2, _3, … to step past collisions", () => {
     expect(uniqueKey("row", new Set(["row"]))).toBe("row_2");
     expect(uniqueKey("row", new Set(["row", "row_2"]))).toBe("row_3");
-  });
-});
-
-// ---------------------------------------------------------------------------
-// Atomic-part predicate (Step 4)
-// ---------------------------------------------------------------------------
-
-describe("isAtomicPart", () => {
-  it("is false for TEXT and true for every non-TEXT part", () => {
-    expect(isAtomicPart({ type: "TEXT", text: "x" })).toBe(false);
-    expect(isAtomicPart(metafield)).toBe(true);
-    expect(isAtomicPart({ type: "SHOPIFY_FIELD", field: "vendor" })).toBe(true);
-    expect(isAtomicPart(lineBreak)).toBe(true);
   });
 });
 
@@ -479,325 +465,6 @@ describe("rowsReducer", () => {
         valueParts: [{ type: "TEXT", text: "y" }],
       });
       expect(result[0]).toBe(rows[0]);
-    });
-  });
-
-  describe("SET_VALUE_TEXT", () => {
-    it("edits only the targeted TEXT segment, leaving pills untouched", () => {
-      const rows = [
-        dataRow("a", "a", [
-          { type: "TEXT", text: "Up to " },
-          metafield,
-          { type: "TEXT", text: " hours" },
-        ]),
-      ];
-      const result = rowsReducer(rows, {
-        type: "SET_VALUE_TEXT",
-        id: "a",
-        partIndex: 0,
-        text: "Max ",
-      }) as DataRow[];
-      expect(result[0].valueParts).toEqual([
-        { type: "TEXT", text: "Max " },
-        metafield,
-        { type: "TEXT", text: " hours" },
-      ]);
-    });
-
-    it("ignores a partIndex that points at a non-TEXT part", () => {
-      const rows = [
-        dataRow("a", "a", [{ type: "TEXT", text: "x" }, metafield]),
-      ];
-      const result = rowsReducer(rows, {
-        type: "SET_VALUE_TEXT",
-        id: "a",
-        partIndex: 1,
-        text: "nope",
-      }) as DataRow[];
-      expect(result[0].valueParts[1]).toEqual(metafield);
-    });
-
-    it("does nothing to SECTION_HEADER rows (they have no value cell)", () => {
-      const rows = [sectionRow("s", "section")];
-      expect(
-        rowsReducer(rows, {
-          type: "SET_VALUE_TEXT",
-          id: "s",
-          partIndex: 0,
-          text: "x",
-        }),
-      ).toEqual(rows);
-    });
-  });
-
-  describe("REMOVE_VALUE_PART", () => {
-    it("drops the part and merges the surrounding TEXT back together", () => {
-      const rows = [
-        dataRow("a", "a", [
-          { type: "TEXT", text: "Up to " },
-          metafield,
-          { type: "TEXT", text: " hours" },
-        ]),
-      ];
-      const result = rowsReducer(rows, {
-        type: "REMOVE_VALUE_PART",
-        id: "a",
-        partIndex: 1,
-      }) as DataRow[];
-      expect(result[0].valueParts).toEqual([
-        { type: "TEXT", text: "Up to  hours" },
-      ]);
-    });
-
-    it("does nothing to SECTION_HEADER rows (they have no value cell)", () => {
-      const rows = [sectionRow("s", "section")];
-      expect(
-        rowsReducer(rows, {
-          type: "REMOVE_VALUE_PART",
-          id: "s",
-          partIndex: 0,
-        }),
-      ).toEqual(rows);
-    });
-  });
-
-  describe("SET_VALUE_PART (in-place pill swap)", () => {
-    const vendor: ValuePart = { type: "SHOPIFY_FIELD", field: "vendor" };
-    const price: ValuePart = { type: "SHOPIFY_FIELD", field: "price" };
-
-    it("replaces the atomic part in place, leaving length and neighbours untouched", () => {
-      const rows = [
-        dataRow("a", "a", [
-          { type: "TEXT", text: "Up to " },
-          vendor,
-          { type: "TEXT", text: " hours" },
-        ]),
-      ];
-      const result = rowsReducer(rows, {
-        type: "SET_VALUE_PART",
-        id: "a",
-        partIndex: 1,
-        part: price,
-      }) as DataRow[];
-      expect(result[0].valueParts).toEqual([
-        { type: "TEXT", text: "Up to " },
-        price,
-        { type: "TEXT", text: " hours" },
-      ]);
-    });
-
-    it("converts a METAFIELD token to a SHOPIFY_FIELD in place (Step 6: native list only)", () => {
-      const rows = [
-        dataRow("a", "a", [
-          { type: "TEXT", text: "" },
-          metafield,
-          { type: "TEXT", text: "" },
-        ]),
-      ];
-      const result = rowsReducer(rows, {
-        type: "SET_VALUE_PART",
-        id: "a",
-        partIndex: 1,
-        part: vendor,
-      }) as DataRow[];
-      expect(result[0].valueParts[1]).toEqual(vendor);
-    });
-
-    it("no-ops on an out-of-range partIndex", () => {
-      const rows = [dataRow("a", "a", [{ type: "TEXT", text: "x" }])];
-      expect(
-        rowsReducer(rows, {
-          type: "SET_VALUE_PART",
-          id: "a",
-          partIndex: 5,
-          part: vendor,
-        }),
-      ).toEqual(rows);
-    });
-
-    it("no-ops when the id is not found", () => {
-      const rows = [dataRow("a", "a")];
-      expect(
-        rowsReducer(rows, {
-          type: "SET_VALUE_PART",
-          id: "ghost",
-          partIndex: 0,
-          part: vendor,
-        }),
-      ).toEqual(rows);
-    });
-
-    it("does nothing to SECTION_HEADER rows (they have no value cell)", () => {
-      const rows = [sectionRow("s", "section")];
-      expect(
-        rowsReducer(rows, {
-          type: "SET_VALUE_PART",
-          id: "s",
-          partIndex: 0,
-          part: vendor,
-        }),
-      ).toEqual(rows);
-    });
-  });
-
-  describe("INSERT_VALUE_PART_AT (caret-aware insert/split)", () => {
-    it("splits the TEXT run at the offset and drops the part between the halves", () => {
-      const rows = [dataRow("a", "a", [{ type: "TEXT", text: "abcd" }])];
-      const result = rowsReducer(rows, {
-        type: "INSERT_VALUE_PART_AT",
-        id: "a",
-        partIndex: 0,
-        offset: 2,
-        part: lineBreak,
-      }) as DataRow[];
-      expect(result[0].valueParts).toEqual([
-        { type: "TEXT", text: "ab" },
-        lineBreak,
-        { type: "TEXT", text: "cd" },
-      ]);
-    });
-
-    it("inserts a LINE_BREAK at the caret between two existing TEXT lines", () => {
-      // "1000 nits…" + Enter at the end → break then an empty trailing line.
-      const rows = [
-        dataRow("a", "a", [{ type: "TEXT", text: "1000 nits max" }]),
-      ];
-      const result = rowsReducer(rows, {
-        type: "INSERT_VALUE_PART_AT",
-        id: "a",
-        partIndex: 0,
-        offset: 13,
-        part: lineBreak,
-      }) as DataRow[];
-      expect(result[0].valueParts).toEqual([
-        { type: "TEXT", text: "1000 nits max" },
-        lineBreak,
-        { type: "TEXT", text: "" },
-      ]);
-    });
-
-    it("keeps an empty leading TEXT when splitting at offset 0", () => {
-      const rows = [dataRow("a", "a", [{ type: "TEXT", text: "hours" }])];
-      const result = rowsReducer(rows, {
-        type: "INSERT_VALUE_PART_AT",
-        id: "a",
-        partIndex: 0,
-        offset: 0,
-        part: metafield,
-      }) as DataRow[];
-      expect(result[0].valueParts).toEqual([
-        { type: "TEXT", text: "" },
-        metafield,
-        { type: "TEXT", text: "hours" },
-      ]);
-    });
-
-    it("splices the part in (no split) when the target index is an atomic part", () => {
-      const rows = [
-        dataRow("a", "a", [
-          { type: "TEXT", text: "x" },
-          metafield,
-          { type: "TEXT", text: "y" },
-        ]),
-      ];
-      // partIndex 1 is the metafield token → splice the break before it.
-      const result = rowsReducer(rows, {
-        type: "INSERT_VALUE_PART_AT",
-        id: "a",
-        partIndex: 1,
-        offset: 0,
-        part: lineBreak,
-      }) as DataRow[];
-      expect(result[0].valueParts).toEqual([
-        { type: "TEXT", text: "x" },
-        lineBreak,
-        metafield,
-        { type: "TEXT", text: "y" },
-      ]);
-    });
-
-    it("splices at the end when partIndex is past the last part (defensive)", () => {
-      // Not reachable from a padded editor caret (linearToPartOffset resolves the
-      // end into the trailing TEXT), but the reducer must still handle it: a
-      // bare splice leaves no trailing TEXT because normalize only adds one when
-      // the value has no TEXT at all.
-      const rows = [dataRow("a", "a", [{ type: "TEXT", text: "x" }])];
-      const result = rowsReducer(rows, {
-        type: "INSERT_VALUE_PART_AT",
-        id: "a",
-        partIndex: 1,
-        offset: 0,
-        part: metafield,
-      }) as DataRow[];
-      expect(result[0].valueParts).toEqual([
-        { type: "TEXT", text: "x" },
-        metafield,
-      ]);
-    });
-
-    it("does nothing to SECTION_HEADER rows (they have no value cell)", () => {
-      const rows = [sectionRow("s", "section")];
-      expect(
-        rowsReducer(rows, {
-          type: "INSERT_VALUE_PART_AT",
-          id: "s",
-          partIndex: 0,
-          offset: 0,
-          part: lineBreak,
-        }),
-      ).toEqual(rows);
-    });
-
-    it("spaceAfter drops a trailing space, merged into the following TEXT (smart-pill UX)", () => {
-      const rows = [dataRow("a", "a", [{ type: "TEXT", text: "Intel" }])];
-      // Caret at the end of "Intel" → pill + space, with the space merged into
-      // the (empty) trailing half so the cell ends with "Intel" + pill + " ".
-      const result = rowsReducer(rows, {
-        type: "INSERT_VALUE_PART_AT",
-        id: "a",
-        partIndex: 0,
-        offset: 5,
-        part: metafield,
-        spaceAfter: true,
-      }) as DataRow[];
-      expect(result[0].valueParts).toEqual([
-        { type: "TEXT", text: "Intel" },
-        metafield,
-        { type: "TEXT", text: " " },
-      ]);
-    });
-
-    it("spaceAfter prefixes the space onto the right half when splitting mid-text", () => {
-      const rows = [dataRow("a", "a", [{ type: "TEXT", text: "ab" }])];
-      const result = rowsReducer(rows, {
-        type: "INSERT_VALUE_PART_AT",
-        id: "a",
-        partIndex: 0,
-        offset: 1,
-        part: metafield,
-        spaceAfter: true,
-      }) as DataRow[];
-      expect(result[0].valueParts).toEqual([
-        { type: "TEXT", text: "a" },
-        metafield,
-        { type: "TEXT", text: " b" },
-      ]);
-    });
-
-    it("omitting spaceAfter inserts no space (LINE_BREAK path unchanged)", () => {
-      const rows = [dataRow("a", "a", [{ type: "TEXT", text: "ab" }])];
-      const result = rowsReducer(rows, {
-        type: "INSERT_VALUE_PART_AT",
-        id: "a",
-        partIndex: 0,
-        offset: 1,
-        part: metafield,
-      }) as DataRow[];
-      expect(result[0].valueParts).toEqual([
-        { type: "TEXT", text: "a" },
-        metafield,
-        { type: "TEXT", text: "b" },
-      ]);
     });
   });
 
@@ -1393,10 +1060,9 @@ describe("isPristineScaffold", () => {
   it("is false once a DATA row's value is non-empty", () => {
     const scaffold = fresh();
     const edited = rowsReducer(scaffold, {
-      type: "SET_VALUE_TEXT",
+      type: "SET_VALUE_PARTS",
       id: scaffold[1].id,
-      partIndex: 0,
-      text: "M5",
+      valueParts: [{ type: "TEXT", text: "M5" }],
     });
     expect(isPristineScaffold(edited)).toBe(false);
   });
@@ -1438,11 +1104,9 @@ describe("isPristineScaffold", () => {
   it("is false when a DATA row carries an atomic value part (not a lone empty TEXT)", () => {
     const scaffold = fresh();
     const edited = rowsReducer(scaffold, {
-      type: "INSERT_VALUE_PART_AT",
+      type: "SET_VALUE_PARTS",
       id: scaffold[1].id,
-      partIndex: 0,
-      offset: 0,
-      part: metafield,
+      valueParts: [metafield],
     });
     expect(isPristineScaffold(edited)).toBe(false);
   });

@@ -125,42 +125,6 @@
   border-inline-start: var(--appx-cell-line);
 }
 
-/* Inline, link-styled dynamic-field token — a Claude-style file reference rather
- * than a chip: blue link-like text with no border, a light hover background, and a
- * darker "caret-on" background that marks it as the next Backspace/Delete target.
- * Deleted as one unit from the keyboard (no per-pill ✕).
- *
- * Polaris `s-*` color tokens are sealed in shadow DOM and are not exposed as
- * light-DOM CSS custom properties (confirmed in-browser), so this module cannot
- * reference `--p-color-text-link`. `--appx-token-color` is Polaris's own link
- * color, captured at runtime from an `<s-link>` and published on the document by
- * `useCapturedTokenColor()`; the hover / caret-on tints are mixed from that same
- * value. No hardcoded hex — the module stays custom-property/`currentColor`-only,
- * degrading to `currentColor` when the capture is unavailable. */
-.token {
-  color: var(--appx-token-color, currentColor);
-  border-radius: 0.25rem;
-  padding: 0 0.125rem;
-  cursor: default;
-  white-space: nowrap;
-}
-
-.token:hover {
-  background: color-mix(
-    in srgb,
-    var(--appx-token-color, currentColor) 10%,
-    transparent
-  );
-}
-
-.token[data-caret-on] {
-  background: color-mix(
-    in srgb,
-    var(--appx-token-color, currentColor) 20%,
-    transparent
-  );
-}
-
 /* Persistent, muted reorder affordance (Step 10 mouse drag; Step 11 made it a
  * real, keyboard-focusable <button> for accessible reorder). `touch-action: none`
  * hands the gesture to dnd-kit's pointer sensor instead of the scroller, so a drag

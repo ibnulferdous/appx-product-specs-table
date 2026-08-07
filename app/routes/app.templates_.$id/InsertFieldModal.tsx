@@ -1,18 +1,17 @@
 import { INSERT_FIELD_MODAL_ID, metafieldChoiceValue } from "./editorShared";
 import type { RowEngine } from "./useRowEngine";
 
-// The single editor-level "Insert field" modal serving both create and edit
-// (Steps 5–9), extracted verbatim from the former container (reshell A1). Hidden
-// until `shopify.modal.show` is called — from the toolbar button (create) or a
-// pill click (edit); <s-modal> provides the focus trap, Esc, and outside-click
-// dismiss natively. The body is a search box over a native-field list plus a live
-// metafield section; the primary button is disabled until a field is selected and
-// commits create (Insert at the saved caret) or edit (Update the clicked pill in
-// place). Cancel / Esc / outside-click commit nothing. Presentational — all state
+// The single editor-level "Insert field" modal (Steps 5–9), extracted verbatim
+// from the former container (reshell A1). Create-only since feature 112 (the
+// edit-a-pill path is gone — merchants edit tokens as text in the textarea).
+// Hidden until `shopify.modal.show` is called from the toolbar button; <s-modal>
+// provides the focus trap, Esc, and outside-click dismiss natively. The body is a
+// search box over a native-field list plus a live metafield section; the primary
+// button is disabled until a field is selected and commits Insert at the saved
+// caret. Cancel / Esc / outside-click commit nothing. Presentational — all state
 // + handlers come from the engine.
 export function InsertFieldModal({ engine }: { engine: RowEngine }) {
   const {
-    editTarget,
     searchQuery,
     searchFieldRef,
     selection,
@@ -32,10 +31,7 @@ export function InsertFieldModal({ engine }: { engine: RowEngine }) {
   } = engine;
 
   return (
-    <s-modal
-      id={INSERT_FIELD_MODAL_ID}
-      heading={editTarget ? "Edit field" : "Insert field"}
-    >
+    <s-modal id={INSERT_FIELD_MODAL_ID} heading="Insert field">
       {/* Search box (Step 7): filters BOTH lists as the merchant types. Pure
           presentation — it never changes `selection`, so a pick that scrolls
           out of the filtered view stays committable. */}
@@ -129,7 +125,7 @@ export function InsertFieldModal({ engine }: { engine: RowEngine }) {
         onClick={handleCommit}
         {...(selection ? {} : { disabled: true })}
       >
-        {editTarget ? "Update" : "Insert"}
+        Insert
       </s-button>
       <s-button slot="secondary-actions" onClick={handleCancelInsertField}>
         Cancel

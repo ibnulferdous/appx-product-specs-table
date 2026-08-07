@@ -1,9 +1,42 @@
 # Value textarea — Step 4: prune the edit-pill wiring
 
-**Status: 📋 Planned.** Part 4 of 6 (features 109–114). Small, mechanical removal
-of the now-unreachable click-a-pill-to-edit path across the live component wiring.
-No pure-module deletions yet (that's Step 113) — this step only cuts the dead
-props and handlers so Step 113's module deletes are clean.
+**Status: ✅ Shipped 2026-08-07.** Part 4 of 6 (features 109–114). Small, mechanical
+removal of the now-unreachable click-a-pill-to-edit path across the live component
+wiring. No pure-module deletions yet (that's Step 113) — this step only cuts the
+dead props and handlers so Step 113's module deletes are clean.
+
+## Shipped (2026-08-07)
+
+Removed the entire edit-a-pill-in-place path; the Insert-field modal is now
+**create-only**. Changes:
+
+- **ValueCell.tsx** — dropped the unused `onEditPart` prop from the signature/type
+  and the now-unused `ValuePart` import.
+- **EditorRowItem.tsx** — dropped the `onEditPart` prop (type + destructure +
+  pass-through to `ValueCell`), its memo-comment mention, and the `ValuePart`
+  import.
+- **RowGrid.tsx** — dropped the `handleEditPart` destructure and the
+  `onEditPart={handleEditPart}` pass-through.
+- **useRowEngine.ts** — deleted `editTarget` state, `handleEditPart`, the
+  `editTarget` branch of `handleCommit` (the `SET_VALUE_PART` dispatch +
+  `partOffsetToLinear` caret set), the `setEditTarget` resets in
+  `handleOpenInsertField` / `handleCommit` / `handleCancelInsertField`, and the
+  `editTarget` / `handleEditPart` return-object fields. Dropped the now-unused
+  `partOffsetToLinear`, `partToSelection`, and `EditTarget` imports.
+- **InsertFieldModal.tsx** — dropped the `editTarget` destructure; collapsed the
+  modal heading to `"Insert field"` and the primary button to `"Insert"` (were
+  ternaries on edit vs create mode).
+- **editorShared.ts** (beyond the plan's listed files) — removed
+  `partToSelection` and the `EditTarget` interface: both existed *only* to serve
+  the edit-pill path being deleted here, and no later step covers them, so they
+  are swept now to avoid orphaned exports. Also dropped the `findNativeField` and
+  `ValuePart` imports they alone used.
+
+`SET_VALUE_PART` reducer action + its direct reducer tests are **kept** (removed in
+Step 113); nothing dispatches it anymore (grep-confirmed).
+
+**Static gates (all green):** `npm run typecheck`, `npm run lint`,
+`npm run test:run` (1468/1468), `npm run build`.
 
 ## Why now
 

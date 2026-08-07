@@ -35,7 +35,6 @@ export function RowGrid({ engine }: { engine: RowEngine }) {
     toggleSelected,
     dispatch,
     onCaretChange,
-    handleEditPart,
     onBulkPaste,
     pendingCaret,
     sensors,
@@ -134,7 +133,6 @@ export function RowGrid({ engine }: { engine: RowEngine }) {
               onToggleSelected={toggleSelected}
               dispatch={dispatch}
               onCaretChange={onCaretChange}
-              onEditPart={handleEditPart}
               onBulkPaste={onBulkPaste}
               pendingCaret={pendingCaret}
             />

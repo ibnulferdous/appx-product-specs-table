@@ -60,7 +60,7 @@ import {
   stylingToCssVars,
   stylingToModifierClasses,
 } from "../../utils/tableStylingCss";
-import { tokenLabels } from "../../utils/valueDom";
+import { tokenLabels } from "../../utils/tokenLabels";
 import { PREVIEW_DOCUMENT_STYLES } from "./previewStyles";
 import { PREVIEW_HEIGHT_BRIDGE_SCRIPT } from "./previewBridge";
 

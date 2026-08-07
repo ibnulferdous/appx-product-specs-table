@@ -1,7 +1,5 @@
 import { useEffect, useRef, type RefObject } from "react";
 import type { EditorRow } from "../../utils/rows";
-import { linearLength } from "../../utils/valueParts";
-import { setCaretLinear } from "../../utils/valueDom";
 import { resolveGridTarget, type GridColumn } from "../../utils/gridNav";
 
 // --- Spreadsheet-style vertical cell navigation (feature 31, Step 2) ----------
@@ -17,12 +15,11 @@ import { resolveGridTarget, type GridColumn } from "../../utils/gridNav";
 // keeps the scroller div purely presentational (no `jsx-a11y` static-interaction
 // role to invent) and is behaviour-identical — `event.target` is still the cell.
 //
-// It deliberately touches NOTHING in the caret engine: `ValueCell.handleKeyDown`
-// returns for arrow keys without `preventDefault`/`stopPropagation`, so the chord
-// reaches this listener untouched, and the Label/Section `<input>`s have no
-// keydown handler. Browser-verified (jsdom can't model contenteditable
-// focus/selection); the navigation RULES it leans on are Node-unit-tested in
-// `gridNav.ts`.
+// It deliberately touches NOTHING in the value cell: the `<textarea>` (feature
+// 111) has no keydown handler, so the chord reaches this listener untouched, and
+// the Label/Section `<input>`s have no keydown handler either. Browser-verified
+// (jsdom can't model textarea focus/selection); the navigation RULES it leans on
+// are Node-unit-tested in `gridNav.ts`.
 
 const ROW_ID_PREFIX = "row-";
 
@@ -62,10 +59,11 @@ export function useGridKeyboardNav(
       const rowEl = target?.closest<HTMLElement>(`[id^="${ROW_ID_PREFIX}"]`);
       if (!rowEl) return;
 
-      // SOURCE cell: value = the stable role; label/section = the row's only text
-      // input (the gutter select checkbox is type=checkbox, excluded). Anything
-      // else (drag handle, ✕, checkbox, padding) is not a navigable cell → leave.
-      const inValue = !!target?.closest('[role="textbox"]');
+      // SOURCE cell: value = the `<textarea>` (feature 111); label/section = the
+      // row's only text input (the gutter select checkbox is type=checkbox,
+      // excluded). Anything else (drag handle, ✕, checkbox, padding) is not a
+      // navigable cell → leave.
+      const inValue = !!target?.closest("textarea");
       const inTextInput = !!target?.closest('input[type="text"]');
       if (!inValue && !inTextInput) return;
 
@@ -94,11 +92,13 @@ export function useGridKeyboardNav(
       if (!targetRowEl) return;
 
       if (result.cell === "value") {
-        const host = targetRowEl.querySelector<HTMLElement>('[role="textbox"]');
+        const host =
+          targetRowEl.querySelector<HTMLTextAreaElement>("textarea");
         const targetRow = liveRows.find((row) => row.id === result.rowId);
         if (!host || targetRow?.rowType !== "DATA") return;
         host.focus(); // browser auto-scrolls it into view
-        setCaretLinear(host, linearLength(targetRow.valueParts)); // caret at end
+        const end = host.value.length;
+        host.setSelectionRange(end, end); // caret at end (native textarea API)
       } else {
         // "label" or "section" → the target row's single text input.
         const input =

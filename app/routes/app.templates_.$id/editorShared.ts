@@ -1,6 +1,4 @@
 import { useEffect, useLayoutEffect } from "react";
-import { findNativeField } from "../../utils/shopifyFields";
-import type { ValuePart } from "../../utils/rows";
 import type { TabId } from "./tabViewMemory";
 
 // Shared types + constants + tiny pure helpers for the spec-table editor, lifted
@@ -27,20 +25,6 @@ export function metafieldChoiceValue(part: {
   key: string;
 }): string {
   return `${part.namespace}.${part.key}`;
-}
-
-// Map a clicked pill's value part to the selection that should pre-fill the modal
-// in edit mode (Step 9). A METAFIELD pill pre-selects its namespace/key; a
-// SHOPIFY_FIELD pill pre-selects its field only when it is a known native token
-// (an unknown token opens unselected); anything else opens unselected.
-export function partToSelection(part: ValuePart): FieldSelection | null {
-  if (part.type === "METAFIELD") {
-    return { kind: "metafield", namespace: part.namespace, key: part.key };
-  }
-  if (part.type === "SHOPIFY_FIELD" && findNativeField(part.field)) {
-    return { kind: "native", field: part.field };
-  }
-  return null;
 }
 
 // React runs layout effects only in the browser; fall back to useEffect during
@@ -99,15 +83,6 @@ export const REORDER_INSTRUCTIONS = {
     "use the arrow keys to move it, then press space or enter to drop it, or " +
     "press escape to cancel.",
 };
-
-// The pill the merchant is editing (Step 6.3): the row and the value-part index
-// of the clicked token. `null` means the modal is in create mode (Insert drops a
-// new pill at the saved caret); non-null means edit mode (Update swaps this pill's
-// field in place). One modal serves both.
-export interface EditTarget {
-  rowId: string;
-  partIndex: number;
-}
 
 // A caret saved from a value cell: which row, and the textarea `selectionStart`
 // character offset into `partsToText(valueParts)` (feature 111). A plain number,

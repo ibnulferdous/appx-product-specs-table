@@ -1,8 +1,32 @@
 # Value textarea — Step 6: docs + live sign-off
 
-**Status: 📋 Planned.** Part 6 of 6 (features 109–114). Documentation and the
-end-to-end live verification that closes the migration. No product code changes
+**Status: ✅ Shipped 2026-08-07.** Part 6 of 6 (features 109–114). Documentation and
+the end-to-end live verification that closes the migration. No product code changes
 beyond doc/comment fixes surfaced during verification.
+
+## Verification (2026-08-07) — ✅ all checks passed
+
+Live on dev store **`appx-dev`**, embedded editor, via Claude-in-Chrome (the "dev
+previews (1)" badge confirmed the live dev build). Test artifact: draft template
+"Untitled template" (`cmsieep340001vptwi9mbgglv`) — safe to delete.
+
+| # | Check | Result |
+|---|-------|--------|
+| 1 | **Undo/redo** | ✅ Native Ctrl+Z peels keystrokes; Ctrl+Y redoes. Original contenteditable defect gone. |
+| 2 | **Insert field** | ✅ Modal opens **create-only** (heading "Insert field", button "Insert" — step-112 copy). Vendor → spliced `{% field vendor %} ` at the caret after "Made by ". |
+| 3 | **Multiline** | ✅ The snowboard row renders two lines in editor, preview, and after save/reload. |
+| 4 | **Bulk paste** | ✅ (verified live in Step 111; the paste path is unchanged by 112–113 — re-confirmed by grep, no code delta). |
+| 5 | **Preview parity** | ✅ Preview renders `Metafield · snowboard_length` and `Field · vendor` as **labeled pills**, no raw `{% %}`. Directly validates the Step-113 `tokenLabels` relocation. |
+| 6 | **Storefront unchanged** | ✅ **Definitional no-op for 112–113:** `git` confirms zero changes under `extensions/` and to `spec-table-value.liquid`; the `ValuePart[]` round-trip is proven by check 7; the preview shares the storefront's `part.type` switch. Last *direct* storefront sign-off was Step 111 (the only step that changed value production). |
+| 7 | **Save/reload round-trip** | ✅ Saved `Made by {% field vendor %}`; after a full reload the textarea text + multiline row were identical (metaobject `ValuePart[]` unchanged in shape). |
+| + | **Grid nav (owed from 113)** | ✅ Ctrl+↓ moved Weight→Display, Ctrl+↑ moved back, caret at end each time (markers landed appended) — the Step-111 regression the Step-113 fix repaired. Both directions. |
+
+**Console:** only `ApolloError: Failed to fetch` from `cdn.shopify.com/shopifycloud/*`
+(Shopify's own admin-shell telemetry). **No app-side errors.**
+
+---
+
+## Original plan (below) — retained for reference
 
 ## Goal in one sentence
 
