@@ -37,9 +37,21 @@ import styles from "./SpecTableEditor.module.css";
 
 // Grow the textarea to fit its content (the old surface grew naturally). Reset to
 // `auto` first so it can also SHRINK when lines are removed.
+//
+// 🔴 THE BUG THIS GUARD EXISTS FOR: an element with no layout yet — not attached,
+// or attached inside a Polaris custom element that has not upgraded — reports
+// `scrollHeight === 0`. Writing that back pinned `height: 0px` on the cell, and
+// because the effect below only re-runs when `desired` changes, a row loaded with
+// a value never re-measured: it sat at the `.surface` `min-height` (20px) with
+// ~32px of content, so `overflow: hidden` cut the bottom of the text off. Measured
+// live on `appx-dev`: `styleH:"0px", clientH:20, scrollH:32`. So NEVER pin a
+// degenerate measurement — clear the inline height instead and let the element
+// fall back to its `rows={1}` CSS height until the ResizeObserver re-measures it
+// for real.
 function autoSize(el: HTMLTextAreaElement): void {
   el.style.height = "auto";
-  el.style.height = `${el.scrollHeight}px`;
+  const measured = el.scrollHeight;
+  el.style.height = measured > 0 ? `${measured}px` : "";
 }
 
 export function ValueCell({
@@ -96,6 +108,22 @@ export function ValueCell({
       }, MODAL_TRANSITION_MS);
     }
   }, [desired, row.id, pendingCaret, onCaretChange]);
+
+  // Re-measure whenever the cell's box actually changes, which the effect above
+  // cannot catch: it only re-runs when `desired` changes, so a row that mounted
+  // without layout (see `autoSize`) would keep its fallback height forever, and a
+  // column-width change would never re-wrap. The observer fires as soon as the
+  // element gains real layout, which is precisely when the first measurement
+  // becomes trustworthy. It settles in one extra pass: `autoSize` is idempotent
+  // once the height matches the content, and writing an unchanged height reports
+  // no resize.
+  useBrowserLayoutEffect(() => {
+    const ta = taRef.current;
+    if (!ta || typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(() => autoSize(ta));
+    observer.observe(ta);
+    return () => observer.disconnect();
+  }, []);
 
   const handleChange = useCallback(
     (event: ChangeEvent<HTMLTextAreaElement>) => {

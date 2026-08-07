@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useAppBridge } from "@shopify/app-bridge-react";
+import { AdminAppLink } from "../../components/AdminAppLink";
 import { VISIBLE_TEMPLATE_STATUS_OPTIONS } from "../../utils/templateStatus";
 import {
   SCOPE_NONE,
@@ -159,7 +160,16 @@ function CollapsibleChipList({ items }: { items: ChipItem[] }) {
   );
 }
 
-export function SettingsTab({ engine }: { engine: RowEngine }) {
+export function SettingsTab({
+  engine,
+  adminAppBase,
+}: {
+  engine: RowEngine;
+  // Admin deep-link base from the route loader — the conflict banner's link to
+  // the colliding template goes through `AdminAppLink` so "open in new tab"
+  // works. See `app/utils/adminAppLink.ts`.
+  adminAppBase: string;
+}) {
   const {
     status,
     setStatus,
@@ -193,6 +203,9 @@ export function SettingsTab({ engine }: { engine: RowEngine }) {
   // storefront page — warn so an ACTIVE-but-invisible template is never a silent
   // no-op.
   const activeButUnassigned = status === "ACTIVE" && scope === SCOPE_NONE;
+  // Blocking conflicts we can actually name and link. An unnamed conflict is the
+  // gate's fail-closed case, which the banner renders differently (see below).
+  const namedConflicts = conflicts.filter((conflict) => conflict.templateId);
 
   // Open the App Bridge resource picker for the current scope kind (feature 47:
   // MULTI-select for PRODUCT/COLLECTION). Preselect the current set via
@@ -266,9 +279,10 @@ export function SettingsTab({ engine }: { engine: RowEngine }) {
       <s-text type="strong">Settings</s-text>
 
       {/* Rich conflict banner (feature 44): a blocked activation returns the
-          colliding template(s); name each with a link and the three resolutions.
-          Persistent until the merchant edits the pending scope/status or a save
-          succeeds (the engine clears `conflicts` on either). */}
+          colliding template(s); name each with a bare link. Persistent until the
+          merchant edits the pending scope/status or a save succeeds (the engine
+          clears `conflicts` on either). The links go through `AdminAppLink` so
+          "open in new tab" lands in the admin rather than the app's own origin. */}
       {conflicts.length > 0 ? (
         <s-banner
           tone="critical"
@@ -276,21 +290,20 @@ export function SettingsTab({ engine }: { engine: RowEngine }) {
         >
           <s-stack direction="block" gap="small-200">
             <s-paragraph>
-              This template’s assignment overlaps one that’s already active. Two
-              active templates can’t target the same products.
+              This template’s assignment overlaps with another active template.
+              Two active templates can’t target the same products.
             </s-paragraph>
-            {conflicts.some((conflict) => conflict.templateId) ? (
+            {namedConflicts.length > 0 ? (
               <s-stack direction="block" gap="small-100">
-                {conflicts
-                  .filter((conflict) => conflict.templateId)
-                  .map((conflict) => (
-                    <s-link
-                      key={conflict.templateId}
-                      href={`/app/templates/${conflict.templateId}`}
-                    >
-                      {conflict.templateName ?? "View conflicting template"}
-                    </s-link>
-                  ))}
+                {namedConflicts.map((conflict) => (
+                  <AdminAppLink
+                    key={conflict.templateId}
+                    adminAppBase={adminAppBase}
+                    appPath={`/app/templates/${conflict.templateId}`}
+                  >
+                    {conflict.templateName ?? "View conflicting template"}
+                  </AdminAppLink>
+                ))}
               </s-stack>
             ) : (
               <s-paragraph>{conflicts[0]?.reason}</s-paragraph>

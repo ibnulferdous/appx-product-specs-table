@@ -56,6 +56,7 @@ import {
   parseStylingValues,
   type StylingValues,
 } from "../../utils/tableStyling";
+import { buildAdminAppBase } from "../../utils/adminAppLink";
 import { SpecTableEditor } from "./SpecTableEditor";
 import { TemplateHeaderActions } from "./TemplateHeaderActions";
 import { useRowEngine } from "./useRowEngine";
@@ -116,6 +117,16 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
   const { session, admin } = await authenticate.admin(request);
   const shop = await upsertShop(session);
 
+  // Admin deep-link base for the Settings tab's conflict banner, which links the
+  // colliding template. Returned on BOTH branches below (a never-saved template
+  // can be blocked by the activation gate too). See `adminAppLink.ts` for why an
+  // in-app link must be built this way.
+  const adminAppBase = buildAdminAppBase(
+    session.shop,
+    // eslint-disable-next-line no-undef
+    process.env.SHOPIFY_API_KEY || "",
+  );
+
   // "new" is a safe sentinel: Template ids are server-generated cuids, so a real
   // template id can never equal the literal string "new". No DB hit — the editor
   // opens on a synthetic, in-memory starter scaffold (1 section + 5 blank rows);
@@ -159,6 +170,7 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
       // Feature 88 step 89/92. `null` on a bare /new — and with the gallery
       // unskippable, that null now means "the merchant chose Blank".
       basedOnPreset,
+      adminAppBase,
     };
   }
 
@@ -212,7 +224,14 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
     template.styling?.basedOnPreset,
   );
 
-  return { template, assignment, excludes, styling, basedOnPreset };
+  return {
+    template,
+    assignment,
+    excludes,
+    styling,
+    basedOnPreset,
+    adminAppBase,
+  };
 };
 
 export const action = async ({ request, params }: ActionFunctionArgs) => {
@@ -534,6 +553,7 @@ function TemplateOverview({
   excludes,
   styling,
   basedOnPreset,
+  adminAppBase,
   onDiscard,
 }: {
   template: { id: string; name: string; status: TemplateStatus; rows: unknown };
@@ -541,6 +561,9 @@ function TemplateOverview({
   excludes: Array<{ gid: string; label: string; image: string | null }>;
   styling: StylingValues;
   basedOnPreset: string | null;
+  // Admin deep-link base, from the loader. Used only by the Settings tab's
+  // conflict banner to link the colliding template (`AdminAppLink`).
+  adminAppBase: string;
   onDiscard: () => void;
 }) {
   const engine = useRowEngine({
@@ -603,14 +626,20 @@ function TemplateOverview({
           takes the shared engine as a prop (the engine lift moved the remount key
           up to TemplateEditorPage, onto this component). The scope picker rides the
           engine's Settings tab (feature 44). */}
-      <SpecTableEditor engine={engine} />
+      <SpecTableEditor engine={engine} adminAppBase={adminAppBase} />
     </s-page>
   );
 }
 
 export default function TemplateEditorPage() {
-  const { template, assignment, excludes, styling, basedOnPreset } =
-    useLoaderData<typeof loader>();
+  const {
+    template,
+    assignment,
+    excludes,
+    styling,
+    basedOnPreset,
+    adminAppBase,
+  } = useLoaderData<typeof loader>();
 
   // Bumped to remount the engine owner (TemplateOverview) — resetting its reducer
   // to the persisted rows and reseeding name/status — when the merchant discards
@@ -634,6 +663,7 @@ export default function TemplateEditorPage() {
       excludes={excludes}
       styling={styling}
       basedOnPreset={basedOnPreset}
+      adminAppBase={adminAppBase}
       onDiscard={() => setEditorNonce((nonce) => nonce + 1)}
     />
   );

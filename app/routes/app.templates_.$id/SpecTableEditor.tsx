@@ -21,7 +21,15 @@ import styles from "./SpecTableEditor.module.css";
 // from the pre-reshell editor; the layout is the agreed mockup (tabbed card +
 // bounded inner-scroll). See `context/features/18-reshell-a1-extract-row-engine.md`
 // and `context/features/20-template-lifecycle-actions.md`.
-export function SpecTableEditor({ engine }: { engine: RowEngine }) {
+export function SpecTableEditor({
+  engine,
+  adminAppBase,
+}: {
+  engine: RowEngine;
+  // Passed straight through to the Settings tab, whose conflict banner links the
+  // colliding template (`AdminAppLink`). Not editor state — loader data.
+  adminAppBase: string;
+}) {
   // Freeze the whole editor card while a save is in flight. `inert` blocks
   // pointer, keyboard, and focus across the entire subtree — the contenteditable
   // value cells, the toolbar, drag/paste, and the tab controls — and removes it
@@ -58,7 +66,9 @@ export function SpecTableEditor({ engine }: { engine: RowEngine }) {
             />
           )}
           stylePanel={<StyleTab engine={engine} />}
-          settingsPanel={<SettingsTab engine={engine} />}
+          settingsPanel={
+            <SettingsTab engine={engine} adminAppBase={adminAppBase} />
+          }
         />
       </div>
 

@@ -34,7 +34,11 @@ describe("formatFieldToken / formatMetafieldToken", () => {
 describe("partsToText", () => {
   it("emits TEXT verbatim, tokens via the formatters, LINE_BREAK as \\n", () => {
     expect(
-      partsToText([{ type: "TEXT", text: "Up to " }, mf, { type: "TEXT", text: " hours" }]),
+      partsToText([
+        { type: "TEXT", text: "Up to " },
+        mf,
+        { type: "TEXT", text: " hours" },
+      ]),
     ).toBe("Up to {% mf custom.battery_life %} hours");
     expect(partsToText([field])).toBe("{% field vendor %}");
     expect(
@@ -95,7 +99,9 @@ describe("textToParts", () => {
 
 describe("textToParts — malformed tokens stay literal", () => {
   it("keeps a token with a missing argument as literal TEXT", () => {
-    expect(textToParts("{% mf %}")).toEqual([{ type: "TEXT", text: "{% mf %}" }]);
+    expect(textToParts("{% mf %}")).toEqual([
+      { type: "TEXT", text: "{% mf %}" },
+    ]);
     expect(textToParts("{% field %}")).toEqual([
       { type: "TEXT", text: "{% field %}" },
     ]);

@@ -22,10 +22,11 @@ Update this file after every meaningful implementation change.
 
 **Building the MVP — feature work is at the App Store pre-submission gate.**
 
-Test suite **1405 tests / 56 files**; full gate (typecheck · lint · format · test · build)
-green as of 2026-08-07. Last unit shipped: the **value-cell → `<textarea>` migration**
-(features 109–114) — `contenteditable` retired, broken Ctrl+Z fixed, `ValuePart[]` unchanged;
-live-verified on `appx-dev`.
+Test suite **1409 tests / 57 files**; full gate (typecheck · lint · format · test · build)
+green as of 2026-08-07. Last unit shipped: the **activation-conflict banner** (a shared
+`AdminAppLink` so the conflicting-template link survives "open in new tab").
+Before it: the **value-cell → `<textarea>` migration** (features 109–114) — `contenteditable`
+retired, broken Ctrl+Z fixed, `ValuePart[]` unchanged; live-verified on `appx-dev`.
 
 ---
 
@@ -153,6 +154,56 @@ saved presets, cuttable).
 
 > Rolling window, newest first. Older units roll into Completed.
 
+- **Activation-conflict banner — the conflicting-template link now opens in a new tab** — ✅
+  2026-08-07, live-verified on `appx-dev`; full gate green (typecheck · lint · format · **test 1409 / 57** (+4, +1 file) ·
+  build). The banner's `s-link href="/app/templates/<id>"` (editor Settings tab, feature 44) was
+  app-origin-relative, so "Open link in new tab" resolved it against the app's own origin and loaded
+  it standalone with no Shopify session — **the same bug fixed for the templates-list name links on
+  2026-08-04**, which is why the fix now lives in shared code rather than in one route: new
+  `app/utils/adminAppLink.ts` (`buildAdminAppBase`, pure, +4 tests) and
+  `app/components/AdminAppLink.tsx` (the `<s-link>` carrying the absolute admin href + the click
+  handler). `app.templates.tsx` was refactored onto both, deleting its inline `handleNameClick`, so
+  the two call sites can never drift. 🚫 The two traps are written into `AdminAppLink`'s comment and
+  must not be re-litigated: a cross-origin admin href makes App Bridge open **every** click in a new
+  tab (hence the bubble handler owning all outcomes), and the handler must **not** bail on
+  `event.defaultPrevented` (App Bridge already set it). See [[appbridge-cross-origin-link-newtab]].
+  Plumbing: the editor loader returns `adminAppBase` on **both** branches (a never-saved template can
+  be blocked by the gate too) → `TemplateEditorPage` → `TemplateOverview` → `SpecTableEditor` →
+  `SettingsTab`. No schema, no action change, no gate-logic change.
+  **Copy:** one word — "overlaps one that's already active" → **"overlaps with another active
+  template"** (merchant's wording, chosen by the merchant). 🚫 A larger rewrite was proposed and
+  **rejected**: a "Can't activate this template" heading, product-centric body copy, a labelled link
+  list and an added "how to fix it" line. The banner keeps its original shape — heading
+  "Can't activate — assignment conflict", one body paragraph, **bare links, no label, no fix line**.
+  Do not reintroduce.
+  ✅ **Banner live-verified on `appx-dev`** (Claude-in-Chrome): template `cmsiwabx8…` ("Mini Turbo
+  Fan (non brand)", PRODUCT-scoped to DJI Mini 4K Stardard) set Draft→Active + Save → the gate
+  blocked it and the banner rendered the exact three parts — heading, the one body paragraph, and the
+  bare link "MacBook Pro M5 Pro Chip 14-inch (18-core CPU, 20-core GPU)" — with the matching toast.
+  Discarded afterwards; the template is still DRAFT, no data changed.
+  ✅ **Both link outcomes merchant-verified on the banner link** (2026-08-07): "right click → Open
+  link in a new tab" works (the context-menu path, which uses the raw href with no JS — the exact
+  case an app-relative href broke), AND a plain left click navigates **in place, same tab** (the
+  counterpart regression a cross-origin href causes when the `onClick` is wrong). Both halves of
+  `AdminAppLink`'s contract are now confirmed on a real merchant click, not just on the templates
+  list. ⚠️ Note for future sessions: anchor clicks inside the admin iframe were inert for the whole
+  automation session — the banner link AND the templates-list name links both no-opped at
+  coordinates confirmed by `zoom`, while `<s-select>`, tab segments and the SaveBar all responded.
+  That is the known "clicks reach the document but activate nothing" state; a link no-op under
+  automation is not evidence of an app defect.
+- **Fix: value-textarea clipped its content (`autoSize` pinned a zero height)** — ✅ 2026-08-07,
+  `ValueCell.tsx`. `autoSize()` could run while the textarea had **no layout** (`scrollHeight === 0`) and
+  wrote that 0 back as `height: 0px`; the cell then sat at the `.surface` `min-height` (20px) with ~32px
+  of content, so `overflow: hidden` cut the text off. The reconcile effect only re-runs when `desired`
+  changes, so a row loaded with a value never re-measured. **Measured live on `appx-dev`**
+  (cross-origin iframe → metrics relayed to the top frame by `postMessage`): broken cell
+  `styleH:"0px", clientH:20, scrollH:32`; a healthy cell `styleH:"32px", scrollH===clientH===32`.
+  Fix = (1) never pin a degenerate measurement — clear the inline height instead, so the element falls
+  back to its `rows={1}` height; (2) a `ResizeObserver` on the textarea re-measures the moment it gains
+  real layout (and on column-width changes / re-wrap). Live-verified: 1- and 4-line cells render fully,
+  typing grows and undo shrinks. ⚠️ A first attempt blamed a **web-font race** and re-ran `autoSize` on
+  `document.fonts.ready` — **disproven** by measuring with it disabled (identical numbers; fonts were
+  already `loaded` at mount). That code was removed, not shipped. Build green, 1405 tests pass.
 - **Value cell → textarea migration — Step 6: docs + live sign-off — 🎉 MIGRATION COMPLETE** — ✅ 2026-08-07,
   `114-value-textarea-step6-docs-and-verification.md`. Recorded the new architecture in `data-model.md`
   (§7: `ValuePart[]` stays canonical; the editor surface is a native `<textarea>` + the `{% … %}` text

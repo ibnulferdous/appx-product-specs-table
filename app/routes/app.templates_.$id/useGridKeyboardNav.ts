@@ -92,8 +92,7 @@ export function useGridKeyboardNav(
       if (!targetRowEl) return;
 
       if (result.cell === "value") {
-        const host =
-          targetRowEl.querySelector<HTMLTextAreaElement>("textarea");
+        const host = targetRowEl.querySelector<HTMLTextAreaElement>("textarea");
         const targetRow = liveRows.find((row) => row.id === result.rowId);
         if (!host || targetRow?.rowType !== "DATA") return;
         host.focus(); // browser auto-scrolls it into view

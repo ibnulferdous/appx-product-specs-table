@@ -9,12 +9,13 @@ import {
   Await,
   useFetcher,
   useLoaderData,
-  useNavigate,
   useNavigation,
   useSearchParams,
 } from "react-router";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import { useAppBridge } from "@shopify/app-bridge-react";
+import { AdminAppLink } from "../components/AdminAppLink";
+import { buildAdminAppBase } from "../utils/adminAppLink";
 import { authenticate } from "../shopify.server";
 import { upsertShop } from "../models/shop.server";
 import {
@@ -146,47 +147,22 @@ const TemplateTableRow = ({
   // Admin deep-link base (`admin.shopify.com/store/<store>/apps/<client-id>`),
   // built in the loader. The row name links THROUGH the admin so "open in new
   // tab" lands in the admin (which re-embeds the app) instead of loading the
-  // app's own origin standalone. A plain left-click is intercepted below and
-  // routed in place via the client router (see `handleNameClick`).
+  // app's own origin standalone; a plain left-click still routes in place. All
+  // of that lives in the shared `AdminAppLink` — read its comment before
+  // touching link behavior here.
   adminAppBase: string;
 }) => {
   // The trigger + menu are per row, so each needs an id derived from the
   // template id (a cuid — DOM-id safe).
   const menuId = `template-actions-${template.id}`;
 
-  const appPath = `/app/templates/${template.id}`;
-  const navigate = useNavigate();
-  // The name links carry the ABSOLUTE admin href (`admin.shopify.com/.../apps/
-  // <client-id>/app/...`) so a deliberate "open in new tab" lands in the admin,
-  // which re-embeds the app — a relative href would open the app's own origin
-  // standalone. The browser's "Open link in new tab" context item uses that href
-  // directly and needs no JS. But because the href is cross-origin to the app
-  // iframe, App Bridge/Polaris would otherwise force EVERY plain click into a new
-  // tab too, so `handleNameClick` below owns the click outcomes.
-  const handleNameClick = (event: Event) => {
-    const mouse = event as MouseEvent;
-    // App Bridge intercepts every click on this cross-origin admin link in a
-    // capture-phase listener and preventDefaults it — that's what stopped the
-    // unwanted new tab, but it ALSO kills the browser's native ⌘/Ctrl/middle
-    // click → new-tab. So own both outcomes here (our bubble handler still runs;
-    // App Bridge preventDefaults but doesn't stopPropagation): a plain primary
-    // click routes in place; an intent-to-open-new-tab opens the absolute admin
-    // href in a new tab (which re-embeds the app), matching what the browser's
-    // own "Open link in new tab" context item does with the same href.
-    const wantsNewTab =
-      mouse.metaKey || mouse.ctrlKey || mouse.shiftKey || mouse.button === 1;
-    event.preventDefault();
-    if (wantsNewTab) {
-      window.open(`${adminAppBase}${appPath}`, "_blank", "noopener");
-    } else if (mouse.button === 0) {
-      navigate(appPath);
-    }
-  };
-
   return (
     <s-table-row id={template.id}>
       <s-table-cell>
-        <s-link href={`${adminAppBase}${appPath}`} onClick={handleNameClick}>
+        <AdminAppLink
+          adminAppBase={adminAppBase}
+          appPath={`/app/templates/${template.id}`}
+        >
           <span
             title={template.name}
             style={{
@@ -198,7 +174,7 @@ const TemplateTableRow = ({
           >
             {template.name}
           </span>
-        </s-link>
+        </AdminAppLink>
       </s-table-cell>
       <s-table-cell>
         <s-badge tone={BADGE_TONES[template.status]}>{template.status}</s-badge>
@@ -420,17 +396,13 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
       Object.fromEntries(templates.map((template) => [template.id, null])),
     );
 
-  // Admin deep-link base for the template name links. Relative `/app/...` hrefs
-  // only work on a left-click (App Bridge intercepts it); "open in new tab"
-  // bypasses App Bridge and resolves the href against the app's OWN origin (the
-  // tunnel/app server), loading it standalone with no Shopify session — the
-  // broken page merchants hit. Linking through the admin
-  // (`admin.shopify.com/store/<store>/apps/<client-id>/app/...`) makes a new tab
-  // land in the admin, which re-embeds the app. The client id (not the derived
-  // app handle) keeps this environment-independent; the admin resolves it.
-  const storeHandle = session.shop.replace(/\.myshopify\.com$/, "");
-  // eslint-disable-next-line no-undef
-  const adminAppBase = `https://admin.shopify.com/store/${storeHandle}/apps/${process.env.SHOPIFY_API_KEY}`;
+  // Admin deep-link base for the template name links — see `adminAppLink.ts`
+  // for why an in-app link must be built this way.
+  const adminAppBase = buildAdminAppBase(
+    session.shop,
+    // eslint-disable-next-line no-undef
+    process.env.SHOPIFY_API_KEY || "",
+  );
 
   return {
     templates,
