@@ -29,7 +29,13 @@ import {
   type RowsAction,
   type ValuePart,
 } from "../../utils/rows";
-import { linearToPartOffset, partOffsetToLinear } from "../../utils/valueParts";
+import { partOffsetToLinear } from "../../utils/valueParts";
+import {
+  formatFieldToken,
+  formatMetafieldToken,
+  partsToText,
+  textToParts,
+} from "../../utils/valueText";
 import {
   DEFAULT_STYLING_VALUES,
   serializeStylingOverrides,
@@ -643,12 +649,12 @@ export function useRowEngine({
   // its reconcile effect. Created once.
   const pendingCaretByRowRef = useRef<Map<string, number>>(new Map());
 
-  const onCaretChange = useCallback((rowId: string, linear: number | null) => {
-    if (linear === null) {
+  const onCaretChange = useCallback((rowId: string, offset: number | null) => {
+    if (offset === null) {
       activeCaretRef.current = null;
       setHasActiveCaret(false);
     } else {
-      activeCaretRef.current = { rowId, linear };
+      activeCaretRef.current = { rowId, offset };
       setHasActiveCaret(true);
     }
   }, []);
@@ -959,22 +965,25 @@ export function useRowEngine({
       if (saved) {
         const row = rows.find((r) => r.id === saved.rowId);
         if (row && row.rowType === "DATA") {
-          const { partIndex, offset } = linearToPartOffset(
-            row.valueParts,
-            saved.linear,
-          );
-          // Drop a trailing space after the new pill (Claude-style smart-pill UX)
-          // so the merchant can keep typing without it abutting the pill; the
-          // caret lands after BOTH the pill and the space (+2: pill = 1 slot,
-          // space = 1 slot).
-          pendingCaretByRowRef.current.set(saved.rowId, saved.linear + 2);
+          // Splice the field's TEXT token into the value string at the saved
+          // textarea offset (feature 111). A trailing space (Claude-style
+          // smart-pill UX) lets the merchant keep typing without it abutting the
+          // token; the caret lands after both. Reparse the spliced string back to
+          // parts and replace the whole value.
+          const token =
+            selection.kind === "native"
+              ? formatFieldToken(selection.field)
+              : formatMetafieldToken(selection.namespace, selection.key);
+          const current = partsToText(row.valueParts);
+          const offset = Math.min(saved.offset, current.length);
+          const insert = `${token} `;
+          const nextText =
+            current.slice(0, offset) + insert + current.slice(offset);
+          pendingCaretByRowRef.current.set(saved.rowId, offset + insert.length);
           dispatch({
-            type: "INSERT_VALUE_PART_AT",
+            type: "SET_VALUE_PARTS",
             id: saved.rowId,
-            partIndex,
-            offset,
-            part,
-            spaceAfter: true,
+            valueParts: textToParts(nextText),
           });
         }
       }

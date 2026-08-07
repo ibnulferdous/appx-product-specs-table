@@ -109,12 +109,12 @@ export interface EditTarget {
   partIndex: number;
 }
 
-// A caret saved from a value cell: which row, and where in that cell's linear
-// caret space (see valueParts.ts). Plain numbers, never a DOM Range, so it
-// survives focus moving into the modal and any re-render.
+// A caret saved from a value cell: which row, and the textarea `selectionStart`
+// character offset into `partsToText(valueParts)` (feature 111). A plain number,
+// never a DOM Range, so it survives focus moving into the modal and any re-render.
 export interface SavedCaret {
   rowId: string;
-  linear: number;
+  offset: number;
 }
 
 // Polaris field events are typed as plain DOM `Event`; the field element exposes

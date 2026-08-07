@@ -152,6 +152,21 @@ saved presets, cuttable).
 
 > Rolling window, newest first. Older units roll into Completed.
 
+- **Value cell → textarea migration — Step 3: the surface swap** — ✅ shipped + browser-verified
+  2026-08-07, `111-value-textarea-step3-surface-swap.md`. `ValueCell` is now a native `<textarea>`
+  (uncontrolled, reconciled only on DOM/state divergence → native undo stack preserved, no IME
+  guard needed); edits go `textToParts` → `SET_VALUE_PARTS`. Caret is `selectionStart`
+  (`SavedCaret.linear`→`offset`); the Insert-field modal splices a `{% … %}` token string at the
+  caret and reparses. Edit-pill wiring left dead for Step 112; `.surface` CSS reworked for a
+  textarea. Full static gate green (1468 tests) AND **all 6 live checks passed on `appx-dev`**:
+  Ctrl+Z/redo work (original bug gone), modal insert lands `{% mf test_data.snowboard_length %}`
+  at the caret, multiline auto-grows, bulk paste → rows, preview renders from `valueParts` (no raw
+  tokens leak), save/reload round-trips the token text. **Step 112 (prune edit-pill wiring) unblocked.**
+- **Value cell → textarea migration — Step 2: `SET_VALUE_PARTS` reducer action** — ✅ 2026-08-07,
+  `110-value-textarea-step2-reducer-action.md`. One additive `rowsReducer` action replaces a
+  DATA row's `valueParts` wholesale (normalized); the future textarea parses its string via
+  `textToParts` and dispatches the result. Same-reference no-op on SECTION_HEADER / unknown id;
+  6 new tests. Full gate green (1468 tests). **Nobody dispatches it yet — editor unchanged.**
 - **Value cell → textarea migration — Step 1: string↔parts codec** — ✅ 2026-08-07,
   `109-value-textarea-step1-codec.md`. New pure module `app/utils/valueText.ts`
   (`partsToText`/`textToParts` + the two token formatters) converts between the canonical

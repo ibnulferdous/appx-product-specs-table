@@ -240,6 +240,15 @@ export type RowsAction =
   // its own meta-reducer (not via a RowsAction) and supersedes this action.
   | { type: "RESTORE_ROWS"; rows: EditorRow[] }
   | { type: "SET_LABEL"; id: string; label: string }
+  // Replace a DATA row's whole value with a caller-parsed array (the `<textarea>`
+  // value surface, feature 111). The textarea edits a plain string; the component
+  // parses it to parts via `textToParts` (feature 109, `valueText.ts`) and
+  // dispatches the result here. Parsing stays OUT of the reducer so it remains
+  // pure / DOM-free / grammar-free (and to avoid a `rows` → `valueText` import
+  // cycle — `valueText` imports from `rows`). `normalizeValueParts` runs so the
+  // stored shape is identical to what the granular value actions produce (≥1 TEXT,
+  // no adjacent TEXT), keeping dirty-tracking / serialize / preview unaffected.
+  | { type: "SET_VALUE_PARTS"; id: string; valueParts: ValuePart[] }
   // partIndex targets one TEXT segment of valueParts (Step 1 only had index 0).
   | { type: "SET_VALUE_TEXT"; id: string; partIndex: number; text: string }
   | { type: "REMOVE_VALUE_PART"; id: string; partIndex: number }
@@ -389,6 +398,18 @@ export function rowsReducer(
       return rows.map((row) =>
         row.id === action.id ? { ...row, label: action.label } : row,
       );
+
+    case "SET_VALUE_PARTS":
+      return rows.map((row) => {
+        // Whole-value replacement from the textarea surface (feature 111). The
+        // component owns parsing; the reducer normalizes + swaps. No-op on a
+        // SECTION_HEADER or unknown id (same-reference return, so a stray dispatch
+        // never flips the editor's dirty flag).
+        if (row.id !== action.id || row.rowType !== "DATA") {
+          return row;
+        }
+        return { ...row, valueParts: normalizeValueParts(action.valueParts) };
+      });
 
     case "SET_VALUE_TEXT":
       return rows.map((row) => {

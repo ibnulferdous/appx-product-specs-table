@@ -401,6 +401,87 @@ describe("rowsReducer", () => {
     });
   });
 
+  describe("SET_VALUE_PARTS (whole-value replacement from the textarea)", () => {
+    it("replaces a DATA row's valueParts wholesale", () => {
+      const rows = [
+        dataRow("a", "a", [{ type: "TEXT", text: "old" }]),
+        dataRow("b", "b", [{ type: "TEXT", text: "keep" }]),
+      ];
+      const next: ValuePart[] = [
+        { type: "TEXT", text: "Up to " },
+        metafield,
+        { type: "TEXT", text: " hours" },
+      ];
+      const result = rowsReducer(rows, {
+        type: "SET_VALUE_PARTS",
+        id: "a",
+        valueParts: next,
+      }) as DataRow[];
+      expect(result[0].valueParts).toEqual(next);
+      // Other rows are untouched (same reference).
+      expect(result[1]).toBe(rows[1]);
+    });
+
+    it("normalizes the incoming array (merges adjacent TEXT)", () => {
+      const rows = [dataRow("a", "a")];
+      const result = rowsReducer(rows, {
+        type: "SET_VALUE_PARTS",
+        id: "a",
+        valueParts: [
+          { type: "TEXT", text: "a" },
+          { type: "TEXT", text: "b" },
+        ],
+      }) as DataRow[];
+      expect(result[0].valueParts).toEqual([{ type: "TEXT", text: "ab" }]);
+    });
+
+    it("normalizes an empty array to the always-editable TEXT seed", () => {
+      const rows = [dataRow("a", "a", [{ type: "TEXT", text: "x" }])];
+      const result = rowsReducer(rows, {
+        type: "SET_VALUE_PARTS",
+        id: "a",
+        valueParts: [],
+      }) as DataRow[];
+      expect(result[0].valueParts).toEqual([{ type: "TEXT", text: "" }]);
+    });
+
+    it("keeps LINE_BREAK parts and the TEXT runs they separate", () => {
+      const rows = [dataRow("a", "a")];
+      const next: ValuePart[] = [
+        { type: "TEXT", text: "line one" },
+        lineBreak,
+        { type: "TEXT", text: "line two" },
+      ];
+      const result = rowsReducer(rows, {
+        type: "SET_VALUE_PARTS",
+        id: "a",
+        valueParts: next,
+      }) as DataRow[];
+      expect(result[0].valueParts).toEqual(next);
+    });
+
+    it("no-ops (same reference) on a SECTION_HEADER id", () => {
+      const rows = [sectionRow("s", "section")];
+      expect(
+        rowsReducer(rows, {
+          type: "SET_VALUE_PARTS",
+          id: "s",
+          valueParts: [{ type: "TEXT", text: "x" }],
+        }),
+      ).toEqual(rows);
+    });
+
+    it("no-ops (same reference) on an unknown id — never flips dirty", () => {
+      const rows = [dataRow("a", "a", [{ type: "TEXT", text: "x" }])];
+      const result = rowsReducer(rows, {
+        type: "SET_VALUE_PARTS",
+        id: "missing",
+        valueParts: [{ type: "TEXT", text: "y" }],
+      });
+      expect(result[0]).toBe(rows[0]);
+    });
+  });
+
   describe("SET_VALUE_TEXT", () => {
     it("edits only the targeted TEXT segment, leaving pills untouched", () => {
       const rows = [

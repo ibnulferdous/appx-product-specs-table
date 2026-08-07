@@ -1,11 +1,12 @@
 # Value textarea — Step 3: swap the value surface to `<textarea>` (the switch)
 
-**Status: 📋 Planned.** Part 3 of 6 (features 109–114). This is the **behavioral
-switch** and the largest step — it replaces the `contenteditable` surface and
-rewires the modal-insert path together, because they share one caret contract.
-Splitting them would leave the editor half-broken between steps. It **deletes
-nothing** (old modules/actions stay in place as a fallback reference); removal is
-Steps 112–113.
+**Status: ✅ Shipped + browser-verified 2026-08-07.** Part 3 of 6 (features
+109–114). The **behavioral switch**: the `contenteditable` surface is replaced by a
+native `<textarea>` and the modal-insert path is rewired to string offsets, together
+(shared caret contract). Full static gate green (typecheck · lint · 1468 tests ·
+build) AND all six live browser checks passed on the dev store (see Verification
+below). It **deletes nothing** (old modules/actions stay as a fallback reference);
+removal is Steps 112–113 — now unblocked.
 
 ## Prerequisite
 
@@ -140,6 +141,81 @@ Claude-in-Chrome per the browser-verify memory):
 - Pruning the edit-pill plumbing — Step 112.
 - Deleting `valueParts.ts` / `valueDom.ts` / dead reducer actions — Step 113.
 - Docs + final sign-off — Step 114.
+
+## Implementation notes (2026-08-07)
+
+What actually landed, and two decisions worth recording:
+
+- **Uncontrolled textarea, reconciled on divergence** (not a controlled `value=`).
+  `ValueCell` renders `defaultValue={partsToText(valueParts)}`; a
+  `useBrowserLayoutEffect` sets `textarea.value` **only when `ta.value !== desired`**.
+  During normal typing (and native undo) the DOM already equals state, so the
+  element is never rewritten — which is exactly what keeps the native undo stack
+  intact (the old bug was `host.textContent = ""` nuking it). This also sidesteps
+  the controlled-textarea + IME hazard, so no `compositionstart/end` guard is
+  needed. `onChange` → `textToParts` → `SET_VALUE_PARTS`; `autoSize` grows/shrinks
+  height to `scrollHeight`.
+- **Caret = `selectionStart`** reported via `onFocus`/`onSelect` (`onCaretChange`).
+  The `SavedCaret` type changed `linear` → `offset` in `editorShared.ts`.
+  `handleCommit` (create mode) now splices `` `${token} ` `` into
+  `partsToText(row.valueParts)` at the saved offset, reparses, and dispatches
+  `SET_VALUE_PARTS`; the pending caret is `offset + insert.length`. Restore uses
+  `setSelectionRange` after the `MODAL_TRANSITION_MS` focus defer.
+- **Left dead on purpose (Step 112 prunes):** the `editTarget` branch of
+  `handleCommit`, `handleEditPart`, the `onEditPart` prop (still in `ValueCell`'s
+  type so `EditorRowItem`'s pass-through typechecks, but unused), and
+  `SET_VALUE_PART`. `partOffsetToLinear` is still imported by the dead `editTarget`
+  branch; `linearToPartOffset` was dropped. Bulk-paste routing is unchanged; a
+  single-value paste now falls through to native textarea paste.
+- **CSS:** `.surface` reworked for a textarea (`resize:none`, `overflow:hidden`,
+  auto-height via JS); the `[data-empty]::before` placeholder rule was removed
+  (native `placeholder` now). The `.token*` rules are orphaned but left for Step
+  113's CSS sweep.
+
+## Known edge (accepted)
+
+Hand-typing a token with non-canonical spacing (e.g. `{%mf custom.x%}`) reparses
+and re-serializes to the canonical `{% mf custom.x %}` on the keystroke that
+completes it, so `ta.value !== desired` fires once and the caret jumps to the
+reconciled position. Tokens inserted via the modal are already canonical, and
+plain text/partial tokens round-trip exactly, so normal editing is unaffected.
+Revisit only if merchants hand-type tokens in practice.
+
+## Verification (2026-08-07) — ✅ all six checks passed
+
+Browser-verified via Claude-in-Chrome on the `shopify app dev` preview (dev store
+`appx-dev`), on a fresh "Modern"-style template. The `dev previews (1)` badge
+confirmed the live dev build was serving.
+
+1. ✅ **Undo/redo** — typed "Up to 18 hours"; `Ctrl+Z` removed characters one at a
+   time (7× → "Up to 1"), `Ctrl+Y` redid them back to the full string. Native
+   textarea undo stack is intact — the original broken-Ctrl+Z bug is gone.
+2. ✅ **Insert field at caret** — with the caret at Home (offset 0), Insert field →
+   Snowboard length metafield produced `{% mf test_data.snowboard_length %} ` at the
+   **start** of the value (trailing space, caret after it), proving string-offset
+   splicing (not append). Matches the merchant's original grammar example exactly.
+3. ✅ **Multiline** — `End` → Enter → "1600 nits peak brightness" rendered two lines
+   in one cell; the textarea auto-grew and the row expanded.
+4. ✅ **Bulk paste** — a real 2×2 TSV on the OS clipboard pasted into a blank cell →
+   "Added 2 rows" toast; became Weight | 1.24 kg and Display | 14.2-inch Liquid
+   Retina (counter 6→8), not a flattened blob.
+5. ✅ **Preview parity** — the Storefront preview rendered from `valueParts`: the
+   metafield as a "Metafield · snowboard_length" chip (editor preview has no live
+   product), the line break as two lines, the pasted rows present. No raw `{% … %}`
+   text leaked into the preview — the delivery/preview path is untouched.
+6. ✅ **Save + reload round-trip** — Save created the template
+   (`…/templates/cmsieep34…`); after a full reload the value cell showed the exact
+   same `{% mf test_data.snowboard_length %} Up to 18 hours` / `1600 nits peak
+   brightness` and the pasted rows persisted. The METAFIELD part survived
+   serialization and re-serialized to the identical token.
+
+Console: no app-side errors/warnings (no React controlled/uncontrolled warning, no
+textarea/valueParts errors). The only console exceptions were
+`ApolloError: Failed to fetch` from `cdn.shopify.com/shopifycloud/*` — Shopify's own
+admin-shell telemetry, unrelated to the app bundle.
+
+**Test artifact:** left a draft template "Untitled template"
+(`cmsieep340001vptwi9mbgglv`) on `appx-dev` — safe to delete.
 
 ## Done when
 

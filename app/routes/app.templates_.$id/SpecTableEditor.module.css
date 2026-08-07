@@ -69,11 +69,13 @@
   align-self: start;
 }
 
-/* The one contenteditable value host. Shares the field chrome above so it matches
- * the Label/Section inputs, then adds what a multiline editing surface needs:
- * `pre-wrap` honors author-intended LINE_BREAK `<br>`s and soft-wraps long text,
- * `min-height` keeps an empty cell one line tall, and `cursor: text` reads as
- * editable. */
+/* The native <textarea> value host (feature 111). Shares the field chrome above
+ * so it matches the Label/Section inputs, then adds what a multiline text surface
+ * needs: `resize: none` + `overflow: hidden` because JS auto-grows the height to
+ * the content (`autoSize` in ValueCell), `min-height` keeps an empty cell one line
+ * tall, and `pre-wrap` / `overflow-wrap` soft-wrap long values. `font: inherit`
+ * (from `.cellField`) overrides the UA textarea font so it reads like the other
+ * cells. The native `placeholder` attribute supplies the empty-state hint. */
 .surface {
   composes: cellField;
   /* The only vertical line in a data row: the Label|Value column divider (the
@@ -83,6 +85,9 @@
   white-space: pre-wrap;
   overflow-wrap: anywhere;
   cursor: text;
+  resize: none;
+  overflow: hidden;
+  display: block;
 }
 
 /* Section-header cell. Unlike Label/Value it is NOT a bordered grid cell — the
@@ -118,15 +123,6 @@
  * outer right edge has no border, mirroring `.surface` in the data rows. */
 .headerCellLast {
   border-inline-start: var(--appx-cell-line);
-}
-
-/* contenteditable has no native placeholder; paint one for an empty cell and drop
- * it as soon as the merchant focuses or types. */
-.surface[data-empty="true"]:not(:focus)::before {
-  content: attr(data-placeholder);
-  color: currentColor;
-  opacity: 0.5;
-  pointer-events: none;
 }
 
 /* Inline, link-styled dynamic-field token — a Claude-style file reference rather
