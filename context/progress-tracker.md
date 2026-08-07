@@ -152,6 +152,16 @@ saved presets, cuttable).
 
 > Rolling window, newest first. Older units roll into Completed.
 
+- **Value cell → textarea migration — Step 1: string↔parts codec** — ✅ 2026-08-07,
+  `109-value-textarea-step1-codec.md`. New pure module `app/utils/valueText.ts`
+  (`partsToText`/`textToParts` + the two token formatters) converts between the canonical
+  `ValuePart[]` and a `{% field … %}` / `{% mf ns.key %}` text string; malformed tokens stay
+  literal, `\n`↔`LINE_BREAK`. 19 tests; full gate green (typecheck·lint·1462 tests·build).
+  **Additive only — nothing imports it yet, editor runtime unchanged.** This is part 1 of 6
+  (features 109–114): the arc replaces the `contenteditable` value surface with a native
+  `<textarea>` to fix broken Ctrl+Z and delete the linear-caret machinery; `ValuePart[]` stays
+  the canonical persisted/delivered/previewed shape (no data migration, storefront untouched).
+  Steps 110–114 planned in their feature docs; implement one at a time.
 - **Routing metaobject sharding (Option 2) — Unit F: LIVE VERIFIED on appx-dev** — ✅ 2026-08-05,
   after deploying app **version 11** (anchors the `appx_routing_shard` definition). Verified end-to-end
   on the deployed storefront (dev preview active): (1) **positive render via shard** — two different
