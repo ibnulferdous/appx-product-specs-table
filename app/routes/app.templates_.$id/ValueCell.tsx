@@ -7,7 +7,7 @@ import type {
 import { useCallback, useRef } from "react";
 import type { DataRow, RowsAction } from "../../utils/rows";
 import { partsToText, textToParts } from "../../utils/valueText";
-import { cellCount } from "../../utils/clipboardTable";
+import { hasMultipleColumns } from "../../utils/clipboardTable";
 import { readClipboardGrid } from "../../utils/clipboardTableDom";
 import { MODAL_TRANSITION_MS, useBrowserLayoutEffect } from "./editorShared";
 import styles from "./SpecTableEditor.module.css";
@@ -146,12 +146,27 @@ export function ValueCell({
 
   const handlePaste = useCallback(
     (event: ClipboardEvent<HTMLTextAreaElement>) => {
-      // Content-first intent (file 21): a genuine multi-cell table routes to the
-      // shared bulk handler — it becomes rows, not a flattened blob in this cell.
-      // A single value is left to the textarea's NATIVE paste (onChange reparses
-      // it), which also keeps it inside the native undo stack.
+      // Content-first intent (file 21), narrowed for the value cell (feature 115):
+      // a genuinely TABULAR paste — one with more than one COLUMN — routes to the
+      // shared bulk handler and becomes rows. Everything else (a single value, and
+      // crucially plain MULTI-LINE text with no tabs) falls through to the
+      // textarea's NATIVE paste, so the lines land as one multiline value in THIS
+      // cell (onChange → textToParts maps `\n` → LINE_BREAK) and stay inside the
+      // native undo stack.
+      //
+      // 🔴 THE BUG THIS GATE EXISTS FOR: it was `cellCount(grid) > 1`, which counts
+      // a single-column 3-line paste as 3 cells — a "table" — and exploded pasted
+      // prose into three label-only rows, wrecking the row being edited. Column
+      // count is the honest signal; a lone value cell is exactly where multi-line
+      // text belongs. The gesture that moves (a column of lines → rows) still works
+      // by pasting into the GRID with no value cell focused, where the container
+      // handler keeps `cellCount > 1`.
+      //
+      // ⚠️ Falling through means NOT calling preventDefault, so this paste bubbles
+      // to `handleContainerPaste`. That handler skips any `[data-value-cell]`
+      // target (below) precisely so it cannot re-grab this paste as a bulk insert.
       const grid = readClipboardGrid(event.clipboardData);
-      if (cellCount(grid) > 1) {
+      if (hasMultipleColumns(grid)) {
         event.preventDefault();
         onBulkPaste(grid);
       }
@@ -163,9 +178,16 @@ export function ValueCell({
   // padding, focus ring via `.surface` → `.cellField`) so it matches the
   // Label/Section inputs. Uncontrolled (`defaultValue` for first paint; the effect
   // owns updates), single `aria-label`, native placeholder.
+  //
+  // `data-value-cell` marks this element as the value surface so
+  // `handleContainerPaste` can leave a value-cell paste alone (feature 115). It is
+  // matched by attribute rather than by tag name deliberately: "the only textarea
+  // in the grid" is true today but is not a contract, and the attribute says why
+  // it is there.
   return (
     <textarea
       ref={taRef}
+      data-value-cell=""
       className={styles.surface}
       defaultValue={desired}
       rows={1}

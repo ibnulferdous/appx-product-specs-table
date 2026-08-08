@@ -708,6 +708,11 @@ Example — a two-line value:
 - Line breaks inside a value never count toward the 200-row cap — only rows do.
 - `LINE_BREAK` is product-agnostic static structure; it does not affect row `key` alignment or the comparison-readiness invariant.
 - The editor renders these breaks identically to the storefront (WYSIWYG).
+- **How a merchant AUTHORS a multiline value:** `Enter` in the value textarea, or **pasting plain multi-line text into a value cell** (feature 115). The textarea's own `\n` is mapped to `LINE_BREAK` by `textToParts` (§7 codec), so paste needs no special case — it rides the native paste.
+- 🔴 **Where you paste decides bulk-vs-in-cell** (feature 115, amending feature 21's content-first intent). The two paste entry points ask **different questions** of the same parsed clipboard grid:
+  - **Value cell** → `hasMultipleColumns(grid)`: only a genuinely multi-**column** table (Excel/Sheets/HTML `<table>`) bulk-creates rows. A single-column paste — plain multi-line text — stays in the cell as a multiline value. This is the fix for pasted prose exploding into one label-only row per line.
+  - **Container** (the grid, no value cell focused) → `cellCount(grid) > 1`: a column of lines still bulk-creates rows, so that gesture keeps a home.
+  - The value cell is the sole authority for its own paste: it `preventDefault`s **only** when it consumes a table, and `handleContainerPaste` skips any `[data-value-cell]` target so a fall-through paste is never re-grabbed.
 
 ### Section header row
 

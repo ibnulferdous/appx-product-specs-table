@@ -110,6 +110,26 @@ export function cellCount(grid: string[][]): number {
 }
 
 /**
+ * True when the grid is genuinely TABULAR — some row carries more than one column
+ * (a tab in the TSV, or >1 `<td>`/`<th>` in an HTML row). This is the bulk-gesture
+ * gate the VALUE CELL uses (feature 115), where `cellCount > 1` is the wrong
+ * question: a single-column, N-line paste (plain multi-line prose) is N cells and
+ * so read as a "table", which exploded it into N label-only rows instead of
+ * landing as one multiline value. Column count is the honest signal — inside a
+ * value cell, only a real table becomes rows; lines become lines.
+ *
+ * 🔴 NOT a replacement for `cellCount`. The CONTAINER paste handler (paste into
+ * the grid with no value cell focused) deliberately keeps `cellCount > 1`, so
+ * pasting a column of labels into the grid still bulk-creates rows — the gesture
+ * that moves out of the value cell keeps its home there (feature 115). The
+ * HTML-vs-TSV source selection in `parseClipboardTable` also stays on `cellCount`:
+ * it measures whether the HTML grid is *usable*, a different question entirely.
+ */
+export function hasMultipleColumns(grid: string[][]): boolean {
+  return grid.some((row) => row.length > 1);
+}
+
+/**
  * Select the best clipboard source and normalize. Prefer the HTML-extracted grid
  * only when it is *usable* = more than one cell total (more than one row OR more
  * than one column): a degenerate 1×1 HTML grid (a layout table, or a single-cell

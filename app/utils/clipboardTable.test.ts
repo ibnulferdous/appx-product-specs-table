@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   cellCount,
   gridToPastedRows,
+  hasMultipleColumns,
   normalizeGrid,
   parseClipboardTable,
   parseDelimitedText,
@@ -141,6 +142,43 @@ describe("cellCount", () => {
     expect(cellCount([["a", "b"]])).toBe(2);
     expect(cellCount([["a"], ["b"]])).toBe(2);
     expect(cellCount([["a", "b", "c"], ["d"]])).toBe(4);
+  });
+});
+
+describe("hasMultipleColumns", () => {
+  it("is false for an empty or degenerate grid", () => {
+    expect(hasMultipleColumns([])).toBe(false);
+    expect(hasMultipleColumns([[]])).toBe(false);
+  });
+
+  it("is false for a lone cell", () => {
+    expect(hasMultipleColumns([["a"]])).toBe(false);
+  });
+
+  // The case feature 115 exists for: plain multi-line text pasted into a value
+  // cell is a single COLUMN, so it must NOT be treated as a table (it becomes one
+  // multiline value). `cellCount` says 3 here — that is the old, wrong signal.
+  it("is false for a single column of many rows (multi-line text)", () => {
+    const grid = [["Waterproof"], ["Bluetooth 5.0"], ["34 min flight"]];
+    expect(hasMultipleColumns(grid)).toBe(false);
+    expect(cellCount(grid)).toBe(3); // the predicate the value cell no longer uses
+  });
+
+  it("is true for one row with two columns", () => {
+    expect(hasMultipleColumns([["a", "b"]])).toBe(true);
+  });
+
+  it("is true for a full 2-D table", () => {
+    expect(
+      hasMultipleColumns([
+        ["RAM", "16 GB"],
+        ["Weight", "249 g"],
+      ]),
+    ).toBe(true);
+  });
+
+  it("is true when ANY row has more than one column (ragged grid)", () => {
+    expect(hasMultipleColumns([["a"], ["b", "c"]])).toBe(true);
   });
 });
 

@@ -39,8 +39,11 @@ export function extractHtmlTableGrid(html: string): string[][] | null {
  * frozen parsers: `extractHtmlTableGrid` (HTML `<table>`) + the plain-text TSV
  * fallback through `parseClipboardTable`. Lives here (not in the pure module)
  * because it reads `DataTransfer.getData` + `DOMParser`; browser-verified, like
- * `extractHtmlTableGrid`. The callers decide bulk-vs-in-cell via `cellCount` on
- * the returned grid.
+ * `extractHtmlTableGrid`. The callers decide bulk-vs-in-cell from the returned
+ * grid, and they ask DIFFERENT questions of it (feature 115): the container
+ * handler uses `cellCount > 1` (a column of lines pasted into the grid still makes
+ * rows), while the value cell uses `hasMultipleColumns` (inside a cell, only a real
+ * table makes rows — plain multi-line text stays one multiline value).
  */
 export function readClipboardGrid(data: DataTransfer | null): string[][] {
   if (!data) return [];

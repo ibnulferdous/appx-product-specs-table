@@ -190,11 +190,20 @@ the `cellCount(grid) <= 1` content gate) and add the `onBulkPaste` routing to
 
 ## Open questions
 
-- **Single column → line breaks?** A single-column, multi-row paste into a value cell is a
-  table (`cellCount > 1`) and so bulk-inserts as label-only rows. A single-column paste of
-  lines *intended as one multiline value* would currently flatten (Step 4) or, if it has >1
-  cell, become rows. Decide with the merchant whether an in-cell multiline paste should map
-  `\n` → `LINE_BREAK` instead of flattening — deferred, not built here.
+- **Single column → line breaks? — RESOLVED 2026-08-08 (merchant decision); built as
+  [feature 115](115-value-cell-multiline-paste.md).** The question as posed: a single-column,
+  multi-row paste into a value cell is a table (`cellCount > 1`) and so bulk-inserts as
+  label-only rows, when the merchant may have intended one multiline value. **Answer: inside a
+  value cell, "table" means multi-COLUMN, not multi-cell.** `ValueCell.handlePaste` now gates on
+  `hasMultipleColumns(grid)`, so a single-column paste falls through to the native textarea
+  paste and its `\n` become `LINE_BREAK`s (via `textToParts`); a genuine multi-column table
+  still routes to `onBulkPaste`. ⚠️ **This AMENDS, does not reverse, content-first intent** —
+  content still decides (not focus), and `handleContainerPaste` keeps `cellCount > 1`, so
+  pasting a column of lines into the GRID still bulk-creates rows. The one gesture that moved
+  is "single column → label-only rows *from inside a value cell*"; its home is now the grid.
+  🔴 A `[data-value-cell]` skip was added to `handleContainerPaste`: the value cell no longer
+  `preventDefault`s a single-column paste, so without that guard the container would see the
+  fall-through, call it a table, and re-create the bug.
 - **Modal search field paste — RESOLVED (assumption was wrong; minimal guard added,
   2026-06-26).** This bullet assumed the Insert-field `<s-search-field>` portals outside the
   editor wrapper (App Bridge), so its paste would not reach the container handler and **no

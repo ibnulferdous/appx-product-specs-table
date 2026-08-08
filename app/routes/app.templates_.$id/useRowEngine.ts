@@ -1103,6 +1103,18 @@ export function useRowEngine({
       // value-cell / label-input / contenteditable skips were intentionally
       // dropped so a table bulk-inserts from those (file 21, content-first).
       if ((event.target as Element | null)?.closest?.("s-search-field")) return;
+      // The VALUE CELL is the sole authority for its own paste (feature 115). It
+      // consumes a multi-COLUMN table itself (preventDefault + onBulkPaste) and
+      // deliberately lets everything else — including plain multi-line text —
+      // fall through to its native textarea paste, so the lines become one
+      // multiline value. Without this skip that fall-through would arrive here
+      // still un-prevented, `cellCount > 1` would call it a table, and we would
+      // bulk-insert rows anyway — re-creating the exact bug feature 115 fixes.
+      // (For the table case this is a no-op: the value cell already
+      // preventDefaulted, so the `defaultPrevented` return above catches it.)
+      if ((event.target as Element | null)?.closest?.("[data-value-cell]")) {
+        return;
+      }
       const grid = readClipboardGrid(data);
       // A bulk gesture needs an actual multi-cell table (>1 cell — more than one
       // row OR column); a lone value (or empty grid) is not. A single value

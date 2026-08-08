@@ -22,8 +22,10 @@ Update this file after every meaningful implementation change.
 
 **Building the MVP — feature work is at the App Store pre-submission gate.**
 
-Test suite **1409 tests / 57 files**; full gate (typecheck · lint · format · test · build)
-green as of 2026-08-07. Last unit shipped: the **activation-conflict banner** (a shared
+Test suite **1418 tests / 57 files**; full gate (typecheck · lint · format · test · build)
+green as of 2026-08-08. Last unit shipped: **value-cell multiline paste** (feature 115 —
+pasting plain multi-line text into a value cell makes one multiline value, not N rows;
+live-verified on `appx-dev`). Before it: the **activation-conflict banner** (a shared
 `AdminAppLink` so the conflicting-template link survives "open in new tab").
 Before it: the **value-cell → `<textarea>` migration** (features 109–114) — `contenteditable`
 retired, broken Ctrl+Z fixed, `ValuePart[]` unchanged; live-verified on `appx-dev`.
@@ -154,6 +156,72 @@ saved presets, cuttable).
 
 > Rolling window, newest first. Older units roll into Completed.
 
+- **Editor: pasting multi-line text into a value cell now makes ONE multiline value, not N rows** —
+  ✅ 2026-08-08, full gate green (typecheck · lint · format · **test 1418 / 57** (+6) · build)
+  **and live-verified on `appx-dev`** (all 7 checks, [`115-…`](features/115-value-cell-multiline-paste.md)).
+  Merchant-reported UX bug: copying a few
+  lines of spec prose (a supplier feature list) and pasting into a Value cell split it into that
+  many label-only rows, wrecking the row being edited — with no way to author a multiline value by
+  paste at all.
+  🔴 **Root cause — one predicate asking the wrong question:** both paste entry points gated bulk
+  -vs-in-cell on `cellCount(grid) > 1`, and `cellCount` is TOTAL CELLS, so a single-column N-line
+  paste (`[["a"],["b"],["c"]]`) counts as 3 and reads as a "table". **Fix: inside a value cell,
+  "table" means multi-COLUMN.** New pure `hasMultipleColumns(grid)` (`clipboardTable.ts`,
+  `grid.some(row => row.length > 1)`); `ValueCell.handlePaste` gates on it, so a genuine
+  multi-column table still routes to `onBulkPaste` while everything else falls through to the
+  **native** textarea paste — the lines become `LINE_BREAK`s via the existing
+  `onChange → textToParts` path, and native Ctrl+Z is preserved because we never `preventDefault`
+  or rewrite the element.
+  ⚠️ **This AMENDS, does not reverse, feature 21's content-first intent** (itself a merchant
+  decision): content still decides, not focus, and `handleContainerPaste` **keeps** `cellCount > 1`
+  — pasting a column of lines into the GRID still bulk-creates rows. The single gesture that moved
+  is "column of lines → label-only rows *from inside a value cell*". Mental model is now **"where
+  you paste decides"**.
+  🔴 **The non-obvious half of the fix — a `[data-value-cell]` skip in `handleContainerPaste`.**
+  The value cell no longer `preventDefault`s a single-column paste, so that paste now BUBBLES; the
+  container would have seen `cellCount > 1`, called it a table, and bulk-inserted anyway,
+  re-creating the exact bug. The value cell is the sole authority for its own paste. (No-op for
+  the table case — the existing `defaultPrevented` return already catches it.) The marker is an
+  attribute, not a `textarea` tag match: "the only textarea in the grid" is true today but is not
+  a contract.
+  **Guard proven by breaking it** (project rule): reverting `hasMultipleColumns` to `cellCount > 1`
+  fails exactly the single-column test with `expected true to be false`, then passes on restore.
+  🚫 **Two alternatives were considered and REJECTED 2026-08-08 — do not reintroduce without a new
+  decision:** a Word-style **"Bulk paste" button** (a button has no paste event, so it needs
+  `navigator.clipboard.read()`, which is permission-gated and commonly BLOCKED in Shopify's
+  cross-origin admin iframe — we don't control the iframe's `allow` attribute), and a **two-button
+  "paste as rows / simple paste" modal** (a paste event is synchronous, so showing a modal means
+  `preventDefault` up front and then hand-implementing insert-at-caret for every field type,
+  costing the native undo step — plus per-paste friction).
+  Files: `clipboardTable.ts` (+`.test.ts` +6), `ValueCell.tsx`, `useRowEngine.ts`,
+  `clipboardTableDom.ts` (comment), `data-model.md` §7, `21-…` (open question closed). No reducer
+  action, no schema, no storefront, no dependency, no CSS.
+  ✅ **Live-verified on `appx-dev`** (Claude-in-Chrome, template `cmsieep34…` "Untitled template",
+  DRAFT / 0 assigned; **every change Discarded — nothing saved, zero data changed**). Baseline 8 rows.
+  **(1)** 3 plain lines pasted into a focused Value cell → ONE multiline value in that cell, **Rows
+  8/200 unchanged**, textarea auto-grew, SaveBar opened. **(2)** **Ctrl+Z undid the whole paste in one
+  press** (native undo alive) and the textarea shrank back. **(3)** A 2-column TSV pasted into the
+  same cell → bulk-inserted 3 rows (Battery life/Weight/Camera), toast "Added 3 rows", 8→11, the
+  focused cell left empty (not flattened). **(4)** 🔴 **The decisive pair — the SAME clipboard content
+  pasted with a drag handle focused bulk-inserted 3 label-only rows (11→14)**, i.e. the moved gesture
+  still works from the grid and the new `[data-value-cell]` skip did not break the container path.
+  **(5)** single value → lands in the cell; **(6)** paste into a Label `<input>` → native at-caret
+  insert. **(7)** Console clean (only pre-existing Shopify admin-shell warnings: ShopifyQL / deprecated
+  init params). **`\n` → `LINE_BREAK` proven semantically, not just visually:** the Desktop preview
+  (which renders from `valueParts`, storefront-faithful) showed the pasted value as three separate
+  lines, with `{% mf %}`/`{% field %}` still rendering as pills — so no token degraded through the
+  textarea round-trip. That preview check replaced the planned save→reload round-trip, which would
+  have written to the merchant's DB for a contract the persisted 2-line value already in this template
+  demonstrates.
+  ⚠️ **Instrument notes for future sessions** (the "instrument before code" rule earned its keep twice
+  here): **(a)** `navigator.clipboard.writeText` is **permission-denied** in the admin tab, and a
+  CDP-typed Ctrl+V into a JS-`.focus()`ed field pastes NOTHING — the working recipe is a real
+  `left_click` to focus, then Ctrl+A/Ctrl+C in a scratch page, then a real click + Ctrl+V on the
+  target. **(b)** Screenshot pixel dimensions **change between captures** (1264/1288/1308 px wide), so
+  coordinates go stale between shots; the first paste attempt silently missed the textarea entirely and
+  looked exactly like "the fix works". **Always confirm the blue focus ring with `zoom` before
+  pasting** — a no-op is indistinguishable from a pass otherwise. **(c)** Contrary to the 2026-08-07
+  note, anchor clicks inside the iframe DID work this session.
 - **Editor: rail-toggle button now has a hover/focus tooltip** — ✅ 2026-08-08, `npm run build`
   green; live-verified on `appx-dev` (Style + Settings, both collapse states). The
   sidebar-collapse button (feature 76) gained an `<s-tooltip>` via the same `interestFor`
