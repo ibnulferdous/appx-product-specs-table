@@ -1,5 +1,5 @@
 import type { CSSProperties, ReactNode } from "react";
-import { useRef, useState } from "react";
+import { useId, useRef, useState } from "react";
 import { isPreviewView, type DeviceView, type ViewId } from "./deviceView";
 import { useScrollRegionHeight } from "./useScrollRegionHeight";
 import { SegmentedControl, type SegOption } from "./SegmentedControl";
@@ -146,6 +146,11 @@ export function EditorShell({
     showSidebar && !railCollapsed ? 1 : 0,
   );
 
+  // Stable, instance-unique id linking the rail toggle to its <s-tooltip>, so a
+  // sighted mouse user gets the same label the aria-label already gives assistive
+  // tech (matches the device-toggle tooltips in SegmentedControl).
+  const railToggleTooltipId = useId();
+
   return (
     <s-box
       background="base"
@@ -197,27 +202,42 @@ export function EditorShell({
                 s-button did. See the Step 0.2 log in
                 `context/features/76-…`. */}
             {railTab ? (
-              <button
-                type="button"
-                className={styles.segBtn}
-                aria-label={railToggleLabel(railTab, railCollapsed)}
-                aria-expanded={!railCollapsed}
-                aria-controls={RAIL_REGION_ID}
-                onClick={() => setRailCollapsed((collapsed) => !collapsed)}
-              >
-                <s-box
-                  borderRadius="base"
-                  paddingBlock="small-300"
-                  paddingInline="small-200"
+              <>
+                <button
+                  type="button"
+                  className={styles.segBtn}
+                  aria-label={railToggleLabel(railTab, railCollapsed)}
+                  aria-expanded={!railCollapsed}
+                  aria-controls={RAIL_REGION_ID}
+                  // Points at the sibling <s-tooltip> so a sighted mouse user
+                  // gets the label on hover/focus (the aria-label already covers
+                  // assistive tech). `interestFor` is not in React's typings for a
+                  // native <button>, so it's spread in — same invoker family as the
+                  // device-toggle tooltips in SegmentedControl.
+                  {...({ interestFor: railToggleTooltipId } as Record<
+                    string,
+                    string
+                  >)}
+                  onClick={() => setRailCollapsed((collapsed) => !collapsed)}
                 >
-                  {/* Presentational: the button is already named by its
-                      `aria-label`, so announcing the icon too would double it. */}
-                  <s-icon
-                    type="layout-sidebar-left"
-                    aria-hidden="true"
-                  ></s-icon>
-                </s-box>
-              </button>
+                  <s-box
+                    borderRadius="base"
+                    paddingBlock="small-300"
+                    paddingInline="small-200"
+                  >
+                    {/* Presentational: the button is already named by its
+                        `aria-label`, so announcing the icon too would double it. */}
+                    <s-icon
+                      type="layout-sidebar-left"
+                      aria-hidden="true"
+                    ></s-icon>
+                  </s-box>
+                </button>
+                {/* Same copy as the aria-label; flips Show/Hide with the state. */}
+                <s-tooltip id={railToggleTooltipId}>
+                  {railToggleLabel(railTab, railCollapsed)}
+                </s-tooltip>
+              </>
             ) : null}
           </s-stack>
           <SegmentedControl

@@ -154,6 +154,12 @@ saved presets, cuttable).
 
 > Rolling window, newest first. Older units roll into Completed.
 
+- **Editor: rail-toggle button now has a hover/focus tooltip** — ✅ 2026-08-08, `npm run build`
+  green; live-verified on `appx-dev` (Style + Settings, both collapse states). The
+  sidebar-collapse button (feature 76) gained an `<s-tooltip>` via the same `interestFor`
+  invoker pattern the device toggles use in `SegmentedControl.tsx`. Copy reuses
+  `railToggleLabel`, so the tooltip flips verb + noun ("Hide Style panel" ⇄ "Show Settings
+  panel") and stays identical to the button's `aria-label` — no new user-facing string.
 - **Fix: hyphenated metafield tokens printed their RAW `{% mf … %}` source on the storefront** — ✅
   2026-08-07, full gate green (typecheck · lint · format · **test 1412 / 57** (+4) · build).
   Merchant-reported: on `dji-mini-4k-stardard`, `{% mf test_data.binding_mount %}` and
