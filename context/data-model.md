@@ -54,11 +54,17 @@ Layer 2: PostgreSQL via Neon
 
 Layer 3: Shopify storefront data
 - Shopify metaobjects store the renderable template payload (one per template).
-- A shop-level routing metafield maps product attributes (type / vendor / collection / tag / all-products default) to the assigned template handle; a bounded per-product metafield carries direct single-product overrides.
-- Liquid reads the routing map, resolves the matched template metaobject by handle, and renders the table through the Theme App Extension.
+- A shop-level routing metafield maps BROAD product attributes (type / vendor /
+  collection / all-products default) to the assigned template handle.
+- Per-product assignments and EXCLUDE carve-outs live in sharded routing
+  metaobjects, keyed product.id mod 1024 (wire v3, feature 108).
+- Liquid reads the routing map + this product's shard, resolves the matched
+  template metaobject by handle, and renders through the Theme App Extension.
 ```
 
-Core principle: Postgres is the source of truth. Shopify metaobjects (template payload) + a shop-level routing metafield (assignment map) are the storefront delivery layer.
+Core principle: Postgres is the source of truth. Shopify metaobjects (template payload + routing shards) and the shop-level routing metafield (broad assignment map) are the storefront delivery layer.
+
+🚫 **There is no per-product override metafield.** `[product.metafields.app.spec_table]` was deleted 2026-08-04 (§9). Reinstating the Liquid read without the TOML definition is silently dead — an undefined metafield resolves to nil.
 
 ---
 
@@ -66,12 +72,12 @@ Core principle: Postgres is the source of truth. Shopify metaobjects (template p
 
 1. Use a real `Shop` model as the parent record for shop-specific app data.
 2. Include minimal billing and entitlement models in the MVP schema.
-3. Make assignments visible to Liquid primarily through **one shop-level routing metafield** (attribute → template handle), not by writing a metafield onto every matching product. A bounded per-product metafield carries only explicit single-product overrides.
+3. Make assignments visible to Liquid through **one shop-level routing metafield** (broad attribute → template handle) plus **sharded routing metaobjects** for per-product entries — never by writing a metafield onto every matching product.
 4. Treat saved data and template status separately, similar to Shopify products.
 5. Enforce **one effective spec table per product via a rigid, block-on-conflict model** (merchant-controlled, Moon-Bundles style): overlaps between `ACTIVE` templates are blocked at `DRAFT → ACTIVE`; the published rule set is therefore disjoint and needs no runtime precedence. `priority` is retained but dormant (see §5 / §9).
 6. Use ordered `valueParts` instead of a single row value source.
-7. Broad rules (type / vendor / collection / tag / all-products) resolve at **render time** against the shop routing map, so future matching products are covered with **zero** per-product writes. Product create/update webhooks keep only bounded per-product overrides and merchant-facing match counts in sync — they do not re-materialize broad rules.
-8. Keep `ProductAssignmentIndex` **sparse**: it records only materialized per-product overrides and their Shopify sync state, never one row per covered product (never O(catalog)).
+7. Broad rules (type / vendor / collection / tag / all-products) resolve at **render time** against the shop routing map, so future matching products are covered with **zero** per-product writes.
+8. `ProductAssignmentIndex` is **dormant since 2026-08-04** — nothing writes it (§9). It was the sparse cache for materialized per-product overrides; that mechanism no longer exists. Never make it O(catalog) if it is ever revived.
 9. Keep advanced Shopify field mapping outside MVP beyond the simple selected/default variant behavior.
 
 ---
@@ -132,353 +138,76 @@ The template defines structure (rows, labels, sections, order, value parts); pro
 
 ## 5. Prisma Schema
 
-```prisma
-generator client {
-  provider = "prisma-client-js"
-}
+🔴 **`prisma/schema.prisma` is the single source of truth for the schema.** This section
+carried a fully annotated copy until 2026-08-08; it was removed because the two copies had
+already diverged. Read the real file for models, fields, enums and indexes. What stays here
+is only what Prisma cannot express: what each model is *for*, and the laws governing the
+styling columns.
 
-datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
-}
+### What each model is for
 
-// Required by Shopify app template for OAuth session storage.
-model Session {
-  id             String    @id
-  shop           String
-  state          String
-  isOnline       Boolean   @default(false)
-  scope          String?
-  expires        DateTime?
-  accessToken    String
-  userId         BigInt?
-  firstName      String?
-  lastName       String?
-  email          String?
-  accountOwner   Boolean   @default(false)
-  locale         String?
-  collaborator   Boolean?  @default(false)
-  emailVerified  Boolean?  @default(false)
-  refreshToken        String?
-  refreshTokenExpires DateTime?
-}
+| Model | Purpose |
+| --- | --- |
+| `Session` | Shopify app-template OAuth storage. ⚠️ **Outside the FK graph** — keyed by a plain `shop` string, so no cascade reaches it and it must be deleted explicitly (§15). |
+| `Shop` | Root parent. Every other model carries `shopId`. `metaobjectDefinitionGid` is **vestigial** (§10). |
+| `Template` | Name, status, `isShared`, the full editor `rows` JSON (array index = display order), and the metaobject GID + handle. |
+| `ProductAssignment` | The merchant's assignment **rules** — polymorphic `scope` + `mode` + `scopeValue`. `priority` is **dormant and unsurfaced** (§9). |
+| `ProductAssignmentIndex` | 🔴 **DORMANT since 2026-08-04 — nothing writes it** (§9). Retained, not dropped: a drop is a migration with no benefit, and `shop/redact` still deletes from it (§15). |
+| `ShopStorefrontRouting` | The projected routing map mirrored to the shop metafield, plus `shardState` (the `{bucketKey → hash}` reconciliation ledger for the routing shards — delivery-only, never sent to the storefront). |
+| `TableStyling` | Per-template style knobs. **Every knob is nullable**; null = the default. |
+| `AppSubscription` / `ShopEntitlement` | Billing and promotional state (§11). |
 
-model Shop {
-  id                 String     @id @default(cuid())
-  myshopifyDomain    String     @unique
-  shopGid            String?
-  name               String?
-  email              String?
-  currencyCode       String?
-  primaryLocale      String?
-  timezone           String?
+Enums: `OnboardingStatus`, `TemplateStatus`, `AssignmentScope`, `AssignmentMode`,
+`AssignmentIndexStatus`, `SubscriptionStatus`. The dependency chain and migration order are
+in §3.
 
-  installedAt        DateTime   @default(now())
-  uninstalledAt      DateTime?
-  isInstalled        Boolean    @default(true)
+### Styling column laws
 
-  onboardingStatus      OnboardingStatus @default(NOT_STARTED)
-  isAppBlockActive      Boolean          @default(false)
-  appBlockLastCheckedAt DateTime?
+These constrain any change to `TableStyling` and are **not** derivable from the schema file.
 
-  metaobjectDefinitionGid String?
+1. 🔴 **The default IS the storage format.** The wire is overrides-only, so a template storing
+   the default stores **nothing** — there is no "unset" state and no way to scope a default
+   change to new templates only. Changing any default repaints every stored table that never
+   set the field.
+2. **Nullable ⇒ CSS custom property; non-null keyword ⇒ modifier class.** This is why most
+   Style-tab features cost no migration, no presence flag and no Liquid edit.
+3. **Every integer minimum is 1, never 0 — on knobs where NULL ALREADY MEANS OFF.** A 0 would
+   be a second spelling of the same off state, which `serializeStylingOverrides` would write
+   to the wire as an override of a default that renders identically. ⚠️ The law is **scoped**:
+   it does not reach `headerPaddingBlockPx`, whose null means the stylesheet's own `0.75rem`
+   — there 0 and null are different renders, so 0 is a *first* spelling. The test: if a knob
+   carries a presence flag keyed on non-null, its floor is 1.
+4. **`headerFontSizePx` is ABSOLUTE px, never an em keyword.** The collapsible `<summary>` is
+   a **sibling** of the `<table>` that carries `--appx-spec-font-size`, so an em would resolve
+   against a different base per shape and resize silently when Collapsible is toggled.
+5. **`gridMinColumnWidthPx` is a MINIMUM WIDTH, never a column count.** The track count falls
+   out of the container width via `repeat(auto-fit, minmax(min(var, 100%), 1fr))`, so the
+   layout is responsive with no media query. No presence flag keys on it — the `--layout-grid`
+   class is the gate.
+6. **`sectionsInitialState` is the one keyword knob whose default is not its domain array's
+   first member** — the rail order is the open→closed spectrum a merchant reads, so the
+   default is named in `DEFAULT_SECTIONS_INITIAL_STATE` instead.
+7. **`sectionGapPx` has TWO CSS rules, one per markup shape.** A `<tr>` takes no margin only
+   under `TWO_COLUMN`; under `STACKED` / `GRID` it displays as a block and margin applies. The
+   rail shows the knob whenever `sectionsCollapsible` **or** `rowLayout !== TWO_COLUMN`; the
+   shapes are mutually exclusive in the renderer, so the rules can never both fire.
+   Two-column-with-collapsing-off is the one excluded state.
+8. **`tableMaxWidthPx` is a CAP** — it shrinks below its value, so it cannot collide with the
+   749px mobile breakpoint.
+9. **String knobs hold app-validated constants, not Prisma enums** — shared TS constants +
+   server re-validation, matching the `fontSize`/`fontWeight` convention.
+10. **`outerBorderColor` and `headerTextColor` group with the colors, not their functional
+    neighbours** — the Style-tab swatch list is derived from `STYLING_FIELD_NAMES` order and a
+    test pins it. `outerBorderColor` null falls back to `borderColor`, then the stylesheet
+    literal.
+11. **`sectionHeaderStyle` is three LOOKS, and each member's CSS rule states BOTH the band and
+    the rule** rather than inheriting either from the base rule — pinned by a test, because
+    that is exactly what went wrong. `TEXT_ONLY`'s merchant-facing label is **"Underlined"**;
+    the wire value keeps its original spelling so no stored row repaints.
+12. **MVP-shipping knobs are real columns** (typed, queryable — locked 2026-07-18), never
+    `extraStyles` entries.
 
-  createdAt          DateTime   @default(now())
-  updatedAt          DateTime   @updatedAt
-
-  // Spec table templates created by this shop.
-  templates          Template[]
-  // Polymorphic assignment rules (scope + value) that bind templates to products/attributes.
-  assignments        ProductAssignment[]
-  // Sparse per-product override state — DORMANT since 2026-08-04, nothing writes it.
-  assignmentIndexes  ProductAssignmentIndex[]
-  // Projected shop-level routing map mirrored to the shop routing metafield.
-  storefrontRouting  ShopStorefrontRouting?
-  // Shopify billing subscriptions for this shop over time.
-  subscriptions      AppSubscription[]
-  // Feature limits and usage rights derived from plan/promotions.
-  entitlements       ShopEntitlement[]
-
-  // Helps filter installed vs uninstalled shops.
-  @@index([isInstalled])
-}
-
-enum OnboardingStatus {
-  NOT_STARTED
-  IN_PROGRESS
-  COMPLETED
-  DISMISSED
-}
-
-model Template {
-  id        String         @id @default(cuid())
-  shopId    String
-  shop      Shop           @relation(fields: [shopId], references: [id], onDelete: Cascade)
-
-  name        String
-  description String?
-  status      TemplateStatus @default(DRAFT)
-
-  // True for reusable templates. Future one-off product tables can set this false.
-  isShared    Boolean        @default(true)
-
-  // Full editor row array. Array index is display order.
-  // Each row must have stable id and key values.
-  rows        Json           @default("[]")
-
-  shopifyMetaobjectGid    String?
-  shopifyMetaobjectHandle String?
-
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-  archivedAt  DateTime?
-
-  assignments ProductAssignment[]
-  assignmentIndexes ProductAssignmentIndex[]
-  styling     TableStyling?
-
-  @@index([shopId])
-  @@index([shopId, status])
-  @@unique([shopId, shopifyMetaobjectHandle])
-}
-
-enum TemplateStatus {
-  DRAFT
-  ACTIVE
-  ARCHIVED
-}
-
-model ProductAssignment {
-  id         String   @id @default(cuid())
-  shopId     String
-  shop       Shop     @relation(fields: [shopId], references: [id], onDelete: Cascade)
-
-  templateId String
-  template   Template @relation(fields: [templateId], references: [id], onDelete: Cascade)
-
-  // Polymorphic scope — one selector method per rule (Kaching-style single picker).
-  scope AssignmentScope
-  // INCLUDE = "this template covers the scope"; EXCLUDE = a carve-out exception
-  // (e.g. ALL_PRODUCTS INCLUDE + PRODUCT EXCLUDE for a discontinued SKU).
-  mode  AssignmentMode  @default(INCLUDE)
-
-  // Selector value for the scope. NULL only for ALL_PRODUCTS (matches everything).
-  //   PRODUCT      -> gid://shopify/Product/123456
-  //   PRODUCT_TYPE -> exact product type string
-  //   VENDOR       -> exact vendor string
-  //   COLLECTION   -> gid://shopify/Collection/123456
-  //   TAG          -> exact tag string (post-MVP)
-  scopeValue String?
-
-  // DORMANT in MVP. The rigid block-on-conflict model keeps the ACTIVE rule set
-  // disjoint, so there is no runtime tie to break and no merchant-facing priority
-  // knob. Retained un-surfaced for a possible post-MVP same-tier tiebreak on
-  // multi-valued scopes (collection/tag). See §9 "Conflict handling".
-  priority   Int      @default(0)
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  resolvedProducts ProductAssignmentIndex[]
-
-  // Prevent literal duplicate rows within one template. Cross-template semantic
-  // overlaps are NOT a DB constraint — they are blocked at DRAFT -> ACTIVE by the
-  // dry-run resolver, which lets DRAFTs coexist with unresolved conflicts.
-  @@unique([shopId, templateId, scope, scopeValue, mode])
-  @@index([shopId, scope])
-  @@index([shopId, scope, scopeValue])
-  @@index([shopId, templateId])
-}
-
-enum AssignmentScope {
-  ALL_PRODUCTS
-  PRODUCT
-  PRODUCT_TYPE
-  VENDOR
-  COLLECTION
-  // TAG — post-MVP; multi-valued like COLLECTION
-}
-
-enum AssignmentMode {
-  INCLUDE
-  EXCLUDE
-}
-
-// 🔴 DORMANT since 2026-08-04 — NOTHING WRITES THIS TABLE (see §9).
-// It was the SPARSE per-product override cache, populated only for single-product
-// overrides materialized as a per-product `$app:spec_table` metafield (the bounded
-// fallback) plus any hard PRODUCT-vs-PRODUCT conflict. That metafield definition was
-// removed, so the case cannot arise. Kept, not dropped: dropping it is a migration
-// with no benefit while the `byProduct` 128KB replacement is undesigned, and
-// `shop/redact` already deletes from it (step 105). Broad rules
-// (type/vendor/collection/tag/all-products) were never indexed here — the shop
-// routing map delivers them, so this table was never O(catalog).
-model ProductAssignmentIndex {
-  id     String @id @default(cuid())
-  shopId String
-  shop   Shop   @relation(fields: [shopId], references: [id], onDelete: Cascade)
-
-  // Required when status is APPLIED. Optional for unresolved conflicts.
-  templateId String?
-  template   Template? @relation(fields: [templateId], references: [id], onDelete: Cascade)
-
-  // The assignment rule that produced this resolved product state.
-  sourceAssignmentId String?
-  sourceAssignment   ProductAssignment? @relation(fields: [sourceAssignmentId], references: [id], onDelete: SetNull)
-
-  // For the resolved product: gid://shopify/Product/123456
-  shopifyProductGid String
-
-  // Scope snapshot used during resolution (PRODUCT for materialized overrides).
-  scope      AssignmentScope?
-  scopeValue String?
-
-  status         AssignmentIndexStatus @default(APPLIED)
-  conflictReason String?
-
-  // Storefront pointer that WAS written to the product's `$app:spec_table`
-  // metaobject_reference — that metafield no longer exists (see the model comment).
-  appliedTemplateHandle String?
-  syncedToShopifyAt     DateTime?
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  @@unique([shopId, shopifyProductGid])
-  @@index([shopId, templateId])
-  @@index([shopId, status])
-  @@index([sourceAssignmentId])
-}
-
-enum AssignmentIndexStatus {
-  APPLIED
-  CONFLICT
-  STALE
-}
-
-// Projected disjoint routing map — the mirror of the shop `$app:routing` json
-// metafield that Liquid reads on the storefront. Rebuilt from the ACTIVE, disjoint
-// ProductAssignment rows on every activate/deactivate. Postgres stays the source of
-// truth; the metafield is the delivery copy. Each map is { scopeValue -> handle }.
-model ShopStorefrontRouting {
-  id     String @id @default(cuid())
-  shopId String @unique
-  shop   Shop   @relation(fields: [shopId], references: [id], onDelete: Cascade)
-
-  defaultTemplateHandle String?              // ALL_PRODUCTS winner
-  byType                Json    @default("{}") // productType    -> template handle
-  byVendor              Json    @default("{}") // vendor         -> template handle
-  byCollection          Json    @default("{}") // collectionGid  -> template handle
-  byTag                 Json    @default("{}") // tag            -> template handle (post-MVP)
-  byProduct             Json    @default("{}") // productGid     -> template handle (bounded overrides)
-  excludedProductGids   Json    @default("[]") // EXCLUDE carve-outs -> render nothing
-
-  // Delivery sync state for the shop-level metafield.
-  shopMetafieldGid  String?
-  syncedToShopifyAt DateTime?
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-}
-
-model TableStyling {
-  id         String   @id @default(cuid())
-  templateId String   @unique
-  template   Template @relation(fields: [templateId], references: [id], onDelete: Cascade)
-
-  // Layout knobs (Style-tab spec 2026-07-18). String knobs hold app-validated
-  // constants (shared TS constants + server re-validation, not Prisma enums —
-  // matching the fontSize/fontWeight convention); null = the flagged default.
-  rowLayout            String?  // "TWO_COLUMN" (null default) | "STACKED" | "GRID"
-  // Feature 85. The narrowest a GRID track may get — a MINIMUM WIDTH, never a
-  // column count, so the track count falls out of the container width via
-  // repeat(auto-fit, minmax(min(var, 100%), 1fr)) and the layout is responsive
-  // with no media query. null = the stylesheet's own 240px (the
-  // headerPaddingBlockPx vocabulary, NOT the container knobs' "null = off":
-  // a grid always has a minimum, so there is no off state to spell). No presence
-  // flag keys on it — the --layout-grid class is the gate.
-  gridMinColumnWidthPx Int?     // 160–640; only meaningful when rowLayout is GRID
-  mobileLayout         String?  // "STACKED" (null default) | "SAME_AS_DESKTOP" — only meaningful when rowLayout is TWO_COLUMN (a GRID table is responsive by construction, so the rail hides this for both non-TWO_COLUMN layouts)
-  sectionHeaderStyle   String?  // "BANDED" (null default) | "TEXT_ONLY" | "PLAIN"
-  // Three LOOKS, and each member's CSS rule states BOTH the band and the rule
-  // rather than inheriting either from the base rule — pinned by a test, because
-  // that is exactly what went wrong: TEXT_ONLY drops only the background and
-  // keeps a 2px border-block-end, so before feature 87 nothing produced a bare
-  // bold title. Its merchant-facing label is "Underlined" for that reason; the
-  // wire value keeps its original spelling, so no stored row repaints.
-  // Section-header typography + spacing (feature 81). All four nullable, null =
-  // inherit the stylesheet's own literal, so an untouched table is byte-identical.
-  // They dress BOTH shapes (the flat th[colspan=2] and the collapsible summary),
-  // so unlike sectionGapPx none of them is hidden in any state. (sectionGapPx is
-  // still the group's one hidden control after feature 94 — it is hidden in fewer
-  // states, not in none. See its note below.)
-  headerFontSizePx     Int?     // 10–184 (shares the fontSize bounds); null = the size the title already renders at. ABSOLUTE px, never an em keyword: the collapsible <summary> is a SIBLING of the <table> that carries --appx-spec-font-size, so an em would resolve against a different base per shape and resize silently when Collapsible is toggled
-  headerFontWeight     String?  // "REGULAR" | "MEDIUM" | "BOLD"; null = the literal 700
-  headerCase           String?  // "DEFAULT" | "UPPERCASE"; null = as typed. Section titles ONLY — labelCase below is the label column's own knob
-  headerPaddingBlockPx Int?     // 0–48; null = the literal 0.75rem. BLOCK AXIS ONLY (the inline padding stays welded to the row cells' 0.75rem, or a large title would indent past its own labels). The ONE integer knob with a 0 floor — see the container-knob law below for why it does not apply here
-  sectionsCollapsible  Boolean  @default(false)
-  sectionsInitialState String?  // "FIRST_OPEN" (null default, changed from ALL_OPEN 2026-07-30) | "ALL_OPEN" | "ALL_CLOSED" — only meaningful when sectionsCollapsible. 🔴 The ONE keyword knob whose default is not its domain array's first member: the rail order is the open→closed spectrum a merchant reads, so the default is named in DEFAULT_SECTIONS_INITIAL_STATE instead. Because the wire is overrides-only the default IS the storage format, so this literal cannot move again after launch without repainting live storefronts
-  sectionGapPx         Int?     // 1–48; null = no gap (feature 80). Space between sections. Takes the container knobs' law below: null = the DEFAULT, minimum 1
-  // ⚠️ Feature 94 widened where this is REACHABLE, not what it stores. Feature 80
-  // fenced it to sectionsCollapsible on the reasoning that a flat section header
-  // is a <tr> and a <tr> takes no margin — true only under TWO_COLUMN. What a <tr>
-  // DISPLAYS as is the row-layout rules' call: table-row there, but block under
-  // STACKED and a block grid item under GRID, and margin applies in both. So the
-  // knob has TWO CSS rules (one per markup shape) and the rail shows it whenever
-  // sectionsCollapsible OR rowLayout !== TWO_COLUMN. The shapes are mutually
-  // exclusive in the renderer, so the two rules can never both fire.
-  // Two-column with collapsing off remains the one excluded state: padding grows
-  // the band, and a transparent border-block-start loses the border-collapse width
-  // contest and deletes the previous row's divider. See progress-tracker.md for the
-  // border-collapse: separate option, still uncosted.
-  rowDividerStyle      String?  // "LINES" (null default) | "STRIPES" | "NONE"
-  columnDividerStyle   String?  // "NONE" (null default) | "LINE" (feature 79) — the vertical rule at the label/value seam; fixed 1px, colored by borderColor. Suppressed in stacked layouts (no seam)
-  density              String?  // "DEFAULT" (null default) | "COMPACT" | "SPACIOUS"
-
-  // Container knobs (feature 78). null = the DEFAULT, not "inherit the theme" —
-  // there is no theme value for "the table's outline". That is also why every
-  // integer minimum is 1, never 0: a 0 would be a second spelling of the same
-  // off state, which serializeStylingOverrides would write to the wire as an
-  // override of a default that renders identically.
-  //
-  // ⚠️ This law is scoped to knobs where NULL ALREADY MEANS OFF. It does not
-  // reach headerPaddingBlockPx (feature 81), whose null means the stylesheet's
-  // 0.75rem: there 0 and null are different renders, so 0 is a FIRST spelling,
-  // and nothing keys a presence flag on it. That is the whole test — if a knob
-  // carries a presence flag keyed on non-null, its floor is 1.
-  tableMaxWidthPx     Int?     // 240–1600; null = full width. A CAP: shrinks below it, so it cannot collide with the 749px mobile breakpoint
-  tableAlign          String?  // "LEFT" (null default) | "CENTER" | "RIGHT" — only meaningful when tableMaxWidthPx is set
-  outerBorderWidthPx  Int?     // 1–12; null = no outer border
-  outerBorderRadiusPx Int?     // 1–48; null = square corners
-
-  headerBgColor    String?
-  headerTextColor  String?  // the section title's own text (feature 81). Sits here, not with the four header knobs above, for the same reason as outerBorderColor: the swatch list is derived from STYLING_FIELD_NAMES order, and a test pins it
-  labelBgColor     String?
-  valueBgColor     String?
-  stripeBgColor    String?  // zebra-stripe surface — used when rowDividerStyle = "STRIPES"
-  borderColor      String?
-  outerBorderColor String?  // the outer frame; null falls back to borderColor, THEN the stylesheet literal. Grouped with the colors, not the container knobs above — the Step 10a swatch list is derived from STYLING_FIELD_NAMES order
-  labelTextColor   String?
-  valueTextColor   String?
-  // Typography (2026-07-18 addendum — adopts the Horizon theme-editor pattern:
-  // bounded segments, preset-first with a Custom px escape hatch; null = inherit).
-  fontSize         String?  // "SMALL" | "MEDIUM" | "LARGE" (theme-relative presets, em-scale) OR an all-digit px string ("18"), app-clamped to 10–184 (ceiling raised from 40 on 2026-07-19 to match the Horizon theme editor's max; floor is an a11y guard)
-  fontWeight       String?  // "REGULAR" | "MEDIUM" | "BOLD"
-  fontStyle        String?  // "NORMAL" | "ITALIC" (kept — merchant decision 2026-07-18)
-  lineHeight       String?  // "TIGHT" | "NORMAL" | "LOOSE" — density's vertical-rhythm partner
-  labelCase        String?  // "DEFAULT" | "UPPERCASE" — label column only
-  labelWidthPct    Int?
-
-  // Provenance only: the preset id these values were copied from at pick time
-  // (a built-in preset id or a saved-preset id). Informational (gallery UI,
-  // support/debugging) — never re-read as a live link; the template owns its
-  // values outright (copy semantics, see the note below).
-  basedOnPreset    String?
-
-  extraStyles      Json     @default("{}")
-}
-
-> **Color fields are merchant overrides, not the whole palette.** Each `*Color` field is nullable: `null` means "inherit the theme," a value means the merchant set it in the Style tab. On the storefront these resolve to **CSS custom properties on the `.appx-spec-table` wrapper** — the same variables that carry the inherited-theme defaults — so saved and default colors flow through one source of truth (see `code-standards.md` → Color & Theming). The app is not colorless: color is centralized in variables, not scattered as hex literals. `extraStyles` is the forward-compatible escape hatch for new themeable surfaces (dark-mode tokens, additional surfaces) added post-MVP without a migration per color. MVP-shipping knobs are **real columns** (typed, queryable — locked 2026-07-18), never `extraStyles` entries.
+> **Color fields are merchant overrides, not the whole palette.** Each `*Color` field is nullable: `null` means "inherit the theme," a value means the merchant set it in the Style tab. On the storefront these resolve to **CSS custom properties on the `.appx-spec-table` wrapper** — the same variables that carry the inherited-theme defaults — so saved and default colors flow through one source of truth (see `code-standards.md` → Color & Theming). The app is not colorless: color is centralized in variables, not scattered as hex literals. `extraStyles` is the forward-compatible escape hatch for new themeable surfaces (dark-mode tokens, additional surfaces) added post-MVP without a migration per color.
 
 > **Styling is per-template with COPY semantics — locked 2026-07-18.** `TableStyling` is the **single styling home**; the style knobs are **orthogonal controls on one table primitive**, not monolithic "layouts" (every real-world archetype — striped, banded, stacked, accordion — is a knob combination). Choosing a preset (the creation-gallery popup or an in-rail preset card) **copies** the preset's values into the template's `TableStyling`; there is **no template→preset link and no shop-level default styling record** (a "store default cascade" was designed and rejected: copy keeps every style edit side-effect-free on live storefronts, makes preset deletion trivial, and collapses storefront delivery to one path). Consequences:
 >
@@ -487,77 +216,6 @@ model TableStyling {
 > - **Retroactive "set once and done" is a post-MVP explicit bulk action** (future app-settings route): pick a preset → confirm against a pre-checked template list → batch-write N `TableStyling` rows + **throttled** sequential metaobject resyncs (merchant-triggered write amplification is acceptable; per-edit propagation is not).
 >
 > Full UI spec: `admin-screen-plan.md` §Screen 3 → Tab 2 — Style.
-
-model AppSubscription {
-  id                       String   @id @default(cuid())
-  shopId                   String
-  shop                     Shop     @relation(fields: [shopId], references: [id], onDelete: Cascade)
-
-  // The unique global identifier from Shopify's Billing API.
-  shopifySubscriptionGid    String?  @unique
-  // Internal string to easily identify the tier (e.g., "FREE", "BASIC", "PRO").
-  planCode                 String
-  // Tracks the current state of the charge without needing to ping Shopify every time.
-  status                   SubscriptionStatus @default(PENDING)
-
-  // Used to manage free trial periods (e.g., 7-day or 14-day trials).
-  trialStartsAt            DateTime?
-  trialEndsAt              DateTime?
-  // Used to track the current 30-day billing cycle (helpful for usage limits).
-  currentPeriodStartsAt    DateTime?
-  currentPeriodEndsAt      DateTime?
-  // Kept for analytics and calculating remaining access time after a merchant uninstalls.
-  cancelledAt              DateTime?
-
-  createdAt                DateTime @default(now())
-  updatedAt                DateTime @updatedAt
-
-  // Optimizes the query to find the currently active subscription for a shop.
-  @@index([shopId, status])
-}
-
-enum SubscriptionStatus {
-  // Merchant has been sent to the approval screen but hasn't approved yet.
-  PENDING
-  // Subscription is active and billing is functioning properly (or in trial).
-  ACTIVE
-  // Shopify couldn't process the payment (e.g., expired card). Features should be restricted.
-  FROZEN
-  // Merchant explicitly cancelled the plan or uninstalled the app.
-  CANCELLED
-  // Subscription period has ended and was not renewed.
-  EXPIRED
-}
-
-model ShopEntitlement {
-  id                       String   @id @default(cuid())
-  shopId                   String
-  shop                     Shop     @relation(fields: [shopId], references: [id], onDelete: Cascade)
-
-  earlyBirdEligible         Boolean  @default(false)
-  earlyBirdInstallNumber    Int?
-
-  freeTrialMonths           Int      @default(0)
-  reviewRewardGrantedAt     DateTime?
-  reviewRewardMonths        Int      @default(0)
-
-  // Requested business field. Can represent bonus credit, bonus discount,
-  // bonus free amount, or internal promotional value.
-  bonusAmount               Float    @default(0)
-
-  couponCode                String?
-  notes                     String?
-
-  startsAt                  DateTime?
-  endsAt                    DateTime?
-
-  createdAt                 DateTime @default(now())
-  updatedAt                 DateTime @updatedAt
-
-  @@index([shopId])
-  @@index([earlyBirdEligible])
-}
-```
 
 ---
 
@@ -773,95 +431,69 @@ That is acceptable for MVP because it matches the simple Shopify product-style s
 
 ## 9. Storefront Assignment Strategy
 
-> **Update (2026-07-07) — rigid model + shop-level routing. Supersedes the per-product-materialization and priority-precedence design originally described in this section.**
->
-> 1. **Assignment is rigid and merchant-controlled (Moon-Bundles style), not priority-resolved.** Each template targets **one scope** (all products / selected products / product type / vendor / selected collections). A dry-run checks that scope against every **other ACTIVE** template; any overlap **blocks activation** (`DRAFT → ACTIVE`). A template may be **saved `DRAFT` with a conflict**, never `ACTIVE`. The published rule set is therefore **disjoint** — the storefront never resolves precedence, so there is no merchant-facing `priority`.
-> 2. **Broad rules deliver through ONE shop-level routing metafield, not per-product writes.** `[shop.metafields.app.routing]` (json, `access.storefront = "public_read"`) holds `{ default, byType, byVendor, byCollection, byTag, byProduct, excludedProductGids }` mapping attribute → template metaobject **handle**. Liquid reads `shop.metafields["$app"].routing.value`, matches the current product's fields, and resolves the handle **directly** to the template metaobject. O(1) writes per rule; future products are covered with no re-materialization. ~~A per-product `metaobject_reference` metafield remains only for bounded single-product overrides.~~ **[SUPERSEDED 2026-08-04 — see the update immediately below.]**
->
-> **Update (2026-08-04) — 🔴 the per-product override metafield is GONE. The routing map is the ONLY delivery mechanism.** `[product.metafields.app.spec_table]` was deleted from `shopify.app.toml` and the deploy took every stored value with it (declarative definitions are read-only through the Admin API — the TOML *is* the delete). It shipped in feature 34 as the product → template pointer, was demoted to "bounded single-product override" here on 2026-07-07, and **no app code ever wrote it** in either role: `PRODUCT`-scope assignments have always gone into `routing.byProduct`. It was therefore a live storefront **read** path with no writer, settable only by hand in Admin. Consequences, all of them load-bearing:
->
-> - Storefront resolution is **two tiers**, not three (`blocks/spec_table.liquid`): routing map → nothing. `byProduct` is the whole of the explicit-single-product story.
-> - **The `byProduct` 128KB escape hatch no longer exists.** The old plan (materialize per-product metafields via `bulkOperationRunMutation` once a template's `byProduct` set neared the json cap) died with the definition. If that ceiling is ever approached, the fix must be re-designed — do not assume the metafield can simply be re-added, because re-adding a definition and re-populating ~2,500 products is a migration, not a config edit.
-> - `ProductAssignmentIndex` loses its only populated case (see "Product assignment index" below). The table is retained but is now **entirely unused**; it was already sparse-to-empty, and no code path writes it.
-> - 🚫 **Reinstating the Liquid read without reinstating the TOML definition is silently dead** — an undefined metafield resolves to nil, so the branch would never fire and would look like a routing bug.
->
-> **Metaobject-by-handle is PROVEN (live storefront, 2026-07-07).** `metaobjects["$app:appx_spec_table"][handle]` resolves an app-owned metaobject from a **handle string** and exposes `.status.value` / `.rows.value` — overturning the 2026-06-19 caveat below (which pushed reference metafields out of caution). Both `$app:appx_spec_table` and the resolved `app--<app-id>--appx_spec_table` type forms work; use the `$app:` form. Observed live: `system.type = app--378906640385--appx_spec_table`, `status = ACTIVE`, `rows = 19`. (App-owned metafields/metaobjects require `access.storefront = "public_read"` to be Liquid-readable — theme app extensions are storefront surfaces.)
->
-> The subsections below are rewritten to this model. The 2026-06-19 and 2026-07-01 notes are retained as shipped history.
+Liquid cannot read Appx Postgres data directly, so assignment resolution is **projected** into
+Shopify data. Two things follow from that and govern everything below: Postgres holds the
+rules, and Shopify holds a derived delivery copy that can fail to update independently (§13).
 
-Liquid cannot read Appx Postgres data directly. Therefore, assignment resolution must be projected into Shopify data.
+**The model, in four statements:**
+
+1. **Assignment is rigid and merchant-controlled (Moon-Bundles style), not priority-resolved.**
+   A template targets **one scope kind** (all products / selected products / product type /
+   vendor / selected collections), optionally narrowed by `EXCLUDE` carve-outs. A dry-run
+   checks it against every **other ACTIVE** template; any overlap **blocks activation**
+   (`DRAFT → ACTIVE`). A template may be saved `DRAFT` with a conflict, never `ACTIVE`. The
+   published rule set is therefore **disjoint** — the storefront never resolves precedence,
+   so there is no merchant-facing `priority`.
+2. **Broad rules deliver as O(1) entries in ONE shop-level routing metafield.**
+   `[shop.metafields.app.routing]` (json, `access.storefront = "public_read"`, wire **v3**)
+   holds the count-bounded tiers only: `byType`, `byVendor`, `byCollection`, `def`, plus the
+   interned `handles[]`. A rule matching 20k products is still one write, and future matching
+   products are covered with no re-materialization.
+3. **Per-product entries deliver through sharded metaobjects** (feature 108). `byProduct` and
+   `excluded` are split across **N = 1024** `$app:appx_routing_shard` metaobjects keyed
+   `product.id mod 1024`, each with its own 128KB budget. A product page reads only its own
+   shard. 🔴 **N can never change after launch** — a different modulus re-buckets every
+   product (§14 D4).
+4. **Metaobject-by-handle resolution is PROVEN live** (2026-07-07).
+   `metaobjects["$app:appx_spec_table"][handle]` resolves an app-owned metaobject from a
+   **handle string** and exposes `.status.value` / `.rows.value`. Both the `$app:` form and
+   the resolved `app--<app-id>--appx_spec_table` form work; use `$app:`. App-owned
+   metaobjects/metafields need `access.storefront = "public_read"` to be Liquid-readable —
+   theme app extensions are storefront surfaces.
+
+🚫 **There is no per-product override metafield, and no `byProduct` overflow escape hatch.**
+`[product.metafields.app.spec_table]` was deleted from `shopify.app.toml` on 2026-08-04 and
+the deploy took every stored value with it (declarative definitions are read-only through the
+Admin API — the TOML *is* the delete). It shipped in feature 34 as the product → template
+pointer, was demoted to "bounded single-product override" on 2026-07-07, and **no app code
+ever wrote it in either role** — `PRODUCT`-scope assignments have always gone into
+`byProduct`. It was a live storefront **read** path with no writer. Three consequences:
+
+- **Reinstating the Liquid read without reinstating the TOML definition is silently dead** —
+  an undefined metafield resolves to nil, so the branch never fires and reads as a routing bug.
+- **The old overflow plan died with it.** "Materialize per-product metafields via
+  `bulkOperationRunMutation` when `byProduct` nears the json cap" is no longer available;
+  re-adding a definition and re-populating ~2,500 products is a migration, not a config edit.
+  Sharding (statement 3) is the replacement.
+- `ProductAssignmentIndex` lost its only populated case and is now dormant (see below).
+
+**Changelog** — the design changed three times; git holds the superseded text.
+`2026-06-19` metaobject round-trip proven via Admin API · `2026-07-01` product → template
+pointer implemented as a `metaobject_reference` metafield (feature 34), superseding an
+earlier `single_line_text_field` handle sketch · `2026-07-07` rigid model + shop-level routing
+map replaces per-product materialization and priority precedence · `2026-08-04` per-product
+override metafield deleted · `2026-08-05` delivery wire compacted (Option 1) then sharded
+(Option 2, wire v3).
 
 ### MVP strategy
 
-The current product is matched to its one effective template through the **shop-level routing map** (`shop.metafields["$app"].routing`) — the only mechanism, since the 2026-08-04 removal. MVP intentionally renders one spec table per product, and the rigid block-on-conflict model (top-of-section update) guarantees exactly one match.
+The current product is matched to its one effective template through the **shop routing map +
+its routing shard** — the only mechanism. MVP renders one spec table per product, and the
+rigid block-on-conflict model guarantees exactly one match.
 
-`ProductAssignment` stores the merchant's assignment **rules** (Postgres, source of truth). `ShopStorefrontRouting` is the projected map pushed to Shopify. `ProductAssignmentIndex` is dormant (see below).
-
-> **The `single_line_text_field` example and Liquid flow immediately below are HISTORICAL** (the original 2026 sketch). They are superseded twice — first by the `metaobject_reference` metafield (2026-07-01 note), then by the shop routing map + direct handle resolution (2026-07-07 top-of-section update). Retained for provenance; do not implement from them.
-
-Example product metafield:
-
-```text
-namespace: appx
-key: spec_table_template_handle
-type: single_line_text_field
-value: template-clxabc123
-```
-
-Liquid flow:
-
-```liquid
-{% assign template_handle = product.metafields.appx.spec_table_template_handle.value %}
-{% assign spec_table = shop.metaobjects.appx_spec_table[template_handle] %}
-
-{% if spec_table.status.value == 'ACTIVE' %}
-  Render rows JSON and styling JSON
-{% endif %}
-```
-
-Exact Liquid syntax should be verified during Theme App Extension implementation, but the architecture goal is clear: product metafield points to metaobject handle.
-
-> **Verified (Editor Step 9.5, 2026-06-19).** The metaobject round trip
-> (React → Postgres → metaobject → read back) was proven via the **Admin GraphQL
-> API** (`metaobjectByHandle`), not Liquid, because the storefront/assignment slice
-> that deploys the Theme App Extension is not built yet. The storefront read syntax
-> is the global `metaobjects` object: `{{ metaobjects[type][handle] }}` (or
-> `metaobjects.type.handle`), with the `rows` json field iterable as
-> `metaobject.rows.value`. **Caveat for the storefront slice:** because the
-> definition is **app-reserved** (`$app:appx_spec_table`, see §10), the bare
-> `shop.metaobjects.appx_spec_table[handle]` sketch above will need the resolved
-> app type. **[SUPERSEDED 2026-07-07]** — proven false on the live storefront:
-> `metaobjects["$app:appx_spec_table"][handle]` resolves a raw handle string
-> directly (see the top-of-§9 update). ~~The `metaobject_reference` product metafield
-> shipped in feature 34 is retained, but only as the bounded single-product override
-> path~~ — **[SUPERSEDED 2026-08-04: that metafield was removed entirely.]** All
-> assignment uses the shop routing map + direct handle lookup.
-
-> **Update (2026-07-01, storefront slice 1 — `context/features/34-storefront-theme-app-extension-first-pixel.md`).**
-> 🔴 **HISTORICAL — the definition described here was DELETED on 2026-08-04** (top-of-§9
-> update). Retained because it records *why* a `metaobject_reference` beats a handle
-> string, which still governs any future product → metaobject pointer.
-> Confirmed against Shopify docs and **implemented**: the product → template pointer
-> is a **`metaobject_reference` product metafield**, **not** the
-> `single_line_text_field` handle sketched in the example below (docs: never store
-> handles/IDs in plain-text fields for relationships — it breaks Liquid/Storefront
-> resolution). Locked details:
->
-> - **Declared in `shopify.app.toml`** (app-owned):
->   `[product.metafields.app.spec_table]`, `type = "metaobject_reference<$app:appx_spec_table>"`,
->   `access.storefront = "public_read"` (required for an app-owned metafield to be
->   Liquid-readable — app metafields are **not** always readable in Liquid, unlike
->   merchant/standard ones), `access.admin = "merchant_read_write"` (so Step 3 can set
->   the value by hand in Admin).
-> - **Namespace/key:** namespace `$app`, key `spec_table`.
-> - **Liquid access (theme app extension, bracket form for the reserved prefix):**
->   `product.metafields["$app"].spec_table.value` → the referenced metaobject;
->   then `...spec_table.value.status.value` and iterate `...spec_table.value.rows.value`.
->   Dot form (`product.metafields.app.spec_table`) does **not** resolve the reserved
->   namespace.
->
-> The example block below is retained for history but is **superseded** by the
-> reference-metafield approach.
+`ProductAssignment` stores the merchant's assignment **rules** (Postgres, source of truth).
+`ShopStorefrontRouting` is the projected map pushed to Shopify. `ProductAssignmentIndex` is
+dormant (see below).
 
 ### Assignment (Postgres) — rigid, block-on-conflict
 
@@ -888,8 +520,6 @@ The theme app extension resolves the current product against the routing map top
 1. `shard.by_product[<product id>]` — an **explicit single-product assignment**, read from this product's routing shard (feature 108), not the shop map. Checked **before** the exclude gate (feature 45 Decision B) so an excluded product still reaches its own dedicated table (the "all products EXCEPT X, and X gets its own table" story). The shard value is the handle **string** directly (D3).
 2. `shard.excluded[<product id>]` present ⇒ the **broad** tiers below are carved out for it (render nothing **from the map**; the explicit `by_product` in step 1 still wins). The exclude gate only suppresses the broad tiers.
 3. `byType[product.type]` → `byVendor[product.vendor]` → first hit scanning `product.collections` against `byCollection` (by collection id) → `routing.def` — the broad tiers, still from the shop `$app:routing` metafield.
-
-> **Removed 2026-08-04:** the list above used to open with `product.metafields["$app"].spec_table.value` — a per-product override checked ahead of everything. Both the read and its definition are gone (top-of-§9 update), so the map is the whole resolver.
 
 > **Compact wire (Option 1 + 2, 2026-08-05):** the steps above say "product id" / "collection id" — the delivery map is keyed by **bare numeric id** (not the full GID). Broad tiers (`byType`/`byVendor`/`byCollection`/`def`) live in the shop `$app:routing` metafield with **handle-index** values (`routing.handles[index]`). The two per-product maps live in the shard (feature 108): `shard.by_product[pid]` → handle **string** (D3), and `shard.excluded[pid]` as O(1) object membership. The block resolves the shard (`product.id | modulo: 1024` → `routing-shard-<k>`) and passes it into the resolver. See the key-format note below and §14.
 
@@ -922,7 +552,7 @@ The matched value is a template **handle**; resolve it with `metaobjects["$app:a
 
 ### Product assignment index (sparse)
 
-🔴 **DORMANT since 2026-08-04 — nothing writes this table.** It was never a per-catalog cache (broad rules live in the shop routing map, so most products had **no** index row); its one populated case was the **materialized single-product override** — a `PRODUCT`-scope entry written as a per-product `$app:spec_table` metafield, with `appliedTemplateHandle` + `syncedToShopifyAt`, plus `STALE` rows when such an override needed resync. That metafield is gone (top-of-§9 update), so the case cannot arise. The table and its columns are **retained, not dropped**: removing them is a migration with no benefit while the `byProduct` cap replacement is undesigned, and `shop/redact` already deletes from it (step 105).
+🔴 **DORMANT since 2026-08-04 — nothing writes this table.** It was never a per-catalog cache (broad rules live in the shop routing map, so most products had **no** index row); its one populated case was the **materialized single-product override** — a `PRODUCT`-scope entry written as a per-product `$app:spec_table` metafield, with `appliedTemplateHandle` + `syncedToShopifyAt`, plus `STALE` rows when such an override needed resync. That metafield is gone (§9), so the case cannot arise. The table and its columns are **retained, not dropped**: dropping it is a migration, and `shop/redact` still deletes from it (§15). The drop should land with OQ-103-D's dead-index migration, not on its own.
 
 The original semantics, for whoever revives it: `status = APPLIED` meant a per-product override metafield is set (`templateId`, `sourceAssignmentId`, `scope = PRODUCT`); `status = CONFLICT` is reserved for the rare hard `PRODUCT`-vs-`PRODUCT` override collision. **Rule-vs-rule conflicts are not stored here** — they are computed by the dry-run at activation and surfaced to the merchant immediately (blocking). The `[shopId, shopifyProductGid]` unique guarantees one override row per product.
 
@@ -940,11 +570,7 @@ Conflicts are resolved by **blocking, not precedence** — the merchant decides,
 
 > **Multi-value scopes — one scope KIND per template, 1..N values (feature 46, server).** `PRODUCT` and `COLLECTION` may carry **several** values ("selected products / collections"); `ALL_PRODUCTS` / `PRODUCT_TYPE` / `VENDOR` stay single-valued. A template's INCLUDE rows are **homogeneous in scope kind** — `setTemplateScope` takes a `ScopeSelector[]` and replaces the whole INCLUDE set in one `$transaction` (validated arity via a `MULTI_VALUE_SCOPES` predicate — *distinct* from `assignmentOverlap`'s per-product `SINGLE_VALUED`). The conflict gate generalizes accordingly: two templates collide iff **any** `(candidateSelector, otherSelector)` pair overlaps; the gate reasons **per pair**, subtracts EXCLUDE carve-outs **per pair**, then dedupes survivors to distinct templates **last** (subtract-before-dedupe — a multi-value *other* template partially covered by the candidate's carve-outs must still block via its un-excluded members). The pure resolver (`assignmentOverlap.ts`) and the Shopify probe (feature 39) are unchanged; the routing projection already folds N rows/template into `byProduct`/`byCollection`. **Decision C — INCLUDE ∩ EXCLUDE disjoint per template:** a product a template INCLUDEs can never also be EXCLUDE'd (on the storefront `byProduct` beats the exclude gate, so the EXCLUDE would be inert *and* would fool the gate's subtraction). Enforced two ways: `setTemplateScope` deletes any contradictory `EXCLUDE PRODUCT` row when it writes an `INCLUDE PRODUCT` set, and the editor action reconciles the PENDING excludes against the pending INCLUDE set before gating (the gate also strips the candidate's self-included products, defense in depth). The multi-select **UI** is feature 47; feature 46 is server-only (the single-select picker keeps working via a legacy `scopeValue` → 1-element-set normalization).
 
-> **Multi-value scopes — the picker + loader (feature 47, UI).** The editor's `PRODUCT`/`COLLECTION` scope control is a **multi-select picker → chip list** (one chip per selected product/collection, per-chip Remove + "Add more", mirroring feature 45's EXCLUDE control); `PRODUCT_TYPE`/`VENDOR` keep the single text field; `ALL_PRODUCTS`/`NONE` carry no value. The engine holds a value **set** (`scopeValues: { value, label, image }[]`); the dirty snapshot + Save payload carry the raw values (order-independent, sorted), sent as `payload.scopeValues[]` which `parsePendingScope` already reads. A valued kind with **zero** values is *incomplete* (Save disabled via `isScopeSetComplete`), **not** a clear — only `NONE` clears. **The loader now reads the full INCLUDE set** (`getTemplateIncludeSelectors`, replacing the single-row `getAssignmentForTemplate`) and batch-resolves the chip details in one `nodes(ids:)` query (`resolveScopeResourceDetails`, fail-soft to the GID) — so an **N>1 template round-trips through the editor without collapsing to one value** (the feature-46 Step-5 hazard is closed; a multi-value template is now safe to open + Save in the editor). Server/gate/writer/projection/Decision-C are **unchanged from feature 46** — 47 only reshapes what the browser sends and shows.
->
-> **Chip visual polish (feature 47, Kaching-style cards).** Each chip is a `<s-box>` card holding an `<s-thumbnail>` (product/collection image, built-in placeholder when none) + the resolved title + a critical-tone `icon="delete"` trash `<s-button>` — replacing the earlier plain title + text "Remove" link. The **same `ResourceChipCard`** renders both the INCLUDE scope list and the `ALL_PRODUCTS` EXCLUDE "Except these products" list. Thumbnails come from two sources: the App Bridge resource picker returns `images[]`/`image` at pick time (in-session), and on reload the loader's `resolveScopeResourceDetails` returns a `GID → { label, image }` map — `Product.featuredImage.url` / `Collection.image.url` fetched in the **same** batched `nodes(ids:)` query as the titles (no extra round-trip; fail-soft to a null image → placeholder). Excludes now use that same batched resolver (one query, was N single `node` calls). All display-only — the durable value/GID is unchanged, so nothing about persistence, the gate, or routing moved.
->
-> **Long lists collapse (`CollapsibleChipList`, `MAX_INLINE_CHIPS = 4`).** So a 100-product assignment doesn't stack 100 cards down the sidebar, both chip lists (scope + `ALL_PRODUCTS` excludes) render inline only up to 4; beyond that they collapse behind a **"View all selected (N)"** toggle, and expanding reveals the full list inside a height-capped (~20rem) scroll `<div>` (`s-box`'s `overflow` supports only hidden/visible, so a plain div) with a "Show less" to re-collapse. The trailing "Add more / Select" button stays visible in every state. Pure client state, display-only. Also — the EXCLUDE picker (`addExcludes`) now passes `selectionIds` (the current exceptions) and REPLACES from the picker's returned set, matching the scope picker (`pickResources`), so reopening either shows the current selection **checked** and unchecking there removes. **Live-verified on the dev store (2026-07-11):** on a `/new` template, setting the scope to "A specific product" and picking two products rendered two Kaching-style cards — product thumbnail + title + a red trash button on one row (a 3-column `auto 1fr auto` grid so the row doesn't wrap in the ~300px sidebar; `background="base"` + border to stand out from the subdued sidebar) — and the incomplete-state error cleared. The loader-reload thumbnail path (`resolveScopeResourceDetails` fetching `featuredImage.url`/`image.url` on reload) is unit-tested + renders through the **same** `ResourceChipCard`; not re-saved live to avoid a stray template on a store in active parallel use. Component markup + the `nodes(ids:)` query were validated with the Shopify MCP validators.
+> **Multi-value scopes — the picker + loader (feature 47, UI).** The `PRODUCT`/`COLLECTION` scope control is a **multi-select picker → chip list**; `PRODUCT_TYPE`/`VENDOR` keep the single text field; `ALL_PRODUCTS`/`NONE` carry no value. The engine holds a value **set** (`scopeValues: { value, label, image }[]`), sent as `payload.scopeValues[]`. A valued kind with **zero** values is *incomplete* (Save disabled via `isScopeSetComplete`), **not** a clear — only `NONE` clears. 🔴 **The loader reads the full INCLUDE set** (`getTemplateIncludeSelectors`, replacing the single-row `getAssignmentForTemplate`) and batch-resolves chip labels + images in one `nodes(ids:)` query (`resolveScopeResourceDetails`, per-chunk fail-soft to the GID) — so an **N>1 template round-trips through the editor without collapsing to one value** (the feature-46 Step-5 hazard). Server/gate/writer/projection/Decision-C are **unchanged from feature 46** — 47 only reshapes what the browser sends and shows. Chip presentation (`ResourceChipCard`, shared by the scope and EXCLUDE lists) and list collapsing (`CollapsibleChipList`, `MAX_INLINE_CHIPS = 4`) are display-only client state: see `context/features/47-…`.
 
 `priority` stays in the schema but **dormant and unsurfaced**. It is a forward-compatible landing spot for a post-MVP same-tier tiebreak on **multi-valued** scopes (a product in two different collection rules, or two tag rules), where an overlap can appear at render time on a *future* product that didn't exist at activation. Even then, prefer an implicit rule (most-recently-updated wins) or a contextual prompt over a global numeric knob — do not surface a priority field in the MVP UI.
 
@@ -961,15 +587,12 @@ One metaobject definition, **declared declaratively in `shopify.app.toml`**
 shop on install/deploy. **Implemented and round-trip-tested live (Editor Step
 9.5, 2026-06-19); decisions locked:**
 
-> **Update (2026-07-01, storefront slice 1).** The definition moved from a
-> **runtime** `metaobjectDefinitionCreate` (once per shop, GID stamped on
-> `Shop.metaobjectDefinitionGid`) to a **declarative TOML** definition — Shopify's
-> recommended path for app-owned data, and required so the `spec_table`
-> `metaobject_reference` metafield (§9) can target it at deploy time via the
-> `metaobject_reference<$app:appx_spec_table>` shorthand. `ensureSpecTableDefinition`
-> and `setShopMetaobjectDefinitionGid` were removed; `Shop.metaobjectDefinitionGid`
-> is now **vestigial** (no longer written/read) — dropping the column is a later
-> cleanup, deferred here to keep this slice off a DB migration.
+> **Declarative since 2026-07-01.** The definition was moved off a **runtime**
+> `metaobjectDefinitionCreate` (once per shop) to **declarative TOML** — Shopify's
+> recommended path for app-owned data. `ensureSpecTableDefinition` and
+> `setShopMetaobjectDefinitionGid` were removed, leaving `Shop.metaobjectDefinitionGid`
+> **vestigial** (no longer written or read); dropping the column is a deferred cleanup
+> that wants to land with OQ-103-D's index migration, not on its own.
 
 - **Type is app-reserved: `$app:appx_spec_table`** (resolves to `app--<app-id>--appx_spec_table`) — the `$app:` prefix reserves it for this app's exclusive use so neither the merchant nor another app can alter its structure (data safety, priority #1). `access: { admin: merchant_read_write, storefront: public_read }`.
 - **Fields:**
@@ -1005,7 +628,7 @@ A **second** app-owned definition, `[metaobjects.app.appx_routing_shard]` in `sh
 
 ### Storefront serialization
 
-The metaobject stores template structure — the same `EditorRow[]` rows JSON (see the §6 example); two pointers reach it: for broad rules the **shop routing map** (`shop.metafields["$app"].routing`) yields a template **handle** resolved directly via `metaobjects["$app:appx_spec_table"][handle]` (§9, proven 2026-07-07), and for bounded single-product overrides a per-product `metaobject_reference` metafield (`product.metafields["$app"].spec_table`, **not** a handle string) points at the same metaobject. Liquid resolves each value by joining its parts in order via `snippets/spec-table-value.liquid`: `TEXT` from row JSON, `SHOPIFY_FIELD` from the Shopify product object, `METAFIELD` from `product.metafields`, `LINE_BREAK` as a hard break (`<br>`, no content). Variant `SHOPIFY_FIELD`s (price, sku, weight, …) resolve against `product.first_available_variant` — the **default** variant, not a shopper selection (feature 35 decision; live variant-switch re-rendering is deferred until requested).
+The metaobject stores template structure — the same `EditorRow[]` rows JSON (see the §6 example). **One** pointer reaches it: a template **handle**, resolved directly via `metaobjects["$app:appx_spec_table"][handle]` (§9, proven 2026-07-07). The handle comes from the shop routing map (`shop.metafields["$app"].routing`) for broad rules, or from this product's routing shard for per-product entries. Liquid resolves each value by joining its parts in order via `snippets/spec-table-value.liquid`: `TEXT` from row JSON, `SHOPIFY_FIELD` from the Shopify product object, `METAFIELD` from `product.metafields`, `LINE_BREAK` as a hard break (`<br>`, no content). Variant `SHOPIFY_FIELD`s (price, sku, weight, …) resolve against `product.first_available_variant` — the **default** variant, not a shopper selection (feature 35 decision; live variant-switch re-rendering is deferred until requested).
 
 **Styling serialization (Style-tab spec 2026-07-18).** The metaobject's `styling` field carries the template's `TableStyling` as a JSON string, written on every sync exactly like `rows`: the layout knobs (`rowLayout`, `mobileLayout`, `sectionHeaderStyle`, `sectionsCollapsible`, `sectionsInitialState`, `rowDividerStyle`, `density`) plus the non-null color/typography overrides — **overrides only**, so an absent/empty object means the table inherits the theme entirely (the zero-config path). Colors/typography become **CSS custom properties on the `.appx-spec-table` wrapper** and layout knobs become **modifier classes** on the same wrapper (e.g. stacked / striped / banded); collapsible sections render as native `<details>/<summary>` groups, with data rows grouped under the preceding `SECTION_HEADER` **at render time** — sections remain flat rows in the data (§7); grouping is strictly a render concern. Because styling is per-template with copy semantics (§5), there is **no shop-level styling metafield** — one delivery path, and no template resync is ever triggered by another template's (or a preset's) style change.
 
@@ -1064,19 +687,9 @@ See §7 for the full id/key rules.
 > §1–§12 document the **write** side thoroughly. This section answers the other
 > question: *what reads this, how often, and how large can it get?*
 >
-> **This section records what IS, not what should be (103 §D6).** Where a read is
-> unbounded it says so and stops — it proposes no pagination, cache, or schema
-> change. Findings are routed at the end of the section; none of them are fixed
-> here.
->
-> ⚠️ **Placement deviates from 103 §D1, deliberately.** D1 asked for placement
-> "after the assignment/routing sections (§9-ish)". Inserting there would renumber
-> §10→§11→§12, invalidating **~16 live `§10`/`§11`/`§12` cross-references** across
-> the repo's docs and code comments. The reasoning behind D1 — the catalog is
-> unreadable before the vocabulary it cites — is satisfied by sitting *after* both
-> §9 (assignment/routing) and §10 (metaobject), which the end of the document also
-> is. The substance of D1 (one new top-level section, in this file, not a new
-> context file) is unchanged.
+> **This section records what IS, not what should be.** Where a read is unbounded
+> it says so and stops — it proposes no pagination, cache, or schema change.
+> Findings are routed at the end of the section; none of them are fixed here.
 
 ### The three stores, and why the distinction is load-bearing
 
@@ -1101,26 +714,23 @@ downstream needs.
 ### R1 · Storefront (no app server involved at all)
 
 The highest-volume reads in the system, and the only ones a shopper triggers.
-Per 103 §D5 the product-page read is **not one row** — `blocks/spec_table.liquid`
-and `snippets/spec-table-resolve.liquid` carry separately-bounded costs, and each
-gets its own row. R1a–R1d are D5's required four; R1e–R1f are additions this step
-found (D5 said "at least four").
+The product-page read is **not one row** — `blocks/spec_table.liquid` and
+`snippets/spec-table-resolve.liquid` carry separately-bounded costs, so each gets
+its own row.
 
 | Read | Trigger | Volume | Served from | Bounded by |
 | --- | --- | --- | --- | --- |
-| **R1a** · Routing blob transfer + parse | Every product page view — `blocks/spec_table.liquid:58` | **Highest** — every product page, every shopper | **Shop metafield** (`shop.metafields["$app"].routing`) | Total entries across `byType` + `byVendor` + `byCollection` + `byProduct` + `excludedProductGids` — one entry per ACTIVE INCLUDE assignment row, one per ACTIVE EXCLUDE row (`app/utils/routingProjection.ts:69`). **Hard ceiling: 128KB** (json metafield write, API 2026-04+). ⚠️ **Not enforced today** — the runtime Admin client is `ApiVersion.October25` (`app/shopify.server.ts:13`), i.e. pre-2026-04, so writes currently sit at the legacy 2MB limit. See F1. |
-| **R1b** · The exclude gate | Every product page view that reaches the broad tiers — `snippets/spec-table-resolve.liquid` | **Highest** (same page views as R1a, minus `byProduct` hits) | **Shop metafield** (the same blob as R1a) | **NOTHING caps the count.** 🟢 As of Option 1 (2026-08-05) the gate is `routing.excluded[pid]` — an **O(1) object-membership** lookup, no longer the linear array scan `contains` performed (the per-page cost stopped growing with the carve-out count). No cap in `setTemplateExcludes` (`app/models/assignment.server.ts`), none in the projection, none in the picker; the only indirect bound is R1a's 128KB write ceiling (now ~7,276 compact entries). See F2. |
+| **R1a** · Routing blob transfer + parse | Every product page view | **Highest** — every product page, every shopper | **Shop metafield** (`shop.metafields["$app"].routing`, wire v3) | Total entries across the **broad** tiers only — `byType` + `byVendor` + `byCollection` + `def` (one per ACTIVE INCLUDE assignment row). Per-product maps moved to the shards (R1e). **Hard ceiling: 128KB** (json metafield write, API 2026-04+). ⚠️ **Not enforced today** — the runtime Admin client is `ApiVersion.October25` (`app/shopify.server.ts:13`), i.e. pre-2026-04, so writes currently sit at the legacy 2MB limit. See F1 / §14. |
+| **R1b** · The exclude gate | Every product page view that reaches the broad tiers — `snippets/spec-table-resolve.liquid` | **Highest** (same page views as R1a, minus `by_product` hits) | **Routing shard metaobject** (R1e) | **NOTHING caps the count app-side.** The gate is `shard.excluded[pid]` — an **O(1) object-membership** lookup (was a linear array scan pre-Option-1), so per-page cost no longer grows with the carve-out count. No cap in `setTemplateExcludes` (`app/models/assignment.server.ts`), the projection, or the picker. 🟢 Since sharding the bound is **per shard**, not shared with the shop wire. See F2. |
 | **R1c** · The collection scan | Product page views reaching the collection tier — `snippets/spec-table-resolve.liquid:58–72` | High (page views with no `byProduct`/`byType`/`byVendor` hit, not excluded) | **Shop metafield** + the storefront `product.collections` object | The **product's own** collection membership — not the shop's collection count. Walked in 50-item chunks (Liquid's `for` cap) with one `byCollection` lookup per collection, breaking on first hit. No app-side cap; the effective ceiling is Shopify's own per-product collection limit. |
 | **R1d** · The rows render | Every product page view that resolves a template — `blocks/spec_table.liquid:200–268` | High (page views that render a table) | **Metaobject** (`spec.rows.value`) | `MAX_TEMPLATE_ROWS = 200` (`app/utils/rows.ts:14`), re-enforced server-side at `app/models/template.server.ts:39`. Walked in 50-row chunks; each DATA row renders `snippets/spec-table-value.liquid`. |
-| **R1e** · Per-product override metafield *(beyond D5)* | Every product page view, unconditionally — `blocks/spec_table.liquid:57` | **Highest** — same as R1a | **Product metafield** (`metaobject_reference`) | O(1) — a single reference resolving to one metaobject. A reference, not `json`, so no value-size ceiling applies. |
-| **R1f** · Metaobject fetch by handle *(beyond D5)* | Product page views where the routing map matched — `blocks/spec_table.liquid:76` | High (same as R1d) | **Metaobject** (`metaobjects["$app:appx_spec_table"][handle]`) | One metaobject entry: `rows` (bounded by R1d's 200-row cap), `styling` (overrides-only; ≤ the `TableStyling` column set of §5), `styling_css` (~450 chars fully overridden, §10). All three are `json` fields and share R1a's 128KB write ceiling per field. |
+| **R1e** · Routing shard fetch | Every product page view, unconditionally — the block resolves `metaobjects["$app:appx_routing_shard"]["routing-shard-<product.id mod 1024>"]` | **Highest** — same as R1a | **Routing shard metaobject** (feature 108) | One shard's `by_product` + `excluded` json. Holds `catalog/1024` entries — ~977 at a 1M-product catalog, ~50KB, well under its **own** 128KB ceiling. Sharding is what removed the shared per-product budget; see §14. |
+| **R1f** · Metaobject fetch by handle | Product page views where routing matched | High (same as R1d) | **Metaobject** (`metaobjects["$app:appx_spec_table"][handle]`) | One metaobject entry: `rows` (bounded by R1d's 200-row cap), `styling` (overrides-only; ≤ the `TableStyling` column set of §5), `styling_css` (~450 chars fully overridden, §10). All three are `json` fields, each with its own 128KB write ceiling. |
 
-📌 **R1a is unconditional in source.** `blocks/spec_table.liquid:57–58` assigns the
-per-product override **and** the routing blob in the same `liquid` block, before the
-tier-1 test at line 66 — so the routing read is not gated on tier 1 missing. Whether
-Shopify's Liquid defers the json parse until first use is **not determinable by
-reading**; either way the bound in the R1a cell is unchanged, so this is recorded as
-an observation about *conditionality*, not about size.
+📌 **R1a and R1e are both unconditional in source** — the block assigns the routing
+blob and resolves this product's shard before any tier test, so neither read is gated
+on an earlier tier missing. Whether Shopify's Liquid defers the json parse until first
+use is **not determinable by reading**; either way the bounds above are unchanged.
 
 ### R2–R5 · Admin, React Router loaders
 
@@ -1196,23 +806,11 @@ dropped — dropping it is a migration and a different unit.
 | # | Finding | Routed to |
 | --- | --- | --- |
 | **F1** | R1a's 128KB ceiling is real, is **not** currently enforced, and this app is **not grandfathered**. Shopify limits `json` metafield **writes** to 128KB from API 2026-04; apps using json fields *before 2026-04-01* keep the 2MB limit. This repo's first commit is **2026-06-09** and its first `type = "json"` declaration landed **2026-07-02** (`6d1cd3a`), both after the cutoff — so no grandfathering. It is masked only because the runtime Admin client is pinned to `ApiVersion.October25` (`app/shopify.server.ts:13`). **Moving the runtime client to 2026-04 or later activates the ceiling.** ✅ Quantified 2026-08-01 — see **§14**. | **104** (byte budgets) — ✅ **done** |
-| **F2** | `excludedProductGids` (R1b / R3d) is bounded by **nothing** app-side — no cap at the picker, the writer, or the projection. 🟢 **Partially mitigated by Option 1 (2026-08-05):** the delivery wire is now compacted, so an exclude entry costs 18 bytes not 38 (ceiling 3,446 → **7,276**) **and** the storefront gate became an O(1) object lookup instead of a linear array scan (§14). The count is still uncapped and still shares one 128KB budget with `byProduct` — the structural fix is Option 2 (metaobject sharding), scoped but undesigned. | **104 / 105 / Option 2** |
+| **F2** | `excludedProductGids` (R1b / R3d) is bounded by **nothing** app-side — no cap at the picker, the writer, or the projection. ✅ **Structurally resolved 2026-08-05:** Option 1 compacted the wire (exclude entry 38 → 18 bytes; gate became an O(1) object lookup, not a linear scan) and **Option 2 sharded it** — `excluded` and `byProduct` left the shop metafield for the `$app:appx_routing_shard` metaobjects, each with its own 128KB budget (§14). The **count** is still uncapped app-side; what changed is that it no longer shares one budget. | **104 → Option 1 + 2, ✅ done** |
 | **F3** | ✅ **FIXED 2026-08-03** (its own unit, not in 103's diff). R2a read and shipped **every template's full `rows` JSON** to the browser to render a row *count*. Now `listTemplateSummariesForDomain` (`template.server.ts`) is a `$queryRaw` that selects only `id/name/status/updatedAt` and computes the count in Postgres via `jsonb_array_length` — no `rows` blob leaves the DB. Keyed off `myshopifyDomain` via a `Shop` JOIN so it no longer waits on `upsertShop`, and R2b is now deferred/streamed. ⚠️ **Still unpaginated** — the remaining `rows`-blob half is closed; the pagination half stays open. | **Next-Up item 9** (templates-list pagination) |
 | **F4** | ✅ **FIXED 2026-08-01** (the only 103 finding acted on, as its own unit — not in 103's diff). R3c / R3e sent an **unchunked** `nodes(ids:)` whose id count is bounded by nothing (R3d) or nothing app-side (R3b). Past the Admin API's 250-id cap the **whole batch** failed and fail-softed to raw GIDs — every chip silently degrading to `gid://shopify/Product/…`, no message anywhere. Now chunked at `NODES_MAX_IDS = 250` with **per-chunk** fail-soft, so a failure costs one chunk instead of the list. `scopeResourceLabel.server.ts:51/62/130/201`; 14 tests, 3 mutations. | **Closed** — was OQ-103-B |
 | **F5** | **Discrepancy against §Key Decisions.** The claim is "O(rules) Postgres set-algebra + `products(query,first:1)` existence tests, never a catalog scan." The Postgres half and the never-a-catalog-scan half **hold**. The probe count does **not**: probes are per **(candidate selector × other ACTIVE INCLUDE row)** *pair* and run **sequentially**, so a 200-product candidate against one VENDOR template issues 200 sequential Admin round-trips. O(pairs), not O(rules). | **New Open Question — OQ-103-C** |
 | **F6** | Four indexes plus the whole `ProductAssignmentIndex` model, and the `scopeValue` component of `ProductAssignment @@index([shopId, scope, scopeValue])`, serve no catalogued read (see the mapping table). `Template @@index([shopId])` is redundant with the `@@unique` above it. | **New Open Question — OQ-103-D** |
-
-### Predictions from 103 §Expected findings — verdicts
-
-Recorded either way; a falsified prediction is a result.
-
-| | Prediction | Verdict |
-| --- | --- | --- |
-| **P1** | R1a has a 128KB ceiling that nothing in the repo mentions | ✅ **CONFIRMED, and sharper than predicted.** The ceiling is real and unmentioned, *and* the app is not grandfathered, *and* it is currently masked by the 2025-10 runtime client. → F1 |
-| **P2** | `excludedProductGids` is bounded by nothing, and is the most reachable route to P1's ceiling | ✅ **CONFIRMED** on both halves. → F2 |
-| **P3** | R2 is unpaginated *and* carries a live Admin API dependency | ⚠️ **CONFIRMED but PARTLY FALSIFIED.** Unpaginated: confirmed, and worse than stated (full `rows` JSON, not just row metadata → F3). The Admin dependency is **real but O(1) requests**, not per-template: `assignedProductCounts.server.ts` collapses every lookup into **one** batched aliased query and fails soft. The "most-visited list page depends on Admin API latency" framing stands; "and rate limits" is overstated at one request per page view. |
-| **P4** | At least one index maps to no catalogued read | ✅ **CONFIRMED, ×6.** Four `ProductAssignmentIndex` indexes (the model is entirely unreferenced), `Shop @@index([isInstalled])`, and `ProductAssignment @@index([shopId, scope, scopeValue])`. Plus one redundancy. → F6 |
-| **P5** | The O(rules) claim will hold, but the `products(query,first:1)` calls will be per-rule, making activation latency scale with rule count | ⚠️ **HALF CONFIRMED, HALF FALSIFIED — and the falsified half is worse.** "Never a catalog scan" holds; the Postgres side is ≤4 queries. But the probes are **not** per-rule: they are per **pair** and **sequential**, so latency scales with candidate-values × other-ACTIVE-rules, not with rule count. → F5 |
 
 ---
 
@@ -1253,7 +851,8 @@ difference is one whole `byProduct` entry.
 
 | Field | Owner | Section |
 | --- | --- | --- |
-| `$app:routing` | shop metafield | R1a / R1b — **instrumented** |
+| `$app:routing` | shop metafield | R1a — **instrumented** |
+| `by_product` / `excluded` | routing shard metaobject | R1b / R1e — one 128KB budget **per shard** (×1024) |
 | `rows` | metaobject | R1d / R1f — documented below, not instrumented |
 | `styling` | metaobject | R1f — overrides-only, far under budget |
 | `styling_css` | metaobject | R1f — ~450 chars fully overridden (§10) |
@@ -1454,8 +1053,8 @@ appears.
 
 ### Shopify-side data is out of reach, by design
 
-The metaobject entries, the shop routing metafield and the per-product metafields
-all live in the merchant's store. By the time `shop/redact` fires there is no
+The template metaobjects, the shop routing metafield and the routing shard
+metaobjects all live in the merchant's store. By the time `shop/redact` fires there is no
 access token, so the Admin API cannot be called — and it does not need to be:
 Shopify removes app-owned metaobjects and reserved-namespace metafields when the
 app is uninstalled — this covers the `$app:appx_routing_shard` shard metaobjects too
@@ -1463,4 +1062,4 @@ app is uninstalled — this covers the `$app:appx_routing_shard` shard metaobjec
 
 ---
 
-**Architecture summary.** Postgres is the source of truth; Shopify metaobjects (template structure) + a shop-level routing metafield (attribute → handle) + a bounded per-product metafield (single-product overrides) are the storefront delivery layer. Store both metaobject GID and handle. Assignment is **rigid and block-on-conflict**: a template targets one scope, overlaps between `ACTIVE` templates are blocked at `DRAFT → ACTIVE` (dry-run: O(rules) set-algebra + `products(query, first:1)` existence checks), so the `ACTIVE` rule set is disjoint and the storefront resolves one match with no precedence. Broad rules deliver as O(1) shop-map entries (future products auto-covered, no re-materialization); `ProductAssignmentIndex` is sparse (materialized overrides only). Liquid resolves the matched handle directly via `metaobjects["$app:appx_spec_table"][handle]` (proven live) and renders only `status == "ACTIVE"`. `priority` is retained dormant. Keep variant-sensitive field mapping to selected/default-variant behavior for MVP.
+**Architecture summary.** Postgres is the source of truth. The storefront delivery layer is three Shopify objects: **template metaobjects** (structure), a **shop-level routing metafield** (broad attribute → handle, wire v3), and **1024 routing shard metaobjects** (per-product assignments + EXCLUDE carve-outs, keyed `product.id mod 1024`). There is **no per-product override metafield** — it was deleted 2026-08-04. Store both metaobject GID and handle. Assignment is **rigid and block-on-conflict**: a template targets one scope kind, overlaps between `ACTIVE` templates are blocked at `DRAFT → ACTIVE` (dry-run: O(rules) Postgres set-algebra + `products(query, first:1)` existence checks — ⚠️ the probe count is O(pairs) and sequential, see F5), so the `ACTIVE` rule set is disjoint and the storefront resolves one match with no precedence. Broad rules deliver as O(1) shop-map entries, so future matching products are auto-covered with no re-materialization. Liquid resolves the matched handle via `metaobjects["$app:appx_spec_table"][handle]` (proven live) and renders only `status == "ACTIVE"`. `priority` and `ProductAssignmentIndex` are retained but dormant. Keep variant-sensitive field mapping to selected/default-variant behavior for MVP.

@@ -4,17 +4,12 @@ Update this file after every meaningful implementation change.
 
 > **Forward-looking status doc, kept compact.** Per-step detail (verification logs, file
 > lists, decisions, findings) lives in `context/features/NN-*.md` and in git history — link
-> there, don't re-narrate. Each completed item is **one line + its feature-doc pointer**.
+> there, don't re-narrate.
 >
-> ⚠️ **Compacted 2026-08-03.** Before that date this file carried the full per-step
-> narrative for features 74–106 inline (3,083 lines). Nothing was deleted: every unit's
-> detail is in its `context/features/` doc, and the pre-compaction text is readable in full
-> at `git show 75176bd:context/progress-tracker.md`. Durable laws that had no other home
-> were promoted into **Binding rules** and **Key Decisions** below.
->
-> **The rule that keeps this file small:** a completed unit gets ONE line here. If a finding
-> is load-bearing for future work, it belongs in Binding rules, Key Decisions, Open
-> Questions, or the feature doc — not in a Completed entry.
+> 🔴 **The rule that keeps this file small: a shipped or completed unit gets ONE line.** If a
+> finding is load-bearing for future work it belongs in **Binding rules**, **Key Decisions**
+> or **Open Questions** — not in an entry. Compacted 2026-08-03 (features 74–106) and
+> 2026-08-08 (Recently Shipped); nothing was lost, git holds the originals.
 
 ---
 
@@ -46,6 +41,13 @@ retired, broken Ctrl+Z fixed, `ValuePart[]` unchanged; live-verified on `appx-de
    `context/features/106-privacy-webhook-routes-and-subscriptions.md`.
 2. 🔴 **Billing** — the other hard blocker for a paid listing (`prd.md`,
    `app-store-review-checklist.md`).
+
+> 🟢 **Blocker 1 now has a domain.** `hiappx.com` purchased + `support@hiappx.com` live
+> (Zoho free) — 2026-08-08, closing **OQ-109-A**. The ordered path from here (DNS/email
+> hardening → dev/prod config split → production host → the deploy that re-anchors the
+> compliance URIs → public pages → listing + in-app support) is
+> [`launch-support-checklist.md`](launch-support-checklist.md). ⚠️ That checklist does
+> **not** cover billing — blocker 2 stays independent.
 
 Everything upstream is done and live-verified on the dev store:
 
@@ -154,575 +156,112 @@ saved presets, cuttable).
 
 ## Recently Shipped
 
-> Rolling window, newest first. Older units roll into Completed.
+> Rolling window, newest first — **one line per unit**. Detail lives in the linked
+> `context/features/` doc and in git. If a finding is load-bearing for future work it belongs
+> in Binding rules, Key Decisions or Open Questions, not in an entry here.
 
-- **Editor: pasting multi-line text into a value cell now makes ONE multiline value, not N rows** —
-  ✅ 2026-08-08, full gate green (typecheck · lint · format · **test 1418 / 57** (+6) · build)
-  **and live-verified on `appx-dev`** (all 7 checks, [`115-…`](features/115-value-cell-multiline-paste.md)).
-  Merchant-reported UX bug: copying a few
-  lines of spec prose (a supplier feature list) and pasting into a Value cell split it into that
-  many label-only rows, wrecking the row being edited — with no way to author a multiline value by
-  paste at all.
-  🔴 **Root cause — one predicate asking the wrong question:** both paste entry points gated bulk
-  -vs-in-cell on `cellCount(grid) > 1`, and `cellCount` is TOTAL CELLS, so a single-column N-line
-  paste (`[["a"],["b"],["c"]]`) counts as 3 and reads as a "table". **Fix: inside a value cell,
-  "table" means multi-COLUMN.** New pure `hasMultipleColumns(grid)` (`clipboardTable.ts`,
-  `grid.some(row => row.length > 1)`); `ValueCell.handlePaste` gates on it, so a genuine
-  multi-column table still routes to `onBulkPaste` while everything else falls through to the
-  **native** textarea paste — the lines become `LINE_BREAK`s via the existing
-  `onChange → textToParts` path, and native Ctrl+Z is preserved because we never `preventDefault`
-  or rewrite the element.
-  ⚠️ **This AMENDS, does not reverse, feature 21's content-first intent** (itself a merchant
-  decision): content still decides, not focus, and `handleContainerPaste` **keeps** `cellCount > 1`
-  — pasting a column of lines into the GRID still bulk-creates rows. The single gesture that moved
-  is "column of lines → label-only rows *from inside a value cell*". Mental model is now **"where
-  you paste decides"**.
-  🔴 **The non-obvious half of the fix — a `[data-value-cell]` skip in `handleContainerPaste`.**
-  The value cell no longer `preventDefault`s a single-column paste, so that paste now BUBBLES; the
-  container would have seen `cellCount > 1`, called it a table, and bulk-inserted anyway,
-  re-creating the exact bug. The value cell is the sole authority for its own paste. (No-op for
-  the table case — the existing `defaultPrevented` return already catches it.) The marker is an
-  attribute, not a `textarea` tag match: "the only textarea in the grid" is true today but is not
-  a contract.
-  **Guard proven by breaking it** (project rule): reverting `hasMultipleColumns` to `cellCount > 1`
-  fails exactly the single-column test with `expected true to be false`, then passes on restore.
-  🚫 **Two alternatives were considered and REJECTED 2026-08-08 — do not reintroduce without a new
-  decision:** a Word-style **"Bulk paste" button** (a button has no paste event, so it needs
-  `navigator.clipboard.read()`, which is permission-gated and commonly BLOCKED in Shopify's
-  cross-origin admin iframe — we don't control the iframe's `allow` attribute), and a **two-button
-  "paste as rows / simple paste" modal** (a paste event is synchronous, so showing a modal means
-  `preventDefault` up front and then hand-implementing insert-at-caret for every field type,
-  costing the native undo step — plus per-paste friction).
-  Files: `clipboardTable.ts` (+`.test.ts` +6), `ValueCell.tsx`, `useRowEngine.ts`,
-  `clipboardTableDom.ts` (comment), `data-model.md` §7, `21-…` (open question closed). No reducer
-  action, no schema, no storefront, no dependency, no CSS.
-  ✅ **Live-verified on `appx-dev`** (Claude-in-Chrome, template `cmsieep34…` "Untitled template",
-  DRAFT / 0 assigned; **every change Discarded — nothing saved, zero data changed**). Baseline 8 rows.
-  **(1)** 3 plain lines pasted into a focused Value cell → ONE multiline value in that cell, **Rows
-  8/200 unchanged**, textarea auto-grew, SaveBar opened. **(2)** **Ctrl+Z undid the whole paste in one
-  press** (native undo alive) and the textarea shrank back. **(3)** A 2-column TSV pasted into the
-  same cell → bulk-inserted 3 rows (Battery life/Weight/Camera), toast "Added 3 rows", 8→11, the
-  focused cell left empty (not flattened). **(4)** 🔴 **The decisive pair — the SAME clipboard content
-  pasted with a drag handle focused bulk-inserted 3 label-only rows (11→14)**, i.e. the moved gesture
-  still works from the grid and the new `[data-value-cell]` skip did not break the container path.
-  **(5)** single value → lands in the cell; **(6)** paste into a Label `<input>` → native at-caret
-  insert. **(7)** Console clean (only pre-existing Shopify admin-shell warnings: ShopifyQL / deprecated
-  init params). **`\n` → `LINE_BREAK` proven semantically, not just visually:** the Desktop preview
-  (which renders from `valueParts`, storefront-faithful) showed the pasted value as three separate
-  lines, with `{% mf %}`/`{% field %}` still rendering as pills — so no token degraded through the
-  textarea round-trip. That preview check replaced the planned save→reload round-trip, which would
-  have written to the merchant's DB for a contract the persisted 2-line value already in this template
-  demonstrates.
-  ⚠️ **Instrument notes for future sessions** (the "instrument before code" rule earned its keep twice
-  here): **(a)** `navigator.clipboard.writeText` is **permission-denied** in the admin tab, and a
-  CDP-typed Ctrl+V into a JS-`.focus()`ed field pastes NOTHING — the working recipe is a real
-  `left_click` to focus, then Ctrl+A/Ctrl+C in a scratch page, then a real click + Ctrl+V on the
-  target. **(b)** Screenshot pixel dimensions **change between captures** (1264/1288/1308 px wide), so
-  coordinates go stale between shots; the first paste attempt silently missed the textarea entirely and
-  looked exactly like "the fix works". **Always confirm the blue focus ring with `zoom` before
-  pasting** — a no-op is indistinguishable from a pass otherwise. **(c)** Contrary to the 2026-08-07
-  note, anchor clicks inside the iframe DID work this session.
-- **Editor: rail-toggle button now has a hover/focus tooltip** — ✅ 2026-08-08, `npm run build`
-  green; live-verified on `appx-dev` (Style + Settings, both collapse states). The
-  sidebar-collapse button (feature 76) gained an `<s-tooltip>` via the same `interestFor`
-  invoker pattern the device toggles use in `SegmentedControl.tsx`. Copy reuses
-  `railToggleLabel`, so the tooltip flips verb + noun ("Hide Style panel" ⇄ "Show Settings
-  panel") and stays identical to the button's `aria-label` — no new user-facing string.
-- **Fix: hyphenated metafield tokens printed their RAW `{% mf … %}` source on the storefront** — ✅
-  2026-08-07, full gate green (typecheck · lint · format · **test 1412 / 57** (+4) · build).
-  Merchant-reported: on `dji-mini-4k-stardard`, `{% mf test_data.binding_mount %}` and
-  `{% field product_type %}` resolved, but `{% mf shopify.battery-size %}` / `battery-type` /
-  `power-source` rendered as literal editor text in the live spec table.
-  🔴 **Root cause — one character class in `valueText.ts`: `TOKEN_RE` matched a metafield
-  namespace/key as `[a-z0-9_]+`, which excludes the HYPHEN.** Shopify's actual rule is
-  alphanumeric **+ hyphen +** underscore (key 2–64, namespace 3–255), and hyphens are not an
-  edge case — the whole standard taxonomy uses them (`shopify.battery-size`, `power-source`,
-  …, the same namespace the 2026-08-04 metaobject-reference fix was built for) and so do
-  app-reserved namespaces (`app--123--foo`). A non-matching token falls through to the
-  literal-`TEXT` branch by design, and a TEXT part is delivered to the storefront verbatim —
-  so the merchant saw their own source. **This was a regression from the textarea migration
-  (features 109/111)**: those three tokens were live-verified rendering correctly on
-  2026-08-04 as real `METAFIELD` parts, then the first round-trip through the new textarea
-  demoted them. It also broke *fresh* picker inserts: `handleCommit` splices the token string
-  and immediately reparses it, so a hyphenated metafield chosen from the modal became TEXT on
-  the spot. 🔴 **The bug was written down as fact first** — `109-…` §Parse regex asserted
-  "Shopify metafield namespaces/keys are `[a-z0-9_]+`" and the code implemented the claim
-  faithfully; both are corrected, and `data-model.md` §7 now states the character rule
-  explicitly rather than leaving it implied by the grammar table.
-  **Fix:** widen both halves to `[A-Za-z0-9_-]+` (`.` still excluded, so the single `.`
-  separator stays unambiguous and `{% mf a.b.c %}` still stays literal). `field` keeps
-  `[a-z0-9_]+` — that catalog is static and snake_case. +4 regression tests (hyphenated
-  ns/key, `app--123--specs.power-source`, mixed case, hyphenated round-trip).
-  ⚠️ **Data already degraded is NOT auto-repaired** — a demoted token is stored as TEXT and is
-  indistinguishable from typed prose (the documented MVP limitation), so no load-time re-parse
-  was added. Verified in Neon: exactly **one** row in **one** template is affected
-  (`cmsiwabx80001vptsr02ydzhy` "Mini Turbo Fan (non brand)", row `others`) — one edit to that
-  cell + Save re-tokenizes all three, because the textarea reparses the whole string.
-  Files: `app/utils/valueText.ts` (+`.test.ts`), `context/data-model.md` §7,
-  `context/features/109-…`. No schema, no Liquid, no storefront change.
-- **Activation-conflict banner — the conflicting-template link now opens in a new tab** — ✅
-  2026-08-07, live-verified on `appx-dev`; full gate green (typecheck · lint · format · **test 1409 / 57** (+4, +1 file) ·
-  build). The banner's `s-link href="/app/templates/<id>"` (editor Settings tab, feature 44) was
-  app-origin-relative, so "Open link in new tab" resolved it against the app's own origin and loaded
-  it standalone with no Shopify session — **the same bug fixed for the templates-list name links on
-  2026-08-04**, which is why the fix now lives in shared code rather than in one route: new
-  `app/utils/adminAppLink.ts` (`buildAdminAppBase`, pure, +4 tests) and
-  `app/components/AdminAppLink.tsx` (the `<s-link>` carrying the absolute admin href + the click
-  handler). `app.templates.tsx` was refactored onto both, deleting its inline `handleNameClick`, so
-  the two call sites can never drift. 🚫 The two traps are written into `AdminAppLink`'s comment and
-  must not be re-litigated: a cross-origin admin href makes App Bridge open **every** click in a new
-  tab (hence the bubble handler owning all outcomes), and the handler must **not** bail on
-  `event.defaultPrevented` (App Bridge already set it). See [[appbridge-cross-origin-link-newtab]].
-  Plumbing: the editor loader returns `adminAppBase` on **both** branches (a never-saved template can
-  be blocked by the gate too) → `TemplateEditorPage` → `TemplateOverview` → `SpecTableEditor` →
-  `SettingsTab`. No schema, no action change, no gate-logic change.
-  **Copy:** one word — "overlaps one that's already active" → **"overlaps with another active
-  template"** (merchant's wording, chosen by the merchant). 🚫 A larger rewrite was proposed and
-  **rejected**: a "Can't activate this template" heading, product-centric body copy, a labelled link
-  list and an added "how to fix it" line. The banner keeps its original shape — heading
-  "Can't activate — assignment conflict", one body paragraph, **bare links, no label, no fix line**.
-  Do not reintroduce.
-  ✅ **Banner live-verified on `appx-dev`** (Claude-in-Chrome): template `cmsiwabx8…` ("Mini Turbo
-  Fan (non brand)", PRODUCT-scoped to DJI Mini 4K Stardard) set Draft→Active + Save → the gate
-  blocked it and the banner rendered the exact three parts — heading, the one body paragraph, and the
-  bare link "MacBook Pro M5 Pro Chip 14-inch (18-core CPU, 20-core GPU)" — with the matching toast.
-  Discarded afterwards; the template is still DRAFT, no data changed.
-  ✅ **Both link outcomes merchant-verified on the banner link** (2026-08-07): "right click → Open
-  link in a new tab" works (the context-menu path, which uses the raw href with no JS — the exact
-  case an app-relative href broke), AND a plain left click navigates **in place, same tab** (the
-  counterpart regression a cross-origin href causes when the `onClick` is wrong). Both halves of
-  `AdminAppLink`'s contract are now confirmed on a real merchant click, not just on the templates
-  list. ⚠️ Note for future sessions: anchor clicks inside the admin iframe were inert for the whole
-  automation session — the banner link AND the templates-list name links both no-opped at
-  coordinates confirmed by `zoom`, while `<s-select>`, tab segments and the SaveBar all responded.
-  That is the known "clicks reach the document but activate nothing" state; a link no-op under
-  automation is not evidence of an app defect.
-- **Fix: value-textarea clipped its content (`autoSize` pinned a zero height)** — ✅ 2026-08-07,
-  `ValueCell.tsx`. `autoSize()` could run while the textarea had **no layout** (`scrollHeight === 0`) and
-  wrote that 0 back as `height: 0px`; the cell then sat at the `.surface` `min-height` (20px) with ~32px
-  of content, so `overflow: hidden` cut the text off. The reconcile effect only re-runs when `desired`
-  changes, so a row loaded with a value never re-measured. **Measured live on `appx-dev`**
-  (cross-origin iframe → metrics relayed to the top frame by `postMessage`): broken cell
-  `styleH:"0px", clientH:20, scrollH:32`; a healthy cell `styleH:"32px", scrollH===clientH===32`.
-  Fix = (1) never pin a degenerate measurement — clear the inline height instead, so the element falls
-  back to its `rows={1}` height; (2) a `ResizeObserver` on the textarea re-measures the moment it gains
-  real layout (and on column-width changes / re-wrap). Live-verified: 1- and 4-line cells render fully,
-  typing grows and undo shrinks. ⚠️ A first attempt blamed a **web-font race** and re-ran `autoSize` on
-  `document.fonts.ready` — **disproven** by measuring with it disabled (identical numbers; fonts were
-  already `loaded` at mount). That code was removed, not shipped. Build green, 1405 tests pass.
-- **Value cell → textarea migration — Step 6: docs + live sign-off — 🎉 MIGRATION COMPLETE** — ✅ 2026-08-07,
-  `114-value-textarea-step6-docs-and-verification.md`. Recorded the new architecture in `data-model.md`
-  (§7: `ValuePart[]` stays canonical; the editor surface is a native `<textarea>` + the `{% … %}` text
-  codec `valueText.ts`; locked grammar table; the "typed `{% mf x.y %}` prose is treated as a token"
-  MVP limitation; retired pill/edit-pill/linear-caret pieces). **All live checks passed on `appx-dev`**
-  (Claude-in-Chrome, dev-previews build): native undo/redo, create-only Insert-field splicing
-  `{% field vendor %}` at the caret, multiline, preview rendering `tokenLabels` pills (no raw tokens),
-  save/reload round-trip, **and the owed Ctrl/Cmd+Arrow grid-nav** (both directions, caret-at-end —
-  the Step-111 regression the Step-113 fix repaired). Storefront a **definitional no-op** (git: zero
-  `extensions/` / `spec-table-value.liquid` changes across 112–113). Console clean (only Shopify
-  admin-shell telemetry). **Features 109–114 done — the `contenteditable` value surface and its broken
-  Ctrl+Z are gone; `ValuePart[]` unchanged end to end (no data migration, storefront untouched).**
-- **Value cell → textarea migration — Step 5: delete the dead contenteditable code** — ✅ 2026-08-07,
-  `113-value-textarea-step5-remove-dead-code.md`. Deleted `valueParts.ts` + `valueDom.ts` (+ tests)
-  and the four granular value reducer actions (`SET_VALUE_TEXT`, `REMOVE_VALUE_PART`, `SET_VALUE_PART`,
-  `INSERT_VALUE_PART_AT`) + `spaceAfter` + orphaned `isAtomicPart` and `.token*` CSS. **The grep gate
-  caught two wrong "it's all dead" assumptions:** (1) `tokenLabels`/`TokenLabels` were still used by the
-  inline preview → relocated to a new `app/utils/tokenLabels.ts` leaf (+ test) before deleting valueDom;
-  (2) `useGridKeyboardNav` still used the contenteditable caret model (`[role="textbox"]` +
-  `setCaretLinear`/`linearLength`), which **Step 111 had silently broken** (the textarea has no explicit
-  `role="textbox"`) — fixed to detect the `<textarea>` and use native `setSelectionRange`, *restoring*
-  Ctrl/Cmd+Arrow value-cell nav. Kept `--appx-token-color`/`useCapturedTokenColor` (still drives the
-  active-cell/active-row/checkbox accents). Full gate green (1405 tests); residual greps empty.
-  **⚠️ One browser check owed:** Ctrl/Cmd+Arrow nav to/from value cells (browser-only; folds into Step
-  114). **Step 114 (docs + live sign-off) unblocked.**
-- **Value cell → textarea migration — Step 4: prune the edit-pill wiring** — ✅ 2026-08-07,
-  `112-value-textarea-step4-prune-editpill-plumbing.md`. Deleted the now-unreachable
-  click-a-pill-to-edit path: `onEditPart` (+ its `RowGrid → EditorRowItem → ValueCell`
-  threading), `useRowEngine`'s `editTarget` state / `handleEditPart` / the `editTarget`
-  branch of `handleCommit` (the last `SET_VALUE_PART` dispatch), and the modal's edit-vs-create
-  copy → collapsed to **create-only** ("Insert field" / "Insert"). Also swept `partToSelection`
-  + the `EditTarget` interface from `editorShared.ts` (edit-pill-only, uncovered by later steps).
-  `SET_VALUE_PART` reducer action + its direct tests kept for Step 113; grep confirms nothing
-  dispatches it. Full gate green (1468 tests). **Step 113 (delete dead modules + reducer actions)
-  unblocked.**
-- **Value cell → textarea migration — Step 3: the surface swap** — ✅ shipped + browser-verified
-  2026-08-07, `111-value-textarea-step3-surface-swap.md`. `ValueCell` is now a native `<textarea>`
-  (uncontrolled, reconciled only on DOM/state divergence → native undo stack preserved, no IME
-  guard needed); edits go `textToParts` → `SET_VALUE_PARTS`. Caret is `selectionStart`
-  (`SavedCaret.linear`→`offset`); the Insert-field modal splices a `{% … %}` token string at the
-  caret and reparses. Edit-pill wiring left dead for Step 112; `.surface` CSS reworked for a
-  textarea. Full static gate green (1468 tests) AND **all 6 live checks passed on `appx-dev`**:
-  Ctrl+Z/redo work (original bug gone), modal insert lands `{% mf test_data.snowboard_length %}`
-  at the caret, multiline auto-grows, bulk paste → rows, preview renders from `valueParts` (no raw
-  tokens leak), save/reload round-trips the token text. **Step 112 (prune edit-pill wiring) unblocked.**
-- **Value cell → textarea migration — Step 2: `SET_VALUE_PARTS` reducer action** — ✅ 2026-08-07,
-  `110-value-textarea-step2-reducer-action.md`. One additive `rowsReducer` action replaces a
-  DATA row's `valueParts` wholesale (normalized); the future textarea parses its string via
-  `textToParts` and dispatches the result. Same-reference no-op on SECTION_HEADER / unknown id;
-  6 new tests. Full gate green (1468 tests). **Nobody dispatches it yet — editor unchanged.**
-- **Value cell → textarea migration — Step 1: string↔parts codec** — ✅ 2026-08-07,
-  `109-value-textarea-step1-codec.md`. New pure module `app/utils/valueText.ts`
-  (`partsToText`/`textToParts` + the two token formatters) converts between the canonical
-  `ValuePart[]` and a `{% field … %}` / `{% mf ns.key %}` text string; malformed tokens stay
-  literal, `\n`↔`LINE_BREAK`. 19 tests; full gate green (typecheck·lint·1462 tests·build).
-  **Additive only — nothing imports it yet, editor runtime unchanged.** This is part 1 of 6
-  (features 109–114): the arc replaces the `contenteditable` value surface with a native
-  `<textarea>` to fix broken Ctrl+Z and delete the linear-caret machinery; `ValuePart[]` stays
-  the canonical persisted/delivered/previewed shape (no data migration, storefront untouched).
-  Steps 110–114 planned in their feature docs; implement one at a time.
-- **Routing metaobject sharding (Option 2) — Unit F: LIVE VERIFIED on appx-dev** — ✅ 2026-08-05,
-  after deploying app **version 11** (anchors the `appx_routing_shard` definition). Verified end-to-end
-  on the deployed storefront (dev preview active): (1) **positive render via shard** — two different
-  products, each with its own PRODUCT-scoped ACTIVE template, render their OWN distinct template content
-  on their storefront product pages (`dji-mini-4k-stardard` → new template's M5 Pro/18-core; `dk-w1-pros-4k-toy-drone`
-  → edited template's M5/13.6-inch full table). Different products → different `product.id mod 1024`
-  buckets → two DISTINCT `routing-shard-<k>` metaobjects written by the live writer and read by the block
-  (`metaobjects["$app:appx_routing_shard"]["routing-shard-<k>"]`) + snippet (`shard.by_product.value[pid]`).
-  (2) **D5 empty-on-remove** — setting a product's template to Draft/unassigned rebuilt routing, upsert-to-emptied
-  its shard bucket, and the storefront table correctly disappeared (sparse shard → nil → falls through to the
-  empty broad tiers). Content was FRESH (matched current admin state), confirming the deployed writer reconciles
-  shards correctly. Co-location (byProduct beats exclude gate) + zero-write status toggle (D5) remain covered by
-  the unit/contract suite. **Feature 108 (Units A–F) COMPLETE.** ⚠️ The v11 deploy re-anchored step 106's
-  compliance-webhook URIs onto `example.com` (known; refreshes when the production host is set — see Current Goal).
-- **Routing metaobject sharding (Option 2) — Unit E: docs** — ✅ 2026-08-05. `data-model.md`
-  updated: §9 (Option 2 built; resolver now reads `shard.by_product`/`shard.excluded`, broad tiers
-  from the shop wire; two private wire contracts), §10 (new "Routing shard metaobject" definition
-  entry — fields, writer, reader), §14 (shop wire is broad-only: envelope 104→75, byProduct/excluded
-  rows gone, byCollection 9,354 fit; per-shard `N × 128KB` capacity + D4/D5/D6 invariants), §15
-  (uninstall removes the shard metaobjects too — no new erase code). `shopify.app.toml` shard comment
-  already complete from Unit A. Binding rule above flipped to "designed + built". Docs-only. (Unit F live
-  verification followed — see the Unit F entry above.)
-- **Routing metaobject sharding (Option 2) — Unit D: the atomic wire flip + Liquid rewrite** — ✅
-  2026-08-05, full gate green (typecheck · lint · format · **test 1443 / 56** (+6, +1 file) · build);
-  both edited Liquid files re-validated (`validate_theme`): snippet clean, block carries only its 13
-  pre-existing `capture` warnings (zero new). This is the CUTOVER — the wire producer and reader move
-  together in one unit ([`108-…`](features/108-routing-metaobject-sharding.md) §6 Unit D). **`ROUTING_WIRE_VERSION`
-  2 → 3**; `compactRoutingForDelivery` + `CompactRouting` DROP `byProduct` / `excluded` (the shop
-  `$app:routing` metafield is now BROAD tiers only — v, handles, def, byType, byVendor, byCollection).
-  **Liquid (OQ-108-A resolved → block-passes-in):** `blocks/spec_table.liquid` computes
-  `product.id | modulo: 1024`, resolves `metaobjects["$app:appx_routing_shard"]["routing-shard-<k>"]`,
-  and passes the shard into `spec-table-resolve.liquid`, which now reads per-product from
-  `shard.by_product.value[pid]` (a handle STRING, D3) + the exclude gate from `shard.excluded.value[pid]`,
-  broad tiers still from `routing`. Semantics identical to before; only the per-product source moved.
-  **Budget re-derived for the broad-only shop wire:** envelope 104 → 75 bytes; `byProduct`/`excluded`
-  shop-wire budget tests removed (those budgets are now per-shard, each with its own 128KB); `byCollection`
-  is the representative unbounded shop-wire map (9,354 fit); `reportRoutingBudget`'s diagnostic now names
-  only broad tiers. **Contract tests:** new `routingShardWireContract.test.ts` (derives modulo/type/handle
-  from `ROUTING_SHARD_COUNT`/`ROUTING_SHARD_TYPE`/`shardHandle`, field keys from `shardFieldValues`; guards
-  the block's modulo+type+handle and the snippet's shard-field reads + no reverted `routing.byProduct/excluded`
-  + no gid token); `routingWireContract.test.ts` still green unchanged (fully derived — both ends dropped
-  the two maps in lockstep). The transitional double-write is over: the storefront now reads shards. No
-  schema, no migration. ⏭️ Live verification (Unit F) still waits on the production-host deploy that anchors
-  the shard definition.
-- **Routing metaobject sharding (Option 2) — Unit C: writer reconciliation** — ✅ 2026-08-05,
-  full gate green (typecheck · lint · format · **test 1437 / 55** (+4) · build) + shard
-  `metaobjectUpsert` validated @ 2025-10 (`write_metaobjects`, already granted). `rebuildShopRouting`
-  (`app/shopify/routing.server.ts`) now ALSO reconciles per-product shards: after the (unchanged)
-  Postgres upsert it captures the row's existing `shardState`, calls `reconcileRoutingShards`
-  (buildShardPayloads → diffShards → `metaobjectUpsert` only the changed buckets, upsert-to-empty the
-  cleared ones), writes the shop metafield (extracted to `writeRoutingMetafield`), then does ONE
-  combined stamp. 🔴 **Stamp is conditional** — `shardState` written only when a shard actually
-  changed, `syncedToShopifyAt` only on FULL success (metafield + every shard); a failed shard keeps
-  its old hash (retried next rebuild) and returns the honest "couldn't publish" error. This preserves
-  the pre-shard contract (an unchanged rebuild whose metafield fails writes nothing — the userErrors
-  test still passes). ⚠️ **Transitional double-write (by design, until Unit D):** the shop `$app:routing`
-  metafield is STILL v2 (carries byProduct/excluded), so the storefront reads it and the shards are
-  **written-but-unread**; per-product data lives in both places during C→D. Harmless (tiny dev-store
-  data), and it keeps Unit D a pure reader flip. New shard mutation reuses the exact validated
-  `metaobjectUpsert` shape + the exported `readUpsertResult`/`readUserErrors` narrowers from
-  `metaobjects.server.ts`. +4 tests: shard write+stamp, D5 zero-write on unchanged content,
-  upsert-to-empty a cleared bucket, partial-failure stamps only successes + returns error. The
-  budget tests now also exercise ~1024 shard writes (excludes shard) — mocks updated. No schema, no
-  migration.
-- **Routing metaobject sharding (Option 2) — Unit B: pure `routingShards.ts` transform** — ✅
-  2026-08-05, full gate green (typecheck · lint · format · **test 1433 / 55** (+25, +1 file) ·
-  build). Purely additive ([`108-…`](features/108-routing-metaobject-sharding.md) §6 Unit B). New
-  `app/utils/routingShards.ts` (pure, client-safe, mirrors `routingProjection.ts`): `ROUTING_SHARD_COUNT`
-  (1024), `ROUTING_SHARD_TYPE`, `shardHandle`, `bucketOf`, `buildShardPayloads`, `shardFieldValues`,
-  `serializeShard`, `hashShard` (cyrb53, pure — no `Date.now`/`Math.random`), `diffShards`.
-  🔴 **`bucketOf` uses BigInt modulo, not `Number % N`** — it must agree with Liquid's
-  `product.id | modulo: 1024` (Ruby, arbitrary precision) for every id; `Number` loses precision
-  above 2^53. A test pins id `2^53+1` where the `Number` path is provably wrong (buckets to 0
-  instead of 1). Shards store handle STRINGS directly (D3); a product in BOTH `byProduct` and
-  `excluded` co-locates in one shard (feature 45 Decision B) — tested. `wire_version` is tied to
-  `ROUTING_WIRE_VERSION` (one version source for the whole delivery wire), asserted, not a literal.
-  `idTail` exported from `routingProjection.ts` so shard keys and shop-wire keys can never diverge.
-  🔴 **Resequenced from doc 108's original split:** the v3 wire flip (bump `ROUTING_WIRE_VERSION`,
-  drop `byProduct`/`excluded` from `compactRoutingForDelivery`) canNOT land here —
-  `routingWireContract.test.ts` derives the wire key set from the real compactor and asserts the
-  Liquid reads exactly those keys, so dropping the two maps while the snippet still reads them turns
-  it red. The wire + its reader move together, so the flip moved to **Unit D** (with the snippet
-  rewrite); Unit C does a harmless transitional double-write (shards written-but-unread while the
-  shop metafield is still v2). Doc §6 updated to reflect this. No schema, no migration, no runtime
-  behavior change yet (nothing calls `routingShards` until Unit C).
-- **Routing metaobject sharding (Option 2) — Unit A: shard definition + tracking column** — 🛠️
-  2026-08-05, code gate green (TOML `shopify app config validate` → `valid: true` · migration
-  applied · build · typecheck · **test 1408 / 54** unchanged). The deploy-independent half of
-  Unit A ([`108-…`](features/108-routing-metaobject-sharding.md) §6). Two changes:
-  **(1)** new app-owned metaobject definition `[metaobjects.app.appx_routing_shard]` in
-  `shopify.app.toml` — fields `by_product` (json), `excluded` (json), `wire_version`
-  (single_line_text_field, debug-only version tag; storefront never parses it, shards are always
-  the current wire version under the hard cutover), `storefront = public_read`. Handle
-  `routing-shard-<k>`, `k = product.id mod ROUTING_SHARD_COUNT` (1024). ⚠️ `wire_version` is TEXT
-  not a number field — matches the existing `appx_spec_table` `status`/`updated_at` convention and
-  needs no storefront parse (minor deviation from doc 108 §4's illustrative `"v": 3`). 🔴 **A
-  metaobject field KEY must be ≥2 chars** — the first cut named it `v` and `shopify app config
-  validate` passed it (`valid: true`), but the `shopify app dev` PREVIEW registration rejected it
-  (`Key is too short (minimum is 2 characters)`), which is where it surfaced. Config-validate does
-  NOT catch short metaobject field keys; the dev-preview / deploy metaobject registration does.
-  **(2)** migration `add-routing-shard-state`
-  adds `ShopStorefrontRouting.shardState Json @default("{}")` (bucketKey → content hash, the D5
-  reconciliation ledger; delivery-only, never sent to the storefront). No new model — `metaobjectUpsert`
-  addresses shards by handle, so no per-shard GID is stored; cascade from `Shop` already covers
-  `shop/redact`. 🔴 **Existing scopes cover it** — `write_metaobjects,write_metaobject_definitions`
-  are already granted, so no new consent screen. ⚠️ **Steps 3–4 of Unit A are DEFERRED:** the
-  `shopify app deploy` that ANCHORS the definition re-anchors step 106's compliance URIs onto
-  `example.com`, so it rides the production-host deploy (same D5 staging as step 107); until then the
-  definition is not live on `appx-dev` and Units B–E build + unit-test against it without it existing.
-  ⚠️ **The migration makes any running `shopify app dev` server stale** ([[prisma-migration-stale-dev-server]])
-  — Saves fail silently until it is restarted. `prisma generate` hit the usual Windows EPERM on the
-  locked query-engine dll but rewrote the client types (verified `shardState` present).
-- **Routing delivery wire compacted (Option 1 — the byte-budget down-payment)** — ✅
-  2026-08-05, full gate green (typecheck · lint · format · **test 1408 / 54** · build) +
-  `validate_theme` clean on the rewritten resolver, **and live-verified on `appx-dev`** after
-  the user's deploy: forced a full compact rebuild (toggled a 0-product ACTIVE template's
-  status, which rewrites the whole shop `$app:routing` map) — both saves succeeded with **no**
-  "couldn't publish to your storefront" error, i.e. the compact `metafieldsSet` went through —
-  then both DJI products assigned to one template (`byProduct`, 2 entries) render the **same**
-  spec table on the live storefront. That end-to-end confirms bare-id key lookup + handle
-  interning (2 distinct product-id keys → 1 shared `handles[]` index → 1 metaobject) + the
-  `handles[hidx]` deref, all decoded by the rewritten Liquid. The **hard cutover** (no dual-read,
-  `v: 2` wire version) is clean because pre-launch the only data was this one dev store; a single
-  rebuild converted the whole shop. 🔴 **Attacks the ~1,745-product `byProduct` ceiling** flagged
-  in the Binding rule above. `compactRoutingForDelivery` (`app/utils/routingProjection.ts`) reshapes
-  the projection into a compact wire at write time only — **Postgres and `buildRoutingProjection`
-  are untouched** (source of truth stays GID-faithful and debuggable). Three lossless transforms:
-  bare-id keys (drop `gid://shopify/Product/`), handle interning (values become indices into
-  `handles[]`), and `excluded` as an O(1) membership object (was a linear array scan on every
-  product page — R1b). `byTag` dropped from the wire. Ceilings: excludes **3,446 → 7,276**,
-  byProduct **1,745 → 7,274** (~4.2×), byCollection **1,769 → 9,352**. The budget instrumentation
-  (`reportRoutingBudget`) now measures the compact string automatically — no change needed there.
-  🔴 **Delays, does not remove:** the two maps still share one 128KB budget; **Option 2
-  (metaobject sharding)** is the structural fix, scoped but undesigned. `spec-table-resolve.liquid`
-  + `compactRoutingForDelivery` are a **private wire contract** (`v` version gates it) — change
-  one, change both — enforced by `routingWireContract.test.ts` (reads the snippet off disk,
-  derives the wire key set from the real compactor, and fails on a stale key / reintroduced GID
-  token / dropped `handles` deref; all four guards proven by breaking them). Files:
-  `routingProjection.ts` (+`.test.ts`), `routing.server.ts` (one-line swap in
-  `buildRoutingMetafieldInput` + `.test.ts`), `spec-table-resolve.liquid` (full rewrite),
-  `routingWireContract.test.ts` (new), `routingBudget.test.ts` (numbers re-derived off the
-  compact serializer), `data-model.md` §9/§13-R1b/§13-F2/§14. No schema, no migration, no
-  TS-runtime behavior change beyond the wire bytes.
-- **Per-product `$app:spec_table` override metafield REMOVED — storefront resolution is now
-  two tiers** — 🛠️ 2026-08-04, full gate green (typecheck · lint · format · **test 1397 / 53**
-  · build) + `validate_theme` on the edited block **byte-identical to HEAD's 13 pre-existing
-  warnings** (all in the feature-74 `capture` gate, none in the resolution preamble).
-  ⚠️ **NOT DEPLOYED and NOT live-verified** — a `shopify app deploy` is what actually deletes
-  the definition, and it is deliberately left to ride the production-host deploy alongside
-  step 107's staged demo-definition removals (same D5 reasoning: a deploy from here re-anchors
-  step 106's three compliance uris onto `example.com`). Until then the definition is still live
-  on `appx-dev` and the Liquid no longer reads it — a **harmless** intermediate state, because
-  no app code ever wrote the metafield.
-  🔴 **The premise that made this safe: it was a live storefront READ path with no writer.**
-  It shipped in feature 34 as the product → template pointer, was demoted to "bounded
-  single-product override" by the 40/43 routing redesign, and in neither role did anything in
-  `app/` write it — `PRODUCT`-scope assignments have always gone into `routing.byProduct`.
-  So the only values that could exist were hand-set in Admin, and the delete costs nothing the
-  routing map does not already cover. 🔴 **Declarative definitions are read-only through the
-  Admin API** — `metafieldDefinitionDelete` errors on them; deleting the TOML block **is** the
-  delete, and it takes every stored value with it.
-  Files: `shopify.app.toml` (block gone, replaced by a 🚫 do-not-re-add comment),
-  `blocks/spec_table.liquid` (tier 1 dropped; the tier-2 branch becomes unconditional — note
-  `spec` is now simply never assigned on a miss, and nil `!= blank` is false, so the
-  render gate at `:133` behaves exactly as before), `snippets/spec-table-resolve.liquid`
-  (its "tier-1 sits ahead of this" note), `context/data-model.md` §9 (new top-of-section
-  update + the resolution list, delivery, and index subsections), `prisma/schema.prisma`
-  (comments only — **no migration**). No TS touched, so no test moved.
-- **Storefront — METAFIELD parts backed by metaobjects rendered EMPTY** — ✅ fixed
-  2026-08-04, full gate green (typecheck · lint · format · **test 1397 / 53** · build) +
-  `validate_theme` clean, **and live-verified on `appx-dev`** after deploy: the DJI product
-  carrying template `cmsebiatx001dvpr0o9mcx8x2` (ACTIVE, 199 rows, 10 METAFIELD parts) renders
-  **184 data rows with 0 blank value cells**, and the `list.metaobject_reference`
-  `shopify.power-source` prints in sentence format — `Rechargeable, USB, and AC-powered` —
-  which is the filter branch doing exactly what the fix intends. Symptom before: on an
-  assigned product, `SHOPIFY_FIELD` parts rendered and every `METAFIELD` part was blank.
-  🔴 **Root cause: `metafield_text` has NO default field for a metaobject reference.** For
-  `metaobject_reference` / `list.metaobject_reference` the filter requires the `field:`
-  parameter naming which metaobject field to print; called bare it returns an empty string.
-  The doc caveat written at feature 35 said those two list types *were* supported, which is
-  true only with `field:` — that half-truth is what let it ship. 🔴 It is not an edge case:
-  **every choice-list attribute in Shopify's standard product taxonomy is metaobject-backed**,
-  i.e. the whole `shopify.*` namespace, and `metafieldDefinitions.server.ts` offers those in
-  the picker like any merchant definition. The dev-store repro used
-  `shopify.battery-type` / `battery-size` / `power-source`.
-  **Fix (`spec-table-value.liquid` only):** branch on
-  `metafield.type contains "metaobject_reference"` and take the first non-blank of
-  `metafield_text: field: "label"` → `"name"` → `"title"` (`label` is Shopify's taxonomy
-  convention; the other two are the common custom-definition keys). Routed through the filter
-  rather than walking `metafield.value`, so the single/list split stays Shopify's problem —
-  lists render in sentence format and never meet the 50-iteration `for` cap. All three blank
-  stays silent, per the unknown-token rule. No schema, no TS, no test change (Liquid is
-  outside the module graph; the admin preview renders METAFIELD parts as inert pills, so it
-  was never affected). `context/features/35-…` §Correction.
-- **Storefront — every OTHER list metafield type rendered empty too** — ✅ 2026-08-04, gate
-  green (typecheck · lint · format · **test 1397 / 53** · build) + `validate_theme` clean,
-  **and live-verified on `appx-dev`**: a purpose-built `custom.appx_list_check`
-  (`list.number_integer`, Storefront API access on) set to `12 / 71 / 350` on the DJI product
-  and pilled into the NPU row renders **`12, 71, 350`** — the exact `", "` separator — with
-  184 data rows and 0 blank value cells, i.e. no regression on the metaobject path either.
-  ⚠️ **That proves the loop, the chunking, the join and the `{{ item }}` scalar fallthrough —
-  NOT the duck-typed `.unit` measurement branch**, which needs a `list.dimension` fixture and
-  is still unexercised. Closes the gap the entry above left open: `metafield_text` supports **no** list type except
-  `list.single_line_text_field` and `list.metaobject_reference`, so `list.number_integer`,
-  `list.dimension`, `list.product_reference`, `list.color` … all rendered a blank cell. They
-  are now rendered item by item in `spec-table-value.liquid`, joined with `", "`.
-  🔴 **The per-item shape is DUCK-TYPED, not switched on the metafield type.** Shopify's
-  measurement family is open and still growing (`dimension`, `weight`, `volume`, `voltage`,
-  `temperature`, `speed`, `antenna_gain`, `volumetric_flow_rate`, …) and every member is the
-  same `measurement` object (`.value` + `.unit`), so a `case` over type names would silently
-  drop each new member the day Shopify ships it — a test for `.unit` cannot. Chain, most
-  specific first: `.unit` → `.rating` → `.title` → `.name` → `.url` → `.src` → `{{ item }}`;
-  a scalar answers nil to every test and correctly falls through.
-  🔴 **Reference lists are CONNECTIONS (`.count`); non-reference lists are arrays
-  (`.size`)** — hence `count | default: size | default: 0`. Lists run to 128 items (256 for
-  metaobject references) against Liquid's 50-iteration `for` cap, so the branch chunks by 50
-  like the parts loop. ⚠️ **Accepted divergence:** Shopify's two supported list types render
-  in *localized* sentence format ("A, B, and C"); this joins with `", "`. Matching it means
-  hardcoding an English "and" (an i18n bug on a translated storefront) or a locale key plus a
-  last-item lookahead the blank-skip makes unreliable — and the two Shopify-rendered types
-  keep their sentence format rather than regress a live-verified path for cosmetic
-  consistency. `context/features/35-…` §Follow-up.
-- **jsdom carve-out + `valueDom.test.ts` (33 tests)** — ✅ 2026-08-04, full gate green
-  (typecheck · lint · format · **test 1397 / 53** · build). Closes the coverage gap that let the
-  value-cell bug below ship silently. **Assessed before adding** (`jsdom` probed in-repo, not
-  assumed): jsdom faithfully supports everything `valueDom.ts` touches — `dataset`, attribute
-  selectors, `window.getSelection()`, a caret round-trip in a text node **and** on the host at a
-  child index (the atomic-boundary case `setCaretLinear` uses). So the whole module is testable,
-  not just the readback half I had expected.
-  🔴 **The guard was proven by breaking it:** reverting `isLineBreakElement` to its pre-fix form
-  fails exactly the two placeholder-`<br>` tests, then passes again on restore (`valueDom.ts`
-  byte-identical to `f2876d2`). A regression test that has never failed proves nothing.
-  **No second Vitest project and no second run:** the runner default stays `node` and the one
-  DOM file opts in with `// @vitest-environment jsdom` on line 1 — one line in the file that
-  needs it, versus config machinery for every file that does not. Revisit if DOM files outgrow
-  a handful. 🚫 **This is not an opening for component tests** — the existing rule stands
-  unchanged: Polaris `<s-…>` do not render in jsdom, and neither does contenteditable *editing
-  behaviour* (the browser injecting a placeholder `<br>`, caret normalisation, the native undo
-  stack). The rule that makes the carve-out pay: **encode browser behaviour as a FIXTURE** —
-  build the host the way Chrome leaves it, assert our reading of it. Files: `valueDom.test.ts`
-  (new), `vitest.config.ts` (comment), `code-standards.md` → Testing (the carve-out, written
-  down so it is not re-litigated), `package.json` (`jsdom` devDependency).
-- **Value cell — fix "last character won't delete" + dead Ctrl+Z** — ✅ 2026-08-04, full gate
-  green (typecheck · lint · format · **test 1364 / 52** · build) **and live-verified on
-  `appx-dev`**: typing `abc` → three Backspaces empties the cell; `hello world` → Ctrl+Z
-  undoes the whole burst; Enter still inserts a hard break, the empty last line stays
-  addressable (filler `<br>`), Backspace still removes the break, and the cell clears back to
-  one empty line. 🔴 **Root cause: the browser authors `<br>`s of its own.** Chrome inserts a
-  placeholder `<br>` the instant a `contenteditable` host becomes empty — i.e. on deleting the
-  cell's **last** character (reproduced in real Chrome: `"a"` → delete → `"<br>"`).
-  `isLineBreakElement` counted *any* non-filler `<br>` as a real `LINE_BREAK`, so
-  `readPartsFromHost` returned 3 parts against state's 1, `sameStructure` failed, and
-  `handleInput` took its "structure drifted" branch — **re-rendering the surface from stale
-  state and writing the deleted character straight back**. Ctrl+Z was the same bug twice:
-  Chrome undoes a typing burst to empty → placeholder `<br>` → same restore, and the restore's
-  `host.textContent = ""` **wipes Chrome's native undo stack** (also verified: a scripted
-  wholesale rebuild kills undo; a scripted `<br>` add/remove does not), so every later Ctrl+Z
-  was dead too. Select-all + Delete always worked because `handleKeyDown` intercepts a
-  non-collapsed range and dispatches through the reducer, never touching the DOM. Label /
-  Section header were never affected — they are real controlled `<input>`s.
-  **Fix (`valueDom.ts` only):** a `LINE_BREAK` must carry the `data-line-break` tag
-  `createAtomicElement` writes; every walk (`readPartsFromHost`, `partIndexOfElement`,
-  `childLinearLength`, `setCaretLinear`) now skips **any** untagged `<br>` — our filler *or* a
-  browser placeholder — via one `isIgnoredBreak` predicate. Safe because Enter and paste are
-  both `preventDefault`ed, so the cell never legitimately receives a browser-authored `<br>`;
-  it also covers Firefox's untagged break. ⚠️ **Known limit, unchanged:** Ctrl+Z after a
-  *structural* edit (pill insert, line break, atomic delete) is still dead — `renderPartsToHost`
-  rebuilds the host by design. A real app-level undo is separate work.
-  ✅ **The coverage gap that let this ship silently is now closed** — see the jsdom entry above.
-- **Templates-list — server-side pagination (Phase 2, first slice)** — ✅ 2026-08-04, full
-  gate green (typecheck · lint · format · **test 1364 / 52** · build) **and live-verified on
-  `appx-dev`** against Neon ground truth (60 templates → 3 pages of 25/25/10): page 3 renders
-  exactly rn 51–60 in `updatedAt DESC, id DESC` order (no overlap/skip vs page 2); `?page=99`
-  **clamps** to the last page (not empty); `?status=ACTIVE` returns exactly the 9 ACTIVE rows
-  on a single page with no pagination bar (COUNT(*) FILTER → pageCount 1) and the Active tab
-  lit from the loader. ⚠️ The prev/next **button click** itself was NOT confirmable through
-  the Claude-in-Chrome harness (embedded-iframe coordinate scaling — a harness limit, not an
-  app bug; the controls render with correct enabled/disabled from `hasPreviousPage`/
-  `hasNextPage`, and the `?page=` navigation they trigger is URL-verified). Page size **25**
-  (`TEMPLATES_PAGE_SIZE`), driven by `?page=` in the URL;
-  uses `s-table`'s built-in `paginate`/`hasNextPage`/`hasPreviousPage`/`onNextPage`/
-  `onPreviousPage`/`loading` (native prev/next, no numbered pages). Scope was **pagination
-  only** (merchant decision) — search/sort deferred to the same loader later.
-  **`listTemplateSummariesForDomain(domain, {status, page, pageSize})`** now runs a COUNT
-  (`totalAll` + `totalFiltered` via `COUNT(*) FILTER`) then a windowed data read
-  (`LIMIT/OFFSET`), returning a `TemplateListPage`. 🔴 Two load-bearing details:
-  **(1)** order is `updatedAt DESC, id DESC` — the `id` tiebreaker makes paging **stable**
-  over the non-unique `updatedAt` (without it a same-second pair could swap pages → a row
-  skipped or shown twice). **(2)** `hasTemplates` keys off `totalAll`, not the page length,
-  so a shop with templates but zero matches under a status filter still gets the table chrome
-  + "no match" row, never the first-run splash. The page is **clamped** to `[1, pageCount]`
-  server-side so a stale `?page=99` lands on the last real page.
-  ⚠️ **Reverses feature 28** (client-side status filter): a client filter over a paginated
-  read only filters the current page, so filtering moved back onto the WHERE + COUNT
-  (status bound + cast to `"TemplateStatus"`). Deleted `filterTemplatesByStatus` + its 5
-  tests and the custom `shouldRevalidate` skip; kept `normalizeStatusFilter` /
-  `STATUS_FILTER_OPTIONS`. A status-tab click now resets to page 1 and re-runs the loader.
-  Files: `template.server.ts` (+`.test.ts`), `app.templates.tsx`, `templateFilter.ts`
-  (+`.test.ts`). No schema/migration. Shop isolation unchanged (every query pins the UNIQUE
-  bound domain). Assigned-product counts still stream deferred, now over just the page's rows.
-- **Template Save latency — remove wasted Admin round-trips + parallelize reads** — ✅
-  2026-08-03, tests → **1363 / 52** (+2, the two new routing cache tests), build green. Three
-  cuts to the editor Save action's critical path, no behavior change:
-  **(1)** dropped the metaobject **read-back verification** in `syncTemplateToMetaobject` — a
-  full second Admin round-trip on *every* save whose only output (`roundTripOk`) was never
-  surfaced to the merchant and could flip a good save into a false warning; `metaobjectUpsert`'s
-  `userErrors` is the real failure signal, and a dropped write self-heals next Save.
-  **(2)** `rebuildShopRouting` now **caches the shop GID** on `Shop.shopGid` (column existed,
-  was never populated) via a new `resolveShopGid` — removes the `{ shop { id } }` Admin call
-  from every scope/status save after the first; cache write is best-effort.
-  **(3)** the edit-save branch now runs its three independent shop-scoped reads
-  (`getTemplateByIdForShop` / `getTemplateIncludeSelectors` / `getExcludesForTemplate`) in a
-  single `Promise.all`, and does the pure payload parses first so a bad payload fails before
-  any DB hit. Files: `templateSync.server.ts`, `routing.server.ts`, `app.templates_.$id/route.tsx`
-  (+ the two test files). No schema/migration. Not yet live-verified on the dev store.
-- **Step 107 Unit A — boilerplate removal + the app-home shell** — ✅ 2026-08-03, gate 10/10,
-  tests → **1361 / 52** (+8, +1 — the delta exactly as predicted; doc 107's "→ 1360" was an
-  arithmetic slip, 1353 + 8 = 1361); 6/6 mutations matched their predictions; **7/7 live
-  checks on `appx-dev` with Postgres identical before and after**. ⚠️ One finding (**L1**):
-  `/app/additional` renders a bare 404, **not** the app's `ErrorBoundary` — an unmatched URL
-  never enters `app.tsx`'s subtree, so no export of its could catch it. Not a crash and not a
-  blank iframe, so the check's requirement holds; fixing it means *adding* a route, which
-  belongs to Unit B.
-  🔴 The load-bearing removal is not tidying: `app._index.tsx`'s `action` ran `productCreate`
-  against the merchant's **live catalog** from the first button a merchant sees. Gone, and
-  guarded as a **whole-tree absence** under `app/` — no file may mention `productCreate` or
-  `productVariantsBulkUpdate` (`app/routes/boilerplateRemovalContract.test.ts`).
-  **`app/routes/app.additional.tsx` was DELETED here** — docs `90-…:295` and `91-…:60/:438`
-  still cite it as the loaderless-route precedent and were deliberately left intact (they
-  were true when written); the live code comment at `choose-style/route.tsx` was repointed to
-  state the property directly instead. ⚠️ The two demo definitions were removed from
-  `shopify.app.toml` but **NOT deployed** (D5) — they remain live on `appx-dev` until the
-  production-host deploy, and the edit rides that deploy with `application_url`. 🚫
-  `[access_scopes]` deliberately untouched → **OQ-107-A**. Unit B (the Screen 1 dashboard) is
-  blocked on **OQ-107-B**. [`107-…`](features/107-boilerplate-removal-and-app-home-shell.md)
-- **Step 106 — privacy webhook routes + subscriptions** — ✅ 2026-08-02, gate 10/10,
-  **deployed and confirmed registered** (version `appx-product-specs-table-7`). 9 live
-  checks green; `appx-dev` unchanged. 🔴 Not submission-ready — see Current Goal item 1.
+- **Editor: multi-line paste into a value cell makes ONE multiline value, not N rows** — ✅
+  2026-08-08, gate green (test **1418 / 57**), live-verified on `appx-dev`.
+  [`115-…`](features/115-value-cell-multiline-paste.md) · rule → `data-model.md` §7
+  "where you paste decides".
+- **Editor: rail-toggle button gained a hover/focus tooltip** — ✅ 2026-08-08, build green,
+  live-verified. Reuses `railToggleLabel` via the `interestFor` invoker pattern; no new string.
+- **Fix: hyphenated metafield tokens printed raw `{% mf … %}` source on the storefront** — ✅
+  2026-08-07, gate green (test **1412 / 57**). `TOKEN_RE` excluded the hyphen; widened to
+  `[A-Za-z0-9_-]+`. ⚠️ Already-degraded data is **not** auto-repaired (one row in one template
+  on `appx-dev`; one edit + Save re-tokenizes). Rule → `data-model.md` §7.
+- **Activation-conflict banner: conflicting-template link opens correctly in a new tab** — ✅
+  2026-08-07, gate green (test **1409 / 57**), merchant-verified both click paths. Extracted
+  the shared `AdminAppLink` + `adminAppLink.ts`; `app.templates.tsx` refactored onto both so
+  the two call sites can't drift. See [[appbridge-cross-origin-link-newtab]].
+- **Fix: value textarea clipped its content (`autoSize` pinned a zero height)** — ✅
+  2026-08-07, build green, live-measured on `appx-dev`. Never pin a degenerate measurement;
+  a `ResizeObserver` re-measures on gaining layout. ⚠️ A web-font-race hypothesis was
+  disproven by measurement and that code was removed, not shipped.
+- **Value cell → `<textarea>` migration — features 109–114, 🎉 COMPLETE** — ✅ 2026-08-07, all
+  live checks passed on `appx-dev`. Step 1 codec `valueText.ts`
+  ([`109-…`](features/109-value-textarea-step1-codec.md)) · Step 2 `SET_VALUE_PARTS`
+  ([`110-…`](features/110-value-textarea-step2-reducer-action.md)) · Step 3 surface swap
+  ([`111-…`](features/111-value-textarea-step3-surface-swap.md)) · Step 4 prune edit-pill
+  wiring ([`112-…`](features/112-value-textarea-step4-prune-editpill-plumbing.md)) · Step 5
+  delete dead code ([`113-…`](features/113-value-textarea-step5-remove-dead-code.md)) · Step 6
+  docs + sign-off ([`114-…`](features/114-value-textarea-step6-docs-and-verification.md)).
+  **`contenteditable` and its broken Ctrl+Z are gone; `ValuePart[]` unchanged end to end** —
+  no data migration, storefront untouched. Architecture → `data-model.md` §7.
+- **Routing metaobject sharding (Option 2) — feature 108, Units A–F COMPLETE** — ✅ 2026-08-05,
+  gate green (test **1443 / 56**), **live-verified on `appx-dev`** after the version-11 deploy
+  (two products → two distinct shards → their own tables; D5 empty-on-remove confirmed).
+  `byProduct`/`excluded` sharded across N = 1024 `$app:appx_routing_shard` metaobjects; shop
+  wire bumped to **v3** (broad tiers only).
+  [`108-…`](features/108-routing-metaobject-sharding.md) · §9/§10/§14. 🔴 N can never change
+  after launch (Binding rules). ⚠️ The v11 deploy re-anchored step 106's compliance URIs onto
+  `example.com` — refreshes when the production host is set.
+- **Routing delivery wire compacted (Option 1)** — ✅ 2026-08-05, gate green (test
+  **1408 / 54**), live-verified on `appx-dev`. Bare-id keys + handle interning + `excluded` as
+  an O(1) membership object; ~4.2× headroom. `spec-table-resolve.liquid` ↔
+  `compactRoutingForDelivery` is a **private wire contract** guarded by
+  `routingWireContract.test.ts`. §9/§14.
+- **Per-product `$app:spec_table` override metafield REMOVED — resolution is two tiers** — 🛠️
+  2026-08-04, gate green (test **1397 / 53**). ⚠️ **NOT DEPLOYED** — the `shopify app deploy`
+  is what deletes the definition; it rides the production-host deploy. 🔴 Declarative
+  definitions are read-only through the Admin API — deleting the TOML block **is** the delete,
+  and it takes every stored value with it. §9.
+- **Storefront: METAFIELD parts backed by metaobjects rendered EMPTY** — ✅ 2026-08-04, gate
+  green, live-verified. `metafield_text` has **no default field** for a metaobject reference;
+  fixed by branching on `type contains "metaobject_reference"` and trying
+  `label` → `name` → `title`. Not an edge case — the whole `shopify.*` taxonomy is
+  metaobject-backed. `context/features/35-…` §Correction.
+- **Storefront: every OTHER list metafield type rendered empty too** — ✅ 2026-08-04, gate
+  green, live-verified. Rendered item-by-item, joined `", "`. 🔴 The per-item shape is
+  **duck-typed** (`.unit` → `.rating` → `.title` → `.name` → `.url` → `.src` → `{{ item }}`),
+  never switched on type name — Shopify's measurement family is open and still growing.
+  ⚠️ Accepted divergence: `", "` join vs Shopify's localized sentence format.
+  `context/features/35-…` §Follow-up.
+- **jsdom carve-out + `valueDom.test.ts` (33 tests)** — ✅ 2026-08-04, gate green (test
+  **1397 / 53**). One file opts in with `// @vitest-environment jsdom`; runner default stays
+  `node`, no second project. 🚫 Not an opening for component tests — rule in Key Decisions
+  and `code-standards.md` → Testing.
+- **Value cell: fix "last character won't delete" + dead Ctrl+Z** — ✅ 2026-08-04, gate green
+  (test **1364 / 52**), live-verified. 🔴 Root cause: Chrome authors a placeholder `<br>` when
+  a `contenteditable` host empties. (Superseded by the 109–114 textarea migration.)
+- **Templates-list: server-side pagination (Phase 2, first slice)** — ✅ 2026-08-04, gate green
+  (test **1364 / 52**), live-verified against Neon. Page size 25 via `?page=`; order is
+  `updatedAt DESC, id DESC` (the `id` tiebreaker makes paging stable); page clamped
+  server-side. ⚠️ **Reverses feature 28** — the client status filter moved back onto the
+  WHERE + COUNT. Next Up item 9 carries what remains.
+- **Templates-list name links open-in-new-tab fix** — ✅ 2026-08-04, live-verified. Superseded
+  by the shared `AdminAppLink` on 2026-08-07 (see above).
+- **Template Save latency: removed wasted Admin round-trips + parallelized reads** — ✅
+  2026-08-03, test **1363 / 52**. Dropped the metaobject read-back verification, cached
+  `Shop.shopGid`, and `Promise.all`'d three shop-scoped reads. ⚠️ Not live-verified.
+- **Editor Save: `saveTemplateForShop` dropped ~5 DB round-trips to 2** — ✅ 2026-08-03, test
+  **1365**. The styling upsert + `include` (which forces an interactive transaction) now runs
+  only when styling actually changed. Measurement trail → [[save-action-latency-breakdown]].
+- **Templates-list loader: read-path perf** — ✅ 2026-08-03, test **1361**. `$queryRaw` selects
+  four columns + `jsonb_array_length(rows)` instead of every template's full `rows` blob;
+  keyed off `myshopifyDomain`; `upsertShop` moved off the critical path; assigned-product
+  counts deferred/streamed. Closes step 103 finding F3's first half.
+- **Step 107 Unit A — boilerplate removal + app-home shell** — ✅ 2026-08-03, gate 10/10, test
+  **1361 / 52**, 7/7 live checks with Postgres identical before and after.
+  🔴 The load-bearing removal: `app._index.tsx`'s `action` ran `productCreate` against the
+  merchant's live catalog. Guarded as a whole-tree absence
+  (`boilerplateRemovalContract.test.ts`). ⚠️ Finding **L1** → Next Up item 3; TOML edits
+  staged, not deployed. [`107-…`](features/107-boilerplate-removal-and-app-home-shell.md)
+- **Step 106 — privacy webhook routes + subscriptions** — ✅ 2026-08-02, gate 10/10, deployed
+  and confirmed registered. 🔴 Not submission-ready — see Current Goal item 1.
   [`106-…`](features/106-privacy-webhook-routes-and-subscriptions.md)
-- **Step 105 — compliance payload domain + shop erase path** — ✅ 2026-08-02, tests → 1338.
-  🔴 `shop/redact` is NOT a no-op (six tables); the erase is guarded on `isInstalled`
-  **inside the `WHERE` clause**; `Session` is outside the FK cascade and needs its own
-  delete. [`105-…`](features/105-privacy-webhook-domain-and-erase.md)
-- **Step 104 — metafield byte budgets** — ✅ 2026-08-01, tests → 1309. The deliverable is
-  one number: **3,446** excluded product GIDs before the 128KB `json` write ceiling. Ships
-  an **API-version tripwire** in `app/shopify.server.test.ts` — the ceiling is dormant only
-  because the runtime client is pinned to `October25`.
-  [`104-…`](features/104-metafield-byte-budgets.md)
-- **Scope/exclude chips turned into raw GIDs past 250 products** — ✅ fixed 2026-08-01,
-  tests → 1284. No feature doc; record is `data-model.md` §13 F4 + git. First OQ-103 finding
-  acted on. ⚠️ Not live-verified (needs a >250-product template; no such dev-store data).
-- **Step 103 — read-pattern catalog** — ✅ 2026-08-01, `data-model.md` §13. No code, tests
-  unmoved at 1270. 20 reads catalogued; six findings routed out.
+- **Step 105 — compliance payload domain + shop erase path** — ✅ 2026-08-02, test **1338**.
+  🔴 `shop/redact` is not a no-op (six tables); the erase is guarded on `isInstalled` **inside
+  the `WHERE`**; `Session` is outside the FK cascade.
+  [`105-…`](features/105-privacy-webhook-domain-and-erase.md) · `data-model.md` §15.
+- **Step 104 — metafield byte budgets** — ✅ 2026-08-01, test **1309**. Ships an API-version
+  tripwire in `app/shopify.server.test.ts`.
+  [`104-…`](features/104-metafield-byte-budgets.md) · `data-model.md` §14.
+- **Scope/exclude chips turned into raw GIDs past 250 products** — ✅ 2026-08-01, test
+  **1284**. Chunked at `NODES_MAX_IDS = 250`, per-chunk fail-soft. ⚠️ Not live-verified (no
+  >250-product dev-store data). Record → `data-model.md` §13 F4.
+- **Step 103 — read-pattern catalog** — ✅ 2026-08-01, `data-model.md` §13. No code; 20 reads
+  catalogued, six findings routed out.
   [`103-…`](features/103-read-pattern-catalog.md)
 
 ---
@@ -917,32 +456,14 @@ saved presets, cuttable).
 
 ### Style tab — Reshell Phase B1 (feature 57, steps 1–12; docs `57-…`–`69-…`)
 
-- Step 1 (`57-…`): pure styling domain `app/utils/tableStyling.ts` — allowed-value arrays,
-  `StylingValues`, `DEFAULT_STYLING_VALUES`, tolerant `parseStylingValues` (never throws),
-  overrides-only `serializeStylingOverrides`, `stylingEquals`.
-- Step 2 (`58-…`): pure presentation mapping `app/utils/tableStylingCss.ts` —
-  `stylingToCssVars` / `stylingToModifierClasses` / `formatCssVarDeclarations` / frozen
-  `SPEC_TABLE_CSS_VARS`; one translation layer, no drift.
-- Step 3 (`59-…`): storefront `spec-table.css` rewritten to `var(--appx-spec-*, <literal>)`;
-  one dormant rule set per modifier + the `--mobile-stacked` @media default; byte-exact
-  drift guard (`specTableCssContract.test.ts`, `previewStyles.ts` copy).
-- Step 4 (`60-…`): `add_table_styling` migration + server persistence — `TableStyling`
-  (override columns, NULL=default), `stylingToDbColumns`, nested shop-scoped upsert.
-- Step 5 (`61-…`): engine styling state + Row-dividers control + Save round-trip;
-  `editorSnapshot.ts` unifies the dirty baseline + submit snapshot.
-- Step 6 (`62-…`): live styling in the device previews (first consumer of the Step 2 mapping).
-- Step 7 (`63-…`): metaobject serialization + Liquid emission — pipe complete to the live
-  storefront; new metaobject `styling_css` field; status-change re-sync hazard closed.
-- Step 8 (`64-…`): the four remaining non-structural keyword knobs — zero non-UI diff.
-- Step 9 (`65-…`): collapsible sections — the only B1 step to change markup
-  (`<details>/<summary>`, one `<table>` per section, native keyboard, per-section
-  `aria-label`).
-- Step 10 (`66-…`): Colors + Typography — nullable "inherit" vocabulary; `FONT_SIZE_PX_MAX`
-  raised 40→184; every `STYLING_FIELD_NAMES` field now has a control.
-- Step 11 (`68-…`): reveal a preview when the merchant opens Style / Settings
-  (`tabViewMemory.ts`). _(NOT the withdrawn "style the grid" step — `67-…`.)_
-- Step 12 (`69-…`): Reset-to-theme-defaults + rail a11y + docs reconciliation.
-  **Phase B1 complete 2026-07-20.**
+- **Phase B1 complete 2026-07-20.** The 12 steps built the styling pipe end to end: pure
+  domain (`tableStyling.ts`) → pure presentation mapping (`tableStylingCss.ts`) →
+  `var(--appx-spec-*, <literal>)` storefront CSS with a byte-exact drift guard →
+  `add_table_styling` migration → engine state + Save round-trip → live device previews →
+  metaobject `styling_css` emission → the remaining keyword knobs → collapsible sections
+  (the only step to change markup) → Colors + Typography → preview-on-open
+  (`tabViewMemory.ts`) → Reset-to-theme-defaults + rail a11y.
+  ⚠️ Step 11 here is `68-…`; `67-…` is the **withdrawn** "style the grid" step (Binding rules).
 
 ### Device previews — Reshell Phase D (feature 49, steps 1–8; docs `49-…`–`56-…`)
 
@@ -954,29 +475,20 @@ saved presets, cuttable).
 
 ### Product assignment engine — features 37–48 (merchant-complete)
 
-- 37 (`37-…`): data foundation — `add-assignment` migration, `ProductAssignment(Index)`,
-  `assignmentScope.ts`, shop-scoped `assignment.server.ts`.
-- 38 (`38-…`): pure scope-overlap resolver (`assignmentOverlap.ts`, set-algebra).
-- 39 (`39-…`): cross-dimension existence probe (`assignmentConflict.server.ts`,
-  `products(query,first:1)`, fails closed, injection-safe).
-- 40 (`40-…`): routing-projection builder + `add-routing` migration (`ShopStorefrontRouting`).
-- 41 (`41-…`): shop routing metafield writer + `[shop.metafields.app.routing]` TOML (deployed).
-- 42 (`42-…`): activation pipeline + DRAFT→ACTIVE dry-run gate wired into both status
-  surfaces (atomic block on conflict, routing rebuild on ACTIVE-set change).
-- 43 (`43-…`): storefront 3-tier resolution (`spec-table-resolve.liquid`: override →
-  byProduct → exclude gate → broad tiers → default handle).
-- 44 (`44-…`): scope-picker UI + rich conflict banner (`SettingsTab.tsx`).
-- 45 (`45-…`): EXCLUDE carve-outs (all-products-except-X; gate subtraction; storefront reorder).
-- 46 (`46-…`): multi-value scopes — server (1..N INCLUDE for PRODUCT/COLLECTION; Decision C).
-- 47 (`47-…`): multi-value scopes — UI (multi-select picker → chip cards, full-set loader).
-- 48 (`48-…`): templates-list dynamic assigned-product count (per-scope, batched Admin query,
-  fail-soft). _Live-render on the dev store still pending._
+- Built in order: data foundation + `add-assignment` migration (37) → pure overlap resolver
+  (38) → cross-dimension existence probe, fails closed, injection-safe (39) → routing
+  projection + `add-routing` migration (40) → shop routing metafield writer + TOML (41) →
+  activation pipeline + DRAFT→ACTIVE dry-run gate on both status surfaces (42) → storefront
+  resolution in `spec-table-resolve.liquid` (43) → scope-picker UI + conflict banner (44) →
+  EXCLUDE carve-outs (45) → multi-value scopes, server (46) then UI (47) → templates-list
+  assigned-product count, batched + fail-soft (48). Docs `37-…`–`48-…`.
+  ⚠️ 48's live-render on the dev store is still pending.
 
-Design lock (2026-07-07, `data-model.md` §5/§9): **rigid block-on-conflict**, one scope per
-template (all / product / type / vendor / collection), no `priority`; broad rules via one
-shop-level routing metafield resolved in Liquid by handle; per-product `metaobject_reference`
-only for bounded overrides. Materialization (`ProductAssignmentIndex`) deferred post-MVP.
-Multi-value applies to PRODUCT + COLLECTION only. No migrations needed for the 45–48 series.
+Design lock (2026-07-07, `data-model.md` §9): **rigid block-on-conflict**, one scope KIND per
+template, no `priority`; broad rules via one shop-level routing metafield resolved in Liquid
+by handle. Multi-value applies to PRODUCT + COLLECTION only. No migrations needed for 45–48.
+⚠️ 43's resolution order was 3-tier at the time; the per-product override tier was removed
+2026-08-04 and per-product entries moved to shards 2026-08-05 — `data-model.md` §9 is current.
 
 ### Storefront (features 34–35)
 
@@ -989,31 +501,14 @@ Multi-value applies to PRODUCT + COLLECTION only. No migrations needed for the 4
 
 ### Editor build — 13-step order + Step 9.5 (features 02–15)
 
-- Step 1 (`02-…`): `app/utils/rows.ts` reducer + static rows + add/delete/duplicate +
-  200-row cap (`MAX_TEMPLATE_ROWS`).
-- Step 2 (`03-…`): segmented value cell + pills + toolbar + row gutter; `afterId` insert;
-  `ADD_SECTION`.
-- Step 3 (`04-…`): review & harden Steps 1–2 (comment-only fixes; not-fixed items →
-  "Step 3 Follow-ups").
-- Step 4 (`05-…`): single contenteditable value surface — linear caret model
-  (`valueParts.ts` + `valueDom.ts`); inline pills; `LINE_BREAK`; `INSERT_VALUE_PART_AT`.
-- Step 5 (`06-…`): "Insert field" modal shell + caret save/restore (App Bridge `shopify.modal`).
-- Step 6 (`07-…`): native Shopify fields list (`shopifyFields.ts`) + create/edit modal;
-  `SET_VALUE_PART`.
-- Step 7 (`08-…`): modal search/filter (`filterNativeFields`); deferred auto-focus.
-- Step 8 (`09-…`): fetch product metafield definitions (`metafieldDefinitions.server.ts` +
-  resource route); shop isolation.
-- Step 9 (`10-…`): selectable metafield section → real `METAFIELD` pill
-  (`filterMetafieldDefinitions`).
-- Step 9.5 (`11-…`): Save → Postgres → app-owned metaobject sync → read-back.
-  `rowsSerialize.ts` (server-authoritative key finalization); `metaobjects.server.ts`
-  (`$app:appx_spec_table`, PUBLIC_READ); contextual SaveBar + dirty baseline.
-- Step 10 (`12-…`): mouse drag reorder (`@dnd-kit`; pure `MOVE_ROW`).
-- Step 11 (`13-…`): keyboard reorder + a11y (`KeyboardSensor`, SR announcements).
-- Step 12 (`14-…`): parse pasted clipboard tables (`clipboardTable.ts` +
-  `clipboardTableDom.ts`); log only.
-- Step 13 (`15-…`): bulk-insert rows from paste (`gridToPastedRows` + `PASTE_ROWS`,
-  cap-truncated).
+- Built in order (docs `02-…`–`15-…`): rows reducer + 200-row cap (1) → segmented value cell
+  + toolbar (2) → harden 1–2 (3) → contenteditable value surface + linear caret (4) →
+  Insert-field modal shell + caret save/restore (5) → native Shopify fields list (6) → modal
+  search/filter (7) → product metafield definitions, shop-isolated (8) → selectable metafield
+  section (9) → **Save → Postgres → metaobject sync → read-back, with server-authoritative
+  key finalization** (9.5) → mouse drag reorder via `@dnd-kit` (10) → keyboard reorder + a11y
+  (11) → parse pasted clipboard tables (12) → bulk-insert rows from paste (13).
+  ⚠️ Steps 4/6's contenteditable + pill machinery was **retired** by features 109–114.
 
 ### Reshell to the mockup — Phase A (features 16–18)
 
@@ -1154,6 +649,35 @@ per-product overflow materialization + a bulk apply-to-all styling route.
 
 ## Open Questions
 
+- 🆕 **OQ-109-E — does the app get a separate dev config, or stay one app?** (raised
+  2026-08-08.) `automatically_update_urls_on_dev = true` means every `shopify app dev` run
+  rewrites `application_url` — which will clobber the production URL the moment it is set.
+  Shopify's documented practice is two apps / two TOMLs (`config use`). **Blocks the
+  production deploy**; full framing + recommendation in
+  [`launch-support-checklist.md`](launch-support-checklist.md) Phase 1.
+- 🆕 **OQ-109-F — demo store: wait for the production DB, or build now and rebuild?**
+  (raised 2026-08-08.) 🔴 A spec table lives in **two** places — the template row in Postgres
+  (source of truth) and the `$app:appx_spec_table` metaobject (delivery, owned by `client_id`
+  and durable). Building demo templates against the **dev** database before a separate
+  production DB exists (checklist Phase 2.2) orphans them: the storefront keeps rendering
+  tables the app can no longer edit. Trade-off is dogfooding-feedback-now vs. rebuild-by-hand.
+  Checklist **D5**.
+- 🆕 **OQ-109-G — demo store niche and brand.** (raised 2026-08-08.) 🔴 The demo store is
+  **publicly linked from the App Store listing**, so it must use a **fictional** brand and
+  imagery held under licence — `appx-dev`'s real DJI products and photography cannot be
+  reused there. Checklist **D1**.
+- **OQ-109-B — where do the help docs live?** Proposed: static site in-repo at
+  `hiappx.com/docs`. Confirm before Phase 4.
+- **OQ-109-C — pursue Built for Shopify?** The badge carries a 30-minute first-response SLA
+  for critical requests (outages + security reports only) and a p95 < 500 ms bar. Not a
+  launch blocker; decide consciously. Checklist Phase 7.4.
+- **OQ-109-D — does the early-bird free window need a support-volume cap?** Free-for-3-months
+  generates support load at zero revenue. Checklist Phase 6 (in-app deflection) is the
+  mitigation; revisit if the install rate outpaces reply capacity.
+- ✅ **OQ-109-A — support domain + inbox — RESOLVED 2026-08-08.** `hiappx.com` +
+  `support@hiappx.com` (Zoho free). 🔴 The one durable constraint: Zoho free is **web/mobile
+  only — no IMAP/SMTP**, so app-generated transactional email needs a separate sender, whose
+  SPF `include:` must be **merged into** the single existing SPF record.
 - 🔴 **OQ-107-A — which access scopes does the app actually need?** (raised 2026-08-03 by
   step 107.) With `app._index.tsx`'s demo action deleted, **no product write remains
   anywhere in the app** — the entire Admin API surface is five reads
@@ -1190,39 +714,9 @@ per-product overflow materialization + a bulk apply-to-all styling route.
   (`onboardingStatus` advance, `Template` count ≥ 1, `Shop.isAppBlockActive`) are
   unaffected and are all schema-backed since the init migration. The `admin-screen-plan.md`
   row now carries a blocked marker so Unit B cannot build from it by accident.
-- ✅ **OQ-103-A — what does a webhook retry burst do to the Neon connection pool? — RESOLVED
-  2026-08-03 (low risk).** (raised 2026-08-01 by step 103; `data-model.md` §13 R8a/R8b.)
-  Both things the OQ said would settle it were checked on 2026-08-03:
-  - **Live `DATABASE_URL` (runtime, credentials masked):** on the **`-pooler`** host,
-    `connect_timeout=30`, `pool_timeout=30`, `sslmode/channel_binding=require`. **No
-    `connection_limit` and no `pgbouncer=true`.** `DIRECT_URL` is the non-pooled host
-    (migrations only). `app/db.server.ts` is a bare `new PrismaClient()` — zero pool config
-    in code, so the string is the whole story.
-  - **Neon compute (project `proud-hat-02103652`, branch `production`):** autoscaling
-    **0.25–2 CU**, single compute, `us-east-1`, **`pooler_mode: "transaction"`**,
-    `suspend_timeout_seconds: 0` (default scale-to-zero — the cold-start source the
-    `connect_timeout=30` already covers).
-
-  **Verdict — the pool is not at meaningful risk**, on three compounding grounds: (1) the
-  runtime string is the **transaction-mode pooler**, so PgBouncer fronts client connections
-  and protects Postgres `max_connections` (~112 direct at the 0.25 CU floor); (2) the webhook
-  handlers are tiny idempotent 1–2-query writes; (3) 🔴 **the deciding input — hosting is a
-  single long-running server** (merchant decision, 2026-08-03), NOT serverless, so Prisma
-  keeps **one** pool of `num_cpus*2+1` — a small bounded number, never a per-request fan-out.
-  `connection_limit` being unset is therefore harmless; leaving the default is fine (an
-  explicit `connection_limit=10` is optional clarity, not a fix). The serverless failure mode
-  (one pool *per cold instance* → burst blowup, which would have needed `connection_limit=1`)
-  **does not apply** given the hosting decision.
-
-  📌 **One before-production follow-up, low urgency:** `pooler_mode` is *transaction* and the
-  app uses plain Prisma-over-TCP, which can hit `prepared statement "s0" already exists` under
-  concurrency. Not observed (single process, low concurrency), and Neon's current Prisma guide
-  omits the flag — but before real traffic, either add **`pgbouncer=true`** to the pooled
-  `DATABASE_URL` or move to the **`@prisma/adapter-neon`** driver adapter (Neon's now-recommended
-  path). Folds into the production-host deploy (Next Up item 1), not a standalone unit.
-- ~~**OQ-103-B — unchunked `nodes(ids:)` past the 250-id cap.**~~ ✅ **CLOSED 2026-08-01
-  by chunking** — see Recently Shipped, which is the record. Kept as a stub because F4 in
-  `data-model.md` §13 points here.
+- ✅ **OQ-103-A — webhook retry burst vs. the Neon connection pool — RESOLVED 2026-08-03 (low risk).** Three compounding grounds: the runtime string is the **transaction-mode pooler**, the webhook handlers are tiny idempotent 1–2-query writes, and 🔴 **hosting is a single long-running server** (merchant decision), so Prisma keeps ONE bounded pool — the serverless per-instance fan-out that would have needed `connection_limit=1` does not apply. See [[hosting-single-long-running-server]] and [[neon-cold-start-prisma-connect-timeout]].
+  📌 **One before-production follow-up, low urgency:** `pooler_mode` is *transaction* and the app uses plain Prisma-over-TCP, which can hit `prepared statement "s0" already exists` under concurrency. Not observed. Before real traffic, add **`pgbouncer=true`** to the pooled `DATABASE_URL` or move to the **`@prisma/adapter-neon`** driver adapter. Folds into the production-host deploy (Next Up item 1).
+- ✅ **OQ-103-B — unchunked `nodes(ids:)` past the 250-id cap — CLOSED 2026-08-01** by chunking (`NODES_MAX_IDS = 250`, per-chunk fail-soft). Stub kept because `data-model.md` §13 F4 points here.
 - **OQ-103-C — the activation gate's probe count is O(pairs) and sequential, not O(rules).**
   (raised 2026-08-01 by step 103, finding F5; `data-model.md` §13 R6.) §Key Decisions
   "Assignment model" claims "O(rules) Postgres set-algebra + `products(query,first:1)`
@@ -1329,8 +823,8 @@ per-product overflow materialization + a bulk apply-to-all styling route.
 - **Save/status model (mockup):** App Bridge contextual SaveBar (Save/Discard) + header status dropdown + ⋯ menu; no separate "Save as draft". Save freezes the editor (`inert`) in-flight; baseline reset uses the **submitted** snapshot (data-safety race fix). ⚠️ The Save button is a **native** `<button>` — see the React 18 boolean-attribute rule in Binding rules.
 - **Persistence/keys:** key finalization is **server-authoritative** ("is this row id already persisted?"), never re-derived. Metaobject is **app-reserved** (`$app:appx_spec_table`); deleted _before_ Postgres on delete so a storefront-readable entry can't outlive its template.
 - **App-owned definitions are declarative TOML** (slice 1): the `$app:appx_spec_table` metaobject and the `$app:spec_table` product `metaobject_reference` are declared in `shopify.app.toml`, distributed on deploy/install. Runtime `metaobjectDefinitionCreate` removed; `Shop.metaobjectDefinitionGid` vestigial. Metaobject _entries_ are still written at runtime via `metaobjectUpsert`.
-- **Assignment model — rigid block-on-conflict + shop-level routing (2026-07-07, `data-model.md` §5/§9).** One scope per template (`scope`+`scopeValue`+`mode`); overlaps between ACTIVE templates are **blocked at DRAFT→ACTIVE** (merchant decides — no silent precedence, no priority knob; `priority` column dormant). Overlap check is O(rules) Postgres set-algebra + `products(query,first:1)` existence tests, never a catalog scan. ⚠️ **The probe half of that claim is half-falsified — see OQ-103-C.** Broad rules deliver as O(1) entries in one `[shop.metafields.app.routing]` json metafield, resolved in Liquid via `metaobjects["$app:appx_spec_table"][handle]`. Per-product `metaobject_reference` survives only for bounded overrides; `ProductAssignmentIndex` is sparse — and, per OQ-103-D, currently unreferenced.
+- **Assignment model — rigid block-on-conflict + shop-level routing (2026-07-07, `data-model.md` §5/§9).** One scope per template (`scope`+`scopeValue`+`mode`); overlaps between ACTIVE templates are **blocked at DRAFT→ACTIVE** (merchant decides — no silent precedence, no priority knob; `priority` column dormant). Overlap check is O(rules) Postgres set-algebra + `products(query,first:1)` existence tests, never a catalog scan. ⚠️ **The probe half of that claim is half-falsified — see OQ-103-C.** Broad rules deliver as O(1) entries in one `[shop.metafields.app.routing]` json metafield (wire v3), resolved in Liquid via `metaobjects["$app:appx_spec_table"][handle]`; per-product entries and EXCLUDE carve-outs live in 1024 `$app:appx_routing_shard` metaobjects (feature 108). 🚫 The per-product override metafield was deleted 2026-08-04. `ProductAssignmentIndex` is dormant and, per OQ-103-D, unreferenced.
 - **Style tab design (2026-07-18 — `admin-screen-plan.md` §Tab 2, `data-model.md` §5/§10, PRD, code-standards).** One spec-table primitive with **orthogonal style knobs** (row layout, mobile behavior, section headers, collapsible sections via native `<details>` zero-JS, row dividers incl. zebra `stripeBgColor`, density). Modal/drawer containers rejected. **Presets = COPY semantics** (built-ins as code constants; phase-2 merchant-saved `StylePreset`) copy values into per-template `TableStyling` **real columns**, not `extraStyles`; `basedOnPreset` is provenance only. **No shop-level default styling record** (copy keeps edits side-effect-free on live storefronts). Storefront delivery via the metaobject `styling` json field: layout knobs → wrapper modifier classes, colors/typography → CSS variables. **Typography:** `fontSize` = S/M/L theme-relative presets or bounded Custom px (10–184, clamped; JSON number on the wire, digit-string in the DB); `lineHeight` (TIGHT/NORMAL/LOOSE) + `labelCase` (DEFAULT/UPPERCASE, labels only) + `fontStyle` kept; font-family/letter-spacing/wrap/per-side padding rejected.
-- **Scale ceilings (steps 103–104, `data-model.md` §13/§14).** The 128KB `json` metafield **write** limit applies — the app is **NOT grandfathered** (first commit 2026-06-09, first `type = "json"` 2026-07-02, both after the 2026-04-01 cutoff). It is dormant **only** because the runtime Admin client is pinned to `ApiVersion.October25`; `app/shopify.server.test.ts` is a tripwire that fails on a version bump. Capacity: **3,446** `excludedProductGids`, 1,745 `byProduct` entries, 1,769 `byCollection`. 🚫 Step 104 measures and warns — it does **not** block; refusing / truncating / surfacing a merchant error is a future decision. ⚠️ `Metafield.sizeInBytes` is unstable-only; measurement is app-side and pre-write.
+- **Scale ceilings (steps 103–104, `data-model.md` §13/§14).** The 128KB `json` metafield **write** limit applies — the app is **NOT grandfathered** (first commit 2026-06-09, first `type = "json"` 2026-07-02, both after the 2026-04-01 cutoff). It is dormant **only** because the runtime Admin client is pinned to `ApiVersion.October25`; `app/shopify.server.test.ts` is a tripwire that fails on a version bump. Capacity (current, after Option 1 compaction + Option 2 sharding): the shop wire is broad-only — **9,354** `byCollection` entries, `byType`/`byVendor` count-bounded; `byProduct`/`excluded` moved to 1024 shards, each with its own 128KB budget, so per-product capacity is `N × 128KB`. (Pre-Option-1 figures were 3,446 excludes / 1,745 `byProduct` / 1,769 `byCollection` in one shared budget.) 🚫 Step 104 measures and warns — it does **not** block; refusing / truncating / surfacing a merchant error is a future decision. ⚠️ `Metafield.sizeInBytes` is unstable-only; measurement is app-side and pre-write.
 - **Testing strategy:** Vitest; Phases 1–2 done (unit + shop-isolation, mocked Prisma); reach Phase 4 (route loaders/actions + GDPR webhooks) before App Store submission, E2E (Playwright) fast-follow. Polaris web components don't render in jsdom → editor UI is browser-verified, pure logic unit-tested. ⚠️ **One narrow jsdom carve-out (2026-08-04):** framework-free DOM *glue* (`app/utils/valueDom.ts`) IS jsdom-tested — the file opts in with `// @vitest-environment jsdom` on line 1; the runner default stays `node`, so there is no second project. Component tests remain excluded, as does contenteditable *editing behaviour* — encode that as a fixture and assert our reading of it (`code-standards.md` → Testing). 🔴 **A mocked Prisma cannot enforce a `WHERE` clause** (step 105 M2) — it returns what it was told regardless of the query, so a test named for a query condition can pass while the condition is deleted. Assert the exact `where`, and say which half is which. ⚠️ **The pointer to a fuller doc was DROPPED 2026-08-01:** it cited a plans file that no longer exists and could not be restored. This entry is the whole record of the testing strategy; if the phases need more detail, write it here or in a `context/` file, not in an untracked plans directory outside the repo.
 - **Embedded-app verification:** the editor is a cross-origin iframe (top frame can't read its DOM/AOM/console); verify via Claude-in-Chrome on the `shopify app dev` preview + direct Postgres/Neon checks. Polaris CDN-build gotchas → `polaris-web-component-gotchas` memory. Admin GraphQL runtime is **2025-10** — validate against that, not the TOML's 2026-07 (which is the **webhook payload** version, `shopify.app.toml:12`, and does not govern the Admin client).
