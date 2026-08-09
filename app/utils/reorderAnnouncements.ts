@@ -1,36 +1,23 @@
-// Screen-reader announcement copy for keyboard row reorder (editor Step 11).
+// Screen-reader announcement copy for keyboard row reorder. `@dnd-kit` renders
+// the live region; this owns only the WORDS, so the wording is unit-testable
+// without a browser or a screen reader.
 //
-// `@dnd-kit` renders the visually-hidden live region; this module owns only the
-// WORDS read out during a keyboard drag, so the wording is unit-testable without
-// a browser or a screen reader. The component (SpecTableEditor) does the dnd-kit
-// glue (assembling the `announcements` object and reading the current rows) —
-// this module stays framework-free, importing the `EditorRow` TYPE only (no
-// `@dnd-kit` dependency in `utils/`), mirroring how `shopifyFields.ts` owns the
-// match rule while the component owns the wiring.
-//
-// Positions are 1-based (a merchant counts "row 1", not index 0). The dnd-kit
-// reorder array is not mutated until the drop dispatches MOVE_ROW, so callers
-// pass the CURRENT (pre-move) rows: the `over` row's position is the slot the
-// dragged row would land in, which is the right thing to announce for both
-// "now over position N" and "dropped at position N" (arrayMove lands the moved
-// element at the target row's original index).
+// ⚠️ Positions are 1-based, and callers pass the CURRENT (pre-move) rows — the
+// reorder array is not mutated until the drop dispatches MOVE_ROW, so the `over`
+// row's position is the slot the dragged row would land in.
 
 import type { EditorRow } from "./rows";
 
-// Capitalize the first character so a descriptor reads cleanly at the start of a
-// sentence ("row 3" -> "Row 3"). Affects only the hidden live-region text;
-// screen readers pronounce regardless of case, but deterministic copy keeps the
-// unit tests honest.
+// So a descriptor reads cleanly at the start of a sentence ("row 3" → "Row 3").
 function capitalize(text: string): string {
   return text.length === 0 ? text : text[0].toUpperCase() + text.slice(1);
 }
 
 /**
- * A natural-language descriptor for a row, used both inside the announcements
- * here and as the drag handle's accessible name in the component. The row's
- * trimmed label plus its kind ("Battery Life row", "Display section"); falls
- * back to a positional name ("row 3", "section 3", 1-based) when the label is
- * blank, so an unnamed row is still distinguishable.
+ * A natural-language descriptor for a row, used in the announcements here and as
+ * the drag handle's accessible name. The trimmed label plus its kind ("Battery
+ * Life row"), falling back to a positional name when the label is blank so an
+ * unnamed row is still distinguishable.
  */
 export function describeRow(row: EditorRow, index: number): string {
   const kind = row.rowType === "SECTION_HEADER" ? "section" : "row";

@@ -1,25 +1,17 @@
 // Static catalog of native Shopify product fields offered in the editor's
-// "Insert field" modal (Step 6).
+// "Insert field" modal.
 //
-// Native product fields are a Shopify *platform-defined* schema — `vendor`,
-// `price`, `sku`, … exist on every product in every shop and never vary per
-// shop — so a static constant IS the source of truth, not a cache. (Metafields
-// are the opposite: merchant-defined `namespace`/`key` that genuinely vary per
-// shop, which is why they are fetched shop-scoped from Admin GraphQL in
-// Steps 8–9, not listed here.)
-//
-// Framework-free and pure on purpose: the editor renders it now, Step 7 filters
-// it, and the storefront resolver reads the same `field` tokens later.
+// Native product fields are a Shopify *platform-defined* schema — they exist on
+// every product in every shop and never vary — so a static constant IS the source
+// of truth, not a cache. Metafields are the opposite (merchant-defined, per-shop),
+// which is why they are fetched from Admin GraphQL rather than listed here.
 
 import type { MetafieldDefinitionSummary } from "../shopify/metafieldDefinitions.server";
 
 export interface NativeShopifyField {
   /**
-   * The token persisted in a SHOPIFY_FIELD value part. This is the
-   * storefront-resolver contract: it is saved in `valueParts` and later drives
-   * the Theme App Extension's Liquid resolution, so these strings are LOCKED —
-   * changing one would orphan every saved pill that referenced it. Shopify
-   * product-object-aligned snake_case.
+   * The token persisted in a SHOPIFY_FIELD value part — the storefront-resolver
+   * contract. 🔴 LOCKED: changing one orphans every saved reference to it.
    */
   field: string;
   /** Human-readable name shown in the picker (never persisted). */
@@ -27,15 +19,13 @@ export interface NativeShopifyField {
 }
 
 /**
- * The thirteen native fields offered in the picker, in display order (mirrors
- * `context/prd.md`). The entry shape is `{ field, label }` only — no
- * product-vs-variant `source` flag (decided 2026-06-16): the editor never
- * resolves values, so the product/variant distinction (and the selected-variant
- * / first-variant fallback) is the storefront resolver's job, not this module's.
+ * The native fields offered in the picker, in display order.
  *
- * Maintenance: the native set can shift across Shopify API versions; update this
- * one tested constant when the API version is bumped — a code change, not
- * runtime data.
+ * No product-vs-variant `source` flag: the editor never resolves values, so the
+ * product/variant distinction and its fallback are the storefront resolver's job.
+ *
+ * ⚠️ The native set can shift across Shopify API versions — update this constant
+ * when the API version is bumped.
  */
 export const NATIVE_SHOPIFY_FIELDS: readonly NativeShopifyField[] = [
   { field: "vendor", label: "Vendor" },
@@ -63,32 +53,21 @@ export function findNativeField(field: string): NativeShopifyField | undefined {
 }
 
 /**
- * The shared matching rule for the modal's search box (Steps 7 & 9). A query
- * matches when, once trimmed + lowercased, it is a substring of any of the
- * supplied haystacks. The caller is responsible for lowercasing / normalising the
- * haystacks it passes (e.g. reading a snake_case token's `_` as a space) so the
- * one rule serves both the native-field list and the metafield list.
+ * The shared matching rule for the modal's search box. Callers lowercase and
+ * normalise the haystacks they pass, so one rule serves both the native-field and
+ * metafield lists.
  */
 function matchesQuery(needle: string, ...haystacks: string[]): boolean {
   return haystacks.some((haystack) => haystack.includes(needle));
 }
 
 /**
- * Filter the native field list by the modal's search query (Step 7). Pure — it
- * reads the constant and returns a fresh array, never mutating the source.
+ * Filter the native field list by the modal's search query.
  *
- * - An empty / whitespace query returns the full list in its original order
- *   (the modal's open state and the cleared-search state).
- * - Otherwise a case-insensitive substring match, preserving the original
- *   order. Each entry matches when the query is a substring of either its human
- *   `label` or its snake_case `field` token with underscores normalised to
- *   spaces — so "price" surfaces both *Price* and *Compare-at price*, "type"
- *   surfaces *Product type*, and "compare at" surfaces *Compare-at price* via
- *   the normalised token. Search only reads tokens; the locked `field` strings
- *   are never rewritten.
- *
- * The matching rule lives here (not in the component) so it is unit-tested once
- * and Step 9's metafield section reuses it (`filterMetafieldDefinitions`).
+ * An empty query returns the full list. Otherwise a case-insensitive substring
+ * match against the human `label` or the `field` token with underscores read as
+ * spaces — so "compare at" surfaces *Compare-at price*. Search only reads tokens;
+ * the locked `field` strings are never rewritten.
  */
 export function filterNativeFields(query: string): NativeShopifyField[] {
   const needle = query.trim().toLowerCase();
@@ -105,16 +84,10 @@ export function filterNativeFields(query: string): NativeShopifyField[] {
 }
 
 /**
- * Filter fetched product metafield definitions by the modal's search query
- * (Step 9), using the **same** rule as `filterNativeFields`. Pure — it reads the
- * supplied array (fetched data, so passed in rather than module-owned) and
- * returns a fresh array, never mutating the source.
- *
- * - An empty / whitespace query returns the full list in its original order.
- * - Otherwise a case-insensitive substring match against either the human `name`
- *   or the `namespace.key` token with every non-alphanumeric run normalised to a
- *   space — so `custom.battery_life` is matched by "battery", "battery life", and
- *   "custom". The locked `namespace`/`key` are read only, never rewritten.
+ * Filter fetched metafield definitions by the same rule as `filterNativeFields`.
+ * Matches the human `name` or the `namespace.key` token with non-alphanumeric
+ * runs read as spaces, so `custom.battery_life` matches "battery", "battery life"
+ * and "custom".
  */
 export function filterMetafieldDefinitions(
   definitions: readonly MetafieldDefinitionSummary[],

@@ -1,35 +1,21 @@
 // Bidirectional codec between the canonical `ValuePart[]` and the value cell's
-// `{% … %}` token STRING (feature 109). Framework-free and pure, like `rows.ts`
-// and `valueParts.ts`; it imports only the `ValuePart` type and
-// `normalizeValueParts` from `rows.ts` (one direction — no cycle).
+// `{% … %}` token STRING. Pure; imports only from `rows.ts` (no cycle).
 //
-// Why this exists: the value cell is migrating from a `contenteditable` surface
-// with a hand-built linear-caret model to a native `<textarea>` (features
-// 109–114). The textarea edits a plain string; `ValuePart[]` stays the canonical
-// persisted + delivered + previewed shape, so this module converts at the editor
-// boundary ONLY. Nothing downstream (save serialization, the storefront Liquid
-// resolver, the live preview) changes.
+// The textarea edits a plain string while `ValuePart[]` stays the canonical
+// persisted + delivered + previewed shape, so this converts at the editor
+// boundary ONLY — nothing downstream changes.
 //
-// ## Token grammar (LOCKED — see context/features/109)
+// ## Token grammar (LOCKED — see `context/features/109-…`)
 //
 //   TEXT           → the literal characters
 //   SHOPIFY_FIELD  → `{% field <token> %}`   e.g. `{% field vendor %}`
 //   METAFIELD      → `{% mf <ns>.<key> %}`   e.g. `{% mf custom.battery_life %}`
 //   LINE_BREAK     → `\n`
 //
-// A `field` argument is a single snake_case token (the locked, static
-// `NATIVE_SHOPIFY_FIELDS` set); an `mf` argument is `namespace.key`, split on the
-// single `.`. 🔴 A metafield namespace/key follows SHOPIFY's rule, not ours:
-// alphanumeric, HYPHEN and underscore (key 2–64, namespace 3–255). Hyphens are
-// not exotic — every standard-taxonomy attribute uses them (`shopify.battery-size`,
-// `shopify.power-source`), and app-reserved namespaces look like `app--123--foo`.
-// See the regression note on `TOKEN_RE`. Anything that
-// starts `{%` but is NOT a well-formed token — `{% mf %}`, `{% field %}`,
-// `{% mf a.b.c %}`, an unclosed `{%` — is emitted back as LITERAL TEXT: nothing
-// is silently dropped in the editor, and an unresolvable token simply renders
-// empty on the storefront (matching the existing unknown-token rule). A literal
-// `{% mf x.y %}` typed as prose is therefore treated as a token — an accepted MVP
-// limitation (no backslash escape; see the feature doc).
+// Anything starting `{%` that is NOT well-formed — `{% mf %}`, `{% mf a.b.c %}`,
+// an unclosed `{%` — is emitted back as LITERAL TEXT, so nothing is silently
+// dropped. ⚠️ A literal `{% mf x.y %}` typed as prose is therefore treated as a
+// token: an accepted MVP limitation, since there is no escape syntax.
 
 import { normalizeValueParts, type ValuePart } from "./rows";
 
@@ -73,21 +59,15 @@ export function partsToText(parts: ValuePart[]): string {
   return out;
 }
 
-// One well-formed token: `{% field <snake> %}` OR `{% mf <ns>.<key> %}`, with
-// flexible surrounding whitespace. The braces are escaped so `{` is never read as
-// a quantifier.
+// One well-formed token, with flexible surrounding whitespace. Braces escaped so
+// `{` is never read as a quantifier.
 //
-// 🔴 THE REGRESSION THIS CHARACTER CLASS EXISTS FOR: the metafield halves were
-// first written `[a-z0-9_]+`, which silently excluded HYPHENS — so every standard
-// taxonomy metafield (`{% mf shopify.battery-size %}`, `power-source`, …) failed
-// to match and fell through to the literal-TEXT branch. The merchant then saw the
-// raw `{% mf … %}` source printed on the storefront, because a TEXT part is
-// delivered verbatim. It degraded a token the moment the cell round-tripped
-// through the textarea, including one inserted from the picker seconds earlier.
-// The class now mirrors Shopify's documented rule for a metafield namespace/key
-// (alphanumeric + hyphen + underscore) exactly — do not narrow it again. A `.` is
-// deliberately still excluded: it is the ns/key separator, so `{% mf a.b.c %}`
-// must stay literal rather than split ambiguously.
+// 🔴 **Do not narrow `NS_KEY` — it mirrors Shopify's rule (alphanumeric, hyphen,
+// underscore).** It was first written `[a-z0-9_]+`, excluding HYPHENS, so every
+// standard-taxonomy metafield (`shopify.battery-size`, `power-source`) fell
+// through to the literal-TEXT branch and the merchant saw raw `{% mf … %}` source
+// printed on the storefront. A `.` stays excluded: it is the ns/key separator, so
+// `{% mf a.b.c %}` must stay literal rather than split ambiguously.
 const NS_KEY = "[A-Za-z0-9_-]+";
 const TOKEN_RE = new RegExp(
   `\\{%\\s*(?:field\\s+([a-z0-9_]+)|mf\\s+(${NS_KEY})\\.(${NS_KEY}))\\s*%\\}`,

@@ -1,20 +1,15 @@
-// DOM glue for clipboard-table parsing (Step 12) — the one piece that must touch
-// the DOM, isolated exactly like valueDom.ts. Reads the clipboard's `text/html`
-// into a raw 2-D grid via DOMParser; the pure shaping + source selection lives in
-// clipboardTable.ts. Browser-verified (DOMParser is unavailable in the Node test
-// env and jsdom is not a project dependency — see the testing strategy); its grid
-// output flows through the unit-tested `normalizeGrid`.
+// DOM glue for clipboard-table parsing — the one piece that must touch the DOM.
+// Reads the clipboard's `text/html` into a raw 2-D grid via DOMParser; the pure
+// shaping and source selection live in `clipboardTable.ts`. Browser-verified,
+// since DOMParser is unavailable in the Node test env.
 
 import { parseClipboardTable } from "./clipboardTable";
 
 /**
- * Extract the first HTML `<table>` from a clipboard `text/html` string into a raw
- * 2-D grid of cell strings, or `null` when there is no usable table (so the caller
- * falls back to the plain-text TSV). Each `<tr>`'s `<td>`/`<th>` cells become one
- * row; a `<br>` inside a cell becomes a `\n` so an author-intended line break
- * survives in the grid string (Step 13 maps it to a LINE_BREAK). No trimming here —
- * `normalizeGrid` owns that. Returns `null` under Node/SSR (no DOMParser); the HTML
- * path only ever runs client-side, where a paste happens.
+ * Extract the first HTML `<table>` into a raw 2-D grid, or `null` when there is
+ * no usable table (so the caller falls back to the plain-text TSV). A `<br>`
+ * inside a cell becomes `\n` so an author-intended line break survives. No
+ * trimming here — `normalizeGrid` owns that. `null` under Node/SSR.
  */
 export function extractHtmlTableGrid(html: string): string[][] | null {
   if (typeof DOMParser === "undefined" || !html) return null;
@@ -33,16 +28,12 @@ export function extractHtmlTableGrid(html: string): string[][] | null {
 }
 
 /**
- * Turn a paste payload into a normalized grid (file 21) — the single place both
- * paste entry points (the container handler and the value cell) call, so they can
- * never disagree on what counts as a table. Null-guards `data`, then composes the
- * frozen parsers: `extractHtmlTableGrid` (HTML `<table>`) + the plain-text TSV
- * fallback through `parseClipboardTable`. Lives here (not in the pure module)
- * because it reads `DataTransfer.getData` + `DOMParser`; browser-verified, like
- * `extractHtmlTableGrid`. The callers decide bulk-vs-in-cell from the returned
- * grid, and they ask DIFFERENT questions of it (feature 115): the container
- * handler uses `cellCount > 1` (a column of lines pasted into the grid still makes
- * rows), while the value cell uses `hasMultipleColumns` (inside a cell, only a real
+ * Turn a paste payload into a normalized grid — the single place both paste entry
+ * points call, so they can never disagree on what counts as a table.
+ *
+ * ⚠️ The callers ask DIFFERENT questions of the result: the container handler uses
+ * `cellCount > 1` (a column of lines pasted into the grid still makes rows),
+ * while the value cell uses `hasMultipleColumns` (inside a cell, only a real
  * table makes rows — plain multi-line text stays one multiline value).
  */
 export function readClipboardGrid(data: DataTransfer | null): string[][] {

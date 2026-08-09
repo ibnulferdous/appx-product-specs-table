@@ -1,12 +1,9 @@
 import type { AssignmentScope } from "@prisma/client";
 
-// The MVP assignment scopes as string literals, in picker order (feature 37).
-// Declared here (client-safe, no runtime `@prisma/client` enum import — the type
-// import below is erased at build) so the assignment UI (feature 44) and the
-// server rule writer (`assignment.server.ts`) share ONE source of truth, exactly
-// like `TEMPLATE_STATUSES` in `templateStatus.ts`. `TAG` is intentionally absent
-// — it is post-MVP (data-model.md §5, the enum comment), so the Prisma
-// `AssignmentScope` enum omits it too and this list matches.
+// The MVP assignment scopes, in picker order. Declared here (client-safe — the
+// type import above is erased at build) so the assignment UI and the server rule
+// writer share ONE source of truth. `TAG` is absent because it is post-MVP, and
+// the Prisma `AssignmentScope` enum omits it too.
 export const ASSIGNMENT_SCOPES = [
   "ALL_PRODUCTS",
   "PRODUCT",
@@ -20,21 +17,17 @@ export const ASSIGNMENT_SCOPES = [
 // can be written straight to the DB without a cast.
 export type AssignmentScopeValue = (typeof ASSIGNMENT_SCOPES)[number];
 
-// The sentinel the assignment picker (feature 44) uses for "no assignment" — a
-// UI-only value that is NOT an AssignmentScope: it means "clear the template's
-// INCLUDE rule so it matches no products". The editor engine carries it as the
-// scope-kind whenever a template has no rule; the Save action reads it as a clear.
+// The picker's "no assignment" sentinel — a UI-only value that is NOT an
+// `AssignmentScope`. It means "clear the template's INCLUDE rule so it matches no
+// products"; the Save action reads it as a clear.
 export const SCOPE_NONE = "NONE";
 
-// The scope-kind the picker binds to: either the "none" sentinel or a real
-// AssignmentScope. Kept distinct from `AssignmentScopeValue` so the persisted
-// rule type never accidentally admits the UI-only sentinel.
+// What the picker binds to. Kept distinct from `AssignmentScopeValue` so the
+// persisted rule type never admits the UI-only sentinel.
 export type ScopeSelectionValue = typeof SCOPE_NONE | AssignmentScopeValue;
 
-// Options for the assignment scope-kind <s-select> (feature 44), in picker order.
-// Client-safe and colocated with `ASSIGNMENT_SCOPES` (mirrors
-// `TEMPLATE_STATUS_OPTIONS`) so the picker and any server copy share one source of
-// truth. "None" leads because a brand-new template is unassigned by default.
+// Picker options, in order. "None" leads because a brand-new template is
+// unassigned by default.
 export const SCOPE_OPTIONS: { value: ScopeSelectionValue; label: string }[] = [
   { value: SCOPE_NONE, label: "No products (not assigned)" },
   { value: "ALL_PRODUCTS", label: "All products" },
@@ -44,39 +37,31 @@ export const SCOPE_OPTIONS: { value: ScopeSelectionValue; label: string }[] = [
   { value: "COLLECTION", label: "Selected collections" },
 ];
 
-// Scope kinds intentionally hidden from the merchant-facing picker for now: the
-// MVP exposes only "No products", "All products", and "Selected products".
-// Product type / vendor / collection scoping stays fully implemented server-side
-// (validation, gate, routing, engine) — it's just not offered in the UI until a
-// merchant asks for it, at which point re-enabling is a one-line removal here.
+// Hidden from the merchant-facing picker for now. Product type / vendor /
+// collection scoping stays fully implemented server-side — it is just not offered
+// until a merchant asks, at which point re-enabling is a one-line removal.
 export const HIDDEN_SCOPE_KINDS: ReadonlySet<ScopeSelectionValue> = new Set([
   "PRODUCT_TYPE",
   "VENDOR",
   "COLLECTION",
 ]);
 
-// The scope options actually rendered in the picker — `SCOPE_OPTIONS` minus the
-// hidden kinds. `SCOPE_OPTIONS` remains the full source of truth (server + tests
-// still enumerate every scope); this is the UI-only projection.
+// The UI-only projection; `SCOPE_OPTIONS` remains the full source of truth.
 export const VISIBLE_SCOPE_OPTIONS = SCOPE_OPTIONS.filter(
   (option) => !HIDDEN_SCOPE_KINDS.has(option.value),
 );
 
 /**
- * Client mirror of the picker's value-required rule over a value SET (features
- * 44/47), driving the inline error + the Save-disable in the editor. Pure +
- * client-safe; the server re-validates (this is UX only, never the security
- * boundary). The multi-value story (feature 46) made a template's INCLUDE scope a
- * homogeneous SET of values, so completeness is a set predicate:
- *  - `SCOPE_NONE` / `ALL_PRODUCTS` — always complete (NONE clears the rule;
- *    ALL_PRODUCTS carries no value).
- *  - `PRODUCT_TYPE` / `VENDOR` — single-valued: complete iff EXACTLY ONE value that
- *    validates (a UX guard mirroring the server's `MULTI_VALUE_SCOPES` arity check).
- *  - `PRODUCT` / `COLLECTION` — 1..N: complete iff ≥1 value and EVERY value
- *    validates.
- * An empty valued set on a valued kind is *incomplete* (Save disabled), NOT a
- * clear — only `SCOPE_NONE` clears (feature 46's settled decision, its UX shipped
- * here in 47).
+ * Client mirror of the picker's value-required rule, driving the inline error and
+ * the Save-disable. ⚠️ UX only — the server re-validates and is the real boundary.
+ *
+ *  - `SCOPE_NONE` / `ALL_PRODUCTS` — always complete.
+ *  - `PRODUCT_TYPE` / `VENDOR` — single-valued: complete iff EXACTLY ONE valid
+ *    value, mirroring the server's arity check.
+ *  - `PRODUCT` / `COLLECTION` — complete iff ≥1 value and EVERY value validates.
+ *
+ * An empty set on a valued kind is *incomplete* (Save disabled), NOT a clear —
+ * only `SCOPE_NONE` clears.
  */
 export function isScopeSetComplete(scope: string, values: string[]): boolean {
   if (scope === SCOPE_NONE || scope === "ALL_PRODUCTS") return true;
@@ -94,19 +79,16 @@ const _scopesAreValid = ASSIGNMENT_SCOPES satisfies readonly AssignmentScope[];
 void _scopesAreValid;
 
 /**
- * Validate an untrusted `(scope, scopeValue)` pair into a persistable rule, or
- * reject it. Pure + client-safe so the picker and the server run the identical
- * rule. The error strings are part of the contract (tests + UI copy depend on
- * them) — keep them stable.
+ * Validate an untrusted `(scope, scopeValue)` pair into a persistable rule.
+ * Client-safe, so the picker and the server run the identical rule. ⚠️ The error
+ * strings are part of the contract — tests and UI copy depend on them.
  *
  * Enforces the data-model §5 `scopeValue` invariant:
- *  - `ALL_PRODUCTS` matches everything → it carries **no** value (normalized to
- *    `null`); a supplied value is rejected.
+ *  - `ALL_PRODUCTS` carries **no** value (normalized to `null`); a supplied value
+ *    is rejected.
  *  - every other scope **requires** a non-empty value.
- *  - `PRODUCT` / `COLLECTION` values are Shopify GIDs — a light structural prefix
- *    check only (the UI supplies real GIDs from Shopify pickers; full existence
- *    validation is the dry-run's job, feature 39). `PRODUCT_TYPE` / `VENDOR` are
- *    free-form exact strings, trimmed.
+ *  - `PRODUCT` / `COLLECTION` get a light structural GID prefix check only — full
+ *    existence validation is the dry-run's job.
  */
 export function validateScope(
   scope: unknown,

@@ -1,25 +1,20 @@
 import { useEffect, useLayoutEffect } from "react";
 import type { TabId } from "./tabViewMemory";
 
-// Shared types + constants + tiny pure helpers for the spec-table editor, lifted
-// out of the former monolithic `SpecTableEditor.tsx` (reshell A1). This is a
-// dependency-free leaf both `useRowEngine` and the presentational components
-// import — it pulls in no engine/component code, so it can never close an import
-// cycle.
+// Shared types, constants and pure helpers for the spec-table editor. A
+// dependency-free leaf that both `useRowEngine` and the presentational components
+// import, so it can never close an import cycle.
 
-// The field the merchant has picked in the "Insert field" modal (Step 9). A
-// discriminated union so a native field and a metafield are mutually exclusive
-// across the modal's two choice lists: whichever kind is set makes the other
-// list's controlled `values` empty, so only one radio is ever checked. `null`
-// means nothing picked (the primary button is disabled).
+// A discriminated union so a native field and a metafield are mutually exclusive
+// across the modal's two choice lists: whichever kind is set empties the other
+// list's controlled `values`, so only one radio is ever checked.
 export type FieldSelection =
   | { kind: "native"; field: string }
   | { kind: "metafield"; namespace: string; key: string };
 
-// The stable choice value for a metafield in the modal's list: its
-// `namespace.key`, which is unique per shop and non-empty (the Step 8 mapper
-// drops nodes missing either). Used both as the <s-choice value> and to decode an
-// onChange pick back to a definition by lookup (never by string-splitting).
+// The stable choice value for a metafield: its `namespace.key`, unique per shop
+// and non-empty. Used as the `<s-choice value>` and to decode a pick back to a
+// definition by lookup — never by string-splitting.
 export function metafieldChoiceValue(part: {
   namespace: string;
   key: string;
@@ -32,13 +27,11 @@ export function metafieldChoiceValue(part: {
 export const useBrowserLayoutEffect =
   typeof document === "undefined" ? useEffect : useLayoutEffect;
 
-// Shared grid template so the column header, data rows, and section rows all
-// line up. First track is the fixed-width gutter holding the per-row select
-// checkbox + the drag handle + the delete button side by side (inline), so it
-// must fit all THREE controls plus gaps. Widened from 4rem (two controls) when
-// the multi-select checkbox landed (feature 29); DATA_COLUMNS / SECTION_COLUMNS
-// derive from it, so the header, data rows, and section rows stay aligned
-// automatically — retune this one constant, never hardcode per-row widths.
+// Shared grid template so the column header, data rows and section rows line up.
+// The first track is the gutter holding the select checkbox, drag handle and
+// delete button inline, so it must fit all three plus gaps. ⚠️ The two column
+// templates derive from it — retune this one constant, never hardcode per-row
+// widths.
 export const GUTTER = "5.5rem";
 export const DATA_COLUMNS = `${GUTTER} 1fr 1.6fr`;
 export const SECTION_COLUMNS = `${GUTTER} 1fr`;
@@ -47,36 +40,27 @@ export const SECTION_COLUMNS = `${GUTTER} 1fr`;
 // Modal API (`shopify.modal.show/hide`).
 export const INSERT_FIELD_MODAL_ID = "insert-field-modal";
 
-// App Bridge plays a view transition whenever an `<s-modal>` opens or closes, and
-// it manages focus AROUND that transition: focusing a child mid-open ABORTS the
-// transition, and on close it restores focus to the modal's invoker AFTER the
-// transition settles. Both fights with our own `.focus()` calls, so we defer past
-// the animation by this many ms — long enough to clear the transition. Used by the
-// modal's deferred search-field focus (open) and the value cell's caret restore
-// after an Insert (close). Confirmed in-browser; see polaris-web-component-gotchas.
+// 🔴 App Bridge plays a view transition whenever an `<s-modal>` opens or closes
+// and manages focus AROUND it: focusing a child mid-open ABORTS the transition,
+// and on close it restores focus to the invoker AFTER the transition settles.
+// Both fight our own `.focus()` calls, so they defer past the animation by this
+// many ms. See [[polaris-web-component-gotchas]].
 export const MODAL_TRANSITION_MS = 350;
 
-// The "some pasted rows won't fit" confirmation modal (feature 24). Shown before a
-// bulk paste that would cross the 200-row cap so the merchant can continue (add
-// what fits) or cancel (add nothing). Driven imperatively via the App Bridge Modal
-// API, like the Insert-field modal.
+// Shown before a bulk paste that would cross the row cap, so the merchant can
+// continue (add what fits) or cancel.
 export const PASTE_CAP_MODAL_ID = "paste-over-cap-modal";
 
-// The bulk-delete confirmation modal (feature 29). Shown before a destructive
-// multi-row delete (gated on count) so the merchant can confirm or cancel —
-// there is no undo yet, so this is the primary safeguard. Driven imperatively via
-// the App Bridge Modal API, like the Insert-field and Paste-cap modals.
+// Shown before a destructive multi-row delete. There is no undo, so this is the
+// primary safeguard.
 export const BULK_DELETE_MODAL_ID = "bulk-delete-modal";
 
-// Deleting this many or more selected rows (and therefore Select all → Delete)
-// opens the confirmation modal first; deleting 1–2 is already a deliberate
-// toolbar action and applies immediately, no modal. A named constant — never a
-// hardcoded literal — same convention as MAX_TEMPLATE_ROWS, so the threshold can
-// be retuned from merchant feedback in one place.
+// Deleting this many or more rows confirms first; deleting fewer is already a
+// deliberate toolbar action and applies immediately.
 export const BULK_DELETE_CONFIRM_THRESHOLD = 3;
 
-// Spoken once when a drag handle is focused (Step 11). dnd-kit renders this into
-// the auto-generated `aria-describedby` instructions element the handle points at.
+// Spoken once when a drag handle is focused. dnd-kit renders this into the
+// auto-generated `aria-describedby` element the handle points at.
 export const REORDER_INSTRUCTIONS = {
   draggable:
     "To reorder a row, press space or enter on its drag handle to pick it up, " +
@@ -84,9 +68,9 @@ export const REORDER_INSTRUCTIONS = {
     "press escape to cancel.",
 };
 
-// A caret saved from a value cell: which row, and the textarea `selectionStart`
-// character offset into `partsToText(valueParts)` (feature 111). A plain number,
-// never a DOM Range, so it survives focus moving into the modal and any re-render.
+// A caret saved from a value cell: the row plus the textarea `selectionStart`
+// offset into `partsToText(valueParts)`. ⚠️ A plain number, never a DOM Range, so
+// it survives focus moving into the modal and any re-render.
 export interface SavedCaret {
   rowId: string;
   offset: number;

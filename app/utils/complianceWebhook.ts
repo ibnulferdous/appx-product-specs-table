@@ -1,33 +1,24 @@
-// Payload narrowing for Shopify's three mandatory compliance webhooks
-// (`customers/data_request`, `customers/redact`, `shop/redact`) — step 105,
+// Payload narrowing for Shopify's three mandatory compliance webhooks. Spec:
 // `context/features/105-privacy-webhook-domain-and-erase.md`.
 //
-// Framework-free and side-effect-free on purpose: the route handlers land in
-// step 106, and this module has no Prisma, no Shopify client and no logger, so
-// it runs under the node-environment Vitest project with no config change.
-//
 // 🔴 THE SHAPE BELOW IS DECIDED BY WHAT IS SAFE TO LOG, NOT BY THE TOPIC LIST.
-// Two of the three payloads carry `customer.email` and `customer.phone`. Writing
-// those into an application log — in response to a webhook whose entire purpose
-// is privacy — would be its own violation, and an invisible one, because nobody
-// reviews logs. So this module does NOT narrow "the payload" into a faithful
-// typed mirror of it. It extracts a fixed set of non-identifying fields and
-// drops everything else on the floor. Anything the app never reads, it never
-// holds.
+// Two of the three payloads carry `customer.email` and `customer.phone`, and
+// writing those into an application log — in response to a privacy webhook —
+// would be its own violation, invisible because nobody reviews logs. So this does
+// NOT mirror the payload: it extracts a fixed set of non-identifying fields and
+// drops everything else. Anything the app never reads, it never holds.
 
 /**
  * The non-identifying summary of a compliance payload — the only thing the app
  * takes from one.
  *
  * 🚫 No `email`, no `phone`, no order ids, no passthrough of the original
- * payload. `complianceWebhook.test.ts` asserts this behaviourally (it searches
- * the serialized output for the fixture's email and phone), so a field added
- * here under any name fails the suite.
+ * payload. `complianceWebhook.test.ts` asserts this behaviourally — it searches
+ * the serialized output for the fixture's email and phone — so a field added here
+ * under any name fails the suite.
  *
  * Every field is independently nullable: one summary type covers all three
- * topics, and the topics differ only in which fields are absent — which `null`
- * already expresses. Three near-identical parsers would say the same thing three
- * times and give a future topic somewhere new to be forgotten.
+ * topics, which differ only in which fields are absent.
  */
 export interface ComplianceSummary {
   /**
@@ -89,15 +80,12 @@ function readArrayLength(value: unknown): number | null {
 /**
  * Narrow an arbitrary compliance webhook body into a {@link ComplianceSummary}.
  *
- * TOTAL: never throws, for any input at all — `null`, a string, an array, a
- * deeply nested object. A handler that throws on a malformed body returns a
- * non-200, and Shopify retries every non-200, so a parser that can throw is a
- * parser that can produce an infinite redelivery loop over a body that will
- * never improve.
+ * TOTAL: never throws, for any input. A handler that throws on a malformed body
+ * returns a non-200, and Shopify retries every non-200 — so a parser that can
+ * throw can produce an infinite redelivery loop over a body that will never
+ * improve.
  *
- * Each field degrades on its own: a payload with a good `shop_domain` and a
- * wrong-typed `shop_id` yields the domain and a null id, rather than failing
- * whole.
+ * Each field degrades on its own rather than failing whole.
  */
 export function parseComplianceSummary(payload: unknown): ComplianceSummary {
   if (!isRecord(payload)) return { ...EMPTY_SUMMARY };
@@ -120,12 +108,12 @@ export function parseComplianceSummary(payload: unknown): ComplianceSummary {
 }
 
 /**
- * The one place a compliance log line is built, so D4's no-PII guarantee has a
- * single place to hold instead of one per route handler.
+ * The one place a compliance log line is built, so the no-PII guarantee holds in
+ * a single place instead of once per route handler.
  *
  * ⚠️ Reads the SUMMARY only. A formatter that reaches back into the original
- * payload for "just a bit more context" is the obvious way to reintroduce the
- * email, which is why the payload is not a parameter here.
+ * payload for "a bit more context" is the obvious way to reintroduce the email,
+ * which is why the payload is not a parameter here.
  *
  * @param topic Shopify's topic constant, e.g. `CUSTOMERS_REDACT`.
  * @param shop  The AUTHENTICATED shop domain, not `summary.shopDomain`.

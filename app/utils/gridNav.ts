@@ -1,28 +1,24 @@
-// Pure vertical-navigation rules for the spec-table editor's keyboard cell
-// navigation (feature 30, Step 1). Given the row array and where the caret
-// currently is, decide which cell a `Ctrl/Cmd + Arrow Up/Down` press should land
-// on — or `null` for a no-op (no row that way).
+// Pure vertical-navigation rules for keyboard cell navigation: given the rows and
+// the caret's position, which cell a `Ctrl/Cmd + Arrow Up/Down` lands on, or
+// `null` for a no-op.
 //
-// Framework-free and DOM-free on purpose (string/array logic only), like
-// `valueParts.ts`: the navigation RULES live here and are unit-tested in Node,
-// while the keyboard/focus/caret WIRING (modifier detection, the preferredColumn
-// ref, focusing the target, caret-at-end placement) is Step 2's browser-verified
-// DOM glue. A bug here is a navigation-rules bug, never a focus/caret bug.
+// DOM-free on purpose — the RULES live here and are unit-tested in Node, while
+// the keyboard/focus/caret WIRING is browser-verified glue in
+// `useGridKeyboardNav.ts`. A bug here is a navigation-rules bug, never a
+// focus/caret bug.
 
 import type { EditorRow } from "./rows";
 
 // Which data-cell column the merchant is navigating in. A section row has no
-// column (one full-width input) — see GridTarget.
+// column (one full-width input).
 export type GridColumn = "label" | "value";
 
-// Vertical only (Step 1). Horizontal stays Tab / Shift+Tab — out of scope.
+// Vertical only — horizontal stays Tab / Shift+Tab.
 export type GridNavDirection = "up" | "down";
 
-// Where a Ctrl/Cmd+Arrow press should land. A data row resolves to one of its two
-// cells (the echoed column); a section row resolves to its single input — the
-// `cell: "section"` arm carries NO column, so Step 2's preferredColumn ref (left
-// unchanged while sitting on a section) preserves the merchant's column intent
-// across the section row.
+// Where a Ctrl/Cmd+Arrow press should land. ⚠️ The `cell: "section"` arm carries
+// NO column, so the caller's preferredColumn ref stays unchanged while sitting on
+// a section — that is what preserves column intent across it.
 export type GridTarget =
   | { rowId: string; cell: "label" | "value" }
   | { rowId: string; cell: "section" };

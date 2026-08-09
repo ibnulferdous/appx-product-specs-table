@@ -1,32 +1,26 @@
 // Single source of truth for the spec-table editor's row array.
 //
-// The editor is a reducer over `rows`; array index is display order. Every later
-// feature (segmented value cell, drag reorder, clipboard paste, undo/redo) is
-// just more actions on this same array, so the shape here matches the authoring
-// row contract in `context/data-model.md` exactly — do not introduce a simpler
-// interim shape and migrate later.
+// The editor is a reducer over `rows`; array index is display order. The shape
+// here matches the authoring row contract in `context/data-model.md` exactly.
 //
-// This module is framework-free on purpose: the editor UI uses it now, and the
-// server-side save validation (Step 6) will read the same constant and types.
+// Framework-free: the editor UI and the server-side save validation both read
+// these constants and types.
 
-// MVP row cap. It is an MVP value that may increase post-MVP, so the UI and the
-// server must both read this constant — never hardcode the literal.
+// MVP row cap — the UI and the server must both read this constant, never the
+// literal.
 export const MAX_TEMPLATE_ROWS = 200;
 
-// Starter-scaffold size for a brand-new template: how many blank DATA rows open
-// below the single seed section header (see `createInitialRows`). A named
-// constant, never a hardcoded literal, so the scaffold can be retuned in one
-// place — same convention as MAX_TEMPLATE_ROWS.
+// How many blank DATA rows open below the seed section header in a brand-new
+// template (see `createInitialRows`).
 export const INITIAL_DATA_ROW_COUNT = 5;
 
 export type ValuePart =
   | { type: "TEXT"; text: string }
   | { type: "SHOPIFY_FIELD"; field: string }
   | { type: "METAFIELD"; namespace: string; key: string }
-  // Author-intended hard line break (data-model.md §7). Carries no text and no
-  // dynamic reference; renders as a `<br>` in the editor and the storefront. It
-  // is a non-TEXT part, so `normalizeValueParts` treats it as a TEXT-merge
-  // boundary like any token.
+  // Author-intended hard line break. Carries no text and no dynamic reference;
+  // a non-TEXT part, so `normalizeValueParts` treats it as a TEXT-merge boundary
+  // like any token.
   | { type: "LINE_BREAK" };
 
 export type RowType = "DATA" | "SECTION_HEADER";
@@ -50,38 +44,28 @@ export interface SectionHeaderRow {
 
 export type EditorRow = DataRow | SectionHeaderRow;
 
-// Base used when a row has no label yet — empty-label rows still need a stable,
-// non-colliding key at creation. The uniqueness suffixing below turns repeated
+// Base for a row with no label yet; the uniqueness suffixing turns repeated
 // blank rows into `row`, `row_2`, `row_3`, …
 const FALLBACK_KEY_BASE = "row";
 
-// Section headers get their own base so blank sections become `section`,
-// `section_2`, … and never collide with blank data rows.
+// Section headers get their own base so they never collide with blank data rows.
 const SECTION_KEY_BASE = "section";
 
 /**
- * Slugify a label into a stable, human-readable key (`Screen Size` ->
- * `screen_size`). Falls back to a generic base when the label has no usable
+ * Slugify a label into a stable, human-readable key (`Screen Size` →
+ * `screen_size`), falling back to a generic base when the label has no usable
  * characters.
  *
- * Label -> key policy (owned decision, Step 3 review): UI-created rows are blank
- * at creation, so they cannot derive a key from a label that does not exist yet.
- * `ADD_ROW` / `ADD_SECTION` therefore seed a *provisional* key via
- * `uniqueKey(FALLBACK_KEY_BASE / SECTION_KEY_BASE, …)` (`row`, `row_2`, …), and
- * `SET_LABEL` never rewrites it. Save (Step 6) is where this helper runs: it
- * derives the slug from the row's label for rows still carrying a provisional
- * key, then never rewrites it again. That satisfies `data-model.md` §7 ("key
- * generated from the label initially … changing a label does not change the key
- * after the row is created") and the comparison-readiness invariant (key is the
- * cross-product / cross-template alignment mechanism, so it must end up
- * human-readable, not an opaque `row_N`). This is the Step 6 serialization tool,
- * kept on purpose — not dead code.
+ * **Not called by the editor reducer.** UI-created rows are blank at creation,
+ * so they cannot derive a key from a label that does not exist yet: `ADD_ROW` /
+ * `ADD_SECTION` seed a *provisional* key and `SET_LABEL` never rewrites it. This
+ * runs at Save, deriving the slug for rows still on a provisional key, and never
+ * rewrites it again — `data-model.md` §7 ("changing a label does not change the
+ * key after the row is created") plus the comparison-readiness invariant, which
+ * needs keys human-readable rather than an opaque `row_N`.
  *
- * Not called by the editor reducer — rows stay on their provisional keys until
- * Save. Its callers both live in `rowsSerialize.ts`: `finalizeRowKeys` (via
- * `reconcileRowKeys`, run server-side in `updateTemplateRows` /
- * `template.server.ts`) for Save-time finalization, and `parseRow` as a fallback
- * to repair a persisted/posted row whose `key` is missing.
+ * Callers both live in `rowsSerialize.ts`: `finalizeRowKeys` for Save-time
+ * finalization, and `parseRow` to repair a row whose `key` is missing.
  */
 export function slugifyKey(label: string): string {
   const slug = label
@@ -94,9 +78,8 @@ export function slugifyKey(label: string): string {
 }
 
 /**
- * Make `base` unique within the template by suffixing `_2`, `_3`, … against the
- * keys already in use. Keeps `key` unique inside a template so cross-product /
- * cross-template row alignment never collides.
+ * Make `base` unique within the template by suffixing `_2`, `_3`, … so
+ * cross-product / cross-template row alignment never collides.
  */
 export function uniqueKey(base: string, existingKeys: Set<string>): string {
   if (!existingKeys.has(base)) {
@@ -115,10 +98,9 @@ function collectKeys(rows: EditorRow[]): Set<string> {
 }
 
 /**
- * crypto.randomUUID() is the only non-deterministic input to row creation, so
- * callers mint the id and pass it into the reducer. This keeps the reducer pure
- * and deterministic (and therefore testable). The id is stable, never changes,
- * and is never reused. Available natively in modern browsers and Node 18+.
+ * The only non-deterministic input to row creation, so callers mint the id and
+ * pass it into the reducer — that is what keeps the reducer pure and testable.
+ * The id is stable, never changes, and is never reused.
  */
 export function newRowId(): string {
   return crypto.randomUUID();
@@ -130,16 +112,14 @@ function createDataRow(id: string, key: string): DataRow {
     key,
     rowType: "DATA",
     label: "",
-    // Step 1 seeds exactly one TEXT part; Step 2 extends this array in place.
     valueParts: [{ type: "TEXT", text: "" }],
     hideWhenEmpty: true,
   };
 }
 
 /**
- * Create a section-header row (`data-model.md` §7). A section has no
- * `valueParts` — it renders as a single full-width header, not a two-cell data
- * row. `hideWhenEmpty` defaults to false to match the data-model example.
+ * A section has no `valueParts` — it renders as a single full-width header, not
+ * a two-cell data row.
  */
 function createSectionRow(id: string, key: string): SectionHeaderRow {
   return {
@@ -153,9 +133,8 @@ function createSectionRow(id: string, key: string): SectionHeaderRow {
 
 /**
  * Collapse a value-part array back to canonical form after a structural edit:
- * merge adjacent TEXT parts into one (so removing a pill from
- * `[TEXT, PILL, TEXT]` yields a single TEXT rather than two fragments) and
- * guarantee at least one TEXT part remains so the cell always stays editable.
+ * merge adjacent TEXT parts into one, and guarantee at least one TEXT part
+ * remains so the cell always stays editable.
  */
 export function normalizeValueParts(parts: ValuePart[]): ValuePart[] {
   const merged: ValuePart[] = [];
@@ -174,10 +153,9 @@ export function normalizeValueParts(parts: ValuePart[]): ValuePart[] {
 }
 
 /**
- * Insert `row` directly below the row with id `afterId` (the active row). Falls
- * back to appending when there is no active row, or the active row is gone. Used
- * by every toolbar row-creating action so new rows land next to the merchant's
- * current focus; the bottom "Add row" passes no `afterId` and so appends.
+ * Insert `row` directly below the row with id `afterId`, falling back to
+ * appending when there is no active row. Used by every toolbar row-creating
+ * action so new rows land next to the merchant's current focus.
  */
 function insertRowAfter(
   rows: EditorRow[],
@@ -194,12 +172,10 @@ function insertRowAfter(
 }
 
 /**
- * Move the element at `from` to index `to`, returning a fresh array (the source
- * is never mutated). Pure and framework-free on purpose: the reducer module owns
- * the array-move so `rows.ts` stays free of any UI dependency (`@dnd-kit` lives in
- * the editor component, not here). Matches `@dnd-kit/sortable`'s `arrayMove`
- * semantics — `to` is the target index in the original array — so the editor can
- * hand the reducer the dragged row's destination index directly.
+ * Move the element at `from` to index `to`, returning a fresh array. Matches
+ * `@dnd-kit/sortable`'s `arrayMove` semantics — `to` is the target index in the
+ * original array — so the editor can hand the reducer a destination index
+ * directly, while `@dnd-kit` itself stays out of this module.
  */
 function arrayMove<T>(list: T[], from: number, to: number): T[] {
   const next = list.slice();
@@ -214,62 +190,34 @@ export type RowsAction =
   | { type: "ADD_SECTION"; id: string; afterId?: string | null }
   | { type: "DUPLICATE_ROW"; id: string; newId: string }
   | { type: "DELETE_ROW"; id: string }
-  // Bulk delete (feature 29): remove every row whose id is in `ids` in one pure,
-  // same-reference-safe step. Sits alongside the single `DELETE_ROW` (the per-row
-  // ✕ is unchanged) and powers the multi-select bulk-action bar; Select all →
-  // Delete passes every id and so empties the template. No cap check — like
-  // MOVE_ROW, a delete can never grow the array. Designed as exactly ONE undoable
-  // step so the upcoming undo/redo slice can capture a bulk delete cleanly.
+  // Bulk delete, designed as exactly ONE undoable step. No cap check — a delete
+  // can never grow the array.
   | { type: "DELETE_ROWS"; ids: string[] }
-  // Replace the row array wholesale with a previously-captured, already-valid
-  // snapshot (feature 33). Powers the bulk-delete "Undo" toast: it restores the
-  // EXACT pre-delete rows — same id / key / valueParts / order — which PASTE_ROWS
-  // cannot (it mints fresh ids/keys). No cap check: a snapshot of a prior valid
-  // state already satisfied the cap, so it can never exceed it. A deliberate
-  // stopgap that adds NO history; the full undo/redo system restores snapshots in
-  // its own meta-reducer (not via a RowsAction) and supersedes this action.
+  // Replace the array wholesale with a previously-captured, already-valid
+  // snapshot. Powers the bulk-delete "Undo" toast: restores the EXACT pre-delete
+  // rows (same id / key / valueParts / order), which PASTE_ROWS cannot since it
+  // mints fresh ids. No cap check: a prior valid state already satisfied it.
   | { type: "RESTORE_ROWS"; rows: EditorRow[] }
   | { type: "SET_LABEL"; id: string; label: string }
-  // Replace a DATA row's whole value with a caller-parsed array (the `<textarea>`
-  // value surface, feature 111). The textarea edits a plain string; the component
-  // parses it to parts via `textToParts` (feature 109, `valueText.ts`) and
-  // dispatches the result here. Parsing stays OUT of the reducer so it remains
-  // pure / DOM-free / grammar-free (and to avoid a `rows` → `valueText` import
-  // cycle — `valueText` imports from `rows`). `normalizeValueParts` runs so the
-  // stored shape is identical to what the granular value actions produce (≥1 TEXT,
-  // no adjacent TEXT), keeping dirty-tracking / serialize / preview unaffected.
+  // Replace a DATA row's whole value with a caller-parsed array. Parsing stays
+  // OUT of the reducer so it remains pure and DOM-free, and to avoid a
+  // `rows` → `valueText` import cycle (`valueText` imports from `rows`).
   | { type: "SET_VALUE_PARTS"; id: string; valueParts: ValuePart[] }
-  // Reorder (Step 10): move the row with id `activeId` to the array position of
-  // the row with id `overId`. Display order IS the array index (data-model §6/§11),
-  // so reordering is a pure array-move and nothing else: row `key`/`id` are left
-  // untouched (data-model §12 — a finalized key is never re-derived, and order is
-  // not identity). Keyed by id, not index, because @dnd-kit reports the dragged and
-  // target row ids; the reducer resolves the indices at apply time so a stale index
-  // can never slip in. No cap check — a reorder can never grow the array.
+  // Move the row with id `activeId` to the position of `overId`. Display order
+  // IS the array index, so this is a pure array-move: `key`/`id` are untouched
+  // (order is not identity). Keyed by id, not index, so a stale index cannot
+  // slip in. No cap check — a reorder can never grow the array.
   | { type: "MOVE_ROW"; activeId: string; overId: string }
-  // Bulk-insert rows from a clipboard paste (Step 13). The component parses the
-  // clipboard to a grid (Step 12), maps it to `{ label, valueParts }` content via
-  // `gridToPastedRows`, and mints a fresh `id` per row (the lone non-deterministic
-  // input, kept out of the reducer like every other row-creating action). The
-  // reducer inserts them in order as DATA rows, seeding a *provisional* key per
-  // row exactly like ADD_ROW (`row`, `row_2`, … — finalized from the label at
-  // Save, never here), and CAP-TRUNCATES defensively: only `MAX_TEMPLATE_ROWS -
-  // length` rows are added (the handler computes the dropped-count for its toast;
-  // this truncation is the belt-and-suspenders gate, like ADD_ROW's cap refusal).
+  // Bulk-insert rows from a clipboard paste. The component parses the clipboard
+  // to a grid and mints a fresh `id` per row; the reducer inserts them as DATA
+  // rows with provisional keys and CAP-TRUNCATES defensively.
   //
-  // `afterId` (file 22) splices the whole batch directly below the active row,
-  // mirroring ADD_ROW / ADD_SECTION; omit/null (or an unknown id) → append at the
-  // end (the Step 13 fallback). A SECTION_HEADER is a valid `afterId` — the pasted
-  // DATA rows land right under the section.
-  //
-  // `replace` (file 23) is the new-template scaffold swap: when true, the result is
-  // built on `[]` instead of the existing rows (and `afterId` is ignored), so the
-  // pasted rows become the WHOLE array — used by the paste handler, gated on
-  // `isNew && isPristineScaffold(...)`, to drop the untouched starter scaffold
-  // (the empty section + 5 blanks) on the merchant's first bulk paste. An empty
-  // paste with `replace` is a same-reference no-op (never wipe the scaffold to
-  // nothing). The row-building loop, provisional keying, and cap are shared with
-  // the non-replace path — only the BASE array (`[]` vs `rows`) differs.
+  // `afterId` splices the whole batch below the active row; an unknown/absent id
+  // appends. `replace` rebuilds on `[]` instead of the existing rows, so the
+  // pasted rows become the WHOLE array — used to drop a brand-new template's
+  // untouched starter scaffold on the first bulk paste. An empty paste with
+  // `replace` is a same-reference no-op, so the scaffold is never wiped to
+  // nothing.
   | {
       type: "PASTE_ROWS";
       rows: Array<{ id: string; label: string; valueParts: ValuePart[] }>;
@@ -283,8 +231,8 @@ export function rowsReducer(
 ): EditorRow[] {
   switch (action.type) {
     case "ADD_ROW": {
-      // The cap is enforced here, not just on the disabled button, so no action
-      // path can exceed it. The disabled buttons are UX; the reducer is the gate.
+      // The cap is enforced here, not just on the disabled button: the disabled
+      // buttons are UX, the reducer is the gate.
       if (rows.length >= MAX_TEMPLATE_ROWS) {
         return rows;
       }
@@ -318,8 +266,8 @@ export function rowsReducer(
       }
 
       const source = rows[index];
-      // Copy the content but mint a fresh id and a fresh unique key. Never reuse
-      // the source row's id or key.
+      // Copy the content but mint a fresh id and unique key — never reuse the
+      // source row's.
       const key = uniqueKey(source.key, collectKeys(rows));
       const copy: EditorRow =
         source.rowType === "DATA"
@@ -340,20 +288,15 @@ export function rowsReducer(
       return rows.filter((row) => row.id !== action.id);
 
     case "DELETE_ROWS": {
-      if (action.ids.length === 0) return rows; // nothing selected — same-ref no-op
+      if (action.ids.length === 0) return rows;
       const remove = new Set(action.ids);
       const next = rows.filter((row) => !remove.has(row.id));
-      // Return the SAME array reference when nothing matched, so a stale/foreign id
-      // set never flips the editor's dirty flag — mirroring MOVE_ROW / PASTE_ROWS
-      // no-ops. Surviving rows keep their id/key and order untouched (set-filter).
+      // Same array reference when nothing matched, so a stale/foreign id set
+      // never flips the editor's dirty flag.
       return next.length === rows.length ? rows : next;
     }
 
     case "RESTORE_ROWS":
-      // Replace the array with a previously-captured, already-valid snapshot. Used
-      // by the bulk-delete "Undo" toast to restore the exact pre-delete rows (same
-      // id/key/order). No cap check: a snapshot of a prior valid state already
-      // satisfied the cap.
       return action.rows;
 
     case "SET_LABEL":
@@ -364,10 +307,8 @@ export function rowsReducer(
 
     case "SET_VALUE_PARTS":
       return rows.map((row) => {
-        // Whole-value replacement from the textarea surface (feature 111). The
-        // component owns parsing; the reducer normalizes + swaps. No-op on a
-        // SECTION_HEADER or unknown id (same-reference return, so a stray dispatch
-        // never flips the editor's dirty flag).
+        // No-op on a SECTION_HEADER or unknown id, returning the same reference
+        // so a stray dispatch never flips the dirty flag.
         if (row.id !== action.id || row.rowType !== "DATA") {
           return row;
         }
@@ -377,10 +318,8 @@ export function rowsReducer(
     case "MOVE_ROW": {
       const from = rows.findIndex((row) => row.id === action.activeId);
       const to = rows.findIndex((row) => row.id === action.overId);
-      // No-op on an unknown id or a drop back onto the origin: return the SAME
-      // array reference so a same-spot drag never flips the editor's dirty flag.
-      // The moved element keeps its identity (id) and meaning (key); only its
-      // array position — i.e. its display order — changes.
+      // Same array reference on an unknown id or a drop back onto the origin, so
+      // a same-spot drag never flips the dirty flag.
       if (from === -1 || to === -1 || from === to) {
         return rows;
       }
@@ -388,31 +327,22 @@ export function rowsReducer(
     }
 
     case "PASTE_ROWS": {
-      // `replace` (file 23) rebuilds from an empty base so the pasted rows become
-      // the whole array — swapping out a brand-new template's untouched scaffold
-      // (the empty section + 5 blanks). The non-replace path (file 22) builds on
-      // the existing rows and splices after `afterId`. Only the BASE array differs;
-      // the keying loop and the cap below are shared, so there is no second path.
+      // Only the BASE array differs between the replace and insert paths; the
+      // keying loop and cap below are shared, so there is no second path.
       const base = action.replace ? [] : rows;
-      // Cap is the gate (truncate, don't refuse): take only the room remaining on
-      // the base. When nothing fits (at the cap) or there is nothing to paste,
-      // return the SAME original array reference so the paste never flips the
-      // editor's dirty flag — mirroring MOVE_ROW's same-reference no-op. For
-      // `replace` this is also the "empty paste never wipes the scaffold" rule:
-      // replace only when there is something to replace it with.
+      // Truncate, don't refuse. When nothing fits or there is nothing to paste,
+      // return the SAME original reference so the paste never flips the dirty
+      // flag — and, on the replace path, so an empty paste never wipes the
+      // scaffold.
       const room = MAX_TEMPLATE_ROWS - base.length;
       if (room <= 0 || action.rows.length === 0) {
         return rows;
       }
-      // Provisional keys, accumulated: seed each new row's key from the shared
-      // fallback base and add it to the working set as we go, so the batch's keys
-      // are mutually unique AND unique against the base rows (`row`, `row_2`, …).
-      // Keys are seeded from ALL base rows (position is irrelevant to uniqueness),
-      // so a mid-table insert can never collide; on the replace path the base is
-      // empty, so they start clean at `row`. No slugifyKey here — finalization from
-      // the label happens at Save (reconcileRowKeys, server-side). All pasted rows
-      // are DATA rows; a grid cannot express a SECTION_HEADER, so paste never
-      // creates one.
+      // Provisional keys accumulated as we go, so the batch's keys are mutually
+      // unique AND unique against the base rows. Seeded from ALL base rows
+      // (position is irrelevant to uniqueness), so a mid-table insert cannot
+      // collide. No `slugifyKey` — finalization happens at Save. All pasted rows
+      // are DATA rows; a grid cannot express a SECTION_HEADER.
       const taken = collectKeys(base);
       const pastedRows: DataRow[] = action.rows.slice(0, room).map((pasted) => {
         const key = uniqueKey(FALLBACK_KEY_BASE, taken);
@@ -426,11 +356,9 @@ export function rowsReducer(
           hideWhenEmpty: true,
         };
       });
-      // Splice the whole batch in directly after the active row (file 22),
-      // mirroring insertRowAfter's single-row semantics: an unknown/absent
-      // `afterId` falls back to append at the end. A SECTION_HEADER `afterId` is
-      // valid — the DATA rows land right under the section. On the replace path the
-      // base is `[]`, so the lookup misses and the rows become the whole array.
+      // A SECTION_HEADER `afterId` is valid — the DATA rows land under it. On
+      // the replace path the base is `[]`, so the lookup misses and the rows
+      // become the whole array.
       const index = action.afterId
         ? base.findIndex((row) => row.id === action.afterId)
         : -1;
@@ -449,17 +377,13 @@ export function rowsReducer(
 }
 
 /**
- * Build the starter scaffold for a brand-new template: one SECTION_HEADER
- * followed by `INITIAL_DATA_ROW_COUNT` blank DATA rows. Folds the canonical
- * `rowsReducer` from `[]` (one ADD_SECTION, then N ADD_ROW) so the seed reuses
- * the exact same provisional-key logic, cap behavior, and row shape as
- * interactive creation — there is no second construction path to drift. The
- * provisional keys come out as `section`, `row`, `row_2`, … `row_5`; they are
- * finalized from labels at Save like any other new row (rowsSerialize.ts).
+ * Build the starter scaffold: one SECTION_HEADER followed by
+ * `INITIAL_DATA_ROW_COUNT` blank DATA rows.
  *
- * `mkId` is injectable (defaults to `newRowId`) so the factory is deterministic
- * under test — the only non-deterministic input (the row ids) is supplied by the
- * caller, keeping this pure like the reducer it folds.
+ * Folds the canonical `rowsReducer` from `[]` so the seed reuses the exact same
+ * provisional-key logic, cap behavior and row shape as interactive creation —
+ * there is no second construction path to drift. `mkId` is injectable so the
+ * factory is deterministic under test.
  */
 export function createInitialRows(mkId: () => string = newRowId): EditorRow[] {
   let rows = rowsReducer([], { type: "ADD_SECTION", id: mkId() });
@@ -470,25 +394,17 @@ export function createInitialRows(mkId: () => string = newRowId): EditorRow[] {
 }
 
 /**
- * True iff `rows` is the untouched starter scaffold a brand-new template opens on
- * — exactly the shape `createInitialRows()` seeds and nothing the merchant has yet
- * typed into:
- *   - length is `INITIAL_DATA_ROW_COUNT + 1`;
- *   - `rows[0]` is a SECTION_HEADER with an empty label;
- *   - every other row is a DATA row with an empty label whose `valueParts` is
- *     exactly one empty TEXT part.
+ * True iff `rows` is the untouched starter scaffold — the shape
+ * `createInitialRows()` seeds, with nothing typed into it.
  *
- * It is a structural, merchant-visible blank check on purpose: it does NOT inspect
- * keys (provisional keys are an implementation detail), and it deliberately does
- * NOT use the editor's dirty flag — the dirty baseline also covers name/status, so
- * a rename-then-paste on a new template would read "dirty" while the rows are still
- * the blank scaffold the merchant clearly wants replaced. This captures exactly the
- * rows state.
+ * A structural, merchant-visible blank check: it does NOT inspect keys
+ * (provisional keys are an implementation detail), and deliberately does NOT use
+ * the editor's dirty flag — that baseline also covers name/status, so a
+ * rename-then-paste would read "dirty" while the rows are still blank.
  *
- * Used by the paste handler (file 23), gated by `isNew`, so the first bulk paste on
- * a never-saved template REPLACES this scaffold (via `PASTE_ROWS { replace: true }`)
- * instead of inserting below it. The `isNew` gate is what keeps a
- * coincidentally-all-blank SAVED template from ever being treated as pristine.
+ * Used by the paste handler gated on `isNew`, so the first bulk paste on a
+ * never-saved template REPLACES the scaffold. The `isNew` gate is what keeps a
+ * coincidentally-all-blank SAVED template from being treated as pristine.
  */
 export function isPristineScaffold(rows: EditorRow[]): boolean {
   if (rows.length !== INITIAL_DATA_ROW_COUNT + 1) {

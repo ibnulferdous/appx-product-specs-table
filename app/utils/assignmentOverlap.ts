@@ -1,12 +1,9 @@
 import type { AssignmentScopeValue } from "./assignmentScope";
 
-// Pure scope-overlap resolver (feature 38) — the decision core of the DRAFT→ACTIVE
-// dry-run (data-model.md §9). Given two INCLUDE scopes, decide whether they
-// overlap WITHOUT touching the DB or the Admin API. Most pairs are settled by
-// string set-algebra here (O(1)); only genuinely cross-dimension / multi-valued
-// pairs defer to a single Shopify existence probe (feature 39). This sits under
-// the activation gate (feature 42) exactly like `gridNav.ts` sits under
-// `useGridKeyboardNav.ts`: no imports beyond a type, deterministic, side-effect-free.
+// Pure scope-overlap resolver — the decision core of the DRAFT→ACTIVE dry-run
+// (data-model.md §9). Decides whether two INCLUDE scopes overlap WITHOUT touching
+// the DB or the Admin API; only cross-dimension / multi-valued pairs defer to a
+// Shopify existence probe.
 //
 // Two facts drive the whole matrix:
 //   - ALL_PRODUCTS is universal → it overlaps every other scope (incl. a second
@@ -31,10 +28,9 @@ export type PairVerdict =
   | { kind: "OVERLAP" }
   // Provably cannot share a product — safe.
   | { kind: "DISJOINT" }
-  // Undecidable here: run `products(first:1, query: A AND B)` (feature 39). The
-  // two selectors are ANDed, so order is irrelevant. Never contains ALL_PRODUCTS
-  // (that always short-circuits to OVERLAP), so feature 39 only ever renders
-  // PRODUCT / PRODUCT_TYPE / VENDOR / COLLECTION query fragments.
+  // Undecidable here: run `products(first:1, query: A AND B)`. Never contains
+  // ALL_PRODUCTS (that short-circuits to OVERLAP), so the probe only ever renders
+  // PRODUCT / PRODUCT_TYPE / VENDOR / COLLECTION fragments.
   | { kind: "NEEDS_CHECK"; selectors: [ScopeSelector, ScopeSelector] };
 
 // Scopes with exactly one value per product: same scope + different value can
@@ -47,10 +43,9 @@ const SINGLE_VALUED: ReadonlySet<AssignmentScopeValue> = new Set([
 ]);
 
 /**
- * Classify a candidate scope against another scope. Symmetric in *kind*
- * (`classifyScopePair(a, b).kind === classifyScopePair(b, a).kind`); only the
+ * Classify a candidate scope against another. Symmetric in *kind*; only the
  * NEEDS_CHECK selector order follows the argument order, which does not matter
- * (feature 39 ANDs them). See the module header for the driving facts.
+ * since the probe ANDs them.
  */
 export function classifyScopePair(
   candidate: ScopeSelector,

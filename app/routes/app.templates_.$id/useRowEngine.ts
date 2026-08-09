@@ -65,10 +65,9 @@ import {
   type SavedCaret,
 } from "./editorShared";
 
-// A bulk paste that would cross the 200-row cap, captured for the confirmation
-// modal (feature 24). The rows are already TRUNCATED to what fits and id-stamped,
-// so confirming applies exactly what the modal previewed; `dropped` is what won't
-// fit. `replace`/`afterId` carry the file-23/file-22 dispatch decision unchanged.
+// A bulk paste that would cross the row cap, captured for the confirmation modal.
+// The rows are already TRUNCATED to what fits and id-stamped, so confirming
+// applies exactly what the modal previewed; `dropped` is what will not fit.
 interface PendingPaste {
   pasted: Array<{ id: string; label: string; valueParts: ValuePart[] }>;
   dropped: number;
@@ -76,24 +75,20 @@ interface PendingPaste {
   afterId: string | null;
 }
 
-// One member of a template's assignment scope value SET (features 44/46/47): the
-// raw value (a PRODUCT/COLLECTION GID, or free text for TYPE/VENDOR) plus its
-// resolved display label (the resource title for a GID, falling back to the GID; the
-// value itself for free text) and an optional thumbnail image URL (feature 47; null
-// for free-text scopes and on any resolution miss) so the picker shows a rich chip —
-// thumbnail + title + remove — not a raw id. Only the `value` rides the dirty
-// snapshot + Save payload; label + image are presentation.
+// One member of a template's assignment scope value SET: the raw value (a
+// PRODUCT/COLLECTION GID, or free text for TYPE/VENDOR) plus a resolved display
+// label and optional thumbnail, so the picker shows a rich chip rather than a raw
+// id. ⚠️ Only `value` rides the dirty snapshot + Save payload; the rest is
+// presentation.
 export interface ScopeValueSeed {
   value: string;
   label: string;
   image: string | null;
 }
 
-// One EXCLUDE carve-out for the Settings-tab "Except these products" list (feature
-// 45): the excluded product's GID plus its resolved display title (falls back to
-// the GID) and an optional thumbnail image URL (feature 47; null on a miss). Only
-// the GIDs ride the dirty snapshot + Save payload; label + image are presentation,
-// mirroring the scope chip.
+// One EXCLUDE carve-out for the Settings-tab "Except these products" list. Only
+// the GIDs ride the dirty snapshot + Save payload; label and image are
+// presentation, mirroring the scope chip.
 export interface ExcludeSeed {
   gid: string;
   label: string;
@@ -104,55 +99,41 @@ export interface UseRowEngineArgs {
   initialRows: EditorRow[];
   initialName: string;
   initialStatus: string;
-  // The persisted assignment scope kind + its value SET (features 44/46/47). Seeds
-  // the Settings-tab picker and rides the dirty snapshot + Save payload exactly like
-  // `status`. Reseeded on every remount (Discard / create-on-save) so Discard reverts
-  // a scope change. The set is homogeneous in `initialScope`: empty for
-  // NONE/ALL_PRODUCTS, one member for TYPE/VENDOR, 1..N for PRODUCT/COLLECTION.
+  // The persisted assignment scope kind + its value SET. Reseeded on every
+  // remount (Discard / create-on-save) so Discard reverts a scope change. The set
+  // is homogeneous in `initialScope`: empty for NONE/ALL_PRODUCTS, one member for
+  // TYPE/VENDOR, 1..N for PRODUCT/COLLECTION.
   initialScope: string;
   initialScopeValues: ScopeValueSeed[];
-  // The persisted EXCLUDE carve-outs (feature 45), seeded from the loader as
-  // `{ gid, label }` pairs. Rides the dirty snapshot + Save payload like `scope`;
-  // reseeded on every remount so Discard reverts an exclude change.
   initialExcludes: ExcludeSeed[];
-  // The persisted table styling, already RESOLVED by the loader (feature 57
-  // Step 5): the server decodes the `TableStyling` row — or the absence of one —
-  // into a complete `StylingValues` exactly once, so the client only ever handles
-  // the resolved domain shape, never raw DB columns. Rides the dirty snapshot +
-  // Save payload like `status`; reseeded on every remount so Discard reverts a
-  // styling change. NOT the same thing as Step 12's `resetStyling`: Discard
-  // reverts to the LAST SAVED styling, Reset goes to theme defaults.
+  // Already RESOLVED by the loader: the server decodes the `TableStyling` row —
+  // or its absence — into a complete `StylingValues` once, so the client never
+  // handles raw DB columns. ⚠️ Not the same as `resetStyling`: Discard reverts to
+  // the LAST SAVED styling, Reset goes to theme defaults.
   initialStyling: StylingValues;
-  // The persisted style-preset stamp (feature 88 step 89), already normalized by
-  // the loader — a known preset id, or `null` for a template that never had a
-  // pattern picked. PROVENANCE ONLY: it records which card the merchant started
-  // from and is never re-read as a live link, so changing a bundle constant in a
-  // future release cannot restyle an existing template (`data-model.md` §5).
-  // Rides the dirty snapshot + Save payload like `initialStyling`.
+  // The style-preset stamp, already normalized by the loader. ⚠️ PROVENANCE ONLY
+  // — never re-read as a live link, so changing a bundle constant in a future
+  // release cannot restyle an existing template (`data-model.md` §5).
   initialBasedOnPreset: string | null;
-  // True only for the `/app/templates/new` sentinel mount (route.tsx). A stable
-  // per-mount fact: after the first Save the URL flips to the real cuid and the
-  // engine remounts with `isNew = false`, so the scaffold-replace (file 23) can
-  // fire at most once. Read in `pasteGrid` to gate the pristine-scaffold replace.
+  // True only for the `/app/templates/new` sentinel mount. A stable per-mount
+  // fact: after the first Save the URL flips to the real cuid and the engine
+  // remounts with `isNew = false`, so the scaffold-replace fires at most once.
   isNew: boolean;
   // Remount the engine owner (parent bumps a key) so Discard resets the reducer to
   // the persisted rows — and reseeds name/status — without a dedicated reset action.
   onDiscard: () => void;
 }
 
-// Polaris's `s-*` color tokens live inside each component's shadow DOM and are
-// NOT exposed as light-DOM CSS custom properties (confirmed in-browser:
-// `--p-color-*` / `--s-color-*` all resolve empty on the document, body, and even
-// on `s-*` hosts). So the editor's scoped CSS — plain light-DOM rules — cannot
-// reference `--p-color-text-link` directly. Instead, capture Polaris's own link
-// color once from a throwaway `<s-link>`'s shadow and publish it as
-// `--appx-token-color`, the shared accent for the active-cell outline
-// (`.cellField`/`.surface` focus edge), the active-row highlight, and the
-// multi-select checkbox `accent-color` (each mixed from the same value via
-// color-mix). This keeps the blue a genuine Polaris value with no hardcoded hex;
-// it degrades to `currentColor` if the read fails. (The former inline value-token
-// pills that first needed this were removed with the textarea migration, feature
-// 113 — the captured accent outlived them.)
+// 🔴 Polaris's `s-*` color tokens live inside each component's shadow DOM and are
+// NOT exposed as light-DOM custom properties — `--p-color-*` / `--s-color-*` all
+// resolve empty on the document, body, and even on `s-*` hosts. So the editor's
+// scoped CSS cannot reference them directly.
+//
+// Instead, capture Polaris's own link color once from a throwaway `<s-link>`'s
+// shadow and publish it as `--appx-token-color`: the shared accent for the
+// active-cell outline, the active-row highlight and the checkbox `accent-color`.
+// Keeps the blue a genuine Polaris value with no hardcoded hex, degrading to
+// `currentColor` if the read fails.
 function useCapturedTokenColor() {
   useEffect(() => {
     const root = document.documentElement;
@@ -232,9 +213,8 @@ export function useRowEngine({
   // touching the engine again: they all go through `setStylingField`.
   const [styling, setStyling] = useState<StylingValues>(initialStyling);
 
-  // The style-preset provenance stamp (feature 88 step 89). A SECOND cell rather
-  // than a 35th styling field, because it is not styling: it is not in
-  // `STYLING_FIELD_NAMES`, it emits no CSS, and it never reaches the storefront.
+  // A SECOND cell rather than another styling field, because it is not styling:
+  // not in `STYLING_FIELD_NAMES`, emits no CSS, never reaches the storefront.
   // Folding it into `styling` would push it through `serializeStylingOverrides`
   // and into the metaobject.
   const [basedOnPreset, setBasedOnPreset] = useState<string | null>(
@@ -257,42 +237,30 @@ export function useRowEngine({
     [],
   );
 
-  // 🚫 There is deliberately NO `applyStylePreset` mutator here (feature 88
-  // step 90). The 2026-07-27 decision made presets CREATE-TIME ONLY: the only
-  // place a pattern is chosen is `/app/templates/choose-style`, and it is applied
-  // by the `/new?style=` LOADER via `seedStylingFromPreset` before the engine
-  // ever mounts. A client-side picker would be a second way to set the same two
-  // cells, reachable from nowhere. If a later phase reopens in-editor picking,
-  // add it back as one action that moves BOTH cells — the values must never be
-  // able to disagree with the stamp.
+  // 🚫 There is deliberately NO `applyStylePreset` mutator. Presets are
+  // CREATE-TIME ONLY: a pattern is chosen at `/app/templates/choose-style` and
+  // applied by the `/new?style=` LOADER before the engine mounts. If a later phase
+  // reopens in-editor picking, add it back as ONE action that moves BOTH cells —
+  // the values must never be able to disagree with the stamp.
 
-  // Reset to theme defaults (feature 57 Step 12). A WHOLESALE replace, not a loop
-  // over `setStylingField` — twenty per-field writes would be twenty renders and
-  // twenty dirty-checks for one merchant action. The target is
-  // `DEFAULT_STYLING_VALUES`, the same constant the loader resolves an ABSENT
-  // `TableStyling` row into, so reset state and never-styled state are identical
-  // by construction. It needs no server work either: `serializeStylingOverrides`
-  // emits only non-default fields, so an all-default value serializes to `{}` and
-  // the existing Save path writes an all-NULL row. Purely client state riding the
-  // SaveBar — and correctly UN-flips isDirty if the reset lands back on the saved
-  // baseline, since the dirty check is a compare, not a counter.
-  // Clears the stamp too (feature 88 step 89): reset means "no pattern", and it
-  // is the ONE edit that is not tuning — it discards the pattern itself, not a
-  // value within it, so the provenance it came from is genuinely gone. This is
-  // exactly the state the "Blank" card produces, which is the check on whether
-  // it is right: reset and Blank must be indistinguishable afterwards.
+  // Reset to theme defaults. A WHOLESALE replace, not a loop over
+  // `setStylingField` — per-field writes would be one render and dirty-check
+  // each. The target is `DEFAULT_STYLING_VALUES`, the same constant the loader
+  // resolves an ABSENT `TableStyling` row into, so reset state and never-styled
+  // state are identical by construction, and it needs no server work: an
+  // all-default value serializes to `{}`.
+  //
+  // Clears the stamp too: reset is the ONE edit that is not tuning — it discards
+  // the pattern itself, so its provenance is genuinely gone. Reset and the "Blank"
+  // card must be indistinguishable afterwards.
   const resetStyling = useCallback(() => {
     setStyling(DEFAULT_STYLING_VALUES);
     setBasedOnPreset(null);
   }, []);
 
-  // Assignment scope (features 44/46/47). Two pieces of state: the picker kind
-  // (`scope`) and its value SET (`scopeValues` — `{ value, label }[]`: 0 members for
-  // NONE/ALL_PRODUCTS, one for TYPE/VENDOR, 1..N GIDs for PRODUCT/COLLECTION). Only
-  // the kind + each member's `value` ride the dirty snapshot / Save payload; the
-  // labels are presentation. `setScopeKind` changes the kind and RESETS the set (a
-  // product GID is meaningless for a VENDOR scope — the homogeneous-kind invariant);
-  // `setScopeValues` replaces the set from a picker/text result keeping the kind.
+  // Assignment scope: the picker kind and its value SET. ⚠️ `setScopeKind` RESETS
+  // the set — a product GID is meaningless for a VENDOR scope, which is the
+  // homogeneous-kind invariant.
   const [scope, setScopeKindState] = useState(initialScope);
   const [scopeValues, setScopeValuesState] =
     useState<ScopeValueSeed[]>(initialScopeValues);
@@ -304,13 +272,10 @@ export function useRowEngine({
     setScopeValuesState(next);
   }, []);
 
-  // EXCLUDE carve-outs (feature 45). `excludes` is the ordered GID list that rides
-  // the dirty snapshot + Save payload; `excludeLabels` (GID→title) and
-  // `excludeImages` (GID→thumbnail url, feature 47) are presentation-only side maps
-  // for the rich chips. `setExcludes` replaces all three from a
-  // `{ gid, label, image }[]` (the SettingsTab builds the new list on add/remove).
-  // Shown only under the ALL_PRODUCTS scope (SettingsTab gates the control), but the
-  // state is unconditional so Discard/seed round-trips cleanly.
+  // EXCLUDE carve-outs. `excludes` is the ordered GID list that rides the dirty
+  // snapshot + Save payload; the label/image maps are presentation-only. Shown
+  // only under the ALL_PRODUCTS scope, but the state is unconditional so
+  // Discard/seed round-trips cleanly.
   const [excludes, setExcludeGids] = useState<string[]>(() =>
     initialExcludes.map((e) => e.gid),
   );
@@ -325,23 +290,19 @@ export function useRowEngine({
     setExcludeLabels(Object.fromEntries(next.map((e) => [e.gid, e.label])));
     setExcludeImages(Object.fromEntries(next.map((e) => [e.gid, e.image])));
   }, []);
-  // Client mirror of the value-required rule over the SET (UX only; the server
-  // re-validates): an incomplete scope (e.g. a PRODUCT kind with no product picked)
-  // is an invalid state, so Save is disabled until it is completed or set back to
-  // "None". A valued kind with an empty set is incomplete, NOT a clear (feature 46).
+  // Client mirror of the value-required rule (UX only; the server re-validates).
+  // A valued kind with an empty set is incomplete, NOT a clear — Save stays
+  // disabled until it is completed or set back to "None".
   const scopeComplete = isScopeSetComplete(
     scope,
     scopeValues.map((item) => item.value),
   );
 
-  // --- Drag reorder (Steps 10–11) ------------------------------------------
-  // Two sensors on one DndContext: a PointerSensor (mouse/touch, Step 10) with a
-  // small activation distance so a click on the ⠿ handle is not mistaken for a
-  // drag, and a KeyboardSensor (Step 11) whose `sortableKeyboardCoordinates` lets
-  // the arrow keys step this vertical list (Space/Enter pick up & drop, Escape
-  // cancels). Both produce the SAME onDragEnd, so the keyboard drop reuses the
-  // Step 10 MOVE_ROW path unchanged; the reducer no-ops a drop onto the origin,
-  // so a same-spot drag never flips the dirty flag.
+  // --- Drag reorder ---------------------------------------------------------
+  // Two sensors on one DndContext: a PointerSensor with a small activation
+  // distance so a click on the ⠿ handle is not mistaken for a drag, and a
+  // KeyboardSensor for arrow-key stepping. Both produce the SAME onDragEnd, so
+  // the keyboard drop reuses the MOVE_ROW path unchanged.
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
     useSensor(KeyboardSensor, {
@@ -358,18 +319,14 @@ export function useRowEngine({
     });
   }, []);
 
-  // Screen-reader announcements for the keyboard drag (Step 11). dnd-kit renders
-  // the hidden live region; we supply row-aware copy (its label + 1-based
-  // position) from the pure `reorderAnnouncements` helper. The callbacks read
-  // CURRENT rows via a ref so they never close over a stale array — the array
-  // does not change mid-drag (MOVE_ROW only fires on drop), and the pre-move
-  // `over` position is the slot the dragged row lands in (see the helper's note).
+  // Screen-reader announcements for the keyboard drag; dnd-kit renders the hidden
+  // live region. ⚠️ The callbacks read CURRENT rows via a ref so they never close
+  // over a stale array.
   const rowsRef = useRef(rows);
   rowsRef.current = rows;
-  // Mirror the active row id into a ref so the paste closure (file 22) can read
-  // the LIVE selection without depending on `activeRowId` — keeping `pasteGrid`
-  // stable across selection changes (memoization-safe), the same pattern as
-  // `rowsRef`.
+  // Mirrored into a ref so the paste closure reads the LIVE selection without
+  // depending on `activeRowId`, keeping `pasteGrid` stable across selection
+  // changes.
   const activeRowIdRef = useRef(activeRowId);
   activeRowIdRef.current = activeRowId;
   const dndAnnouncements = useMemo<Announcements>(
@@ -394,30 +351,24 @@ export function useRowEngine({
     [],
   );
 
-  // --- Save (Step 9.5) -----------------------------------------------------
-  // Persist the row array (plus name + status, ridden along unchanged for now) to
-  // Postgres + the storefront metaobject via the route action. The editor sends
-  // JSON so the structured valueParts survive (FormData would stringify them).
+  // --- Save -----------------------------------------------------------------
+  // Persist rows, name and status to Postgres + the storefront metaobject via the
+  // route action. ⚠️ Sends JSON so the structured `valueParts` survive — FormData
+  // would stringify them.
   const saveFetcher = useFetcher<typeof templateAction>();
   const revalidator = useRevalidator();
   const saving = saveFetcher.state !== "idle";
-  // Mirror `saving` into a ref so deferred callbacks read the LIVE save state, not
-  // the value captured at the time they were created. The Undo toast's `onAction`
-  // (feature 33) is registered with the admin chrome and outlives the render that
-  // showed it, so a plain `saving` closure there would be stale (always the value
-  // at toast-show time, i.e. false) — letting Undo mutate rows during an in-flight
-  // save started AFTER the toast appeared. Reading `savingRef.current` keeps the
-  // guard honest, the same pattern as `rowsRef` / `activeRowIdRef`.
+  // 🔴 Mirrored into a ref so deferred callbacks read the LIVE save state. The
+  // Undo toast's `onAction` is registered with the admin chrome and outlives the
+  // render that showed it, so a plain `saving` closure would be stale (always
+  // false) — letting Undo mutate rows during a save started AFTER the toast.
   const savingRef = useRef(saving);
   savingRef.current = saving;
 
-  // Rich conflict banner state (feature 44). A blocked activation is discovered
-  // server-side on Save (feature 42's model returns `{ blocked, conflicts }`); we
-  // hold those conflicts here so the SettingsTab can render a persistent critical
-  // banner naming the colliding template(s), not just the fleeting error toast.
-  // Cleared when a save succeeds (below) and when the merchant edits the pending
-  // scope/status (the clearing effect further down) — so the banner never lingers
-  // after the merchant has moved to resolve it.
+  // A blocked activation is discovered server-side on Save; these conflicts are
+  // held so the SettingsTab can render a persistent banner naming the colliding
+  // templates, not just a fleeting toast. Cleared on a successful save and when
+  // the merchant edits the pending scope/status.
   const [conflicts, setConflicts] = useState<
     Array<{ templateId?: string; templateName?: string; reason: string }>
   >([]);
@@ -429,8 +380,7 @@ export function useRowEngine({
   // styling change each flips isDirty and opens the SaveBar, not just a row edit
   // (feature 20).
   //
-  // The serialization itself lives in the pure `editorMetaSnapshot` (key order,
-  // set-sorting, and the styling wire shape all documented there) and is called
+  // ⚠️ The serialization lives in the pure `editorMetaSnapshot` and is called
   // again verbatim in `handleSave` — one function, two call sites, so the
   // baseline and the submitted snapshot cannot drift apart.
   const currentMetaJson = editorMetaSnapshot({
@@ -459,12 +409,8 @@ export function useRowEngine({
   const handleSave = useCallback(() => {
     if (saveFetcher.state !== "idle") return; // a save is already in flight
     if (!scopeComplete) return; // an incomplete scope is not submittable (Save is disabled)
-    // The payload is valid JSON at runtime; the cast satisfies SubmitTarget,
-    // which the EditorRow interface union does not match structurally (interfaces
-    // carry no implicit index signature). name/status/scope are sent from STATE, so
-    // a rename or a scope change rides the existing Save payload. The scope value SET
-    // is sent as `scopeValues` (the raw values); the action's `parsePendingScope`
-    // reads it into a homogeneous `ScopeSelector[]` (features 46/47).
+    // The cast satisfies `SubmitTarget`, which the `EditorRow` union does not
+    // match structurally (interfaces carry no implicit index signature).
     const scopeValuesPayload = scopeValues.map((item) => item.value);
     submittedMetaJsonRef.current = editorMetaSnapshot({
       rows,
@@ -484,16 +430,14 @@ export function useRowEngine({
         scope,
         scopeValues: scopeValuesPayload,
         excludes,
-        // The OVERRIDES-ONLY wire shape (Step 1), not the resolved value: an
-        // all-default table sends `{}`, which the server writes as an all-NULL
-        // row — so resetting a knob to its default genuinely CLEARS the stored
-        // override rather than persisting the default as data. This is the same
-        // serialization the dirty snapshot above uses.
+        // The OVERRIDES-ONLY wire shape, not the resolved value: an all-default
+        // table sends `{}`, which the server writes as an all-NULL row, so
+        // resetting a knob genuinely CLEARS the stored override.
         styling: serializeStylingOverrides(styling),
-        // Provenance, sent raw (feature 88 step 89) — the server re-validates it
-        // with `normalizeStylePresetStamp`, so an id this build does not know
-        // stores NULL rather than junk. Note the server reads an ABSENT stamp as
-        // `null`, so this key must always be sent alongside `styling`.
+        // Sent raw; the server re-validates with `normalizeStylePresetStamp`, so
+        // an unknown id stores NULL rather than junk. ⚠️ The server reads an
+        // ABSENT stamp as `null`, so this key must always ride alongside
+        // `styling`.
         basedOnPreset,
       } as unknown as Parameters<typeof saveFetcher.submit>[0],
       { method: "post", encType: "application/json" },
@@ -561,24 +505,19 @@ export function useRowEngine({
   }, [saveFetcher.state, saveFetcher.data, revalidator, shopify]);
 
   // Clear the conflict banner once the merchant edits the pending state it was
-  // reported against (scope kind, the value set, status, or excludes) — the banner
-  // describes a specific pending combination, so any change to that combination makes
-  // it stale. `scopeValues` is state, so its identity only changes when the set is
-  // actually edited (setScopeKind/setScopeValues), never per render. Runs on mount
-  // too, but conflicts starts empty so that first pass is a no-op.
+  // reported against — the banner describes a specific combination, so any change
+  // to it makes the banner stale. `scopeValues` is state, so its identity changes
+  // only on a real edit, never per render.
   useEffect(() => {
     setConflicts([]);
   }, [scope, scopeValues, status, excludes]);
 
-  // Close the editor's body modals when a save begins. Both portal their content
-  // (including their primary buttons) into the admin chrome, OUTSIDE the editor's
-  // inert freeze wrapper — exactly like the SaveBar — so a save that starts while
-  // one is open would otherwise leave that button live, a path to mutate rows
-  // mid-save that the freeze cannot reach. Hiding them here, plus the hard `saving`
-  // guards in handleCommit / handleConfirmPaste, blocks both ends. Clearing
-  // `pendingPaste` also drops the captured rows so a later reopen can't re-apply a
-  // stale paste. Hiding an already-hidden modal is a no-op, so this is safe to run
-  // on any render where a save is in flight.
+  // 🔴 Close the body modals when a save begins. They portal their content —
+  // including their primary buttons — into the admin chrome, OUTSIDE the editor's
+  // inert freeze wrapper, so a save starting while one is open would leave that
+  // button live: a path to mutate rows mid-save the freeze cannot reach. Clearing
+  // `pendingPaste` also drops the captured rows so a reopen cannot re-apply a
+  // stale paste.
   useEffect(() => {
     if (saving) {
       shopify.modal.hide(INSERT_FIELD_MODAL_ID);
@@ -588,13 +527,9 @@ export function useRowEngine({
     }
   }, [saving, shopify]);
 
-  // --- Metafield definitions fetch (Step 8) --------------------------------
-  // The shop's product metafield definitions are fetched lazily from the
-  // `/app/metafield-definitions` resource route the FIRST time the modal opens,
-  // then cached for the editor's lifetime (reopening never refetches). The fetch
-  // is observably async so the modal can show explicit loading / empty / error
-  // states. Step 8 only confirms the fetch + states — the definitions are NOT
-  // rendered as selectable choices yet (that is Step 9).
+  // --- Metafield definitions fetch ------------------------------------------
+  // Fetched lazily from the `/app/metafield-definitions` resource route the FIRST
+  // time the modal opens, then cached for the editor's lifetime.
   const metafieldsFetcher = useFetcher<typeof metafieldDefinitionsLoader>();
   // Flips true on the first open; gates both the "load once" guard and whether
   // the status region renders at all (so it never shows a spinner before the
@@ -614,38 +549,30 @@ export function useRowEngine({
     loadMetafieldDefinitions();
   }, [metafieldsRequested, loadMetafieldDefinitions]);
 
-  // --- Insert field modal: caret bridge (Step 5) ---------------------------
-  // `activeCaretRef` holds the live caret in whichever value cell last reported
-  // one; it is NOT cleared when that cell blurs (so tabbing/clicking to the
-  // toolbar button keeps a saved selection — the canonical rich-text-toolbar
-  // pattern). It IS cleared when a Label/Section field is focused, since the
-  // merchant is no longer editing a value. `savedCaretRef` is the snapshot taken
-  // when the modal opens; `hasActiveCaret` only drives the button's disabled gate.
+  // --- Insert field modal: caret bridge -------------------------------------
+  // ⚠️ `activeCaretRef` is NOT cleared when a value cell blurs, so tabbing to the
+  // toolbar button keeps the saved selection — the canonical rich-text-toolbar
+  // pattern. It IS cleared when a Label/Section field is focused.
+  // `savedCaretRef` is the snapshot taken when the modal opens.
   const activeCaretRef = useRef<SavedCaret | null>(null);
   const savedCaretRef = useRef<SavedCaret | null>(null);
   const [hasActiveCaret, setHasActiveCaret] = useState(false);
-  // The field the merchant has picked in the modal (Step 6 native, Step 9
-  // metafield). Insert is disabled while this is null. The discriminated `kind`
-  // keeps the native and metafield choice lists mutually exclusive. The modal is
-  // create-only (feature 112 removed the edit-a-pill-in-place path): committing
-  // always splices a new token at the saved caret.
+  // The field picked in the modal; Insert is disabled while null. The
+  // discriminated `kind` keeps the native and metafield lists mutually exclusive.
+  // The modal is create-only — committing always splices a new token at the saved
+  // caret.
   const [selection, setSelection] = useState<FieldSelection | null>(null);
-  // The modal's search query (Step 7). Pure UI: it filters which native fields
-  // are rendered (`filterNativeFields`) and never touches `selectedField` — a
-  // selected field filtered out of view stays selected and committable. Reset to
-  // "" on every open so the list always opens full.
+  // Pure UI: filters which fields are rendered and never touches the selection,
+  // so a selected field filtered out of view stays committable.
   const [searchQuery, setSearchQuery] = useState("");
-  // The modal's search field. Focused shortly after open so the merchant can
-  // type immediately; the focus is deliberately deferred past the modal's open
-  // animation (see `focusSearchField`). Typed via the global tag-name map so the
-  // JSX ref accepts it (the element is an <s-search-field>, not a plain element).
+  // Focused shortly after open, deliberately deferred past the modal's open
+  // animation (see `focusSearchField`).
   const searchFieldRef = useRef<HTMLElementTagNameMap["s-search-field"] | null>(
     null,
   );
   // Caret positions queued for a value cell after a modal Insert, keyed by row id.
-  // A ref-held Map so its identity is stable across renders (memoization-safe) and
-  // mutating it never triggers a render; the target ValueCell consumes it once in
-  // its reconcile effect. Created once.
+  // A ref-held Map so its identity is stable across renders and mutating it never
+  // triggers one; the target ValueCell consumes it once in its reconcile effect.
   const pendingCaretByRowRef = useRef<Map<string, number>>(new Map());
 
   const onCaretChange = useCallback((rowId: string, offset: number | null) => {
@@ -861,16 +788,14 @@ export function useRowEngine({
     focusSearchField();
   }, [shopify, focusSearchField, ensureMetafieldDefinitions]);
 
-  // Track the merchant's search query (Step 7). `onInput` fires per keystroke,
-  // before `onChange`, so the list filters live as they type.
+  // `onInput` fires per keystroke, before `onChange`, so the list filters live.
   const handleSearchInput = useCallback((event: Event) => {
     const value = (event.currentTarget as unknown as { value?: string }).value;
     setSearchQuery(value ?? "");
   }, []);
 
-  // Track the merchant's pick in the native-field choice list (Step 6). Setting a
-  // native kind makes the metafield list's controlled values empty, so picking a
-  // native field deselects any metafield.
+  // Setting a native kind empties the metafield list's controlled values, so
+  // picking a native field deselects any metafield.
   const handleSelectNative = useCallback((event: Event) => {
     const values = (event.currentTarget as unknown as { values?: string[] })
       .values;
@@ -879,10 +804,8 @@ export function useRowEngine({
     }
   }, []);
 
-  // Track the merchant's pick in the metafield choice list (Step 9). The picked
-  // value is a `namespace.key`; decode it back to a definition by LOOKUP in the
-  // loaded list (never by string-splitting, so a `.` in a key can't corrupt the
-  // pair). Setting a metafield kind deselects any native field.
+  // ⚠️ The picked value is a `namespace.key`; decode it by LOOKUP in the loaded
+  // list, never by string-splitting, so a `.` in a key cannot corrupt the pair.
   const handleSelectMetafield = useCallback(
     (event: Event) => {
       const values = (event.currentTarget as unknown as { values?: string[] })
@@ -905,11 +828,8 @@ export function useRowEngine({
     [metafieldsFetcher],
   );
 
-  // Commit the picked field (create-only since feature 112). Splice the field's
-  // TEXT token into the value string at the saved textarea offset, reparse the
-  // spliced string back to parts, and replace the whole value. The post-commit
-  // caret lands just after the inserted token via pendingCaretByRowRef, and all
-  // modal state is reset.
+  // Splice the field's token into the value string at the saved offset, reparse,
+  // and replace the whole value. The caret lands just after the inserted token.
   const handleCommit = useCallback(() => {
     if (saving) return; // a save is in flight — the editor is frozen
     if (!selection) return; // primary button is disabled in this state
@@ -919,9 +839,7 @@ export function useRowEngine({
     if (saved) {
       const row = rows.find((r) => r.id === saved.rowId);
       if (row && row.rowType === "DATA") {
-        // Splice the field's TEXT token into the value string at the saved
-        // textarea offset (feature 111). A trailing space (Claude-style
-        // smart-pill UX) lets the merchant keep typing without it abutting the
+        // The trailing space lets the merchant keep typing without abutting the
         // token; the caret lands after both.
         const token =
           selection.kind === "native"
@@ -953,29 +871,19 @@ export function useRowEngine({
     setSearchQuery("");
   }, [shopify]);
 
-  // --- Bulk table paste → rows (Steps 12–13, refined files 21–24) ----------
-  // Capture a multi-cell table pasted into the editor (Excel / Google Sheets / a
-  // web <table>), parse it to a 2-D grid (Step 12), and bulk-insert it as rows
-  // (Step 13): first column → Label, remaining columns → a TEXT/LINE_BREAK Value
-  // (`gridToPastedRows`), inserted via PASTE_ROWS with the 200-row cap enforced
-  // on paste. The block lands directly after the active row (file 22; appends
-  // when none) — EXCEPT on a brand-new template still showing the untouched
-  // starter scaffold, where the first bulk paste REPLACES the whole scaffold
-  // (file 23; the empty section + 5 blanks go, leaving only the pasted rows).
-  // When the paste would cross the cap, the merchant is asked to confirm first
-  // (file 24) instead of silently dropping the overflow.
+  // --- Bulk table paste → rows ----------------------------------------------
+  // A multi-cell table pasted into the editor becomes rows: first column → Label,
+  // remaining columns → a TEXT/LINE_BREAK Value, inserted via PASTE_ROWS with the
+  // row cap enforced. The block lands after the active row (appending when there
+  // is none) — EXCEPT on a brand-new template still showing the untouched starter
+  // scaffold, where the first bulk paste REPLACES it. A paste that would cross the
+  // cap asks for confirmation rather than silently dropping the overflow.
 
-  // The over-cap paste awaiting the merchant's confirmation (feature 24). Null
-  // unless the confirmation modal is open with a paste staged.
+  // Null unless the confirmation modal is open with a paste staged.
   const [pendingPaste, setPendingPaste] = useState<PendingPaste | null>(null);
 
-  // Apply a prepared paste: dispatch PASTE_ROWS, move the selection to the last
-  // inserted row + scroll it into view, and toast the outcome. Shared by the
-  // fits-immediately path and the post-confirmation path so the dispatch +
-  // affordance + toast live in one place. `replace` → the pasted rows become the
-  // whole array (reducer bases on `[]`, ignoring `afterId`); otherwise the block
-  // is spliced directly after the active row (file 22; the reducer appends when
-  // nothing is selected or the active row is gone).
+  // Apply a prepared paste. Shared by the fits-immediately and post-confirmation
+  // paths so the dispatch, focus affordance and toast live in one place.
   const applyPaste = useCallback(
     (prepared: PendingPaste) => {
       dispatch(
@@ -988,9 +896,8 @@ export function useRowEngine({
             },
       );
 
-      // Focus affordance: set the last inserted row active and scroll it into
-      // view so the merchant sees where the pasted block landed (and a second
-      // consecutive paste stacks right under the first block).
+      // Set the last inserted row active and scroll it into view, so the merchant
+      // sees where the block landed and a second paste stacks under it.
       const lastId = prepared.pasted[prepared.pasted.length - 1]?.id;
       if (lastId) {
         scrollTargetRef.current = lastId;
@@ -1000,9 +907,6 @@ export function useRowEngine({
       const added = prepared.pasted.length;
       const rowWord = added === 1 ? "row" : "rows";
       if (prepared.dropped > 0) {
-        // The merchant already confirmed via the modal; this restates the outcome
-        // in plain language (the old terse "N over the limit weren't added" copy
-        // tested poorly with merchants).
         const droppedWord = prepared.dropped === 1 ? "row" : "rows";
         shopify.toast.show(
           `Added ${added} ${rowWord} — ${prepared.dropped} ${droppedWord} didn't fit (${MAX_TEMPLATE_ROWS}-row limit)`,
@@ -1015,25 +919,21 @@ export function useRowEngine({
   );
 
   // Prepare a bulk paste from a normalized grid, cap it to the room remaining, and
-  // either apply it (fits) or stage it for confirmation (would cross the cap,
-  // file 24). Reads `rowsRef.current` / `activeRowIdRef.current`, so it needs no
-  // `rows`/`activeRowId` dep — the closure stays stable across selection changes.
+  // either apply it or stage it for confirmation. Reads the refs rather than
+  // `rows`/`activeRowId`, so the closure stays stable across selection changes.
   // Exposed as `onBulkPaste` so the value cell can route a table here instead of
   // flattening it.
   const pasteGrid = useCallback(
     (grid: string[][]) => {
-      // file 23: on a brand-new template whose rows are still the untouched
-      // scaffold (1 section + 5 blanks), the first bulk paste REPLACES the whole
-      // scaffold. Compute room/dropped against an empty base (`MAX_TEMPLATE_ROWS`,
-      // matching the reducer's base-`[]` replace path); every other state keeps
-      // the file-22 insert-after-active math (`MAX − current length`).
+      // On a brand-new template still showing the untouched scaffold, the first
+      // bulk paste REPLACES it — so room is computed against an empty base,
+      // matching the reducer's base-`[]` replace path.
       const replace = isNew && isPristineScaffold(rowsRef.current);
       const room = replace
         ? MAX_TEMPLATE_ROWS
         : MAX_TEMPLATE_ROWS - rowsRef.current.length;
       if (room <= 0) {
-        // Already full — nothing can be added, so there is no "continue" choice to
-        // offer; just say so plainly.
+        // Already full, so there is no "continue" choice to offer.
         shopify.toast.show(
           `This template is full (${MAX_TEMPLATE_ROWS} rows). Delete a row before pasting.`,
           { isError: true },
@@ -1052,9 +952,8 @@ export function useRowEngine({
         afterId: activeRowIdRef.current,
       };
 
-      // file 24: a paste that would cross the cap waits for confirmation — show
-      // the merchant how many rows fit vs. won't, and apply only on Continue. A
-      // paste that fits within the cap inserts immediately, unchanged.
+      // A paste that would cross the cap waits for confirmation; one that fits
+      // inserts immediately.
       if (dropped > 0) {
         setPendingPaste(prepared);
         shopify.modal.show(PASTE_CAP_MODAL_ID);
@@ -1065,11 +964,9 @@ export function useRowEngine({
     [shopify, isNew, applyPaste],
   );
 
-  // Continue an over-cap paste (feature 24): apply exactly what the modal
-  // previewed (the truncated, id-stamped rows captured when it opened), then
-  // close + clear. Guard on `saving` — the modal portals outside the editor's
-  // inert freeze, so a save starting while it is open must not let Continue mutate
-  // rows mid-save (defense in depth alongside the hide-on-save effect).
+  // Apply exactly what the modal previewed, then close and clear. ⚠️ Guarded on
+  // `saving`: the modal portals outside the editor's inert freeze, so a save
+  // starting while it is open must not let Continue mutate rows mid-save.
   const handleConfirmPaste = useCallback(() => {
     shopify.modal.hide(PASTE_CAP_MODAL_ID);
     if (pendingPaste && !saving) applyPaste(pendingPaste);
@@ -1081,15 +978,12 @@ export function useRowEngine({
     setPendingPaste(null);
   }, [shopify]);
 
-  // Content-first intent (file 21): the bulk-vs-in-cell decision comes from the
-  // clipboard SHAPE, not where focus is. The value cell already handles its own
-  // paste (table → onBulkPaste, single value → text-at-caret) and always
-  // preventDefaults, so a value-cell paste arrives here defaultPrevented and is
-  // skipped. For every other target (a Label/Section <input>, a focused
-  // button/handle, the inter-cell padding), only a genuine multi-cell table is a
-  // bulk gesture; a lone value falls through to the native field/text paste. This
-  // replaces the old focus/target skip-guard — which is why a focused button or
-  // the grey margin no longer triggers a surprise insert.
+  // 🔴 Content-first intent: the bulk-vs-in-cell decision comes from the clipboard
+  // SHAPE, not where focus is. The value cell handles its own paste and always
+  // preventDefaults, so a value-cell paste arrives here defaultPrevented. For
+  // every other target only a genuine multi-cell table is a bulk gesture; a lone
+  // value falls through to the native paste, which is why a focused button or the
+  // grey margin no longer triggers a surprise insert.
   const handleContainerPaste = useCallback(
     (event: ClipboardEvent<HTMLDivElement>) => {
       const data = event.clipboardData;
@@ -1116,13 +1010,10 @@ export function useRowEngine({
         return;
       }
       const grid = readClipboardGrid(data);
-      // A bulk gesture needs an actual multi-cell table (>1 cell — more than one
-      // row OR column); a lone value (or empty grid) is not. A single value
-      // pasted into a Label/Section <input> falls through to the native input
-      // paste; pasted with a button/padding focused, it does nothing.
+      // A bulk gesture needs a real multi-cell table; a lone value falls through
+      // to the native input paste.
       if (cellCount(grid) <= 1) return;
-      // We are consuming a table now — this also stops the native flatten when a
-      // table is pasted into a Label/Section <input>.
+      // Consuming the table also stops the native flatten into a Label input.
       event.preventDefault();
       pasteGrid(grid);
     },
@@ -1130,28 +1021,24 @@ export function useRowEngine({
   );
 
   const canDuplicate = activeRowId !== null && !atCap;
-  // The native fields visible in the modal for the current search query (Step 7).
-  // Cheap over 13 entries, so computed inline each render rather than memoized.
+  // Cheap over this many entries, so computed inline rather than memoized.
   const visibleFields = filterNativeFields(searchQuery);
 
-  // Metafield fetch status for the modal's metafield section (Steps 8–9). `data`
-  // is undefined until the first load resolves; treat that — and any non-idle
-  // fetcher state, including a Retry that still holds stale data — as loading.
+  // `data` is undefined until the first load resolves; treat that — and any
+  // non-idle state, including a Retry still holding stale data — as loading.
   const metafieldsData = metafieldsFetcher.data;
   const metafieldsLoading =
     metafieldsFetcher.state !== "idle" || metafieldsData === undefined;
   const metafieldDefinitions =
     metafieldsData && metafieldsData.ok ? metafieldsData.definitions : [];
   const metafieldCount = metafieldDefinitions.length;
-  // The metafields visible for the current search query (Step 9), filtered by the
-  // same shared rule as the native list above.
+  // Filtered by the same shared rule as the native list above.
   const visibleMetafields = filterMetafieldDefinitions(
     metafieldDefinitions,
     searchQuery,
   );
-  // The single combined empty state (Step 9): shown only when a non-empty query
-  // filters BOTH the native list and the loaded metafield list to nothing, so the
-  // merchant never sees two "no match" messages.
+  // Shown only when a query filters BOTH lists to nothing, so the merchant never
+  // sees two "no match" messages.
   const showCombinedEmpty =
     searchQuery.trim() !== "" &&
     visibleFields.length === 0 &&
@@ -1169,41 +1056,39 @@ export function useRowEngine({
     sensors,
     handleDragEnd,
     dndAnnouncements,
-    // Template-level fields (feature 20; status setter added feature 36)
+    // Template-level fields
     name,
     setName,
     status,
     setStatus,
-    // Assignment scope (features 44/46/47)
+    // Assignment scope
     scope,
     scopeValues,
     setScopeKind,
     setScopeValues,
     scopeComplete,
     conflicts,
-    // EXCLUDE carve-outs (feature 45; thumbnails feature 47)
+    // EXCLUDE carve-outs
     excludes,
     excludeLabels,
     excludeImages,
     setExcludes,
-    // Table styling (feature 57 Step 5). Read by StyleTab and by the device
-    // previews (Step 6) — and by NOTHING else: the editing grid deliberately
-    // never reflects merchant styling (`context/features/67-…`).
+    // Table styling. Read by StyleTab and the device previews — and by NOTHING
+    // else: 🚫 the editing grid deliberately never reflects merchant styling
+    // (`context/features/67-…`).
     styling,
     setStylingField,
-    // Step 12's wholesale reset to theme defaults, behind a confirm dialog.
+    // Wholesale reset to theme defaults, behind a confirm dialog.
     resetStyling,
-    // Style-preset provenance (feature 88 step 89). Read by NO component — it
-    // exists to ride the dirty snapshot and the Save payload, which is the whole
-    // write path for the stamp. Presets are create-time only, so there is
-    // nothing in the editor for a merchant to pick; see the note by
-    // `setStylingField` for why an edit must not clear it.
+    // Provenance stamp. Read by NO component — it exists to ride the dirty
+    // snapshot and the Save payload, which is its whole write path. Presets are
+    // create-time only, so there is nothing here for a merchant to pick.
     basedOnPreset,
     // Save / dirty
     isDirty,
     saving,
-    // Save is blocked while a scope is incomplete (an invalid state) — the SaveBar
-    // primary button reads this so an incomplete assignment can't be submitted.
+    // Blocked while a scope is incomplete, so an invalid assignment cannot be
+    // submitted.
     canSave: !saving && scopeComplete,
     handleSave,
     handleDiscard,
@@ -1221,7 +1106,7 @@ export function useRowEngine({
     handleAddSection,
     handleDuplicate,
     handleAppendRow,
-    // Multi-select bulk delete (feature 29)
+    // Multi-select bulk delete
     selectedRowIds,
     selectedCount,
     allSelected,
@@ -1250,7 +1135,7 @@ export function useRowEngine({
     // Bulk paste
     handleContainerPaste,
     onBulkPaste: pasteGrid,
-    // Over-cap paste confirmation (feature 24)
+    // Over-cap paste confirmation
     pendingPaste,
     handleConfirmPaste,
     handleCancelPaste,

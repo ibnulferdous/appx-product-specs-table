@@ -1,13 +1,8 @@
-// Pure builder for the editor tips footer (feature 32). The tip list is the
-// testable core of the manual-advance tips strip below the editor card: a single
-// source of truth for every discoverability message the editor surfaces (keyboard
-// navigation, device views, gutter, Insert field, smart pills, Add row, paste).
+// Pure builder for the editor tips footer — one source of truth for every
+// discoverability message the editor surfaces.
 //
-// Framework-free and deterministic — given the platform flag it returns a fresh
-// ordered array, Node-unit-tested in `editorTips.test.ts`. The only platform-
-// dependent entry is the keyboard tip (Mac ⌘ vs. Ctrl); the lone browser read of
-// "am I on a Mac?" is isolated in `platform.ts`, matching the pure/DOM-glue split
-// the editor uses elsewhere (see `valueDom.ts` / `valueParts.ts`).
+// The only platform-dependent entry is the keyboard tip (⌘ vs. Ctrl); the browser
+// read behind it is isolated in `platform.ts`.
 
 export interface EditorTip {
   /** Stable React key + test anchor. */
@@ -16,9 +11,7 @@ export interface EditorTip {
   text: string;
 }
 
-// Build the ordered tip list. The keyboard-nav tip leads (it is the reason this
-// footer ships); the rest seed the footer as the long-term home for editor
-// discoverability copy. Adding or retiring a tip is a one-line edit here.
+// The keyboard-nav tip leads — it is the reason this footer ships.
 export function buildEditorTips(isMac: boolean): EditorTip[] {
   const mod = isMac ? "⌘" : "Ctrl";
   return [

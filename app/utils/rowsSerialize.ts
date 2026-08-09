@@ -1,25 +1,15 @@
-// Save-boundary transforms for the spec-table editor (Editor Step 9.5).
+// Save-boundary transforms for the spec-table editor. Two pure jobs, both run at
+// the load/save seam — never inside the reducer:
 //
-// Two pure jobs, both run at the load/save seam — never inside the reducer:
+//   1. `parseRows` narrows a persisted / submitted `rows` value into the typed
+//      `EditorRow[]`. Runs at BOTH the loader and the action — trust the DB shape
+//      no more than a form post, and never trust the client.
 //
-//   1. parseRows(unknown): EditorRow[]
-//      Narrow a persisted / submitted `rows` value into the typed EditorRow[]
-//      contract. Replaces the old `normalizeRows` cast (Step 3 review finding #4):
-//      malformed persisted JSON or an untrusted client payload must not render
-//      garbage or crash. Runs at BOTH the loader (trust the DB shape no more than
-//      a form post) and the action (the server never trusts the client —
-//      code-standards.md "validate and sanitize all external input").
-//
-//   2. reconcileRowKeys(incoming, persisted) / finalizeRowKeys(rows, provisionalIds)
-//      Finalize the human-readable row `key` at Save (Step 3 review finding #1
-//      follow-through). UI rows are created blank with a provisional key
-//      (`row` / `row_2`, `section` / `section_2`); SET_LABEL never rewrites it.
-//      The slug from the label is derived HERE, the first time a row is saved,
-//      then never re-derived — so a later label change cannot move a finalized key
-//      (the cross-product alignment invariant, data-model.md §12).
-//
-// The module is framework-free and side-effect-free, like rows.ts. It imports the
-// row contract + the key helpers from rows.ts (one direction — no cycle).
+//   2. `reconcileRowKeys` / `finalizeRowKeys` finalize the human-readable row
+//      `key` at Save. UI rows are created blank with a provisional key and
+//      `SET_LABEL` never rewrites it; the slug is derived HERE the first time a
+//      row is saved, then never re-derived, so a later label change cannot move a
+//      finalized key (data-model.md §12).
 
 import {
   normalizeValueParts,
@@ -40,11 +30,9 @@ function asString(value: unknown): string {
 }
 
 /**
- * Narrow one untyped value part into the `ValuePart` union, or `null` when it is
+ * Narrow one untyped value part into the `ValuePart` union, or `null` when
  * unusable. A `SHOPIFY_FIELD` needs a non-empty `field`; a `METAFIELD` needs both
- * `namespace` and `key` (the locked pill contract — a partial one resolves to
- * nothing on the storefront, so it is dropped, mirroring the Step 8 mapper rule).
- * `TEXT` coerces a missing `text` to "" and `LINE_BREAK` carries nothing.
+ * halves, since a partial one resolves to nothing on the storefront.
  */
 function parseValuePart(value: unknown): ValuePart | null {
   if (!isRecord(value)) return null;
@@ -69,11 +57,10 @@ function parseValuePart(value: unknown): ValuePart | null {
 
 /**
  * Narrow one untyped row into `EditorRow`, or `null` when it cannot be aligned.
- * `id` is the stable identity used by relational tables and `@dnd-kit`, so a row
- * with no `id` is dropped rather than minted one (a fresh id here would not match
- * any persisted reference). An empty `key` is repaired from the label so the row
- * still aligns; key *finalization* of provisional keys is a separate, explicit
- * step (see finalizeRowKeys). Unknown `rowType` → dropped.
+ *
+ * ⚠️ A row with no `id` is DROPPED rather than minted one — a fresh id here would
+ * not match any persisted reference. An empty `key` is repaired from the label so
+ * the row still aligns; finalizing provisional keys is a separate, explicit step.
  */
 function parseRow(value: unknown): EditorRow | null {
   if (!isRecord(value)) return null;
@@ -127,14 +114,12 @@ export function parseRows(value: unknown): EditorRow[] {
 // --- Duplication ----------------------------------------------------------
 
 /**
- * Clone a row array for a duplicated template, minting a FRESH `id` for every row
- * via `mkId`. Row `id`s are the technical identity reserved for relational
- * references / translations (data-model.md §7, §12: "id must never be reused"), so
- * a copy must not share its source's ids. Every other field (key, label,
- * valueParts, …) is carried over verbatim; the caller re-finalizes keys against
- * `[]` afterwards (a copy is a brand-new row set). Pure: returns a fresh array,
- * mutates neither the input nor its rows. `mkId` is injected (not called inside)
- * so the helper stays deterministic under test, matching `createInitialRows`.
+ * Clone a row array for a duplicated template, minting a FRESH `id` for every
+ * row. Row ids are the technical identity reserved for relational references
+ * (data-model.md §7, §12: "id must never be reused"), so a copy must not share
+ * its source's. Every other field carries over verbatim; the caller re-finalizes
+ * keys against `[]` afterwards. `mkId` is injected so this stays deterministic
+ * under test.
  */
 export function cloneRowsWithNewIds(
   rows: EditorRow[],
@@ -171,20 +156,17 @@ export function finalizeRowKeys(
 }
 
 /**
- * Reconcile the incoming editor rows against what is already persisted, deciding
- * key finalization SERVER-SIDE (the authoritative "was this key ever finalized?"
- * signal is "does this row id already exist in the saved template?", not a
- * client-tracked flag a payload could lie about, and not a brittle key-string
- * pattern):
+ * Reconcile incoming editor rows against what is persisted, deciding key
+ * finalization SERVER-SIDE.
  *
- *   - A row whose id is already persisted keeps its PERSISTED key, even if the
- *     client sent a stale provisional key or the label has since changed. This is
- *     what makes "never re-derive a finalized key" robust — including the edge
- *     case of a row whose label legitimately slugs to `row`/`section`.
- *   - A row whose id is new (not persisted) is provisional: its key is finalized
- *     from the label via finalizeRowKeys.
+ * 🔴 The authoritative "was this key ever finalized?" signal is "does this row id
+ * already exist in the saved template?" — not a client-tracked flag a payload
+ * could lie about, and not a key-string pattern:
  *
- * Pure: returns a fresh array, mutates neither argument.
+ *   - An already-persisted id keeps its PERSISTED key, even if the client sent a
+ *     stale provisional key or the label changed. That covers the edge case of a
+ *     label that legitimately slugs to `row`/`section`.
+ *   - A new id is provisional, and its key is finalized from the label.
  */
 export function reconcileRowKeys(
   incoming: EditorRow[],
