@@ -1,41 +1,27 @@
 {% comment %}
-  Appx — Product Specs Table
-  Resolves ONE data row's value cell against the live product (slice 2,
-  `context/features/35-storefront-value-part-resolution.md`).
+  Appx — Product Specs Table. Resolves ONE data row's value cell against the live product (slice 2,
+  features/35).
 
-  Params (render scope is isolated — both must be passed explicitly):
+  Params (render scope is isolated — both passed explicitly):
   - row:     one DATA row object from the metaobject `rows` json field
   - product: the current product (drives SHOPIFY_FIELD / METAFIELD parts)
 
   Contracts:
-  - Emits the resolved cell HTML only — no wrapper element. The block captures
-    this output and applies the whole-cell `hideWhenEmpty` gate; keep all
-    author-meaningful whitespace (TEXT part edges like "Up to ") intact.
-  - Every dynamic value is escaped before output (merchant/Shopify data is
-    never trusted as HTML). The only raw HTML emitted is `<br>` (LINE_BREAK
+  - Emits the resolved cell HTML only — no wrapper. The block captures this and applies the
+    whole-cell `hideWhenEmpty` gate; keep author-meaningful whitespace (TEXT edges like "Up to ").
+  - Every dynamic value is escaped before output. The only raw HTML emitted is `<br>` (LINE_BREAK,
     and metafield multiline newlines via `newline_to_br` AFTER `escape`).
-  - Variant-sourced fields read `product.first_available_variant`, falling
-    back to the FIRST variant when every variant is unavailable (sold-out
-    products must still show their specs). Selected-variant resolution +
-    live variant-switch JS are deferred (locked decision).
-  - Shopify caps `{% for %}` at 50 iterations, so the parts loop runs in
-    50-part chunks (a long multiline value alone can exceed 50 parts).
-  - Unknown/unresolvable tokens emit nothing (silent by design), including
-    `total_inventory` (no clean product-level Liquid property).
-  - METAFIELD parts resolve down THREE paths, because `metafield_text` alone
-    covers only some of the type space (see the branches below):
-      1. metaobject-backed (`metaobject_reference`, `list.metaobject_reference`
-         — what ALL of Shopify's standard `shopify.*` taxonomy choice-list
-         attributes are) → the filter WITH its `field:` parameter.
-      2. any OTHER list type → rendered here, item by item; the filter emits
-         nothing at all for them.
-      3. everything else → the filter, unparameterised.
-  - `selected_options` renders `variant.title` (the option values joined with
-    " / ", guaranteed string) and emits nothing for single-variant products —
-    shoppers must never see "Default Title".
-  - `inventory_quantity` guard: untracked inventory (`inventory_management`
-    nil) returns "items sold", which would mislead shoppers — emit nothing.
-  - `weight` guard: 0 means unset — emit nothing rather than "0 g".
+  - Variant-sourced fields read `product.first_available_variant`, falling back to the FIRST variant
+    when all are unavailable (sold-out products must still show specs).
+  - Shopify caps `{% for %}` at 50 iterations, so the parts loop runs in 50-part chunks.
+  - Unknown/unresolvable tokens emit nothing (silent by design), incl. `total_inventory`.
+  - METAFIELD parts resolve down THREE paths, because `metafield_text` covers only part of the type
+    space: (1) metaobject-backed (`metaobject_reference`, `list.metaobject_reference` — all of
+    Shopify's `shopify.*` taxonomy choice-lists) → the filter WITH `field:`; (2) any OTHER list type
+    → rendered here item by item; (3) everything else → the filter, unparameterised.
+  - `selected_options` renders `variant.title` and emits nothing for single-variant products (never
+    "Default Title"). `inventory_quantity`: untracked inventory emits nothing (else "items sold").
+    `weight`: 0 means unset — emit nothing rather than "0 g".
 {% endcomment %}
 {%- liquid
   assign variant = product.first_available_variant | default: product.variants.first
@@ -52,26 +38,16 @@
         {%- assign mf_type = mf.type | default: "" -%}
         {%- if mf_type contains "metaobject_reference" -%}
           {%- comment -%}
-            `metafield_text` renders NOTHING for `metaobject_reference` /
-            `list.metaobject_reference` unless it is given the `field:` parameter
-            naming which field of the referenced metaobject to print — the filter
-            has no default field. That is not an edge case: every choice-list
-            attribute in Shopify's standard product taxonomy (the whole `shopify`
-            namespace — `shopify.battery-type`, `shopify.power-source`,
-            `shopify.color-pattern`, …) is metaobject-backed, and the metafield
-            picker offers those definitions like any other. So the un-parameterised
-            call silently emitted an empty cell for them.
+            `metafield_text` renders NOTHING for `metaobject_reference` / `list.metaobject_reference`
+            unless given `field:` naming which field of the referenced metaobject to print (it has no
+            default field). Not an edge case: every choice-list attribute in Shopify's `shopify.*`
+            taxonomy is metaobject-backed, so the un-parameterised call silently emitted empty for them.
 
-            Shopify's taxonomy metaobjects name their display field `label`; custom
-            merchant definitions commonly use `name` or `title`. Try them in that
-            order and take the first non-blank — `field:` may only reference a
-            `single_line_text_field`, and a miss renders blank rather than raising.
-            All three blank stays SILENT, consistent with the unknown-token rule.
-
-            Going through the filter (rather than walking `mf.value` by hand) keeps
-            the single/list split inside Shopify's implementation: a list renders in
-            sentence format ("A, B, and C") and is not subject to the 50-iteration
-            `for` cap.
+            Taxonomy metaobjects name their display field `label`; custom definitions commonly use
+            `name` or `title`. Try in that order, first non-blank wins — a miss renders blank rather
+            than raising; all three blank stays SILENT. Going through the filter (not walking
+            `mf.value`) keeps the single/list split inside Shopify's implementation (sentence-format
+            lists, no 50-iteration `for` cap).
           {%- endcomment -%}
           {%- assign mo_text = mf | metafield_text: field: "label" -%}
           {%- if mo_text == blank -%}{%- assign mo_text = mf | metafield_text: field: "name" -%}{%- endif -%}
@@ -79,38 +55,25 @@
           {{- mo_text | escape -}}
         {%- elsif mf_type contains "list." and mf_type != "list.single_line_text_field" -%}
           {%- comment -%}
-            `metafield_text` supports NO list type except `list.single_line_text_field`
-            and `list.metaobject_reference` — both handled elsewhere — so every other
-            list (`list.number_integer`, `list.dimension`, `list.product_reference`,
-            `list.color`, …) rendered an empty cell. Those are rendered here instead,
-            one item at a time.
+            `metafield_text` supports NO list type except `list.single_line_text_field` and
+            `list.metaobject_reference` (both handled elsewhere), so every other list
+            (`list.number_integer`, `list.dimension`, …) rendered empty. Those are rendered here, one
+            item at a time.
 
-            🔴 The per-item shape is DUCK-TYPED, not switched on `mf_type`, and that is
-            deliberate. Shopify's measurement family is open and still growing — the
-            type list already carries `dimension`, `weight`, `volume`, `voltage`,
-            `temperature`, `speed`, `antenna_gain`, `volumetric_flow_rate` and more —
-            but every one of them is the same `measurement` object (`.value` + `.unit`).
-            A `case mf_type` would silently drop each new member the day Shopify ships
-            it; testing for `.unit` cannot. Same reasoning for the reference types:
-            they differ only in which display property they carry.
+            🔴 The per-item shape is DUCK-TYPED, not switched on `mf_type`, deliberately. Shopify's
+            measurement family is open and growing (`dimension`, `weight`, `volume`, `voltage`, …) but
+            every one is the same `measurement` object (`.value` + `.unit`); a `case mf_type` would
+            silently drop each new member, testing for `.unit` cannot. Order runs most specific first;
+            a plain string/number/date answers nil to every test and falls through to `{{ item }}`.
 
-            Order matters — the chain runs most specific first. A plain string / number
-            / date answers `nil` to every property test and falls through to `{{ item }}`,
-            which is exactly right for the scalar lists.
+            SIZE: reference lists are CONNECTIONS (`.count`); non-reference lists are arrays (`.size`).
+            Lists run to 128 items (256 for metaobject refs) against the 50-iteration cap, so this
+            chunks like the parts loop.
 
-            SIZE: reference lists are CONNECTIONS and answer `.count`; non-reference
-            lists are arrays and answer `.size` (metafield object docs, "Determining the
-            length of a list metafield"). Lists run to 128 items (256 for metaobject
-            references) against a 50-iteration `for` cap, so this chunks exactly like
-            the parts loop above.
-
-            ⚠️ DIVERGENCE, accepted: Shopify renders its two supported list types in
-            localized sentence format ("A, B, and C"); this joins with ", ". Matching it
-            would mean hardcoding an English "and" (an i18n bug on a translated
-            storefront) or adding a locale key plus last-item lookahead that the
-            blank-skip below makes unreliable. A comma list also reads better in a spec
-            table. The two Shopify-rendered types keep their sentence format — this is
-            not worth regressing a live-verified path over.
+            ⚠️ DIVERGENCE, accepted: Shopify renders its two supported list types in localized
+            sentence format ("A, B, and C"); this joins with ", ". Matching it would hardcode an
+            English "and" (an i18n bug) or need a last-item lookahead the blank-skip makes unreliable —
+            and a comma list reads better in a spec table. Not worth regressing a live-verified path.
           {%- endcomment -%}
           {%- assign list_items = mf.value -%}
           {%- assign list_size = list_items.count | default: list_items.size | default: 0 -%}

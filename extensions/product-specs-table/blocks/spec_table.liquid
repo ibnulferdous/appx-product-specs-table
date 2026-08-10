@@ -1,76 +1,52 @@
 {% comment %}
-  Appx — Product Specs Table
-  Storefront app block. Renders the spec table assigned to the current product.
+  Appx — Product Specs Table. Storefront app block; renders the spec table assigned to the
+  current product.
 
-  - Resolves the assigned template metaobject `spec` in TWO tiers (feature 43,
-    data-model §9); the disjoint ACTIVE set guarantees <=1 table per product:
-      1. The shop routing map: `snippets/spec-table-resolve.liquid` reads
-         `shop.metafields["$app"].routing.value` and emits the matched template
-         HANDLE (or nothing, incl. when the product is in `excludedProductGids`);
-         the handle resolves to the metaobject via
-         `metaobjects["$app:appx_spec_table"][handle]` (raw-handle lookup, proven
-         live — data-model §9). Explicit single-product assignments arrive the
-         same way, as `routing.byProduct` entries.
+  - Resolves the assigned template metaobject `spec` in TWO tiers (feature 43, data-model §9);
+    the disjoint ACTIVE set guarantees <=1 table per product:
+      1. `snippets/spec-table-resolve.liquid` reads `shop.metafields["$app"].routing.value` and
+         emits the matched template HANDLE (or nothing, incl. products in `excludedProductGids`);
+         the handle resolves via `metaobjects["$app:appx_spec_table"][handle]` (raw-handle lookup,
+         proven live). Single-product assignments arrive as `routing.byProduct` entries.
       2. No match -> `spec` stays blank -> nothing renders.
-    🚫 There was a tier ahead of these: the per-product `metaobject_reference`
-    metafield `product.metafields["$app"].spec_table.value` (features 34/35),
-    REMOVED 2026-08-04 along with its definition. No app code ever wrote it, so
-    it could only ever be set by hand in Admin. Do not reinstate the read without
-    reinstating the definition in `shopify.app.toml` — a metafield with no
-    definition resolves to nil and the branch would be silently dead.
-  - `.status`/`.rows` are read as `.status.value` / `.rows.value` (json -> array).
-  - SECTION_HEADER rows span both columns; DATA rows are label/value pairs.
-  - Value cells (all part types, incl. SHOPIFY_FIELD / METAFIELD resolution
-    against the live product) render via `snippets/spec-table-value.liquid` —
-    see that file + `context/features/35-storefront-value-part-resolution.md`.
-  - `hideWhenEmpty` is a WHOLE-CELL character test (locked decision, slice 2):
-    the row is skipped when the flag is set and the fully resolved cell has
-    zero non-whitespace characters. `strip_html` drops the `<br>`s first so
-    LINE_BREAKs never count as content. TEXT-only cells always render.
-  - Author-entered text is escaped inside the snippet (merchants author these —
-    never inject raw HTML); the captured cell is emitted unfiltered because it
-    is already escaped and may legitimately contain `<br>`.
-  - Silent by design: a non-ACTIVE status, no assigned template, or no rows
-    renders NOTHING on the storefront (no diagnostic text, no empty box).
-  - CONTENT-FREE TABLES render nothing either (feature 74). Two render-time
-    gates, mirrored exactly in the admin preview renderer:
-      R1 a SECTION_HEADER whose label is blank after `strip` is skipped — the
-         element exists only to carry a title, and an empty one paints a bare
-         grey band (the BANDED default) with nothing in it.
-      R2 if NO row survives its gate, no wrapper is emitted at all — not an
-         empty <div class="appx-spec-table">, not an empty <table>. This is
-         what makes the "silent by design" line above true for a rows array
-         that is non-empty but resolves to nothing (e.g. the editor's starter
-         scaffold: one blank section header + five empty hideWhenEmpty rows).
-    R2 is why the body is built into `table_body` via `capture` FIRST and the
-    wrapper decided after: the <div> used to open before the loop, and a data
-    cell's emptiness is undecidable without rendering it against the live
-    product. One pass, no double-render. NOT gated: a section header with a
-    real label whose rows are all hidden still renders (authored content —
-    see feature 74 "R3", deliberately out of scope).
+    🚫 The per-product `metaobject_reference` metafield tier (features 34/35) was REMOVED
+    2026-08-04 with its definition. Do not reinstate the read without reinstating the definition
+    in `shopify.app.toml` — a metafield with no definition resolves to nil and the branch is dead.
+  - `.status`/`.rows` read as `.status.value` / `.rows.value` (json -> array). SECTION_HEADER rows
+    span both columns; DATA rows are label/value pairs, rendered via `spec-table-value.liquid`.
+  - `hideWhenEmpty` is a WHOLE-CELL character test: the row is skipped when the flag is set and the
+    resolved cell has zero non-whitespace characters. `strip_html` drops `<br>`s first so
+    LINE_BREAKs never count. Author-entered text is escaped in the snippet; the captured cell is
+    emitted unfiltered because it is already escaped and may contain `<br>`.
+  - Silent by design: a non-ACTIVE status, no assigned template, or no rows renders NOTHING.
+  - CONTENT-FREE TABLES render nothing either (feature 74). Two render-time gates, mirrored in the
+    admin preview renderer:
+      R1 a SECTION_HEADER whose label is blank after `strip` is skipped (an empty one paints a bare
+         grey band with nothing in it).
+      R2 if NO row survives its gate, no wrapper is emitted — not an empty <div>, not an empty
+         <table> (e.g. the editor's starter scaffold resolves to nothing).
+    R2 is why the body is built into `table_body` via `capture` FIRST and the wrapper decided after:
+    a data cell's emptiness is undecidable without rendering it against the live product. NOT gated:
+    a section header with a real label whose rows are all hidden still renders (feature 74 "R3").
 
-  CSS lives in assets/spec-table.css and is loaded via the schema "stylesheet"
-  attribute — theme app extension blocks cannot use the {% stylesheet %} tag.
+  CSS lives in assets/spec-table.css, loaded via the schema "stylesheet" attribute — theme app
+  extension blocks cannot use the {% stylesheet %} tag.
 {% endcomment %}
 
 {%- comment -%}
-  Tier 1 — shop routing map. Resolve a template handle from the product's
-  attributes, then look up its metaobject by handle. The resolver emits nothing for
-  an excluded / unmatched product, so `spec` stays blank and nothing renders
-  (tier 2).
+  Tier 1 — shop routing map. Resolve a template handle from the product's attributes, then look up
+  its metaobject by handle. The resolver emits nothing for an excluded / unmatched product, so
+  `spec` stays blank (tier 2).
 
-  Feature 108 (metaobject sharding). The two per-product maps (`byProduct` /
-  `excluded`) no longer ride the `$app:routing` metafield — they live in per-bucket
-  shard metaobjects keyed by `product.id mod N`. We resolve THIS product's single
-  shard here and pass it into the resolver alongside `routing`, keeping the snippet a
-  pure function of its inputs (symmetry with the `routing:` param).
+  Feature 108 (metaobject sharding): the two per-product maps (`byProduct` / `excluded`) live in
+  per-bucket shard metaobjects keyed by `product.id mod N`, not the `$app:routing` metafield. We
+  resolve THIS product's single shard here and pass it into the resolver alongside `routing`,
+  keeping the snippet a pure function of its inputs.
 
-  🔴 The `modulo: 1024` literal and the `$app:appx_routing_shard` type string are a
-  CROSS-LANGUAGE CONTRACT with `ROUTING_SHARD_COUNT` / `ROUTING_SHARD_TYPE` in
-  app/utils/routingShards.ts — they MUST match, and `routingShardWireContract.test.ts`
-  reads this file off disk and fails if they drift. `append` coerces the integer
-  bucket key to the handle string (`routing-shard-<k>`); a bucket with no shard
-  resolves `shard` to nil, which the snippet treats as a clean miss.
+  🔴 The `modulo: 1024` literal and the `$app:appx_routing_shard` type string are a CROSS-LANGUAGE
+  CONTRACT with `ROUTING_SHARD_COUNT` / `ROUTING_SHARD_TYPE` in app/utils/routingShards.ts — they
+  MUST match, and `routingShardWireContract.test.ts` reads this file off disk and fails if they
+  drift. A bucket with no shard resolves `shard` to nil, treated as a clean miss.
 {%- endcomment -%}
 {%- liquid
   assign routing = shop.metafields["$app"].routing.value
@@ -80,10 +56,9 @@
 -%}
 {%- capture routed_handle -%}{%- render "spec-table-resolve", product: product, routing: routing, shard: shard -%}{%- endcapture -%}
 {%- comment -%}
-  Shopify wraps app-extension snippet output in `<!-- BEGIN/END app snippet -->`
-  comments; strip_html removes those (and any stray tags) so only the plain
-  handle slug remains, then strip trims whitespace. A metaobject handle has no
-  HTML characters, so strip_html is lossless here.
+  Shopify wraps app-extension snippet output in `<!-- BEGIN/END app snippet -->` comments;
+  strip_html removes those (and any stray tags), then strip trims whitespace. A metaobject handle
+  has no HTML characters, so strip_html is lossless here.
 {%- endcomment -%}
 {%- assign routed_handle = routed_handle | strip_html | strip -%}
 {%- if routed_handle != blank -%}
@@ -96,32 +71,21 @@
 -%}
 
 {%- comment -%}
-  Collapsible sections (feature 57 Step 9a). These two knobs are the ONLY ones
-  Liquid reads from the raw `styling` field rather than the precomputed
-  `styling_css`, and deliberately so: they are MARKUP decisions (`<details>` and
-  its `open` attribute), not part of the CSS mapping, so Step 7's "the server
-  precomputes; Liquid only prints" rule is not violated — there is no per-knob
-  table here to fall out of sync, just two scalars.
+  Collapsible sections (feature 57 Step 9a). These two knobs are the ONLY ones Liquid reads from
+  the raw `styling` field rather than the precomputed `styling_css`, deliberately: they are MARKUP
+  decisions (`<details>` and its `open` attribute), not part of the CSS mapping, so Step 7's "the
+  server precomputes; Liquid only prints" rule is not violated — just two scalars.
 
-  The wire shape is OVERRIDES-ONLY, which is what makes this free of defaulting
-  logic: a default-styled template has no `sectionsCollapsible` key at all, so
-  the lookup is nil, so it is falsy — the correct default (false) with zero code.
-  Same for the initial state via `| default:`.
+  The wire is OVERRIDES-ONLY, which frees this of defaulting logic: a default-styled template has no
+  `sectionsCollapsible` key, so the lookup is nil (falsy — the correct `false` default with zero
+  code). Same for the initial state via `| default:`.
 
-  ⚠️ THAT `| default:` MUST TRACK `DEFAULT_SECTIONS_INITIAL_STATE` in
-  app/utils/tableStyling.ts. A mismatch is SILENT — the admin preview and the
-  storefront would simply disagree about which sections start open, on exactly
-  the templates that store no value (i.e. most of them). Changed ALL_OPEN →
-  FIRST_OPEN with the domain default on 2026-07-30.
-
-  It is enforced, despite Liquid being outside the module graph:
-  `specTableLiquidDefaultsContract.test.ts` reads this file off disk and
-  compares the literal below to the domain constant. Change one, and the suite
-  names the other.
-
-  Collapsible degrades to the flat shape when the template has no section
-  headers (nothing to collapse), matching the admin preview renderer exactly —
-  see app/routes/app.templates_.$id/specTablePreviewHtml.ts.
+  ⚠️ THAT `| default:` MUST TRACK `DEFAULT_SECTIONS_INITIAL_STATE` in app/utils/tableStyling.ts. A
+  mismatch is SILENT — admin preview and storefront would disagree about which sections start open,
+  on exactly the templates that store no value. Enforced despite Liquid being outside the module
+  graph: `specTableLiquidDefaultsContract.test.ts` reads this file off disk and compares the literal
+  below to the domain constant. Collapsible degrades to the flat shape when the template has no
+  section headers, matching the admin preview renderer exactly.
 {%- endcomment -%}
 {%- liquid
   assign section_rows = rows | where: "rowType", "SECTION_HEADER"
@@ -133,70 +97,42 @@
 -%}
 
 {%- comment -%}
-  Styling (feature 57 Step 7). `styling_css` is PRECOMPUTED server-side at sync
-  time — `.classes` is the space-joined BEM modifier list for the wrapper,
-  `.vars` the `--appx-spec-*: v;` declarations — so this template performs NO
-  styling logic and needs no change when a knob is added. The mapping lives once,
-  in `app/utils/tableStylingCss.ts`, shared with the admin preview (data-model §10).
-
-  An entry synced before this field existed leaves both blank, which renders
-  exactly as it did pre-Step-7 (lazy backfill; self-heals on the next save).
-
-  `escape` is defense in depth only: values are whitelist-validated upstream at
-  `parseStylingValues` (hex-only colors, clamped integers, list-checked keywords),
-  and the output contains no quotes or angle brackets, so it is a no-op here.
+  Styling (feature 57 Step 7). `styling_css` is PRECOMPUTED server-side at sync time — `.classes`
+  is the space-joined BEM modifier list, `.vars` the `--appx-spec-*: v;` declarations — so this
+  template performs NO styling logic and needs no change when a knob is added. The mapping lives once
+  in `app/utils/tableStylingCss.ts`, shared with the admin preview (data-model §10). An entry synced
+  before this field existed leaves both blank (renders as pre-Step-7; self-heals on the next save).
+  `escape` is defense in depth only: values are whitelist-validated upstream at `parseStylingValues`.
 {%- endcomment -%}
 {%- if spec != blank and spec.status.value == "ACTIVE" and rows != blank and rows.size > 0 -%}
   {%- comment -%}
-    Feature 74 — R2. The body is CAPTURED, then the wrapper is emitted only if
-    something actually rendered. `has_content` is assigned inside the capture and
-    read after it: `capture` redirects OUTPUT, not assignments, so the flag (like
-    `table_open` / `details_open` / `section_index` below) is template-scoped and
-    survives the block.
-
-    The capture is the whole reason this works in one pass. A DATA row's
-    emptiness depends on the live product (`spec-table-value` resolves
-    SHOPIFY_FIELD / METAFIELD parts), so a pre-pass "will anything render?" would
-    have to render every value cell twice.
+    Feature 74 — R2. The body is CAPTURED, then the wrapper emitted only if something rendered.
+    `has_content` is assigned inside the capture and read after it: `capture` redirects OUTPUT, not
+    assignments, so the flag (like `table_open` / `details_open` / `section_index`) survives the
+    block. The capture is why this works in one pass — a DATA row's emptiness depends on the live
+    product, so a pre-pass "will anything render?" would render every value cell twice.
   {%- endcomment -%}
   {%- assign has_content = false -%}
   {%- capture table_body -%}
     {%- comment -%}
-      TWO markup shapes, switched by `collapsible`, sharing ONE row loop so the
-      hideWhenEmpty gate can never differ between them:
+      TWO markup shapes, switched by `collapsible`, sharing ONE row loop so the hideWhenEmpty gate
+      can never differ:
+      - OFF (default): one <table>, section headers as full-width <tr>. Byte-for-byte what shipped
+        before Step 9a — must not move.
+      - ON: one <details> per section header, each wrapping its OWN <table>. Rows BEFORE the first
+        section header render in a leading bare <table> (no section to name), so `table_open` opens
+        lazily. A section whose rows are all hidden renders as an empty collapsible (no new emptiness
+        logic). Each per-section table carries an aria-label with the title (the split costs it the
+        <th scope="colgroup"> heading). No JavaScript: <details> is native and keyboard-operable.
 
-      - OFF (the default): one <table>, section headers as full-width <tr>. Byte
-        for byte what shipped before Step 9a — every existing template renders
-        through here and must not move.
-      - ON: one <details> per section header, each wrapping its OWN <table>.
-        Rows appearing BEFORE the first section header render in a leading bare
-        <table> with no <details> (there is no section to name), so `table_open`
-        opens lazily. A section whose rows are all hidden renders as an empty
-        collapsible — no new emptiness logic, which would change the OFF path
-        too. Each per-section table carries an aria-label with the section
-        title, because the split costs it the <th scope="colgroup"> heading.
-
-      No JavaScript: <details> is native, keyboard-operable, and announces its
-      own expanded state.
-
-      EXPLICIT ARIA ROLES (feature 70) restate semantics this markup already
-      expresses correctly via the tags + scope attributes. They are here because
-      the STACKED layouts apply `display: block` (spec-table.css), which drops an
-      element out of the CSS table model and takes the browser's implicit table
-      semantics with it — a screen reader stops announcing label/value as a
-      header/cell pair. ARIA roles are immune to `display`, so they survive it.
-
-      They are UNCONDITIONAL on purpose. The mobile stacked rule is a MEDIA
-      QUERY, and Liquid renders server-side with no idea how wide the shopper's
-      screen is — so a role emitted only when `rowLayout == STACKED` would leave
-      every narrow-screen shopper of every two-column template broken. In
-      two-column mode these roles are harmless restatements of what the tags
-      already mean.
-
-      ALL OR NOTHING: table -> rowgroup -> row -> rowheader/cell must stay
-      complete. A `role="row"` with no table role above it can be dropped
-      outright by assistive tech, children included — a partial chain is worse
-      than none. `specTableAriaContract.test.ts` fails if one goes missing.
+      EXPLICIT ARIA ROLES (feature 70) restate semantics the tags already express, because the
+      STACKED layouts apply `display: block`, dropping the element out of the CSS table model and
+      taking the browser's implicit table semantics with it. Roles are immune to `display`.
+      UNCONDITIONAL on purpose: the mobile stacked rule is a MEDIA QUERY, and Liquid renders
+      server-side with no idea of screen width, so a role emitted only when `rowLayout == STACKED`
+      would leave every narrow-screen shopper of a two-column template broken. ALL OR NOTHING:
+      table -> rowgroup -> row -> rowheader/cell must stay complete (a partial chain can be dropped
+      outright by AT). `specTableAriaContract.test.ts` fails if one goes missing.
     {%- endcomment -%}
     {%- if collapsible -%}
       {%- assign table_open = false -%}
@@ -207,8 +143,8 @@
     {%- assign details_open = false -%}
     {%- assign section_index = 0 -%}
     {%- comment -%}
-      Shopify caps for-loops at 50 iterations; templates hold up to
-      MAX_TEMPLATE_ROWS (200) rows, so iterate in 50-row chunks.
+      Shopify caps for-loops at 50 iterations; templates hold up to MAX_TEMPLATE_ROWS (200) rows,
+      so iterate in 50-row chunks.
     {%- endcomment -%}
     {%- assign row_chunks = rows.size | plus: 49 | divided_by: 50 -%}
     {%- for chunk in (1..row_chunks) -%}
@@ -216,22 +152,17 @@
       {%- for row in rows offset: row_offset limit: 50 -%}
         {%- if row.rowType == "SECTION_HEADER" -%}
           {%- comment -%}
-            R1 (feature 74). A section header carries nothing but its title, so a
-            blank one is skipped in BOTH shapes. Tested trimmed, emitted untrimmed
-            — the same test-input/output split `hideWhenEmpty` already uses. The
-            filter has to land in an `assign`: Liquid `if` conditions do not
+            R1 (feature 74). A blank section header is skipped in BOTH shapes. Tested trimmed,
+            emitted untrimmed. The filter has to land in an `assign`: Liquid `if` conditions do not
             accept filters.
           {%- endcomment -%}
           {%- assign section_label = row.label | strip -%}
           {%- if collapsible -%}
             {%- comment -%}
-              A blank header still CLOSES the open group before vanishing. Without
-              the close, the rows that followed it would be filed under the
-              PREVIOUS section's heading — a worse bug than the band it removes.
-              They instead hit the lazy-open branch below and land in a fresh bare
-              unnamed table, exactly as rows before the first section header do.
-              `section_index` is deliberately NOT incremented: a skipped section is
-              not a section, so FIRST_OPEN still opens the first REAL one.
+              A blank header still CLOSES the open group before vanishing — without the close, the
+              rows that followed would be filed under the PREVIOUS section's heading. They hit the
+              lazy-open branch below and land in a fresh bare unnamed table. `section_index` is NOT
+              incremented: a skipped section is not a section, so FIRST_OPEN opens the first REAL one.
             {%- endcomment -%}
             {%- if table_open -%}</tbody></table>{%- assign table_open = false -%}{%- endif -%}
             {%- if details_open -%}</details>{%- assign details_open = false -%}{%- endif -%}
@@ -283,11 +214,9 @@
     {%- if details_open -%}</details>{%- endif -%}
   {%- endcapture -%}
   {%- comment -%}
-    `table_body` is printed RAW: Liquid does not auto-escape, and every
-    author-entered string inside it was escaped at emission time (same posture as
-    `{{ cell }}` above). When nothing rendered, the captured body — which may
-    still hold an empty <table><tbody></tbody></table> from the flat shape's
-    eager open — is simply discarded.
+    `table_body` is printed RAW: Liquid does not auto-escape, and every author-entered string inside
+    it was escaped at emission time. When nothing rendered, the captured body (which may still hold
+    an empty <table><tbody></tbody></table> from the flat shape's eager open) is simply discarded.
   {%- endcomment -%}
   {%- if has_content -%}
     <div class="appx-spec-table {{ styling_css.classes | escape }}" style="{{ styling_css.vars | escape }}" {{ block.shopify_attributes }}>{{ table_body }}</div>

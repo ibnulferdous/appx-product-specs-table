@@ -1,47 +1,28 @@
-// The canned sample table every style-preset card previews (feature 88 · step
-// 90). Binding spec: `context/features/90-style-preset-card-preview.md`.
+// The canned sample table every style-preset card previews (feature 88 · step 90; binding spec in
+// features/90). ONE generic sample, reused by all five cards. Deliberately not per-category content:
+// "Screen size / Battery / Chipset" would be the starter-content idea the merchant rejected, arriving
+// through the back door. The card advertises a LAYOUT, so the words carry as little meaning as
+// possible while still reading like a real spec table. Colocated with the gallery (presentation
+// fixture data — never read outside this route, never persisted).
 //
-// ONE generic sample, reused by all five pattern cards. Deliberately not
-// per-category content: a sample that said "Screen size / Battery / Chipset"
-// would be the starter-content idea the merchant explicitly rejected arriving
-// through the back door. The card advertises a LAYOUT, so the words must carry
-// as little meaning as possible while still reading like a real spec table.
-//
-// Colocated with the gallery rather than living in `app/utils` because it is
-// presentation fixture data: nothing outside this route reads it, it is never
-// persisted, and it must never be confused for a template a merchant owns.
-//
-// ⚠️ The SHAPE is load-bearing, not decorative. Each requirement below exists
-// because a smaller sample would make a card lie about the pattern it names, and
-// `sampleRows.test.ts` pins every one of them:
-//
-//   - TWO section headers. Section-header treatment is the axis that separates
-//     three of the five cards (Modern's, Multi-column's and Accordion's band,
-//     Classic's underlined title, Minimal's plain one). With one header there is
-//     nothing to compare it against; with none the axis is invisible.
-//   - SEVEN data rows. `GRID` flows tracks into columns at a minimum column
-//     width; too few rows and Multi-column renders as a single column, so the
-//     card would show the merchant something the preset does not do.
-//   - ONE long-ish value. Wrapping is half of what distinguishes the layouts
-//     (feature 85: narrower tracks wrap more, so the smaller layout is taller).
-//     All-short values flatten that difference away.
-//   - STATIC ids. `newRowId()` would mint fresh UUIDs on every import, changing
-//     the rendered markup for no benefit and defeating any memoisation of the
-//     five preview documents.
+// ⚠️ The SHAPE is load-bearing; a smaller sample would make a card lie about the pattern it names, and
+// `sampleRows.test.ts` pins each requirement:
+//   - TWO section headers. Header treatment separates three cards (banded / underlined / plain); with
+//     one there's nothing to compare, with none the axis is invisible.
+//   - SEVEN data rows. `GRID` flows tracks at a minimum column width; too few and Multi-column renders
+//     as a single column, showing something the preset doesn't do.
+//   - ONE long-ish value. Wrapping is half of what distinguishes the layouts (feature 85); all-short
+//     values flatten that difference away.
+//   - STATIC ids. `newRowId()` would mint fresh UUIDs every import, changing the markup and defeating
+//     memoisation of the five preview documents.
 
 import type { EditorRow } from "../../utils/rows";
 
 /**
- * The sample, as real `EditorRow`s.
- *
- * Typed as `EditorRow[]` rather than inferred on purpose: if the row contract in
- * `rows.ts` gains a field or changes a shape, this fixture must fail to COMPILE
- * rather than quietly render a stale row shape into five merchant-facing cards.
- *
- * `hideWhenEmpty` follows the same defaults the editor's own row factories use
- * (`true` for data rows, `false` for section headers) so the fixture is a
- * plausible template and not a special case; nothing here is empty, so the flag
- * never actually fires.
+ * The sample, as real `EditorRow`s. Typed as `EditorRow[]` rather than inferred so a change to the
+ * row contract fails to COMPILE rather than quietly rendering a stale shape into five cards.
+ * `hideWhenEmpty` follows the editor's own row-factory defaults so the fixture is plausible; nothing
+ * here is empty, so the flag never fires.
  */
 export const STYLE_PREVIEW_SAMPLE_ROWS: EditorRow[] = [
   {
@@ -56,9 +37,8 @@ export const STYLE_PREVIEW_SAMPLE_ROWS: EditorRow[] = [
     key: "material",
     rowType: "DATA",
     label: "Material",
-    // The long-ish value. Long enough to wrap in a narrow `GRID` track and stay
-    // on one line in a wide two-column row — which IS the difference the
-    // Multi-column card is advertising.
+    // The long-ish value. Long enough to wrap in a narrow `GRID` track and stay on one line in a wide
+    // two-column row — the difference the Multi-column card advertises.
     valueParts: [
       { type: "TEXT", text: "Anodised aluminium with a brushed finish" },
     ],

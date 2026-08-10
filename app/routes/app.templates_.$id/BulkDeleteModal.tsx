@@ -1,15 +1,10 @@
 import { BULK_DELETE_MODAL_ID } from "./editorShared";
 import type { RowEngine } from "./useRowEngine";
 
-// Confirmation modal shown before a destructive bulk delete (feature 29) — gated
-// on count: deleting 3+ selected rows (and therefore Select all → Delete) opens
-// this first; 1–2 apply immediately. It's a friction guard, not the last line of
-// defense: confirming still fires the 10s "Undo" toast (feature 33), and the
-// removal only persists on Save — which is what the copy tells the merchant.
-// Mounted in ContentTab beside InsertFieldModal / PasteCapModal and
-// driven imperatively via the App Bridge Modal API; <s-modal> supplies the focus
-// trap, Esc, and outside-click dismiss, all of which cancel and delete nothing.
-// Presentational — count + handlers come from the engine.
+// Confirmation modal before a bulk delete (feature 29), gated on count: 3+ selected rows (and Select
+// all → Delete) open this first; 1–2 apply immediately. A friction guard, not the last line of
+// defense: confirming still fires the 10s "Undo" toast (feature 33), and the removal only persists on
+// Save. Driven imperatively via the App Bridge Modal API. Presentational.
 export function BulkDeleteModal({ engine }: { engine: RowEngine }) {
   const { selectedCount, handleConfirmBulkDelete, handleCancelBulkDelete } =
     engine;

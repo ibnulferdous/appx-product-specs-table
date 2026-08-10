@@ -75,145 +75,82 @@ import {
 } from "../../utils/tableStyling";
 import type { RowEngine } from "./useRowEngine";
 
-// The editor's Style-tab sidebar (feature 57 Step 5). Presentational, and the
-// sibling of `SettingsTab` in every respect: it reads the live styling off the
-// engine, calls the engine's one mutator, and rides the same meta-JSON dirty
-// snapshot — so changing a knob opens the contextual SaveBar and Save persists it
-// alongside rows/name/status/scope in a single request. It renders in
-// EditorShell's `stylePanel` slot, INSIDE the editor's inert freeze wrapper
-// (SpecTableEditor), so it is frozen with the rest of the editor during an
-// in-flight save — no separate `saving` guard here.
+// The editor's Style-tab sidebar (feature 57 Step 5). Presentational, sibling of `SettingsTab`: it
+// reads the live styling off the engine, calls the engine's one mutator, and rides the same meta-JSON
+// dirty snapshot, so changing a knob opens the SaveBar. It renders in EditorShell's `stylePanel` slot,
+// INSIDE the editor's inert freeze wrapper, so it is frozen during a save — no separate `saving` guard.
 //
-// THE RAIL'S ORGANISING RULE, and the one thing to preserve when adding a knob
-// (feature 86): the eight groups are cut on ONE axis — the OBJECT being styled —
-// and every group ends with its own colors. "Structure knobs, then colors" is a
-// rule a merchant learns once and reapplies in every group.
-//
+// THE RAIL'S ORGANISING RULE (feature 86), the one thing to preserve when adding a knob: the eight
+// groups are cut on ONE axis — the OBJECT being styled — and every group ends with its own colors.
+// "Structure knobs, then colors" is a rule a merchant learns once and reapplies in every group.
 //   1 Table layout · 2 Table size & frame · 3 Table text · 4 Section headers
 //   5 Collapsible sections · 6 Rows · 7 Labels · 8 Values
+// The rail used to be cut on TWO axes (four by object, two by CSS property: Colors / Typography),
+// which put `headerBgColor` ~20 controls from the select that makes the band visible. File by object.
 //
-// It was NOT always so, and the failure mode is worth keeping: the rail used to
-// carry six groups cut on TWO axes at once — four by object (Layout / Size &
-// frame / Sections / Rows) and two by CSS property (Colors / Typography). The
-// cost was not untidiness, it was distance. `headerBgColor` sat ~20 controls
-// from the select that makes the band visible; the label column had its weight
-// in Typography, its colors in Colors, and no group of its own anywhere. A new
-// knob filed by "what kind of CSS is this" rather than "what does it style"
-// re-creates that, so file by object.
+// ⚠️ Where a knob goes is decided by WHERE THE CSS VAR LANDS, not by what the control sounds like.
+// `font-size` / `font-style` / `line-height` sit on `.appx-spec-table__table` (Table text);
+// `font-weight` / `text-transform` sit on `.appx-spec-table__label` (Labels). Check `spec-table.css`
+// before filing — the split is falsifiable in one click, and a heading that lies is worse than none.
 //
-// ⚠️ Where a knob goes is decided by WHERE THE CSS VAR LANDS, not by what the
-// control sounds like. `font-size` / `font-style` / `line-height` sit on
-// `.appx-spec-table__table`, so they are Table text; `font-weight` and
-// `text-transform` sit on `.appx-spec-table__label`, so they are Labels. Check
-// `spec-table.css` before filing — the split is falsifiable in one click, and a
-// group heading that lies is worse than no heading.
+// ⚠️ THE GROUP HEADINGS ARE LOAD-BEARING. Feature 86 shortened labels that named their own scope
+// ("Label weight" → "Weight"), and two swatch pairs (Labels, Values) are character-identical. That
+// only holds while every group is a `role="group"` wired to its heading by `aria-labelledby`, which
+// makes the scope ANNOUNCED, not merely seen. Deleting a wrapper silently widens two controls' scope
+// to the whole table — see the lock note in `stylingControls.ts`.
 //
-// ⚠️ THE GROUP HEADINGS ARE LOAD-BEARING. Feature 86 shortened labels that used
-// to name their own scope ("Label weight" → "Weight", "Section title case" →
-// "Title case") on the strength of the heading stating it instead, and two
-// swatch pairs (Labels, Values) are character-identical. That only holds while
-// every group is a `role="group"` wired to its heading by `aria-labelledby`,
-// which is what makes the scope ANNOUNCED rather than merely seen. Deleting a
-// wrapper silently widens two controls' apparent scope to the whole table — see
-// the lock note in `stylingControls.ts`.
+// ⚠️ NO GROUP MAY CONSIST ENTIRELY OF HIDE-GATED CONTROLS. Ten of the 35 are behind a visibility
+// predicate; a group where all were would render as a heading + divider fencing nothing. Pinned in
+// `styleTabContract.test.ts`. Seven of the ten are JSX guards; the other three (features 95, 96) gate
+// COLORS, applied inside `colorGrid` via `ColorKnob.visibleWhen` — same law, and no group's swatches
+// may ALL be gated or `colorGrid` paints an empty `<s-grid>`. Section headers is the closest call
+// (2 of 3 gated; only `Title color` stands between it and an empty grid); Rows is the same with
+// `Divider color`.
 //
-// ⚠️ NO GROUP MAY CONSIST ENTIRELY OF HIDE-GATED CONTROLS. Ten of the 35 are
-// behind a visibility predicate; a group where all of them were would render as
-// a heading and a divider fencing nothing — an empty section a merchant reads as
-// a broken screen, and a `role="group"` with no members. Pinned in
-// `styleTabContract.test.ts`.
+// Knobs added here already rode the pipe end to end (previews + storefront render from the same
+// `tableStylingCss.ts` mapping), so these are UI-only additions — if flipping one fails to repaint the
+// preview, the bug is in the mapping.
 //
-// Seven of those ten are JSX guards — `{showsX(styling) && <control/>}`. The
-// other three (features 95, 96) gate COLORS, which this file never writes as
-// JSX: the ten swatches are one `.filter(…).map(…)` over `COLOR_KNOBS`, so their
-// predicates ride `ColorKnob.visibleWhen` and are applied inside `colorGrid`.
-// Same law, same registry, different attachment point — and they carry their own
-// version of the rule above: no group's swatches may ALL be gated, or
-// `colorGrid` paints an empty `<s-grid>`. ⚠️ Section headers is now the closest
-// call in the rail — 2 of its 3 swatches are gated, and only `Title color`
-// stands between that group and an empty grid. Rows is the same shape with
-// `Divider color`. Pinned in `stylingControls.test.ts`.
+// NULLABLE knobs (all nine colors + the keyword selects) must reach unset and back. The `""`-to-null
+// conversion lives entirely in `stylingControls.ts`; nothing here may write a bare `""` into styling.
 //
-// Knobs added here already rode the pipe end to end before they had a control:
-// the previews and the live storefront both render from the same
-// `tableStylingCss.ts` mapping, so these are UI-only additions. If flipping one
-// fails to repaint the preview, the bug is in the mapping, not here.
+// ACCESSIBILITY: help text rides the control's own `details` attribute (never a stranded sibling
+// `<s-text>`); group headings are real `<s-heading>`s inside `role="group"` wrappers referencing them
+// (s-text has no heading variant, s-box has no `group` role — hence a raw div, as in EditorShell's
+// radiogroup). ⚠️ `s-heading` takes NO level prop, so the panel title and eight group headings are
+// peers — accepted, since `role="group"` + `aria-labelledby` carries the structure. NO CONTRAST
+// CHECKING (decision, not deferral, features/69 §3): the app can't compute contrast, so any warning
+// would be a guess.
 //
-// NULLABLE knobs (all nine colors and the keyword selects) must be able to reach
-// unset and get back. The `""`-to-null conversion lives entirely in
-// `stylingControls.ts`; nothing in this file may write a bare `""` into styling
-// state.
+// EVERY NUMBER BOX CARRIES BOTH `onInput` AND `onChange`, and dropping either is a bug (2026-07-31).
+// `onChange` fires on COMMIT (blur/Enter) — with it alone, typing `1000` into Maximum width shows no
+// SaveBar and leaving before blur throws the number away. `onInput` alone is worse: the boxes are
+// controlled and every `from…` clamps, rewriting a half-typed number under the caret. The
+// reconciliation is `liveCommitValue` (commit on a keystroke only when the text already spells what
+// would be stored), and the ONLY correct read of its result is `!== undefined` (`null` is a real value
+// — a cleared box, or a zero-means-off `0`). Selects/swatches need none of this. Pinned per box.
 //
-// ACCESSIBILITY — the rail conveys structure and description PROGRAMMATICALLY,
-// not just visually, and each piece is deliberate:
-//
-//   · Help text rides the control's own `details` attribute, never an
-//     unassociated sibling `<s-text>`, so a screen reader reads the description
-//     WITH the field instead of finding it stranded between controls.
-//   · Group headings are real `<s-heading>`s inside `role="group"` wrappers that
-//     reference them. `s-text`'s `type` union has no heading variant, which is
-//     why this needs a different element; `s-box`'s `accessibilityRole` union has
-//     no `group`, which is why the wrapper is a raw light-DOM div (an established
-//     pattern here — see EditorShell's radiogroup).
-//   · The rail CONTAINER is a named landmark — but that lives in `EditorShell`,
-//     since one box sits behind both Style and Settings.
-//   · ⚠️ `s-heading` takes NO level prop (only `accessibilityRole`), so the panel
-//     title and all eight group headings are peers rather than nested. Known and
-//     accepted: `role="group"` + `aria-labelledby` is what carries the structure,
-//     and the alternative — wrapping each group in `s-section` to establish a
-//     level — would add card chrome the rail does not want.
-//
-// NO CONTRAST CHECKING, and this is a decision rather than a deferral (see
-// `context/features/69-…` §3): the app cannot compute contrast — a null color
-// inherits an unknown theme value and every background knob allows alpha — so any
-// warning would be a guess, and an unreliable a11y warning is worse than none.
-//
-// EVERY NUMBER BOX CARRIES BOTH `onInput` AND `onChange`, and dropping either
-// one is a bug rather than a simplification (2026-07-31). `onChange` fires on
-// COMMIT — blur or Enter — so with it alone a merchant could type `1000` into
-// Maximum width and see NO SaveBar, and leaving the editor before blurring threw
-// the number away silently, since `isDirty` is also what the unsaved-changes
-// guard reads. `onInput` alone is worse: these boxes are controlled and every
-// `from…` clamps, so a per-keystroke commit rewrites a half-typed number under
-// the caret. The reconciliation is `liveCommitValue` in `stylingControls.ts` —
-// commit on a keystroke only when the text already spells exactly what would be
-// stored — and the ONLY correct way to read its result is `!== undefined`, since
-// `null` is a real value here (a cleared box, or a zero-means-off `0`). The
-// selects and swatches need none of this: their `change` is already immediate.
-// Pinned per box in `styleTabContract.test.ts`.
-//
-// NO GENERIC CONTROL WRAPPER, deliberately. Five near-identical selects look like
-// they want a `<StylingSelect knob={…}>`, but at this size the abstraction would
-// be bigger than what it removes. Step 9b's switch and Step 10's color fields and
-// number fields have since confirmed the call: the shapes really do diverge, and
-// only the `selectedHelpText` lookup — which knows nothing about how a value is
-// picked — turned out to be worth sharing.
+// NO GENERIC CONTROL WRAPPER, deliberately: at this size the abstraction would be bigger than what it
+// removes, and Steps 9b/10 confirmed the shapes really diverge — only `selectedHelpText` was worth sharing.
 
-// Read the `value` off a Polaris web-component change event (the elements are
-// custom, so `currentTarget.value` isn't in the DOM typings). Same helper as
-// SettingsTab — deliberately duplicated rather than shared, since each panel's
-// event handling is otherwise independent.
+// Read the `value` off a Polaris web-component change event (custom elements, so `currentTarget.value`
+// isn't in the DOM typings). Same helper as SettingsTab — duplicated rather than shared, since each
+// panel's event handling is otherwise independent.
 function readValue(event: Event): string {
   return (event.currentTarget as unknown as { value: string }).value;
 }
 
-// The `checked` counterpart for the one boolean knob (Step 9b). Same reasoning
-// as `readValue`: the Polaris elements are custom, so the property isn't in the
-// DOM typings.
+// The `checked` counterpart for the one boolean knob (Step 9b). Same reasoning as `readValue`.
 function readChecked(event: Event): boolean {
   return (event.currentTarget as unknown as { checked: boolean }).checked;
 }
 
-// The subdued line under a control, describing whatever is currently selected.
-// A lookup, not a control abstraction — it stays valid for Step 10's non-select
-// shapes because it knows nothing about how the value is picked.
+// The subdued line under a control, describing the current selection. A lookup, not a control
+// abstraction, so it stays valid for Step 10's non-select shapes.
 //
-// ⚠️ Returns `undefined`, never `""` (feature 86). Most options no longer carry
-// a gloss at all — see the rule on `StylingOption.helpText` — and a `details=""`
-// paints an empty subdued line, so the control would keep the vertical space of
-// a description it does not have. `undefined` omits the attribute instead.
-// The `||` rather than `??` is deliberate: it catches a stray `""` in the option
-// data as well as a missing key, so neither can reach the DOM.
+// ⚠️ Returns `undefined`, never `""` (feature 86): most options carry no gloss, and a `details=""`
+// paints an empty subdued line. The `||` (not `??`) catches a stray `""` in the option data as well
+// as a missing key.
 function selectedHelpText<T extends string>(
   options: ReadonlyArray<StylingOption<T>>,
   value: T,
@@ -227,17 +164,15 @@ export function StyleTab({ engine }: { engine: RowEngine }) {
   const { styling, setStylingField } = engine;
   const shopify = useAppBridge();
 
-  // Stable, instance-unique prefix for the group headings each `role="group"`
-  // points at with `aria-labelledby`. Same approach as EditorShell's tooltip ids.
+  // Stable, instance-unique prefix for the group headings each `role="group"` points at with
+  // `aria-labelledby`. Same approach as EditorShell's tooltip ids.
   const groupId = useId();
   const headingId = (group: string) => `${groupId}-${group}`;
 
-  // The px a merchant last typed, so leaving and re-entering Custom is not
-  // destructive: S → Custom → S → Custom must return their number, not the seed.
-  // It cannot live in `StylingValues` — `fontSize` holds ONE of its three shapes
-  // at a time — so it is UI memory, the same shape of fix as the four hide
-  // rules. A ref rather than state because nothing renders from it directly;
-  // it is only ever read at the moment Custom is picked.
+  // The px a merchant last typed, so leaving and re-entering Custom is non-destructive (S → Custom →
+  // S → Custom must return their number, not the seed). It can't live in `StylingValues` (fontSize
+  // holds one of three shapes), so it's UI memory. A ref, not state, because nothing renders from it
+  // — only read at the moment Custom is picked.
   const rememberedPxRef = useRef(
     rememberedCustomFontSizePx(styling.fontSize, CUSTOM_FONT_SIZE_SEED_PX),
   );
@@ -247,42 +182,21 @@ export function StyleTab({ engine }: { engine: RowEngine }) {
   );
   const rememberedPx = rememberedPxRef.current;
 
-  // One group's swatches, 2-up (feature 86 Step 4). The nine colors used to be a
-  // single `Colors` group rendered by one `.map`; they now scatter across five
-  // groups, each sitting with the controls it composes with — "structure knobs,
-  // then colors" as one rule the merchant learns once and reapplies everywhere.
+  // One group's swatches, 2-up (feature 86 Step 4). Selected by FILTERING, which lets `COLOR_KNOBS`
+  // stay in `STYLING_FIELD_NAMES` order (the test derives the expected order from it). A plain
+  // function called `{colorGrid("labels")}`, NOT a `<ColorGrid/>` component: a component declared
+  // inside StyleTab would be a new type every render and remount its subtree, blowing away focus and
+  // any half-typed hex; it's not hoisted to module scope because it closes over `styling`/`setStylingField`.
   //
-  // Selected by FILTERING rather than by reordering, which is what lets
-  // `COLOR_KNOBS` stay in `STYLING_FIELD_NAMES` order (`tableStyling.ts` pins the
-  // color block as contiguous, and `stylingControls.test.ts` derives the expected
-  // order from it). Within-group order is therefore inherited, not chosen.
+  // Stays 2-up even for `tableFrame` (one swatch → a half-width field with a gap) — a full-width lone
+  // swatch would make Outline color the only differently-sized color input. A swatch may carry its own
+  // `visibleWhen`, applied HERE rather than a `{showsX && }` guard because these controls are
+  // generated, not written (the predicate still lives in `stylingControls.ts` under preserve-on-hide).
   //
-  // A plain function called as `{colorGrid("labels")}`, NOT a `<ColorGrid/>`
-  // component: a component declared inside `StyleTab` would be a new type on
-  // every render and would remount its subtree, blowing away focus and any
-  // half-typed hex. This is also why it is not hoisted to module scope — it
-  // closes over `styling` and `setStylingField`, and threading those through
-  // props would buy nothing.
-  //
-  // Stays 2-up even for `tableFrame`, which has ONE swatch and so renders a
-  // half-width field with a gap beside it. Deliberate: a full-width lone swatch
-  // would make Outline color the only differently-sized color input in the rail,
-  // trading a small alignment oddity for an inconsistency the eye tracks harder.
-  // Feature 95 added the second half of the filter. A swatch may carry its own
-  // visibility rule, and it is applied HERE rather than as a `{showsX(…) && }`
-  // guard because these controls are generated, not written — there is no JSX
-  // line to wrap. The predicate itself still lives in `stylingControls.ts` with
-  // the other seven and is registered under the same preserve-on-hide law, so
-  // hiding a swatch can never clear the merchant's hex.
-  //
-  // ⚠️ THE EARLY RETURN IS LOAD-BEARING (2026-07-29). The `<s-grid>` used to be
-  // built outside the filter, so a group with no surviving swatch painted an
-  // EMPTY grid — a blank strip carrying the stack's gap, which reads as a
-  // half-loaded screen. Unreachable until `outerBorderColor` was gated, because
-  // `tableFrame` is the only group with a single swatch. Returning null also
-  // keeps `styleTabContract.test.ts`'s bare-heading count honest: it credits
-  // `colorGrid(…)` as an always-rendering control only for groups that still
-  // have an unconditional swatch.
+  // ⚠️ THE EARLY RETURN IS LOAD-BEARING (2026-07-29). The `<s-grid>` used to be built outside the
+  // filter, so a group with no surviving swatch painted an EMPTY grid — a blank strip carrying the
+  // stack's gap. Unreachable until `outerBorderColor` was gated (`tableFrame` is the only single-swatch
+  // group). Returning null also keeps the contract test's bare-heading count honest.
   const colorGrid = (group: StyleGroupId) => {
     const visible = COLOR_KNOBS.filter(
       (knob) => knob.group === group && (knob.visibleWhen?.(styling) ?? true),
@@ -295,20 +209,11 @@ export function StyleTab({ engine }: { engine: RowEngine }) {
           <s-color-field
             key={knob.field}
             label={knob.label}
-            // State-reporting, like the rail's six number fields (feature 86).
-            // An empty swatch says what it currently falls back to; a set one
-            // says which surface it paints. This is what replaced the old Colors
-            // group note — see `ColorKnob.emptyHelpText`, and note the note was
-            // WRONG about four of the nine.
-            //
-            // ⚠️ `emptyHelpText` is OPTIONAL since feature 96, so this can be
-            // `undefined` — which renders no `details` line at all, and that is
-            // the intended result rather than a hole to patch. Exactly one
-            // swatch (`Underline color`) omits it, because its fallback chain is
-            // two links deep and no true sentence about it fits the rail. Do not
-            // substitute `knob.helpText` here as a "safe" default: it describes
-            // the surface a SET colour paints, so an empty swatch would claim to
-            // be painting something.
+            // State-reporting (feature 86): an empty swatch says what it falls back to; a set one says
+            // which surface it paints. ⚠️ `emptyHelpText` is OPTIONAL since feature 96, so this can be
+            // undefined (renders no `details` line — intended). Exactly one swatch (`Underline color`)
+            // omits it. Do NOT substitute `knob.helpText` as a default: it describes the surface a SET
+            // colour paints, so an empty swatch would claim to be painting something.
             details={
               styling[knob.field] === null ? knob.emptyHelpText : knob.helpText
             }
@@ -327,24 +232,16 @@ export function StyleTab({ engine }: { engine: RowEngine }) {
   };
 
   return (
-    // Two gap scales, and the difference between them is the whole separation
-    // treatment (feature 86 Step 3). The OUTER stack runs `large-200` and the
-    // inner per-group stacks stay `base`, so whitespace alone already groups the
-    // rail: controls that belong together sit closer to each other than to
-    // anything in the next group. The `<s-divider>`s then draw that same
-    // boundary for anyone who reads structure rather than rhythm.
-    //
-    // ⚠️ The two scales have to STAY different. Setting the outer stack back to
-    // `base` would not just tighten the rail, it would flatten the proximity
-    // signal entirely and leave the dividers doing the work alone.
+    // Two gap scales, and the difference is the whole separation treatment (feature 86 Step 3). The
+    // OUTER stack runs `large-200` and the inner per-group stacks stay `base`, so whitespace alone
+    // groups the rail; the `<s-divider>`s draw the same boundary for anyone who reads structure. ⚠️ The
+    // two scales must STAY different — flattening the outer to `base` would leave the dividers doing the
+    // work alone.
     <s-stack direction="block" gap="large-200">
       <s-heading>Style</s-heading>
 
-      {/* 1 · Table layout. FIRST by merchant decision (feature 86): Row layout
-          is the highest-leverage knob in the rail and it gates whether four
-          other controls exist at all, so it has to be the thing a merchant
-          meets before anything else. The group carries no colors — a layout has
-          no surface of its own to paint. */}
+      {/* 1 · Table layout. FIRST by merchant decision (feature 86): Row layout is the highest-leverage
+          knob and it gates whether four other controls exist. No colors — a layout has no surface. */}
       <div role="group" aria-labelledby={headingId("tableLayout")}>
         <s-stack direction="block" gap="base">
           <s-heading id={headingId("tableLayout")}>
@@ -356,8 +253,7 @@ export function StyleTab({ engine }: { engine: RowEngine }) {
             details={selectedHelpText(ROW_LAYOUT_OPTIONS, styling.rowLayout)}
             value={styling.rowLayout}
             onChange={(event: Event) => {
-              // Safe by construction: every option's value comes from ROW_LAYOUTS,
-              // so the select can only ever emit a member of the union.
+              // Safe by construction: every option's value comes from ROW_LAYOUTS.
               setStylingField(
                 "rowLayout",
                 readValue(event) as typeof styling.rowLayout,
@@ -371,17 +267,10 @@ export function StyleTab({ engine }: { engine: RowEngine }) {
             ))}
           </s-select>
 
-          {/* Grid only — the seventh hide rule. A MINIMUM WIDTH, never a column
-            count: the browser fits as many tracks as the container allows, so
-            the layout is responsive with no media query and cannot produce
-            three unreadable tracks in a narrow theme. It is also what keeps
-            this rail's own Desktop preview honest — that preview is ~640px on
-            a laptop, so a count knob would render the same number of tracks
-            there as on a 1400px storefront while looking nothing like it.
-
-            Clearing the box is the way back to the stylesheet's 240px; 0 is
-            not a spelling of anything here (contrast Outline thickness), so it
-            clamps up to the floor. */}
+          {/* Grid only — the seventh hide rule. A MINIMUM WIDTH, never a column count: the browser
+            fits as many tracks as the container allows (responsive with no media query), which also
+            keeps this rail's ~640px Desktop preview honest. Clearing the box returns to 240px; 0 spells
+            nothing here (contrast Outline thickness), so it clamps up. */}
           {showsGridMinColumnWidthControl(styling) && (
             <s-number-field
               label="Minimum column width"
@@ -415,11 +304,8 @@ export function StyleTab({ engine }: { engine: RowEngine }) {
             />
           )}
 
-          {/* Two-column only. A stacked table is already stacked everywhere and
-            a grid is responsive by construction, so in both cases the two
-            options would mean the same thing. Hiding only —
-            `styling.mobileLayout` keeps the merchant's value, so it comes back
-            intact if they switch back to two-column. */}
+          {/* Two-column only. A stacked table is stacked everywhere and a grid is responsive, so both
+            options would mean the same. Hiding only — `styling.mobileLayout` keeps the value. */}
           {showsMobileLayoutControl(styling) && (
             <s-select
               label="On mobile"
@@ -443,15 +329,10 @@ export function StyleTab({ engine }: { engine: RowEngine }) {
             </s-select>
           )}
 
-          {/* Two-column only — a stacked table has no label column to size. The
-            third hide rule, and a pure read like the others, so the merchant's
-            percentage survives a trip through Stacked.
-
-            A number field rather than the plan's original "slider": Polaris web
-            components ship no slider/range element (verified against
-            `@shopify/polaris-types`), and a hand-rolled `<input type="range">`
-            would look foreign in the rail and owe its own a11y pass. Clearing
-            the box is the way back to the theme's default ratio. */}
+          {/* Two-column only — a stacked table has no label column to size. The third hide rule, a pure
+            read, so the merchant's percentage survives a trip through Stacked. A number field rather
+            than a slider: Polaris ships no slider element, and a hand-rolled range would look foreign
+            and owe its own a11y pass. Clearing the box returns to the theme's default ratio. */}
           {showsLabelWidthControl(styling) && (
             <s-number-field
               label="Label column width"
@@ -487,26 +368,19 @@ export function StyleTab({ engine }: { engine: RowEngine }) {
 
       <s-divider></s-divider>
 
-      {/* 2 · Table size & frame — the container knobs. Every one of these
-          defaults to an OFF state (no cap, no outline, square corners), so an
-          untouched table renders exactly as it did before the group existed.
-
-          ⚠️ The outline's COLOR now lives HERE, and that reversal is the whole
-          point of feature 86. The old comment in this spot argued it belonged
-          with the other swatches "the same way row-divider style sits in Layout
-          while its color sits in Colors" — which is exactly the two-axis cut
-          that made the rail hard to use. Outline thickness and Outline color are
-          one decision; they are now one group — and since 2026-07-29 the colour
-          only appears once the thickness has turned the outline on. */}
+      {/* 2 · Table size & frame — the container knobs. Every one defaults OFF (no cap, no outline,
+          square corners), so an untouched table renders as before the group existed. ⚠️ The outline's
+          COLOR lives HERE (the reversal that is the whole point of feature 86: Outline thickness and
+          Outline color are one decision), and since 2026-07-29 the colour only appears once the
+          thickness has turned the outline on. */}
       <div role="group" aria-labelledby={headingId("tableFrame")}>
         <s-stack direction="block" gap="base">
           <s-heading id={headingId("tableFrame")}>
             {STYLE_GROUP_HEADINGS.tableFrame}
           </s-heading>
 
-          {/* Empty = full width, which is the default. A CAP rather than a
-              fixed width: it shrinks below the cap on a narrow screen, so it
-              cannot fight the mobile breakpoint or overflow a phone. */}
+          {/* Empty = full width (the default). A CAP, not a fixed width: it shrinks below the cap on a
+              narrow screen, so it can't fight the mobile breakpoint or overflow a phone. */}
           <s-number-field
             label="Maximum width"
             suffix="px"
@@ -536,9 +410,8 @@ export function StyleTab({ engine }: { engine: RowEngine }) {
             }}
           />
 
-          {/* Hidden at full width, where all three options look the same. The
-              fifth hide rule, and a pure read like the other four — the
-              merchant's alignment survives clearing the width above. */}
+          {/* Hidden at full width, where all three options look the same. The fifth hide rule, a pure
+              read — the alignment survives clearing the width above. */}
           {showsTableAlignControl(styling) && (
             <s-select
               label="Alignment"
@@ -562,25 +435,17 @@ export function StyleTab({ engine }: { engine: RowEngine }) {
             </s-select>
           )}
 
-          {/* "Outline THICKNESS", not width, since 2026-07-29 — and the reason
-              is two fields above this one. `Maximum width` caps the table's
-              horizontal size; this is a stroke weight. Two controls in one group
-              whose labels shared a word that meant different axes, ~40px apart
-              on screen. The noun `Outline` is the part that stays: feature 86
-              split the rail's vocabulary into Divider (the row and column rules)
-              and Outline (the frame) precisely so "border" never names two
-              things, and both swatches' help texts now name each other. */}
+          {/* "Outline THICKNESS", not width, since 2026-07-29 — `Maximum width` two fields up caps the
+              horizontal size; this is a stroke weight, and the shared word meant different axes ~40px
+              apart. Feature 86 split the vocabulary into Divider (row/column rules) and Outline (frame)
+              so "border" never names two things; both swatches' help texts name each other. */}
           <s-number-field
             label="Outline thickness"
             suffix="px"
             details={
               styling.outerBorderWidthPx === null
                 ? "No outline. Set 1 or more to frame the table."
-                : // Feature 86 renamed both swatches this names. "Border" was
-                  // ambiguous once it moved to Rows, and the old sentence ended
-                  // "…if that is unset" — a reference that only parsed while the
-                  // two sat next to each other in one Colors list.
-                  "Colored by Outline color, or Divider color if that is unset."
+                : "Colored by Outline color, or Divider color if that is unset."
             }
             min={ZERO_MEANS_OFF_CONTROL_MIN}
             max={OUTER_BORDER_WIDTH_PX_MAX}
@@ -603,8 +468,8 @@ export function StyleTab({ engine }: { engine: RowEngine }) {
             }}
           />
 
-          {/* Independent of the outline: a radius rounds the section band and
-              the stripe fills whether or not a frame is drawn. */}
+          {/* Independent of the outline: a radius rounds the section band and stripe fills whether or
+              not a frame is drawn. */}
           <s-number-field
             label="Corner radius"
             suffix="px"
@@ -634,34 +499,21 @@ export function StyleTab({ engine }: { engine: RowEngine }) {
             }}
           />
 
-          {/* Outline color, and since 2026-07-29 this renders NOTHING until the
-              thickness above is 1 or more: at 0 the stylesheet's one consumer is
-              `border: 0 solid <color>`, so the swatch had no referent at all.
-              `tableFrame` is the only group with a single swatch, which is why
-              this is also the first call that can return null — see `colorGrid`.
-
-              It stays the one swatch in the rail whose empty state points at
-              ANOTHER control rather than at the theme: it falls back through
-              `borderColor`, which is why its `emptyHelpText` reads "Follows
-              Divider color." That sentence only became sayable once the two
-              swatches stopped sharing one undifferentiated list. */}
+          {/* Outline color — renders NOTHING until the thickness above is 1+ (at 0 the one consumer is
+              `border: 0 solid <color>`, no referent). The first `colorGrid` call that can return null
+              (`tableFrame` is the only single-swatch group). Its empty state points at ANOTHER control
+              ("Follows Divider color.") — it falls back through `borderColor`. */}
           {colorGrid("tableFrame")}
         </s-stack>
       </div>
 
       <s-divider></s-divider>
 
-      {/* 3 · Table text — the type knobs that apply to the WHOLE table, and
-          only those. Feature 86 split the old Typography group on where the CSS
-          var actually lands (verified against `spec-table.css`, not assumed):
-          `font-size`, `font-style` and `line-height` sit on
-          `.appx-spec-table__table`, so they belong to the table; `font-weight`
-          and `text-transform` sit on `.appx-spec-table__label`, so they moved to
-          Labels instead.
-
-          That split is FALSIFIABLE IN ONE CLICK, which is why it is not a matter
-          of taste: set Case here and only the label column changes. Filing those
-          two as table-wide would have been a group heading that lies. */}
+      {/* 3 · Table text — the type knobs that apply to the WHOLE table, and only those. Feature 86
+          split the old Typography group on where the CSS var lands (verified against `spec-table.css`):
+          `font-size` / `font-style` / `line-height` sit on `__table`; `font-weight` / `text-transform`
+          sit on `__label` and moved to Labels. FALSIFIABLE IN ONE CLICK: set Case here and only the
+          label column changes. */}
       <div role="group" aria-labelledby={headingId("tableText")}>
         <s-stack direction="block" gap="base">
           <s-heading id={headingId("tableText")}>
@@ -689,11 +541,10 @@ export function StyleTab({ engine }: { engine: RowEngine }) {
             ))}
           </s-select>
 
-          {/* The fourth hide rule. Small / Medium / Large are theme-RELATIVE (an
-              em multiplier, so they survive a theme switch); this box is the
-              ABSOLUTE escape hatch, which is why it only exists in Custom mode.
-              An emptied box is ignored rather than treated as inherit — Inherit
-              is its own option above, so clearing must not flip the mode. */}
+          {/* The fourth hide rule. Small / Medium / Large are theme-RELATIVE (an em multiplier); this
+              box is the ABSOLUTE escape hatch, so it only exists in Custom mode. An emptied box is
+              ignored rather than treated as inherit — Inherit is its own option, so clearing mustn't
+              flip the mode. */}
           {showsCustomFontSizeInput(styling) && (
             <s-number-field
               label="Custom size"
@@ -703,11 +554,9 @@ export function StyleTab({ engine }: { engine: RowEngine }) {
               step={1}
               value={String(styling.fontSize)}
               onInput={(event: Event) => {
-                // Two guards, and they mean different things. `undefined` is
-                // "still typing" (below), `null` is this box's own "nothing
-                // usable to store" — an emptied field must not flip the select
-                // above out of Custom, which is why the blur handler has always
-                // carried the same `!== null` test.
+                // Two guards, different meanings. `undefined` = "still typing"; `null` = this box's own
+                // "nothing usable to store" (an emptied field must not flip the select out of Custom,
+                // which is why the blur handler carries the same `!== null` test).
                 const px = liveCommitValue(
                   readValue(event),
                   parseCustomFontSizePx,
@@ -769,12 +618,10 @@ export function StyleTab({ engine }: { engine: RowEngine }) {
 
       <s-divider></s-divider>
 
-      {/* 4 · Section headers. Eight controls — the style select, the four
-          feature-81 typography knobs that refine the band it turns on, the
-          gap that separates one header's section from the next (feature 94),
-          and the band's own two colors. `headerBgColor` used to sit ~20
-          controls away from the select that makes it visible; that distance
-          was the single clearest symptom of the old cut. */}
+      {/* 4 · Section headers. Eight controls — the style select, the four feature-81 typography knobs
+          that refine the band, the gap that separates one section from the next (feature 94), and the
+          band's own two colors. `headerBgColor` used to sit ~20 controls from the select that makes it
+          visible — the clearest symptom of the old cut. */}
       <div role="group" aria-labelledby={headingId("sectionHeaders")}>
         <s-stack direction="block" gap="base">
           <s-heading id={headingId("sectionHeaders")}>
@@ -802,17 +649,10 @@ export function StyleTab({ engine }: { engine: RowEngine }) {
             ))}
           </s-select>
 
-          {/* Feature 81 — four knobs refining the band the select above turns
-            on, so they sit with it, above the collapsible/behavior controls.
-            None of them is hidden in any shape: all four apply to the flat
-            `th` and the collapsible `<summary>` alike, so the hide-rule count
-            stays at 6. The section title's COLOR is not here — it is a color,
-            so it lives with the other swatches below, the same split the band's
-            own background already takes.
-
-            Blank boxes, not the zero-means-off boxes the frame group uses:
-            for these two, clearing the field means "use the default", which is
-            a real state distinct from any number either box can hold. */}
+          {/* Feature 81 — four knobs refining the band the select turns on. None is hidden in any shape
+            (all apply to the flat `th` and the collapsible `<summary>` alike). The section title's
+            COLOR isn't here — it's a color, so it lives with the swatches below. Blank boxes, not
+            zero-means-off: clearing means "use the default", a real state distinct from any number. */}
           <s-number-field
             label="Title size"
             suffix="px"
@@ -884,12 +724,9 @@ export function StyleTab({ engine }: { engine: RowEngine }) {
             ))}
           </s-select>
 
-          {/* ⚠️ The one box in the rail where an EMPTY field and a typed `0`
-            mean different things, and both are valid: empty inherits the
-            standard spacing, 0 removes it. Safe only because this knob's null
-            means "the default" rather than "off" — the frame group's px knobs
-            get the zero-means-off treatment precisely because for them the two
-            states would be the same render. */}
+          {/* ⚠️ The one box where an EMPTY field and a typed `0` mean different things, both valid:
+            empty inherits the standard spacing, 0 removes it. Safe only because this knob's null means
+            "the default" rather than "off". */}
           <s-number-field
             label="Title spacing"
             suffix="px"
@@ -921,21 +758,11 @@ export function StyleTab({ engine }: { engine: RowEngine }) {
             }}
           />
 
-          {/* Feature 80, moved here by feature 94. It sat in Collapsible
-            sections while it was reachable only with disclosures on; now that
-            it works in the flat block layouts too, a gap is not a property of
-            collapsing but of the section headers it separates — the feature-86
-            axis deciding its own placement, as it is meant to.
-
-            The LAST structural knob before the colors, which keeps the group
-            reading "structure knobs, then colors" and puts the two whitespace
-            controls next to each other: Title spacing is the padding INSIDE a
-            header, this is the margin OUTSIDE one.
-
-            Still hidden rather than disabled, and still a pure read, so the px
-            value survives a trip through Two-column and back. Zero-means-off
-            box, like Outline thickness and Corner radius: 0 is exactly what "no
-            gap" looks like on a px control. */}
+          {/* Feature 80, moved here by feature 94: a gap is a property of the section headers it
+            separates, not of collapsing. The LAST structural knob before the colors, next to Title
+            spacing (the padding INSIDE a header; this is the margin OUTSIDE one). Hidden not disabled,
+            a pure read. Zero-means-off box like Outline thickness / Corner radius: 0 is what "no gap"
+            looks like on a px control. */}
           {showsSectionGapControl(styling) && (
             <s-number-field
               label="Gap between sections"
@@ -966,55 +793,32 @@ export function StyleTab({ engine }: { engine: RowEngine }) {
             />
           )}
 
-          {/* Three swatches, and the group's geometry is the design. Two of
-              them are MUTUALLY EXCLUSIVE: `Background` shows only under Banded
-              (feature 95) and `Underline color` only under Underlined
-              (feature 96), because each member hardcodes the other's surface
-              away — so slot 1 always holds whatever the current header style
-              actually paints, and `Title color` always holds slot 2 without
-              moving. Plain shows `Title color` alone.
-
-              `Title color` stays ungated because the base rule's `color:` is
-              never overridden by a member, so a title is coloured under all
-              three — and it is what keeps this grid from ever rendering empty,
-              the same role `Divider color` plays in Rows.
-
-              It is also the one swatch pair where the second keeps a qualifier
-              ("Title color") rather than the bare "Text color" Labels and Values
-              use: the band, the rule and the text are three different
-              surfaces. */}
+          {/* Three swatches; the geometry is the design. `Background` (Banded only, feature 95) and
+              `Underline color` (Underlined only, feature 96) are MUTUALLY EXCLUSIVE, each member
+              hardcoding the other's surface away — so slot 1 always holds whatever the current header
+              style paints, and `Title color` always holds slot 2. `Title color` stays ungated (the base
+              `color:` is never overridden by a member) and keeps this grid from ever rendering empty —
+              the role `Divider color` plays in Rows. It keeps the "Title" qualifier because band, rule
+              and text are three surfaces. */}
           {colorGrid("sectionHeaders")}
         </s-stack>
       </div>
 
       <s-divider></s-divider>
 
-      {/* 5 · Collapsible sections — BEHAVIOR, not appearance, which is the whole
-          reason it split from Section headers (merchant decision, feature 86).
-          The old `Sections` group ran to eight controls and mixed "what a
-          section title looks like" with "can a shopper collapse it", so a
-          merchant hunting one had to read past the other.
-
-          Small on purpose: the switch plus the ONE control that only means
-          anything once it is on. Hidden rather than disabled while it is off,
-          so the group collapses to a single switch — the thin-group case
-          Step 5 re-examined live and kept.
-
-          ⚠️ Two controls until feature 94, which moved the section gap to
-          Section headers once it stopped depending on disclosures. The group
-          still leads with an UNGATED switch, so it can never render as a
-          heading fencing nothing — the Step 5 invariant that a group may not
-          consist entirely of hide-gated controls. */}
+      {/* 5 · Collapsible sections — BEHAVIOR, not appearance, which is why it split from Section headers
+          (feature 86). Small on purpose: the switch plus the ONE control that only means anything once
+          it's on. Hidden rather than disabled while off, so the group collapses to a single switch. ⚠️
+          The section gap moved to Section headers in feature 94; the group still leads with an UNGATED
+          switch, so it can never render as a heading fencing nothing (the Step 5 invariant). */}
       <div role="group" aria-labelledby={headingId("collapsibleSections")}>
         <s-stack direction="block" gap="base">
           <s-heading id={headingId("collapsibleSections")}>
             {STYLE_GROUP_HEADINGS.collapsibleSections}
           </s-heading>
 
-          {/* The rail's first NON-select control (Step 9b) — `sectionsCollapsible`
-            is the one boolean in `StylingValues`, so it needs no option list.
-            This is what confirms Step 8's rejection of a generic
-            `<StylingSelect>` wrapper: the shapes really do diverge. */}
+          {/* The rail's first NON-select control (Step 9b) — the one boolean in `StylingValues`, so no
+            option list. Confirms Step 8's rejection of a generic `<StylingSelect>` wrapper. */}
           <s-switch
             label="Enable collapsing"
             details="Each section becomes an expandable group shoppers can open and close."
@@ -1024,10 +828,8 @@ export function StyleTab({ engine }: { engine: RowEngine }) {
             }}
           />
 
-          {/* Hidden, not disabled, while collapsing is off — it describes which
-            disclosures start open, which means nothing without disclosures.
-            Hiding is a pure READ (see `showsSectionsInitialStateControl`), so
-            the merchant's choice survives a trip through off and back on. */}
+          {/* Hidden, not disabled, while collapsing is off — it describes which disclosures start open,
+            meaningless without disclosures. Hiding is a pure READ, so the choice survives off and back. */}
           {showsSectionsInitialStateControl(styling) && (
             <s-select
               label="Sections start"
@@ -1055,25 +857,20 @@ export function StyleTab({ engine }: { engine: RowEngine }) {
 
       <s-divider></s-divider>
 
-      {/* 6 · Rows. Five controls: the two divider selects, density, and the two
-          colors those dividers use. `stripeBgColor` sits with the Row dividers
-          select it depends on, and `borderColor` sits with the rules it paints.
-          Since feature 95 the stripe swatch is also GATED on that select, so
-          this group renders four controls or five — never fewer, and never an
-          empty color grid, because Divider color is unconditional. */}
+      {/* 6 · Rows. Five controls: the two divider selects, density, and the two colors those dividers
+          use. `stripeBgColor` sits with the Row dividers select it depends on (and is GATED on it since
+          feature 95); `borderColor` sits with the rules it paints. Renders four or five controls —
+          never an empty color grid, because Divider color is unconditional. */}
       <div role="group" aria-labelledby={headingId("rows")}>
         <s-stack direction="block" gap="base">
           <s-heading id={headingId("rows")}>
             {STYLE_GROUP_HEADINGS.rows}
           </s-heading>
 
-          {/* The one control whose OPTION LIST depends on another knob (feature
-              85): Grid drops Stripes, because DOM-order parity paints a
-              checkerboard across several tracks rather than alternating rows.
-              Derived rather than filtered inline because of the orphan case —
-              a merchant already on Stripes who switches to Grid keeps a stored
-              value the list would otherwise no longer contain, and this select
-              stays on screen. See `rowDividerOptionsFor`. */}
+          {/* The one control whose OPTION LIST depends on another knob (feature 85): Grid drops Stripes
+              (DOM-order parity paints a checkerboard). Derived rather than filtered inline because of
+              the orphan case — a merchant already on Stripes who switches to Grid keeps a stored value
+              the list would otherwise no longer contain. See `rowDividerOptionsFor`. */}
           <s-select
             label="Row dividers"
             details={selectedHelpText(
@@ -1095,10 +892,8 @@ export function StyleTab({ engine }: { engine: RowEngine }) {
             ))}
           </s-select>
 
-          {/* Directly under Row dividers — its vertical partner, and together
-              with an Outline thickness the three make a full grid. Always shown,
-              including on stacked layouts where it has no seam to sit on: the
-              merchant's choice has to survive a trip through Stacked, and the
+          {/* Directly under Row dividers — its vertical partner. Always shown, including on stacked
+              layouts where it has no seam: the choice has to survive a trip through Stacked, and the
               option's own help text carries the caveat. */}
           <s-select
             label="Column divider"
@@ -1139,43 +934,32 @@ export function StyleTab({ engine }: { engine: RowEngine }) {
             ))}
           </s-select>
 
-          {/* ⚠️ This grid holds the rail's ONE asymmetry, and both halves are
-              decisions. `Stripe background` hides unless Row dividers is
-              Stripes (feature 95) — one field, one CSS declaration, no referent
-              otherwise. `Divider color` stays VISIBLE at Row dividers = None
-              (feature 86 decision 3) — the same field also dresses the column
-              divider, the feature-80 section separator, and the table outline
-              whenever Outline color is unset, so hiding it would leave a
-              merchant with a lines-free table holding no control for two live
-              surfaces. Its help text carries the coupling instead. */}
+          {/* ⚠️ The rail's ONE asymmetry, both halves decisions. `Stripe background` hides unless Row
+              dividers is Stripes (feature 95) — one field, one declaration, no referent otherwise.
+              `Divider color` stays VISIBLE at Row dividers = None (feature 86 decision 3) — it also
+              dresses the column divider, the section separator, and the outline when Outline color is
+              unset, so hiding it would leave a lines-free table with no control for two live surfaces.
+              Its help text carries the coupling. */}
           {colorGrid("rows")}
         </s-stack>
       </div>
 
       <s-divider></s-divider>
 
-      {/* 7 · Labels — the label column as one object: how its text is set, and
-          what it is painted in. This group is the clearest thing feature 86
-          bought. Before it, styling the label column meant visiting Typography
-          for the weight and the case and Colors for the two swatches, and there
-          was no group anywhere in the rail that said "labels".
-
-          ⚠️ THE SHORT LABELS HERE ARE LOAD-BEARING ON THE HEADING. "Weight" and
-          "Case" used to read "Label weight" and "Label case" because the control
-          had to name its own scope; the heading states it now, wired with
-          `role="group"` + `aria-labelledby` so it is ANNOUNCED and not merely
-          seen. Drop the wrapper and two controls silently start claiming the
-          whole table — see the lock note in `stylingControls.ts`. */}
+      {/* 7 · Labels — the label column as one object: how its text is set and what it's painted in. The
+          clearest thing feature 86 bought (before it, styling the label column meant visiting
+          Typography and Colors with no "labels" group anywhere). ⚠️ THE SHORT LABELS ARE LOAD-BEARING
+          ON THE HEADING: "Weight"/"Case" used to read "Label weight"/"Label case"; the heading states
+          the scope now, wired `role="group"` + `aria-labelledby`. Drop the wrapper and two controls
+          silently claim the whole table. */}
       <div role="group" aria-labelledby={headingId("labels")}>
         <s-stack direction="block" gap="base">
           <s-heading id={headingId("labels")}>
             {STYLE_GROUP_HEADINGS.labels}
           </s-heading>
 
-          {/* Written out rather than looped, to match every other control in
-              this file — and because a loop would need a cast per field to
-              re-narrow the union that `fromControlValue` already narrowed
-              correctly. */}
+          {/* Written out rather than looped, to match every other control here — and because a loop
+              would need a cast per field to re-narrow the union `fromControlValue` already narrowed. */}
           <s-select
             label="Weight"
             details={selectedHelpText(
@@ -1184,8 +968,8 @@ export function StyleTab({ engine }: { engine: RowEngine }) {
             )}
             value={toControlValue(styling.fontWeight)}
             onChange={(event: Event) => {
-              // `fromControlValue` is what keeps the `""` sentinel out of styling
-              // state, and its domain-list check makes the narrowing real.
+              // `fromControlValue` keeps the `""` sentinel out of styling state; its domain-list check
+              // makes the narrowing real.
               setStylingField(
                 "fontWeight",
                 fromControlValue(readValue(event), STYLING_FONT_WEIGHTS),
@@ -1199,9 +983,8 @@ export function StyleTab({ engine }: { engine: RowEngine }) {
             ))}
           </s-select>
 
-          {/* Label column only — the section header takes no case var, which is
-              also why Section headers has a Title case of its own rather than
-              sharing this one. */}
+          {/* Label column only — the section header takes no case var, which is why Section headers has
+              a Title case of its own rather than sharing this one. */}
           <s-select
             label="Case"
             details={selectedHelpText(
@@ -1229,16 +1012,10 @@ export function StyleTab({ engine }: { engine: RowEngine }) {
 
       <s-divider></s-divider>
 
-      {/* 8 · Values — the rail's smallest group, and the only one that is
-          nothing but swatches. Kept as a group rather than folded into Labels
-          because the pair mirrors the table's two columns, which is the
-          merchant's own model of the thing: "labels on the left, values on the
-          right" is what Row layout's help text already says.
-
-          Its two swatches are `Background` and `Text color`, character-identical
-          to Labels' pair. That is deliberate symmetry, and it is legible ONLY
-          because each sits under its own announced heading — the same bet the
-          short labels above make. */}
+      {/* 8 · Values — the rail's smallest group, the only one that is nothing but swatches. Kept
+          separate from Labels because the pair mirrors the table's two columns (the merchant's own
+          model). Its `Background` and `Text color` are character-identical to Labels' pair — deliberate
+          symmetry, legible ONLY because each sits under its own announced heading. */}
       <div role="group" aria-labelledby={headingId("values")}>
         <s-stack direction="block" gap="base">
           <s-heading id={headingId("values")}>
@@ -1251,20 +1028,12 @@ export function StyleTab({ engine }: { engine: RowEngine }) {
 
       <s-divider></s-divider>
 
-      {/* Reset (Step 12) — last in the rail and LOW-emphasis on purpose: it is a
-          bulk undo of every knob above it, not a primary action. It never applies
-          on first click; the confirmation lives in `ResetStylingModal`, mounted up
-          in `SpecTableEditor` so switching tabs cannot tear it out mid-confirm.
-          No `saving` guard here — the whole rail is inside the editor's inert
-          freeze, unlike the portalled modal it opens.
-
-          It takes a divider like a group does, though it is not one: it acts on
-          everything above it, so the rule reads as "end of the knobs" rather than
-          as another boundary between two of them.
-
-          The box lost its `paddingBlockStart` in Step 3 — it existed only to buy
-          separation back when the outer stack ran `base` and there was no rule
-          here. The stack's own `large-200` now supplies it, twice over. */}
+      {/* Reset (Step 12) — last in the rail and LOW-emphasis: a bulk undo of every knob, not a primary
+          action. Never applies on first click; the confirmation lives in `ResetStylingModal`, mounted
+          up in `SpecTableEditor` so switching tabs can't tear it out mid-confirm. No `saving` guard —
+          the whole rail is inside the editor's inert freeze, unlike the portalled modal it opens. Takes
+          a divider like a group (it acts on everything above it, so the rule reads "end of the knobs").
+          Lost its `paddingBlockStart` in Step 3 — the stack's own `large-200` supplies it now. */}
       <s-box>
         <s-button onClick={() => shopify.modal.show(RESET_STYLING_MODAL_ID)}>
           Reset to theme defaults

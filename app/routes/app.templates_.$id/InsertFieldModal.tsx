@@ -1,15 +1,11 @@
 import { INSERT_FIELD_MODAL_ID, metafieldChoiceValue } from "./editorShared";
 import type { RowEngine } from "./useRowEngine";
 
-// The single editor-level "Insert field" modal (Steps 5–9), extracted verbatim
-// from the former container (reshell A1). Create-only since feature 112 (the
-// edit-a-pill path is gone — merchants edit tokens as text in the textarea).
-// Hidden until `shopify.modal.show` is called from the toolbar button; <s-modal>
-// provides the focus trap, Esc, and outside-click dismiss natively. The body is a
-// search box over a native-field list plus a live metafield section; the primary
-// button is disabled until a field is selected and commits Insert at the saved
-// caret. Cancel / Esc / outside-click commit nothing. Presentational — all state
-// + handlers come from the engine.
+// The single editor-level "Insert field" modal (Steps 5–9). Create-only since feature 112 (the
+// edit-a-pill path is gone — tokens are edited as text in the textarea). Hidden until shown from the
+// toolbar button. The body is a search box over a native-field list plus a live metafield section; the
+// primary button is disabled until a field is selected and commits Insert at the saved caret.
+// Presentational.
 export function InsertFieldModal({ engine }: { engine: RowEngine }) {
   const {
     searchQuery,
@@ -32,9 +28,8 @@ export function InsertFieldModal({ engine }: { engine: RowEngine }) {
 
   return (
     <s-modal id={INSERT_FIELD_MODAL_ID} heading="Insert field">
-      {/* Search box (Step 7): filters BOTH lists as the merchant types. Pure
-          presentation — it never changes `selection`, so a pick that scrolls
-          out of the filtered view stays committable. */}
+      {/* Search box (Step 7): filters BOTH lists as the merchant types. Never changes `selection`, so
+          a pick that scrolls out of the filtered view stays committable. */}
       <s-stack direction="block" gap="base">
         <s-search-field
           ref={searchFieldRef}
@@ -44,9 +39,8 @@ export function InsertFieldModal({ engine }: { engine: RowEngine }) {
           value={searchQuery}
           onInput={handleSearchInput}
         />
-        {/* Native fields (Step 6). No per-section empty message: an empty
-            native list is silent, and the single combined empty state below
-            covers the case where BOTH lists are empty. */}
+        {/* Native fields (Step 6). No per-section empty message: an empty native list is silent, and
+            the combined empty state below covers the both-empty case. */}
         {visibleFields.length > 0 ? (
           <s-choice-list
             label="Product field"
@@ -62,11 +56,9 @@ export function InsertFieldModal({ engine }: { engine: RowEngine }) {
           </s-choice-list>
         ) : null}
 
-        {/* Metafield section (Step 9): the shop's product metafield
-            definitions as a selectable list below the native fields, filtered
-            by the same search box. Loading / error+Retry / empty-store states
-            are carried from Step 8. The heading stays visible whenever the
-            section has been requested so it is always discoverable. */}
+        {/* Metafield section (Step 9): the shop's product metafield definitions as a selectable list,
+            filtered by the same search box. Loading / error+Retry / empty-store states from Step 8. The
+            heading stays visible once the section has been requested. */}
         {metafieldsRequested ? (
           <s-stack direction="block" gap="small-200">
             <s-divider />
@@ -111,8 +103,7 @@ export function InsertFieldModal({ engine }: { engine: RowEngine }) {
           </s-stack>
         ) : null}
 
-        {/* Single combined empty state (Step 9): only when a query filters
-            both loaded lists to nothing. */}
+        {/* Combined empty state (Step 9): only when a query filters both loaded lists to nothing. */}
         {showCombinedEmpty ? (
           <s-paragraph color="subdued">
             No fields match “{searchQuery.trim()}”.

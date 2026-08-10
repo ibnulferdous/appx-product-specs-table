@@ -3,38 +3,27 @@ import { useAppBridge } from "@shopify/app-bridge-react";
 import { RESET_STYLING_MODAL_ID } from "./editorShared";
 import type { RowEngine } from "./useRowEngine";
 
-// Confirmation gate for the Style rail's "Reset to theme defaults" (feature 57
-// Step 12). Resetting throws away every styling override in one click, and the
-// SaveBar's Discard is not an undo for it — Discard reverts unrelated edits too —
-// so this confirms first. <s-modal> supplies the focus trap, Esc, and
-// outside-click dismiss, all of which cancel and change nothing.
+// Confirmation gate for the Style rail's "Reset to theme defaults" (feature 57 Step 12). Resetting
+// throws away every styling override in one click, and the SaveBar's Discard is no undo for it (it
+// reverts unrelated edits), so this confirms first. <s-modal> supplies the focus trap + Esc +
+// outside-click dismiss, all of which cancel.
 //
-// MOUNTED IN `SpecTableEditor`, not in `StyleTab`, for two reasons. `EditorShell`
-// unmounts the whole rail the moment the merchant switches to Content, which
-// would tear the dialog out from under them mid-confirm; and mounting it at the
-// wrapper level keeps it alive across every tab and device view. Nothing about
-// the reset depends on being on the Style tab, so an open dialog that survives a
-// tab switch still does exactly what it says.
-//
-// Show/hide is component-local (the `TemplateHeaderActions` variant) rather than
-// routed through the engine: the engine owns the state change, this owns the
-// dialog. Like every other <s-modal> here it portals OUTSIDE the editor's inert
-// save-freeze, so the freeze cannot reach its buttons — hence both guards below.
+// MOUNTED IN `SpecTableEditor`, not `StyleTab`: `EditorShell` unmounts the rail the moment the
+// merchant switches to Content, which would tear the dialog out mid-confirm; the wrapper level keeps
+// it alive across every tab. Like every <s-modal> here it portals OUTSIDE the editor's inert
+// save-freeze, so the freeze can't reach its buttons — hence both guards below.
 export function ResetStylingModal({ engine }: { engine: RowEngine }) {
   const shopify = useAppBridge();
   const { saving, resetStyling } = engine;
 
-  // If a save somehow starts while this is open, hide it: the freeze that stops
-  // every other control cannot reach a portalled modal. Hiding an already-hidden
-  // modal is a no-op.
+  // If a save starts while this is open, hide it: the freeze can't reach a portalled modal.
   useEffect(() => {
     if (saving) shopify.modal.hide(RESET_STYLING_MODAL_ID);
   }, [saving, shopify]);
 
   const handleConfirm = () => {
-    // Re-guard at click time, not just via the effect above — the effect races a
-    // click landing in the same tick, and an edit applied into an in-flight save
-    // would never reach the server.
+    // Re-guard at click time — the effect races a click in the same tick, and an edit applied into an
+    // in-flight save would never reach the server.
     if (saving) return;
     resetStyling();
     shopify.modal.hide(RESET_STYLING_MODAL_ID);

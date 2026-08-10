@@ -1,21 +1,15 @@
-// Sync the storefront delivery copy of a template to a Shopify metaobject
-// (Editor Step 9.5). Postgres is the source of truth; this metaobject is written
-// AFTER the Postgres save (code-standards.md "Data and Storage") and is the only
-// thing Liquid can read on the storefront.
+// Sync the storefront delivery copy of a template to a Shopify metaobject (Editor Step 9.5).
+// Postgres is the source of truth; this metaobject is written AFTER the Postgres save
+// (code-standards.md "Data and Storage") and is the only thing Liquid can read on the storefront.
 //
-// Same conventions as metafieldDefinitions.server.ts: every `#graphql` operation
-// was validated with `validate_graphql_codeblocks` against API version 2025-10;
-// the response narrowing is pure and unit-tested; the live `admin.graphql` calls
-// are mocked at the boundary, not unit-tested. Shop isolation is STRUCTURAL —
-// `authenticate.admin(request)` binds the client to this shop's Admin token, so
-// every mutation/query here can only touch this shop's data (priority #1).
+// Same conventions as metafieldDefinitions.server.ts: every `#graphql` op was validated against
+// API 2025-10; the response narrowing is pure + unit-tested; the live admin.graphql calls are
+// mocked at the boundary. Shop isolation is STRUCTURAL — `authenticate.admin(request)` binds the
+// client to this shop's Admin token, so every op here can only touch this shop's data (priority #1).
 //
-// The definition is app-owned: the type is prefixed with `$app:`, which reserves
-// it for this app's exclusive use so neither the merchant nor another app can
-// alter its structure (data safety). The definition itself is now declared
-// declaratively in `shopify.app.toml` ([metaobjects.app.appx_spec_table]) and
-// distributed on deploy/install, so this module only writes/reads/deletes
-// ENTRIES — it no longer creates the definition at runtime (data-model.md §10).
+// The definition is app-owned (type prefixed `$app:`, reserved for this app's exclusive use) and
+// is now declared declaratively in `shopify.app.toml` and distributed on deploy/install, so this
+// module only writes/reads/deletes ENTRIES — it no longer creates the definition (data-model.md §10).
 
 import type { AdminApiContext } from "@shopify/shopify-app-react-router/server";
 import type { EditorRow } from "../utils/rows";
@@ -31,8 +25,8 @@ import {
 } from "../utils/tableStylingCss";
 
 // The app-reserved metaobject type (data-model.md §10). `$app:` resolves to
-// `app--<app-id>--appx_spec_table` server-side within this app's context, so the
-// same literal is used for the definition, the upsert handle, and the read-back.
+// `app--<app-id>--appx_spec_table` server-side, so the same literal serves the definition, the
+// upsert handle, and the read-back.
 export const SPEC_TABLE_METAOBJECT_TYPE = "$app:appx_spec_table";
 
 /** The storefront-lookup handle for a template's metaobject (data-model.md §10). */
@@ -124,17 +118,15 @@ export function readUpsertResult(
 }
 
 /**
- * Read the `rows` field value (a JSON string) back out of a metaobjectByHandle
- * response, parsed into the editor row array. Returns `null` when the metaobject
- * or field is absent, the JSON does not parse, or the payload is not a clean
- * EditorRow[] — the round-trip check treats any of those as "did not survive".
+ * Read the `rows` field (a JSON string) back out of a metaobjectByHandle response, parsed into
+ * the editor row array. Returns null when the metaobject/field is absent, the JSON doesn't parse,
+ * or the payload isn't a clean EditorRow[] — the round-trip check treats any of those as "did not
+ * survive".
  *
- * Every element is narrowed through the shared `parseRows` rather than cast, so a
- * malformed payload (`[42]`, `[{ rowType: "NOPE" }]`) can never masquerade as
- * `EditorRow[]`. `parseRows` DROPS anything that does not narrow, so a length
- * mismatch means the stored payload was not our row shape: return `null` (did not
- * survive) rather than a silently cleaned array, which could mask corruption and
- * falsely pass the round-trip equality check in route.tsx.
+ * Every element is narrowed through `parseRows` rather than cast, so a malformed payload can't
+ * masquerade as EditorRow[]. `parseRows` DROPS anything that doesn't narrow, so a length mismatch
+ * means the stored payload wasn't our row shape: return null rather than a silently cleaned array
+ * that could mask corruption and falsely pass the round-trip check in route.tsx.
  */
 export function readMetaobjectRows(json: unknown): EditorRow[] | null {
   if (!isRecord(json)) return null;
@@ -157,20 +149,16 @@ export function readMetaobjectRows(json: unknown): EditorRow[] | null {
 }
 
 /**
- * The precomputed PRESENTATION half of a template's styling (feature 57 Step 7) —
- * the `styling_css` metaobject field. The server derives it here, at sync time,
- * because Liquid cannot import the Step 2 mapping: re-deriving classes/vars in a
- * template language would be a fourth copy of a 20-knob mapping with no
- * exhaustiveness checking, so a knob added in a later step would silently fail on
- * the storefront ONLY. Precomputing keeps `tableStylingCss.ts` the single source of
- * truth across every consumer and leaves the Liquid block with zero styling logic
- * (data-model.md §10).
+ * The precomputed PRESENTATION half of a template's styling (feature 57 Step 7) — the
+ * `styling_css` metaobject field. Derived here at sync time because Liquid cannot import the Step
+ * 2 mapping: re-deriving classes/vars in a template language would be a fourth copy of a 20-knob
+ * mapping with no exhaustiveness checking, so a later-added knob would silently fail on the
+ * storefront ONLY. Precomputing keeps `tableStylingCss.ts` the single source of truth and leaves
+ * the Liquid block with zero styling logic (data-model.md §10).
  *
- * `vars` is the SAME `formatCssVarDeclarations` join the Step 6 preview emits into
- * its `<style>` block, so the preview and the storefront cannot drift — only the
- * carrier differs (a rule there, an inline `style` attribute here). An all-inherit
- * value yields `""`, which renders an empty `style` attribute — i.e. the theme's
- * own look, exactly as before this step.
+ * `vars` is the SAME `formatCssVarDeclarations` join the Step 6 preview emits, so preview and
+ * storefront can't drift — only the carrier differs. An all-inherit value yields "" (an empty
+ * `style` attribute — the theme's own look).
  */
 export function stylingCssPayload(styling: StylingValues): {
   classes: string;
@@ -207,19 +195,17 @@ export function readMetaobjectDeleteId(json: unknown): string | null {
 // --- Live Admin API calls (mocked at the boundary in tests) -----------------
 
 /**
- * Upsert (create-or-update by handle) the template's metaobject entry, returning
- * its GID + handle to store back on the Template. The `rows` field is the
- * finalized editor rows serialized to a JSON string (data-model.md §10 — the same
- * row shape, no storefront-only reshape).
+ * Upsert (create-or-update by handle) the template's metaobject entry, returning its GID + handle
+ * to store back on the Template. The `rows` field is the finalized editor rows serialized to JSON
+ * (data-model.md §10 — same row shape, no storefront-only reshape).
  *
- * Styling rides along in TWO fields (feature 57 Step 7): `styling` is the DATA —
- * the overrides-only wire shape, the same `serializeStylingOverrides` output the
- * Save payload carries — and `styling_css` is the PRECOMPUTED presentation Liquid
- * prints verbatim. `styling` takes a resolved `StylingValues`, never `unknown`:
- * resolution (and the whitelist validation that makes these values safe to inline
- * into a storefront `style` attribute) belongs at `parseStylingValues`, upstream of
- * here. Sync runs for every status; the storefront decides visibility
- * (data-model.md §8). Throws on user errors so the caller can warn.
+ * Styling rides along in TWO fields (feature 57 Step 7): `styling` is the DATA (the overrides-only
+ * wire shape, same `serializeStylingOverrides` output the Save payload carries); `styling_css` is
+ * the PRECOMPUTED presentation Liquid prints verbatim. `styling` takes a resolved `StylingValues`,
+ * never `unknown`: resolution (and the whitelist validation that makes these safe to inline into a
+ * storefront `style` attribute) belongs at `parseStylingValues`, upstream. Sync runs for every
+ * status; the storefront decides visibility (data-model.md §8). Throws on user errors so the caller
+ * can warn.
  */
 export async function upsertSpecTableMetaobject(
   admin: AdminApiContext,
@@ -275,9 +261,8 @@ export async function upsertSpecTableMetaobject(
 }
 
 /**
- * Read a template's metaobject back by handle and return its `rows` payload,
- * parsed (Editor Step 9.5 round-trip check). `null` when the metaobject is
- * missing or the JSON did not survive.
+ * Read a template's metaobject back by handle and return its `rows` payload, parsed (Step 9.5
+ * round-trip check). `null` when the metaobject is missing or the JSON did not survive.
  */
 export async function readSpecTableMetaobjectRows(
   admin: AdminApiContext,
@@ -295,16 +280,13 @@ export async function readSpecTableMetaobjectRows(
 }
 
 /**
- * Best-effort delete of a template's storefront metaobject (feature 20). Called
- * by the delete route action BEFORE the Postgres row is removed, so a
- * storefront-readable metaobject can never outlive its template (priority #2,
- * storefront correctness). Postgres is the source of truth, so this is best-effort
- * by design: any failure (a thrown request, GraphQL userErrors) is logged and
- * swallowed — it never throws, so it cannot block the durable Postgres delete.
+ * Best-effort delete of a template's storefront metaobject (feature 20). Called by the delete
+ * route BEFORE the Postgres row is removed, so a storefront-readable metaobject can never outlive
+ * its template (priority #2). Postgres is the source of truth, so this is best-effort: any failure
+ * is logged and swallowed — it never throws, so it can't block the durable Postgres delete.
  *
- * Resolves the metaobject GID from the template's stored `shopifyMetaobjectGid`
- * when present; otherwise looks it up by handle (`template-{id}`). A template that
- * was never synced has no metaobject, so a null GID is a clean no-op.
+ * Resolves the GID from the stored `shopifyMetaobjectGid` when present, else looks it up by handle.
+ * A never-synced template has no metaobject, so a null GID is a clean no-op.
  */
 export async function deleteSpecTableMetaobject(
   admin: AdminApiContext,

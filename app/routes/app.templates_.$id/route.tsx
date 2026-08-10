@@ -61,22 +61,19 @@ import { SpecTableEditor } from "./SpecTableEditor";
 import { TemplateHeaderActions } from "./TemplateHeaderActions";
 import { useRowEngine } from "./useRowEngine";
 
-// The editor's assignment seed: the homogeneous INCLUDE scope kind + its value set
-// with resolved display details — label + optional thumbnail image (feature 47).
-// Shared shape between the loader return, the engine seed, and the SettingsTab
-// picker. `image` is null for free-text scopes (TYPE/VENDOR) and on any resolution
-// miss.
+// The editor's assignment seed: the homogeneous INCLUDE scope kind + its value set with resolved
+// display details (feature 47). Shared shape between the loader return, the engine seed, and the
+// SettingsTab picker. `image` is null for free-text scopes (TYPE/VENDOR) and on any resolution miss.
 type AssignmentSeed = {
   scope: string;
   values: { value: string; label: string; image: string | null }[];
 };
 
-// Build the assignment seed from a template's persisted INCLUDE selector SET
-// (feature 47). The set is homogeneous in `scope` (guaranteed at the write
-// boundary, feature 46): a PRODUCT/COLLECTION set gets its chip labels resolved in
-// ONE batched query; a TYPE/VENDOR set carries its free-text value as its own label;
-// ALL_PRODUCTS has no value; an empty set is "no assignment" (null → the picker
-// opens on "None"). Never throws — label resolution is fail-soft.
+// Build the assignment seed from a template's persisted INCLUDE selector SET (feature 47). The set
+// is homogeneous in `scope` (guaranteed at the write boundary, feature 46): PRODUCT/COLLECTION gets
+// its chip labels resolved in ONE batched query; TYPE/VENDOR carries its free-text value as its own
+// label; ALL_PRODUCTS has no value; an empty set is "no assignment" (null → picker opens on "None").
+// Never throws — label resolution is fail-soft.
 async function buildAssignmentSeed(
   admin: AdminApiContext,
   selectors: ScopeSelector[],
@@ -117,40 +114,28 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
   const { session, admin } = await authenticate.admin(request);
   const shop = await upsertShop(session);
 
-  // Admin deep-link base for the Settings tab's conflict banner, which links the
-  // colliding template. Returned on BOTH branches below (a never-saved template
-  // can be blocked by the activation gate too). See `adminAppLink.ts` for why an
-  // in-app link must be built this way.
+  // Admin deep-link base for the Settings tab's conflict banner (links the colliding template).
+  // Returned on BOTH branches — a never-saved template can be blocked by the gate too. See
+  // `adminAppLink.ts` for why an in-app link must be built this way.
   const adminAppBase = buildAdminAppBase(
     session.shop,
     // eslint-disable-next-line no-undef
     process.env.SHOPIFY_API_KEY || "",
   );
 
-  // "new" is a safe sentinel: Template ids are server-generated cuids, so a real
-  // template id can never equal the literal string "new". No DB hit — the editor
-  // opens on a synthetic, in-memory starter scaffold (1 section + 5 blank rows);
-  // the Postgres row is created on the first Save (create-on-first-save). See
-  // `context/features/19-template-create-on-first-save.md`. A brand-new template
-  // has no assignment yet.
+  // "new" is a safe sentinel: template ids are server-generated cuids, so a real id can never equal
+  // "new". No DB hit — the editor opens on a synthetic in-memory starter scaffold; the Postgres row
+  // is created on the first Save (create-on-first-save, feature 19). A new template has no assignment.
   if (params.id === "new") {
-    // Feature 88 step 92 — the gallery's choice, applied SERVER-SIDE before the
-    // engine ever mounts. `/app/templates/choose-style` links each card at
-    // `?style=<id>`; this resolves that param to the styling the scaffold opens
-    // with AND the provenance stamp, from one lookup so the two cannot disagree.
+    // Feature 88 step 92 — the gallery's choice, applied SERVER-SIDE before the engine mounts. Each
+    // card links at `?style=<id>`; this resolves that param to the styling the scaffold opens with AND
+    // the provenance stamp, from one lookup so the two can't disagree.
     //
-    // 🔴 The read is INSIDE this branch deliberately, and the branch returns.
-    // `/app/templates/<real-id>?style=classic` must be completely inert: seeding
-    // a SAVED template from a URL would hand the editor values that are not in
-    // Postgres, and the merchant's next Save — of a rename, of anything — would
-    // write them plus a stamp it never earned. Structurally impossible here
-    // rather than conditionally avoided; pinned by `createFlowContract.test.ts`.
-    //
-    // Anything unrecognized (absent, empty, unknown, wrong-cased, a withdrawn
-    // id) degrades to theme defaults with a null stamp — the "Blank" card's
-    // landing, and byte-identical to what bare /new returned before this step.
-    // Nothing is written here either way: the scaffold is in-memory until the
-    // first Save, so choosing a card and leaving creates no row.
+    // 🔴 The read is INSIDE this branch and the branch returns. `/app/templates/<real-id>?style=classic`
+    // must be inert: seeding a SAVED template from a URL would hand the editor values not in Postgres,
+    // and the next Save would write them plus an unearned stamp. Structurally impossible here; pinned
+    // by `createFlowContract.test.ts`. Anything unrecognized degrades to theme defaults with a null
+    // stamp (the "Blank" card's landing). Nothing is written — the scaffold is in-memory until Save.
     const { styling, basedOnPreset } = resolveGalleryParams(
       new URL(request.url).searchParams,
     );
@@ -164,11 +149,9 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
       },
       assignment: null,
       excludes: [],
-      // Feature 57 Step 4: a never-saved template has no styling row. Defaults
-      // unless the gallery seeded a pattern above (feature 88 step 92).
+      // A never-saved template has no styling row; defaults unless the gallery seeded a pattern.
       styling,
-      // Feature 88 step 89/92. `null` on a bare /new — and with the gallery
-      // unskippable, that null now means "the merchant chose Blank".
+      // `null` on a bare /new — and with the gallery unskippable, that null means "chose Blank".
       basedOnPreset,
       adminAppBase,
     };
@@ -180,21 +163,16 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
     throw new Response("Template not found", { status: 404 });
   }
 
-  // The template's INCLUDE scope SET (features 44/46/47), shop-scoped. The set is
-  // homogeneous in `scope` (the write boundary guarantees it): 0 rows (NONE), one
-  // row for ALL_PRODUCTS/PRODUCT_TYPE/VENDOR, or 1..N rows for PRODUCT/COLLECTION.
-  // For PRODUCT/COLLECTION we BATCH-resolve resource TITLEs (one query, not N) so
-  // each chip is readable (falls back to the GID on a miss — never blank). null when
-  // the set is empty → the picker opens on "None".
+  // The template's INCLUDE scope SET (features 44/46/47), shop-scoped and homogeneous in `scope`. For
+  // PRODUCT/COLLECTION we BATCH-resolve resource TITLEs (one query, not N) so each chip is readable
+  // (falls back to the GID on a miss). null when the set is empty → the picker opens on "None".
   const selectors = await getTemplateIncludeSelectors(shop.id, template.id);
   const assignment = await buildAssignmentSeed(admin, selectors);
 
-  // The template's EXCLUDE carve-outs (feature 45), each resolved to its product
-  // TITLE + thumbnail image for a rich chip (feature 47; fails soft to the GID with
-  // no thumbnail — display only, never blocks the load). One batched query for the
-  // whole set (excludes are all PRODUCT), the same resolver the INCLUDE scope uses.
-  // Loaded even when the scope isn't ALL_PRODUCTS (the UI hides the control, but the
-  // state must seed cleanly so Discard/dirty round-trips work).
+  // The template's EXCLUDE carve-outs (feature 45), each resolved to its product TITLE + thumbnail for
+  // a rich chip (feature 47; fails soft to the GID, never blocks the load). One batched query for the
+  // whole set. Loaded even when the scope isn't ALL_PRODUCTS (the UI hides the control, but the state
+  // must seed cleanly so Discard/dirty round-trips work).
   const excludeGids = await getExcludesForTemplate(shop.id, template.id);
   const excludeDetails = await resolveScopeResourceDetails(
     admin,
@@ -210,16 +188,12 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
     };
   });
 
-  // Feature 57 Step 4: the client's one styling vocabulary is the RESOLVED
-  // domain shape — the DB columns are decoded server-side exactly once, here.
-  // No styling row (styling: null) = fully-default styling, by the no-backfill
-  // rule. Dormant until Step 5 seeds the engine from it.
+  // Feature 57 Step 4: the DB columns are decoded to the client's one styling vocabulary server-side,
+  // here. No styling row (styling: null) = fully-default styling (the no-backfill rule).
   const styling = parseStylingValues(template.styling ?? {});
 
-  // Feature 88 step 89. Resolved server-side like `styling`, and normalized on
-  // the way OUT as well as in: a stamp left behind by a preset removed in a
-  // later release degrades to "no pattern" here, rather than reaching the rail
-  // as an id that matches no card.
+  // Feature 88 step 89. Normalized on the way OUT as well as in: a stamp left by a preset removed in a
+  // later release degrades to "no pattern" here rather than reaching the rail as an id matching no card.
   const basedOnPreset = normalizeStylePresetStamp(
     template.styling?.basedOnPreset,
   );
@@ -251,13 +225,12 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
     intent?: unknown;
   };
 
-  // Create-on-first-save: the editor submits the seed + edits as JSON (the same
-  // shape as an edit save), so the create branch reads JSON too — not FormData.
-  // Lifecycle actions (duplicate/delete) are disabled on /new, so this branch
-  // always creates regardless of intent.
+  // Create-on-first-save: the editor submits the seed + edits as JSON (same shape as an edit save),
+  // so the create branch reads JSON, not FormData. Lifecycle actions are disabled on /new, so this
+  // branch always creates regardless of intent.
   if (params.id === "new") {
-    // Parse the pending scope SET (feature 44/46). A create-as-ACTIVE-with-scope
-    // must be gated BEFORE anything is written (atomic block).
+    // Parse the pending scope SET (feature 44/46). A create-as-ACTIVE-with-scope must be gated BEFORE
+    // anything is written (atomic block).
     const pending = parsePendingScope(payload);
     if (!pending.ok) {
       return { ok: false as const, error: pending.error };
@@ -273,9 +246,8 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
     );
     const willBeActive = payload.status === "ACTIVE";
     if (willBeActive && pending.selectors.length > 0) {
-      // The template doesn't exist yet, so it can't be in the comparison set. The
-      // pending selector SET + carve-outs are passed explicitly so the gate reads
-      // them, not a (nonexistent) rule.
+      // The template doesn't exist yet, so it can't be in the comparison set. The pending selector
+      // SET + carve-outs are passed explicitly so the gate reads them, not a (nonexistent) rule.
       const gate = await evaluateActivationConflicts(
         admin,
         shop.id,
@@ -304,9 +276,8 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
       return { ok: false as const, error: result.error };
     }
 
-    // Persist the scope rule SET on the freshly created template (feature 44/46).
-    // The gate already cleared it; a write failure is best-effort (the next Save
-    // resyncs), like the metaobject sync below.
+    // Persist the scope rule SET on the freshly created template. The gate already cleared it; a
+    // write failure is best-effort (the next Save resyncs), like the metaobject sync below.
     if (pending.selectors.length > 0) {
       await setTemplateScope(shop.id, result.data.id, pending.selectors);
     }
@@ -316,48 +287,43 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
       await setTemplateExcludes(shop.id, result.data.id, reconciledExcludes);
     }
 
-    // Persist styling arriving with the first save (feature 57 Step 4). Rides the
-    // same shop-scoped save path as an edit save; `rows` are the just-persisted
-    // finalized rows, so this write is styling-only in effect. Best-effort, like
-    // the scope write above.
+    // Persist styling arriving with the first save (Step 4). Rides the same shop-scoped save path as
+    // an edit save; `rows` are the just-persisted finalized rows, so this write is styling-only in
+    // effect. Best-effort, like the scope write above.
     let created = result.data;
     if (payload.styling !== undefined) {
       const styled = await saveTemplateForShop(shop.id, result.data.id, {
         rows: result.data.rows,
         styling: payload.styling,
-        // Feature 88 step 89 — the stamp rides this call, not the create above.
-        // Omitting it here would lose a preset picked on /app/templates/new at
-        // its very first Save, which is the most common path into the feature.
+        // The stamp rides this call, not the create above — omitting it would lose a preset picked on
+        // /app/templates/new at its very first Save, the most common path into the feature.
         basedOnPreset: payload.basedOnPreset,
       });
-      // Sync from the STYLED row (feature 57 Step 7). `result.data` predates the
-      // write above and carries no styling relation, so syncing it would publish
-      // default styling for a template the merchant just styled. On failure we
-      // fall through to the unstyled row — the rows still reach the storefront,
-      // and the next Save resyncs.
+      // Sync from the STYLED row (Step 7). `result.data` predates the write and carries no styling
+      // relation, so syncing it would publish default styling for a just-styled template. On failure
+      // we fall through to the unstyled row — the rows still reach the storefront; the next Save resyncs.
       if (styled.ok) created = styled.data;
     }
 
-    // Best-effort storefront sync; the template is already durable in Postgres, so
-    // a sync failure here does not block the redirect — the next Save resyncs.
+    // Best-effort storefront sync; the template is durable in Postgres, so a failure doesn't block
+    // the redirect — the next Save resyncs.
     await syncTemplateToMetaobject(admin, shop, created);
 
-    // A new ACTIVE template changes the shop's ACTIVE set → publish the routing map
-    // so its scope lights up on the storefront (best-effort; Postgres is durable).
+    // A new ACTIVE template changes the shop's ACTIVE set → publish the routing map so its scope
+    // lights up on the storefront (best-effort; Postgres is durable).
     if (willBeActive) {
       await rebuildShopRouting(admin, shop.id);
     }
 
-    // The editor's saveFetcher follows this redirect and remounts at the real id
-    // in normal (edit) mode; ?created=1 drives the one-time landing toast.
+    // The saveFetcher follows this redirect and remounts at the real id in edit mode; ?created=1
+    // drives the one-time landing toast.
     return redirect(`/app/templates/${result.data.id}?created=1`);
   }
 
   const templateId = params.id as string;
 
-  // Duplicate (feature 20): clone the SAVED template (DRAFT, fresh row ids) and
-  // navigate to the copy's editor. The duplicateFetcher follows this redirect, the
-  // same mechanism the create flow uses. No metaobject sync — the copy is DRAFT.
+  // Duplicate (feature 20): clone the SAVED template (DRAFT, fresh row ids) and navigate to the
+  // copy's editor. No metaobject sync — the copy is DRAFT.
   if (payload.intent === "duplicate") {
     const result = await duplicateTemplateForShop(shop.id, templateId);
     if (!result.ok) {
@@ -366,11 +332,10 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
     return redirect(`/app/templates/${result.data.id}?duplicated=1`);
   }
 
-  // Delete (feature 20): remove the storefront metaobject FIRST (best-effort) so
-  // it can't outlive its template (priority #2), THEN delete the durable Postgres
-  // row, then navigate to the list. Reads the owned template shop-scoped first for
-  // the metaobject GID; a cross-shop/unknown id reads nothing and is a clean
-  // redirect (deleteMany is a no-op for it anyway — priority #1).
+  // Delete (feature 20): remove the storefront metaobject FIRST (best-effort) so it can't outlive its
+  // template (priority #2), THEN delete the durable Postgres row, then navigate to the list. Reads
+  // the owned template shop-scoped first for the metaobject GID; a cross-shop/unknown id reads nothing
+  // and is a clean redirect (deleteMany is a no-op for it anyway — priority #1).
   if (payload.intent === "delete") {
     const existing = await getTemplateByIdForShop(shop.id, templateId);
     if (existing) {
@@ -383,10 +348,9 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
     return redirect("/app/templates");
   }
 
-  // Parse the pending scope SET + EXCLUDE carve-outs (feature 44/45/46). Both are
-  // PURE (no DB), so run them BEFORE any read: a malformed payload fails fast here
-  // without paying for the reads below. `provided:false` means a caller that
-  // doesn't touch that facet (leave it).
+  // Parse the pending scope SET + EXCLUDE carve-outs (feature 44/45/46). Both are PURE (no DB), so
+  // run them BEFORE any read: a malformed payload fails fast without paying for the reads below.
+  // `provided:false` means a caller that doesn't touch that facet (leave it).
   const pending = parsePendingScope(payload);
   if (!pending.ok) {
     return { ok: false as const, error: pending.error };
@@ -396,11 +360,10 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
     return { ok: false as const, error: pendingExcludes.error };
   }
 
-  // Read the current status + persisted scope + persisted excludes shop-scoped
-  // (priority #1) so the gate and rebuild decisions are made against the durable
-  // state, not the payload. The three reads are independent, so fetch them
-  // concurrently — they were three serial round-trips, which dominated a save's DB
-  // time on a cold Neon connection.
+  // Read the current status + persisted scope + persisted excludes shop-scoped (priority #1) so the
+  // gate and rebuild decisions run against durable state, not the payload. The three reads are
+  // independent, so fetch them concurrently — three serial round-trips dominated a save's DB time on
+  // a cold Neon connection.
   const [existing, persistedSelectors, persistedExcludes] = await Promise.all([
     getTemplateByIdForShop(shop.id, templateId),
     getTemplateIncludeSelectors(shop.id, templateId),
@@ -421,25 +384,21 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
     pending.provided &&
     selectorSetKey(pendingSelectors) !== selectorSetKey(persistedSelectors);
 
-  // Diff the pending EXCLUDE carve-outs against the persisted set (feature 45).
-  // Then reconcile them against the pending INCLUDE PRODUCT set (Decision C): a
-  // product the template now INCLUDEs can't also be EXCLUDE'd (byProduct beats the
-  // exclude gate; a lingering exclude would fool the gate's exclude-subtraction).
+  // Diff the pending EXCLUDE carve-outs against the persisted set, then reconcile against the pending
+  // INCLUDE PRODUCT set (Decision C): a product the template now INCLUDEs can't also be EXCLUDE'd
+  // (byProduct beats the exclude gate; a lingering exclude would fool the gate's exclude-subtraction).
   const pendingExcludeGids = reconcileExcludes(
     pendingExcludes.provided ? pendingExcludes.gids : persistedExcludes,
     pendingSelectors,
   );
   const excludesChanged = !sameGidSet(pendingExcludeGids, persistedExcludes);
 
-  // DRAFT→ACTIVE / ACTIVE-scope-edit dry-run gate (feature 42 generalized in 44,
-  // extended for carve-outs in 45, multi-value in 46): run against the PENDING
-  // selector SET + carve-outs BEFORE any write when the post-save template will be
-  // ACTIVE and either it wasn't ACTIVE before, its scope set changed, OR its
-  // carve-out set changed (removing a carve-out — or reconciling one away — can
-  // re-create a conflict). On overlap, BLOCK atomically — write nothing; the
-  // merchant's unsaved edits stay in client state (the SaveBar stays up). The gate
-  // fails closed. An already-ACTIVE template with an unchanged scope set AND
-  // carve-out set was validated when it went ACTIVE, so it is not re-gated.
+  // DRAFT→ACTIVE / ACTIVE-scope-edit dry-run gate (feature 42/44/45/46): run against the PENDING
+  // selector SET + carve-outs BEFORE any write when the post-save template will be ACTIVE and either
+  // it wasn't before, its scope changed, OR its carve-out set changed (removing a carve-out can
+  // re-create a conflict). On overlap, BLOCK atomically — write nothing; unsaved edits stay in client
+  // state. Fails closed. An already-ACTIVE template with an unchanged scope + carve-out set was
+  // validated when it went ACTIVE, so it isn't re-gated.
   if (willBeActive && (!wasActive || scopeChanged || excludesChanged)) {
     const gate = await evaluateActivationConflicts(
       admin,
@@ -458,11 +417,10 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
     }
   }
 
-  // Gate passed → persist. Write the SCOPE set FIRST (before the status/rows), so
-  // an ACTIVE template's persisted scope is always the gate-checked one: if the
-  // status write below then failed, the template would stay as it was, never
-  // ACTIVE-with-an-ungated-scope (the disjoint-set invariant, priority #2). A DRAFT
-  // scope edit persists here too (no gate — DRAFT may hold a conflict). An empty set
+  // Gate passed → persist. Write the SCOPE set FIRST (before status/rows), so an ACTIVE template's
+  // persisted scope is always the gate-checked one: if the status write below failed, the template
+  // would stay as it was, never ACTIVE-with-an-ungated-scope (the disjoint-set invariant, priority
+  // #2). A DRAFT scope edit persists here too (no gate — DRAFT may hold a conflict). An empty set
   // clears the rule; a non-empty set replaces it (and cleans contradictory EXCLUDEs).
   if (scopeChanged) {
     const scopeWrite =
@@ -480,10 +438,9 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
     }
   }
 
-  // Persist the EXCLUDE carve-outs (feature 45) alongside the scope, before the
-  // status/rows write, same atomic-block rationale — the gate has already cleared
-  // this pending set. A create-or-replace touching only EXCLUDE rows (the INCLUDE
-  // scope written above survives). A DRAFT carve-out edit persists here too.
+  // Persist the EXCLUDE carve-outs (feature 45) before the status/rows write, same atomic-block
+  // rationale — the gate has cleared this pending set. Create-or-replace touching only EXCLUDE rows
+  // (the INCLUDE scope written above survives). A DRAFT carve-out edit persists here too.
   if (excludesChanged) {
     const excludeWrite = await setTemplateExcludes(
       shop.id,
@@ -495,28 +452,25 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
     }
   }
 
-  // Editing an existing template: persist to Postgres (the source of truth).
-  // Shop isolation, the 200-row cap, per-row validation, and key finalization are
-  // all enforced server-side inside saveTemplateForShop.
+  // Editing an existing template: persist to Postgres. Shop isolation, the 200-row cap, per-row
+  // validation, and key finalization are all enforced inside saveTemplateForShop.
   const result = await saveTemplateForShop(shop.id, templateId, payload);
   if (!result.ok) {
     return { ok: false as const, error: result.error };
   }
 
-  // Sync the storefront delivery copy to the app-owned metaobject. This runs
-  // AFTER the durable Postgres write; a failure warns but never loses the rows.
+  // Sync the storefront delivery copy to the metaobject. Runs AFTER the durable Postgres write; a
+  // failure warns but never loses the rows.
   const { syncError } = await syncTemplateToMetaobject(
     admin,
     shop,
     result.data,
   );
 
-  // Rebuild + publish the shop routing map when the ACTIVE-set membership changed
-  // (to/from ACTIVE) OR an ACTIVE template's scope/carve-out CONTENT changed
-  // (features 44/45) — any of these alters the scope→handle map or its
-  // `excludedProductGids`. A rows-only save (status + scope + excludes unchanged)
-  // skips this fast path. Best-effort: the durable writes already landed; a routing
-  // failure is surfaced, never rolled back.
+  // Rebuild + publish the shop routing map when ACTIVE-set membership changed OR an ACTIVE template's
+  // scope/carve-out CONTENT changed (features 44/45) — any of these alters the scope→handle map or
+  // its `excludedProductGids`. A rows-only save skips this. Best-effort: the durable writes landed; a
+  // routing failure is surfaced, never rolled back.
   let routingError: string | undefined;
   if (
     shouldRebuildRoutingForScopeSave(
@@ -539,14 +493,12 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
   };
 };
 
-// The page-level engine owner (feature 20). It calls `useRowEngine` so the
-// `<s-page>` header — the status badge, the More-actions menu, and the lifecycle
-// modals (all rendered ABOVE the editor's inert freeze) — reads the SAME
-// saving/dirty/name state the editor body does, and the heading binds to the live
-// `engine.name` so a rename updates the H1 immediately (and Discard reverts it).
-// Remounted by its parent's key on a discard (nonce bump) and on the
-// create-on-first-save id change, which reseeds the engine from the persisted
-// rows/name/status — preserving the reshell's "no reducer reset action" decision.
+// The page-level engine owner (feature 20). Calls `useRowEngine` so the `<s-page>` header — status
+// badge, More-actions menu, lifecycle modals (all rendered ABOVE the editor's inert freeze) — reads
+// the SAME saving/dirty/name state the editor body does, and the heading binds to live `engine.name`
+// so a rename updates the H1 immediately (Discard reverts it). Remounted by its parent's key on a
+// discard (nonce bump) and on the create-on-first-save id change, which reseeds the engine from the
+// persisted rows/name/status.
 function TemplateOverview({
   template,
   assignment,
@@ -561,8 +513,7 @@ function TemplateOverview({
   excludes: Array<{ gid: string; label: string; image: string | null }>;
   styling: StylingValues;
   basedOnPreset: string | null;
-  // Admin deep-link base, from the loader. Used only by the Settings tab's
-  // conflict banner to link the colliding template (`AdminAppLink`).
+  // Admin deep-link base, from the loader. Used only by the Settings tab's conflict banner.
   adminAppBase: string;
   onDiscard: () => void;
 }) {
@@ -570,31 +521,25 @@ function TemplateOverview({
     initialRows: parseRows(template.rows),
     initialName: template.name,
     initialStatus: template.status,
-    // Seed the scope picker from the persisted rule SET (features 44/46/47); no rule
-    // → "None" with an empty value set.
+    // Seed the scope picker from the persisted rule SET (features 44/46/47); no rule → "None".
     initialScope: assignment?.scope ?? SCOPE_NONE,
     initialScopeValues: assignment?.values ?? [],
     // Seed the EXCLUDE carve-outs (feature 45); empty for a new/unassigned template.
     initialExcludes: excludes,
-    // Seed the Style tab from the loader's RESOLVED styling (feature 57 Step 5);
-    // fully-default for a template with no styling row.
+    // Seed the Style tab from the loader's RESOLVED styling (Step 5); default when no styling row.
     initialStyling: styling,
-    // Seed the style-preset provenance (feature 88 step 89); `null` for a
-    // template that never had a pattern picked, which is every template today.
+    // Seed the style-preset provenance (feature 88 step 89); null for a template with no pattern.
     initialBasedOnPreset: basedOnPreset,
-    // The "new" sentinel id (loader) marks a never-saved template; the engine uses
-    // it to gate the file-23 first-paste scaffold replace. A real cuid is never
-    // "new", and the create-on-first-save remount reseeds this to false.
+    // The "new" sentinel marks a never-saved template; the engine uses it to gate the file-23
+    // first-paste scaffold replace. A real cuid is never "new"; the create remount reseeds it to false.
     isNew: template.id === "new",
     onDiscard,
   });
   const [searchParams, setSearchParams] = useSearchParams();
   const shopify = useAppBridge();
 
-  // After create-on-first-save (?created=1) or duplicate (?duplicated=1) redirects
-  // here, toast once and strip the param so a refresh or back/forward navigation
-  // does not re-toast. Idempotent across the discard remount: the param is already
-  // gone by then.
+  // After a create (?created=1) or duplicate (?duplicated=1) redirect, toast once and strip the param
+  // so a refresh or back/forward navigation doesn't re-toast. Idempotent across the discard remount.
   useEffect(() => {
     const created = searchParams.get("created") === "1";
     const duplicated = searchParams.get("duplicated") === "1";
@@ -607,25 +552,19 @@ function TemplateOverview({
   }, [searchParams, setSearchParams, shopify]);
 
   return (
-    // `inlineSize="large"` matches the templates list's page width (app.templates.tsx)
-    // so the editor uses the same wide layout instead of the narrower default. The
-    // editor is fully fluid (the EditorShell card has no max-width; the rows grid is
-    // proportional; the bounded scroll is height-only), so widening only gives the
-    // value column + device previews more room (see previewDeviceWidth /
-    // .previewFrame).
+    // `inlineSize="large"` matches the templates list's page width so the editor uses the same wide
+    // layout. The editor is fully fluid, so widening only gives the value column + device previews
+    // more room.
     <s-page heading={engine.name} inlineSize="large">
       <s-link slot="breadcrumb-actions" href="/app/templates">
         Templates
       </s-link>
-      {/* Status badge + More-actions menu + lifecycle modals. Direct children of
-          <s-page> (via slot=…) so they portal into the page header, above the
-          editor's freeze wrapper. */}
+      {/* Status badge + More-actions menu + lifecycle modals. Direct children of <s-page> (via
+          slot=…) so they portal into the page header, above the editor's freeze wrapper. */}
       <TemplateHeaderActions engine={engine} template={template} />
-      {/* The editor is a full-bleed mockup card (its own EditorShell), not wrapped
-          in <s-section heading="Rows"> — the reshell A2 locked decision. It now
-          takes the shared engine as a prop (the engine lift moved the remount key
-          up to TemplateEditorPage, onto this component). The scope picker rides the
-          engine's Settings tab (feature 44). */}
+      {/* The editor is a full-bleed mockup card (its own EditorShell), not wrapped in an
+          <s-section> — the reshell A2 decision. Takes the shared engine as a prop; the scope picker
+          rides the engine's Settings tab (feature 44). */}
       <SpecTableEditor engine={engine} adminAppBase={adminAppBase} />
     </s-page>
   );
@@ -641,20 +580,18 @@ export default function TemplateEditorPage() {
     adminAppBase,
   } = useLoaderData<typeof loader>();
 
-  // Bumped to remount the engine owner (TemplateOverview) — resetting its reducer
-  // to the persisted rows and reseeding name/status — when the merchant discards
-  // unsaved changes; no reducer reset action needed.
+  // Bumped to remount the engine owner (resetting its reducer to the persisted rows and reseeding
+  // name/status) when the merchant discards unsaved changes; no reducer reset action needed.
   const [editorNonce, setEditorNonce] = useState(0);
 
   // The key carries BOTH the template id and the editorNonce:
-  //   - the id forces a remount when create-on-first-save redirects from the "new"
-  //     sentinel to the real cuid (same route, only the param changes, so React
-  //     would otherwise reuse the instance and keep the seed rows + stale dirty
-  //     baseline — leaving "Unsaved changes" up after the create save); remounting
-  //     reseeds the engine from the persisted rows so the SaveBar correctly closes;
-  //   - the nonce remounts it (resetting to the persisted state) on Discard.
-  // Both "new" (a synthetic seeded scaffold) and an existing template render the
-  // same page; the create-vs-update split lives entirely in the action.
+  //   - the id forces a remount when create-on-first-save redirects from "new" to the real cuid (same
+  //     route, only the param changes, so React would otherwise reuse the instance and keep the seed
+  //     rows + stale dirty baseline, leaving "Unsaved changes" up); remounting reseeds from persisted
+  //     rows so the SaveBar closes;
+  //   - the nonce remounts it (resetting to persisted state) on Discard.
+  // Both "new" and an existing template render the same page; the create-vs-update split lives in the
+  // action.
   return (
     <TemplateOverview
       key={`${template.id}:${editorNonce}`}

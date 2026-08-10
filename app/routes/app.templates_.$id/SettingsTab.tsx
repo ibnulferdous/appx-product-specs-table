@@ -9,28 +9,23 @@ import {
 } from "../../utils/assignmentScope";
 import type { ExcludeSeed, RowEngine, ScopeValueSeed } from "./useRowEngine";
 
-// The editor's Settings-tab sidebar (feature 36 status control + feature 44
-// assignment scope picker). Presentational — it reads the live status/scope off
-// the engine and renders the controls; both ride the meta-JSON dirty snapshot, so
-// changing either opens the contextual SaveBar and Save persists them together
-// (route action). This panel renders in EditorShell's `settingsPanel` slot, INSIDE
-// the editor's inert freeze wrapper (SpecTableEditor), so it is frozen with the
-// rest of the editor during an in-flight save — no separate `saving` guard here.
+// The editor's Settings-tab sidebar (feature 36 status control + feature 44 scope picker).
+// Presentational — reads the live status/scope off the engine; both ride the meta-JSON dirty
+// snapshot, so changing either opens the SaveBar. Renders in EditorShell's `settingsPanel` slot,
+// INSIDE the editor's inert freeze wrapper, so it's frozen during a save — no separate `saving` guard.
 //
-// Note the division of labour with the header: the <s-badge> in the page header
-// (TemplateHeaderActions) shows the PERSISTED loader status; these controls show
-// the PENDING edit. They converge after Save + revalidation.
+// Division of labour with the header: the page-header <s-badge> shows the PERSISTED loader status;
+// these controls show the PENDING edit. They converge after Save + revalidation.
 
-// Read the `value` off a Polaris web-component change/input event (the elements are
-// custom, so `currentTarget.value` isn't in the DOM typings).
+// Read the `value` off a Polaris web-component change/input event (custom elements, so
+// `currentTarget.value` isn't in the DOM typings).
 function readValue(event: Event): string {
   return (event.currentTarget as unknown as { value: string }).value;
 }
 
-// The subset of an App Bridge resource-picker result we read: the GID, the title,
-// and the thumbnail. A product carries `images[]`, a collection a single `image`;
-// each image field has historically been `originalSrc` (newer builds also expose
-// `url`), so we read both defensively.
+// The subset of an App Bridge resource-picker result we read. A product carries `images[]`, a
+// collection a single `image`; each image field has historically been `originalSrc` (newer builds
+// also expose `url`), so we read both defensively.
 type PickedImage = { originalSrc?: string; url?: string };
 type PickedResource = {
   id: string;
@@ -53,15 +48,11 @@ function pickedImageUrl(resource: PickedResource): string | null {
   );
 }
 
-// A Kaching-style resource chip: thumbnail + title + a critical-tone trash button
-// on one row (feature 47). Shared by the INCLUDE scope list and the EXCLUDE "Except
-// these products" list so both read identically. A 3-column `auto 1fr auto` grid so
-// the row NEVER wraps in the narrow (~300px) Settings sidebar — the thumbnail and
-// trash keep their intrinsic width and the title column (1fr) absorbs the rest,
-// wrapping its own text over two lines if long. `background="base"` (not the
-// sidebar's `subdued`) + a border make the card read as a distinct tile against the
-// subdued sidebar. `s-thumbnail` renders its own placeholder when `src` is empty, so
-// a resource with no image (or an unresolved one) still shows a neat square.
+// A Kaching-style resource chip: thumbnail + title + a critical-tone trash button on one row
+// (feature 47). Shared by the INCLUDE scope list and the EXCLUDE list so both read identically. A
+// 3-column `auto 1fr auto` grid so the row NEVER wraps in the narrow (~300px) sidebar — thumbnail and
+// trash keep their intrinsic width, the title column (1fr) absorbs the rest. `background="base"` + a
+// border make it read as a distinct tile. `s-thumbnail` renders its own placeholder when `src` is empty.
 function ResourceChipCard({
   image,
   label,
@@ -99,11 +90,9 @@ function ResourceChipCard({
   );
 }
 
-// Above this many selected resources the chip list collapses behind a "View all
-// selected (N)" toggle, so a large assignment (e.g. 100 products) doesn't stack 100
-// cards down the narrow Settings sidebar — matching the Kaching Bundles pattern the
-// merchant shared (list a few inline; a summary button beyond that). At or below it,
-// every chip renders inline as before.
+// Above this many selected resources the chip list collapses behind a "View all selected (N)" toggle,
+// so a large assignment (e.g. 100 products) doesn't stack 100 cards down the narrow sidebar. At or
+// below it, every chip renders inline.
 const MAX_INLINE_CHIPS = 4;
 
 type ChipItem = {
@@ -114,12 +103,10 @@ type ChipItem = {
   onRemove: () => void;
 };
 
-// A chip list that collapses when long. ≤ MAX_INLINE_CHIPS → all chips inline. More
-// than that → hidden behind a "View all selected (N)" toggle; expanding reveals the
-// full list inside a height-capped scroller so it can never blow out the page (and
-// "Show less" re-collapses). The trailing Add button is a sibling in the caller, so
-// it stays visible in every state. Returns null when empty (the caller renders the
-// "Select …" button on its own).
+// A chip list that collapses when long. ≤ MAX_INLINE_CHIPS → all inline. More → hidden behind a
+// "View all selected (N)" toggle; expanding reveals the full list inside a height-capped scroller
+// ("Show less" re-collapses). The trailing Add button is a sibling in the caller, so it stays visible.
+// Returns null when empty (the caller renders the "Select …" button on its own).
 function CollapsibleChipList({ items }: { items: ChipItem[] }) {
   const [expanded, setExpanded] = useState(false);
   const isLong = items.length > MAX_INLINE_CHIPS;
@@ -144,8 +131,8 @@ function CollapsibleChipList({ items }: { items: ChipItem[] }) {
       {!isLong ? (
         chips
       ) : expanded ? (
-        // `s-box`'s `overflow` only supports hidden/visible, so a plain scroll div
-        // caps the expanded list's height (~20rem) rather than growing unbounded.
+        // `s-box`'s `overflow` only supports hidden/visible, so a plain scroll div caps the
+        // expanded list's height (~20rem) rather than growing unbounded.
         <div style={{ maxHeight: "20rem", overflowY: "auto" }}>{chips}</div>
       ) : null}
       {isLong ? (
@@ -165,9 +152,8 @@ export function SettingsTab({
   adminAppBase,
 }: {
   engine: RowEngine;
-  // Admin deep-link base from the route loader — the conflict banner's link to
-  // the colliding template goes through `AdminAppLink` so "open in new tab"
-  // works. See `app/utils/adminAppLink.ts`.
+  // Admin deep-link base — the conflict banner's link to the colliding template goes through
+  // `AdminAppLink` so "open in new tab" works. See `app/utils/adminAppLink.ts`.
   adminAppBase: string;
 }) {
   const {
@@ -187,32 +173,26 @@ export function SettingsTab({
 
   const isResourceScope = scope === "PRODUCT" || scope === "COLLECTION";
   const isTextScope = scope === "PRODUCT_TYPE" || scope === "VENDOR";
-  // EXCLUDE carve-outs (feature 45) are shown ONLY under ALL_PRODUCTS: it is the
-  // one scope where a carve-out has an unambiguous, always-honorable meaning (it
-  // overlaps every other scope, so the only rule that can coexist with
-  // "all products EXCEPT X" is a dedicated PRODUCT:X template — exactly the case the
-  // gate resolves). See feature 45's settled decision.
+  // EXCLUDE carve-outs (feature 45) are shown ONLY under ALL_PRODUCTS: the one scope where a
+  // carve-out has an unambiguous, always-honorable meaning (it overlaps every other scope, so the
+  // only rule that can coexist with "all products EXCEPT X" is a dedicated PRODUCT:X template).
   const showExcludes = scope === "ALL_PRODUCTS";
-  // A valued scope with an empty value set is an invalid (incomplete) state —
-  // surface an inline error (Save is also disabled by the engine's `canSave`).
+  // A valued scope with an empty value set is incomplete — surface an inline error (Save is also
+  // disabled by the engine's `canSave`).
   const scopeIncomplete = !isScopeSetComplete(
     scope,
     scopeValues.map((item) => item.value),
   );
-  // An Active template with no assignment (or a still-incomplete one) shows on no
-  // storefront page — warn so an ACTIVE-but-invisible template is never a silent
-  // no-op.
+  // An Active template with no assignment shows on no storefront page — warn so an ACTIVE-but-
+  // invisible template is never a silent no-op.
   const activeButUnassigned = status === "ACTIVE" && scope === SCOPE_NONE;
-  // Blocking conflicts we can actually name and link. An unnamed conflict is the
-  // gate's fail-closed case, which the banner renders differently (see below).
+  // Blocking conflicts we can name and link. An unnamed conflict is the gate's fail-closed case,
+  // which the banner renders differently.
   const namedConflicts = conflicts.filter((conflict) => conflict.templateId);
 
-  // Open the App Bridge resource picker for the current scope kind (feature 47:
-  // MULTI-select for PRODUCT/COLLECTION). Preselect the current set via
-  // `selectionIds` so reopening shows the chosen resources checked; the picker
-  // returns the FULL final selection (checked minus unchecked), so we REPLACE the
-  // set with what came back (dedupe defensively). A cancel returns undefined → keep
-  // the current set.
+  // Open the App Bridge resource picker for the current scope kind (feature 47: MULTI-select for
+  // PRODUCT/COLLECTION). Preselect the current set via `selectionIds`; the picker returns the FULL
+  // final selection, so we REPLACE the set (dedupe defensively). A cancel returns undefined → keep it.
   const pickResources = async () => {
     const type = scope === "PRODUCT" ? "product" : "collection";
     const selected = (await shopify.resourcePicker({
@@ -221,8 +201,7 @@ export function SettingsTab({
       selectionIds: scopeValues.map((item) => ({ id: item.value })),
     })) as PickedResource[] | undefined;
     if (!selected) return;
-    // The picker returns the FULL final selection, so REPLACE the set (dedupe by
-    // GID). Capture each resource's title + thumbnail for the rich chip.
+    // Capture each resource's title + thumbnail for the rich chip (dedupe by GID).
     const byGid = new Map<string, ScopeValueSeed>();
     for (const resource of selected) {
       byGid.set(resource.id, {
@@ -238,12 +217,9 @@ export function SettingsTab({
     setScopeValues(scopeValues.filter((item) => item.value !== value));
   };
 
-  // Edit the EXCLUDE carve-out list (feature 45). Multi-select picker, preseeded via
-  // `selectionIds` with the current exceptions so reopening shows them CHECKED — the
-  // same preselect + REPLACE model as the scope picker above: the picker returns the
-  // full final selection (checked minus unchecked), so unchecking one in the picker
-  // removes it (per-chip trash still works too). A cancel returns undefined → keep the
-  // current set.
+  // Edit the EXCLUDE carve-out list (feature 45). Same preselect + REPLACE model as the scope picker
+  // above: the picker returns the full final selection, so unchecking one removes it (per-chip trash
+  // works too). A cancel returns undefined → keep the current set.
   const addExcludes = async () => {
     const selected = (await shopify.resourcePicker({
       type: "product",
@@ -278,11 +254,9 @@ export function SettingsTab({
     <s-stack direction="block" gap="base">
       <s-text type="strong">Settings</s-text>
 
-      {/* Rich conflict banner (feature 44): a blocked activation returns the
-          colliding template(s); name each with a bare link. Persistent until the
-          merchant edits the pending scope/status or a save succeeds (the engine
-          clears `conflicts` on either). The links go through `AdminAppLink` so
-          "open in new tab" lands in the admin rather than the app's own origin. */}
+      {/* Rich conflict banner (feature 44): a blocked activation returns the colliding template(s),
+          each named with a bare link. Persistent until the merchant edits the pending scope/status or
+          a save succeeds. Links go through `AdminAppLink` so "open in new tab" lands in the admin. */}
       {conflicts.length > 0 ? (
         <s-banner
           tone="critical"
@@ -331,9 +305,8 @@ export function SettingsTab({
 
       <s-divider></s-divider>
 
-      {/* Assignment scope (features 44/46/47). Changing the kind resets the value
-          set (the engine's setScopeKind); the conditional control below collects it
-          (multi-select resource picker vs. free text). */}
+      {/* Assignment scope (features 44/46/47). Changing the kind resets the value set (setScopeKind);
+          the conditional control below collects it (multi-select resource picker vs. free text). */}
       <s-select
         label="Show this table on"
         value={scope}
@@ -346,10 +319,9 @@ export function SettingsTab({
         ))}
       </s-select>
 
-      {/* PRODUCT / COLLECTION value SET (feature 47). A multi-select picker → chip
-          list with per-chip Remove + an Add button — mirroring the EXCLUDE carve-out
-          control below (feature 45), the same picker→chips pattern applied to the
-          INCLUDE scope so a template can target several products / collections. */}
+      {/* PRODUCT / COLLECTION value SET (feature 47). A multi-select picker → chip list with per-chip
+          Remove + an Add button, mirroring the EXCLUDE control below (feature 45) — the same
+          picker→chips pattern on the INCLUDE scope so a template can target several products. */}
       {isResourceScope ? (
         <s-stack direction="block" gap="small-200">
           <CollapsibleChipList
@@ -389,8 +361,8 @@ export function SettingsTab({
           }
           onInput={(event: Event) => {
             const value = readValue(event);
-            // Single-valued free text: the value IS its own label, no thumbnail. An
-            // empty field clears the set (incomplete — not a value), keeping the kind.
+            // Single-valued free text: the value IS its own label, no thumbnail. An empty field
+            // clears the set (incomplete — not a value), keeping the kind.
             setScopeValues(
               value === "" ? [] : [{ value, label: value, image: null }],
             );
@@ -399,10 +371,8 @@ export function SettingsTab({
         />
       ) : null}
 
-      {/* Scope help text. Suppressed under `activeButUnassigned`: that state also
-          renders the warning banner below, and the banner states the SAME fact
-          (unassigned → invisible on the storefront) plus the Active nuance and the
-          call to action — so showing both just says it twice. */}
+      {/* Scope help text. Suppressed under `activeButUnassigned`: the warning banner below states the
+          SAME fact plus the Active nuance and the call to action, so showing both says it twice. */}
       {!activeButUnassigned ? (
         <s-text color="subdued">
           {scope === SCOPE_NONE
@@ -411,19 +381,14 @@ export function SettingsTab({
         </s-text>
       ) : null}
 
-      {/* EXCLUDE carve-outs (feature 45). Shown only under ALL_PRODUCTS: carve
-          specific products out of the catch-all so a dedicated per-product table
-          can take them over (or they render nothing). Multi-select picker → chip
-          list with per-chip remove; rides the SaveBar via the engine. */}
+      {/* EXCLUDE carve-outs (feature 45). Shown only under ALL_PRODUCTS: carve specific products out
+          of the catch-all so a dedicated per-product table can take them over. Rides the SaveBar. */}
       {showExcludes ? (
         <>
           <s-divider></s-divider>
           <s-stack direction="block" gap="small-200">
-            {/* No help text under this heading. It renders directly beneath
-                "Show this table on → All products", so the two read as one
-                sentence — "show this table on all products, EXCEPT these" —
-                and the heading's own first word carries the whole meaning.
-                The paragraph that used to sit here only restated it. */}
+            {/* No help text: it renders directly beneath "Show this table on → All products", so the
+                two read as one sentence — "show this table on all products, EXCEPT these". */}
             <s-text type="strong">Except these products</s-text>
             <CollapsibleChipList
               items={excludes.map((gid) => ({

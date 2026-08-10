@@ -6,19 +6,16 @@ import { PasteCapModal } from "./PasteCapModal";
 import { BulkDeleteModal } from "./BulkDeleteModal";
 import type { RowEngine } from "./useRowEngine";
 
-// The Content stage hosted in the EditorShell's `stage` slot (reshell A1): the
-// fixed action toolbar + the at-cap banner + the bounded rows scroller (or the
-// empty state) + the Insert field modal. The outer <div onPaste> captures a bulk
-// table paste over the whole Content subtree (Steps 12–13); the engine's
-// skip-guards ignore field/modal targets, so a single-field paste is unaffected.
+// The Content stage in the EditorShell's `stage` slot (reshell A1): the action toolbar + at-cap banner
+// + bounded rows scroller (or empty state) + the modals. The outer <div onPaste> captures a bulk table
+// paste over the whole subtree (Steps 12–13); the engine's skip-guards ignore field/modal targets.
 // Presentational — all state + handlers come from the engine.
 export function ContentTab({ engine }: { engine: RowEngine }) {
   const { rows, atCap, handleContainerPaste } = engine;
 
   return (
-    // Plain wrapper purely to capture a bulk table paste over the whole Content
-    // subtree (Step 12). `onPaste` is not a typed prop on <s-stack>, and a plain
-    // <div> gives full React ClipboardEvent typing; it adds no layout of its own.
+    // Plain wrapper purely to capture a bulk table paste over the subtree (Step 12). `onPaste` isn't a
+    // typed prop on <s-stack>; a plain <div> gives full ClipboardEvent typing and no layout of its own.
     <div onPaste={handleContainerPaste}>
       <s-box padding="base">
         <s-stack direction="block" gap="base">

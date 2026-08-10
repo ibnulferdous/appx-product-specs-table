@@ -15,15 +15,10 @@ import {
 import styles from "./SpecTableEditor.module.css";
 import shellStyles from "./EditorShell.module.css";
 
-// The mockup's editor card (design/spec-editor-mockup.html → `.editor`): a
-// full-bleed Polaris card with a control row (segmented tabs + device toggle)
-// above a stage-wrap (a sidebar shown only on Style/Settings + the always-present
-// stage). This component is PRESENTATIONAL — it owns only `activeTab`/`activeView`
-// and renders slots. The editing engine is wired one level up by the
-// `SpecTableEditor` wrapper (`stage={<ContentTab engine={engine} />}`); the shell
-// itself never touches the engine. See
-// `context/features/16-reshell-a2-editor-shell.md` and
-// `context/features/18-reshell-a1-extract-row-engine.md`.
+// The mockup's editor card: a full-bleed Polaris card with a control row (segmented tabs + device
+// toggle) above a stage-wrap (a sidebar shown only on Style/Settings + the always-present stage).
+// PRESENTATIONAL — it owns only `activeTab`/`activeView` and renders slots; the editing engine is
+// wired one level up by `SpecTableEditor`. (features/16, features/18)
 
 const TABS: ReadonlyArray<SegOption<TabId>> = [
   { value: "content", label: "Content", icon: "compose" },
@@ -31,11 +26,9 @@ const TABS: ReadonlyArray<SegOption<TabId>> = [
   { value: "settings", label: "Settings", icon: "settings" },
 ];
 
-// The standard clip-rect visually-hidden recipe, inline rather than a CSS-module
-// class on purpose: Step 11's definition of done requires
-// `SpecTableEditor.module.css` to diff clean against the Step 10 sign-off, which
-// is the tripwire that stops this step quietly becoming the withdrawn one. A
-// live region is not a style, so it does not earn an exception.
+// The clip-rect visually-hidden recipe, inline rather than a CSS-module class on purpose: Step 11's
+// DoD requires `SpecTableEditor.module.css` to diff clean against the Step 10 sign-off (the tripwire
+// that stops this step becoming the withdrawn one). A live region is not a style.
 const VISUALLY_HIDDEN: CSSProperties = {
   position: "absolute",
   width: "1px",
@@ -55,16 +48,12 @@ const VIEWS: ReadonlyArray<SegOption<ViewId>> = [
 ];
 
 interface EditorShellProps {
-  // The Content stage (the grid). In the sandbox this is a dummy static grid; at
-  // A1 it becomes the engine-driven <ContentTab>. A presentational slot — never
-  // the engine itself.
+  // The Content stage (the grid) — the engine-driven <ContentTab>. A presentational slot.
   stage: ReactNode;
-  // The read-only device preview slot (feature 49). Rendered in place of `stage`
-  // whenever a device view is active; receives the active device view so the
-  // preview can size itself. Optional + a `stage` fallback, so the toggle stays
-  // harmless when no preview is wired.
+  // The read-only device preview slot (feature 49), rendered in place of `stage` on a device view.
+  // Optional + a `stage` fallback, so the toggle stays harmless when no preview is wired.
   preview?: (view: DeviceView) => ReactNode;
-  // Reserved for Phase B / C. Undefined in A2 → an empty placeholder renders.
+  // The Style / Settings rail slots; undefined → an empty placeholder renders.
   stylePanel?: ReactNode;
   settingsPanel?: ReactNode;
 }
@@ -76,13 +65,10 @@ export function EditorShell({
   settingsPanel,
 }: EditorShellProps) {
   const [activeTab, setActiveTab] = useState<TabId>("content");
-  // Feature 57 · Step 11: the active view is DERIVED from the active tab
-  // (`tabViewMemory.ts`) — its edit-or-preview mode, resolved against the shared
-  // preview device. Opening Style therefore lands on a preview — the only surface
-  // that shows styling — without disabling or hiding the view control, and without
-  // re-overriding a merchant who chose Edit there last time. The device is shared,
-  // so picking Mobile on one tab moves every previewing tab to Mobile. In-memory
-  // only: a reload returns to Content/`edit`/`desktop`.
+  // Feature 57 · Step 11: the active view is DERIVED from the active tab (`tabViewMemory.ts`) — its
+  // edit-or-preview mode, resolved against the shared device. Opening Style lands on a preview (the
+  // only surface that shows styling) without disabling the view control or re-overriding a merchant's
+  // last Edit choice there. In-memory only: a reload returns to Content/`edit`/`desktop`.
   const [viewMemory, setViewMemory] = useState<ViewMemory>(DEFAULT_VIEW_MEMORY);
   const activeView = viewForTab(viewMemory, activeTab);
 
@@ -90,12 +76,9 @@ export function EditorShell({
   // the merchant clicked themselves announces via the radio's own state change.
   const [announcement, setAnnouncement] = useState("");
 
-  // Feature 76: is the Style / Settings rail collapsed to zero width? ONE
-  // boolean shared by both tabs, not one per tab — the rail is a single surface,
-  // and per-tab collapse memory is state the merchant never asked for and would
-  // have to keep track of. In-memory only, like `viewMemory` above: a reload
-  // returns to an expanded rail, so a merchant who collapses it and forgets
-  // cannot get permanently stuck wondering where the Style controls went.
+  // Feature 76: is the rail collapsed to zero width? ONE boolean shared by both tabs (the rail is a
+  // single surface; per-tab collapse memory is state the merchant never asked for). In-memory only, so
+  // a reload returns to an expanded rail — a merchant who collapses it and forgets can't get stuck.
   const [railCollapsed, setRailCollapsed] = useState(false);
 
   const handleTabChange = (next: TabId) => {
@@ -109,14 +92,10 @@ export function EditorShell({
     setAnnouncement("");
   };
 
-  // Tabs reveal/hide the sidebar; they never replace the stage (mirrors the
-  // mockup). The device toggle drives the stage content (feature 49): on a device
-  // view the stage renders the read-only `preview` slot instead of the editable
-  // `stage`; `edit` keeps the editor. Previews replace the STAGE only — the
-  // sidebar's show/hide stays governed by `activeTab`, unchanged.
-  // `railTab` is `activeTab` narrowed to the tabs that actually have a rail, so
-  // the toggle's label helper can be total over its domain (feature 76). It also
-  // remains the single source for `showSidebar`, unchanged in meaning.
+  // Tabs reveal/hide the sidebar; they never replace the stage. The device toggle drives the stage
+  // content (feature 49): a device view renders the read-only `preview` slot instead of `stage`;
+  // `edit` keeps the editor. Previews replace the STAGE only. `railTab` is `activeTab` narrowed to the
+  // tabs that have a rail, so the toggle's label helper is total over its domain (feature 76).
   const railTab: RailTab | null = activeTab === "content" ? null : activeTab;
   const showSidebar = railTab !== null;
   const sidebarContent = activeTab === "style" ? stylePanel : settingsPanel;
@@ -124,31 +103,20 @@ export function EditorShell({
     ? (preview?.(activeView) ?? stage)
     : stage;
 
-  // Bound the Style/Settings rail to the remaining iframe viewport so ONLY the
-  // rail scrolls — the preview beside it stays in view instead of the whole admin
-  // iframe scrolling the preview off-screen. Reuses the Content tab's A3 measurer
-  // (`useScrollRegionHeight`): it clamps `railRef`'s top → viewport bottom and
-  // returns the px applied inline below, while `.railScroller` supplies the scroll
-  // + floor. Called unconditionally (rules of hooks); it no-ops until `railRef` is
-  // mounted, i.e. only on the Style/Settings tabs. The `showSidebar` re-measure key
-  // makes it clamp the moment the rail appears.
-  //
-  // The key includes `railCollapsed` (feature 76) because the rail is HIDDEN, not
-  // unmounted: `railRef` stays live, and `getBoundingClientRect()` on a
-  // `display: none` element returns all zeros — so a measurement taken while
-  // collapsed reads `top: 0` and yields an over-large `maxHeight` that is
-  // stale-wrong the moment the rail comes back. The effect re-runs after commit,
-  // i.e. after the grid template and the hide class are applied, so the first
-  // measurement on expand is taken against settled layout.
+  // Bound the rail to the remaining iframe viewport so ONLY the rail scrolls (the preview beside it
+  // stays in view). Reuses the Content tab's A3 measurer (`useScrollRegionHeight`); `.railScroller`
+  // supplies the scroll + floor. Called unconditionally; no-ops until `railRef` is mounted. The key
+  // includes `railCollapsed` (feature 76) because the rail is HIDDEN, not unmounted: a measurement
+  // while collapsed reads `top: 0` and yields a stale-wrong `maxHeight`. The effect re-runs after
+  // commit, so the first measurement on expand is taken against settled layout.
   const railRef = useRef<HTMLDivElement>(null);
   const railMaxHeight = useScrollRegionHeight(
     railRef,
     showSidebar && !railCollapsed ? 1 : 0,
   );
 
-  // Stable, instance-unique id linking the rail toggle to its <s-tooltip>, so a
-  // sighted mouse user gets the same label the aria-label already gives assistive
-  // tech (matches the device-toggle tooltips in SegmentedControl).
+  // Stable, instance-unique id linking the rail toggle to its <s-tooltip>, so a sighted mouse user
+  // gets the same label the aria-label gives AT (matches SegmentedControl's device-toggle tooltips).
   const railToggleTooltipId = useId();
 
   return (
@@ -161,12 +129,9 @@ export function EditorShell({
       {/* Control row: tabs pinned left, device toggle pinned right. */}
       <s-box background="subdued" padding="small-300">
         <div className={styles.controlrow}>
-          {/* The tab group and the rail toggle are wrapped as ONE flex child:
-              `.controlrow` is `justify-content: space-between` with exactly two
-              children (this group, and the device toggle), so a third would
-              strand the device toggle in the middle of the row — and that rule
-              lives in the tripwired `SpecTableEditor.module.css`, which this
-              feature must not edit. */}
+          {/* The tab group and the rail toggle are wrapped as ONE flex child: `.controlrow` is
+              `space-between` with exactly two children, so a third would strand the device toggle in
+              the middle — and that rule lives in the tripwired `SpecTableEditor.module.css`. */}
           <s-stack direction="inline" gap="small-300" alignItems="center">
             <SegmentedControl
               ariaLabel="Editor tab"
@@ -174,33 +139,19 @@ export function EditorShell({
               value={activeTab}
               onChange={handleTabChange}
             />
-            {/* Collapses the Style / Settings rail to zero width (feature 76),
-                handing the stage the full editor card so the Desktop preview can
-                clear the storefront's 749px breakpoint. Beside the tabs on
-                purpose: the tabs choose WHICH rail shows, this chooses WHETHER it
-                shows — and the rail collapses to nothing, so there is no surviving
-                strip for the button to live in (an icon-rail stub would spend more
-                width than the tight case has to give). One STABLE icon in a FIXED
-                position, visible in both states: a control that moves when you
-                press it is a control you have to re-find, and a toggle icon that
-                swaps is ambiguous about whether it shows the state or the action.
-                Rendered only where a rail exists — on Content it would be a
-                permanently dead control.
+            {/* Collapses the rail to zero width (feature 76), handing the stage the full editor card so
+                the Desktop preview clears the storefront's 749px breakpoint. Beside the tabs: they
+                choose WHICH rail shows, this chooses WHETHER — and the rail collapses to nothing, so
+                there's no strip for the button to live in. One STABLE icon in a FIXED position, in both
+                states (a moving/swapping toggle is one you have to re-find and is ambiguous about
+                state-vs-action). Rendered only where a rail exists.
 
-                A plain <button> rather than an <s-button variant="tertiary">,
-                which is what this started as. Measured against the live Polaris
-                CDN build: the host `<s-button>` carries NO role, and of the ARIA
-                written on it only `accessibilityLabel` is forwarded to the
-                internal shadow `<button>` — `aria-expanded` and `aria-controls`
-                are dropped on the floor. So an s-button here would have been a
-                toggle whose state existed for sighted users only, in the one rail
-                that spent a whole step (feature 57 Step 12) closing exactly that
-                class of gap. The `.segBtn` chrome is the same chrome-reset +
-                `:focus-visible` ring the tab segments beside it use, imported —
-                never edited — from the tripwired module, and the nested `<s-box>`
-                supplies the hit area, so it renders as the same bare icon the
-                s-button did. See the Step 0.2 log in
-                `context/features/76-…`. */}
+                A plain <button> rather than an `<s-button variant="tertiary">` (what it started as):
+                the host `<s-button>` carries NO role and forwards only `accessibilityLabel` to its
+                shadow `<button>` — `aria-expanded`/`aria-controls` are dropped, so an s-button toggle's
+                state would exist for sighted users only. `.segBtn` is the same chrome-reset +
+                `:focus-visible` ring the tab segments use, imported from the tripwired module, and the
+                nested `<s-box>` supplies the hit area. (features/76 Step 0.2) */}
             {railTab ? (
               <>
                 <button
@@ -209,11 +160,8 @@ export function EditorShell({
                   aria-label={railToggleLabel(railTab, railCollapsed)}
                   aria-expanded={!railCollapsed}
                   aria-controls={RAIL_REGION_ID}
-                  // Points at the sibling <s-tooltip> so a sighted mouse user
-                  // gets the label on hover/focus (the aria-label already covers
-                  // assistive tech). `interestFor` is not in React's typings for a
-                  // native <button>, so it's spread in — same invoker family as the
-                  // device-toggle tooltips in SegmentedControl.
+                  // Points at the sibling <s-tooltip> for a sighted mouse user (the aria-label covers
+                  // AT). `interestFor` isn't in React's typings for a native <button>, so it's spread in.
                   {...({ interestFor: railToggleTooltipId } as Record<
                     string,
                     string
@@ -225,8 +173,7 @@ export function EditorShell({
                     paddingBlock="small-300"
                     paddingInline="small-200"
                   >
-                    {/* Presentational: the button is already named by its
-                        `aria-label`, so announcing the icon too would double it. */}
+                    {/* Presentational: the button is already named by its `aria-label`. */}
                     <s-icon
                       type="layout-sidebar-left"
                       aria-hidden="true"
@@ -249,60 +196,40 @@ export function EditorShell({
         </div>
       </s-box>
 
-      {/* Polite live region for a view change the merchant did NOT click (a tab
-          switch moving the stage under them). Visually hidden — the segmented
-          control already shows the change to sighted users. Kept OUTSIDE the
-          control row so it never affects that layout. */}
+      {/* Polite live region for a view change the merchant did NOT click (a tab switch moving the
+          stage). Visually hidden; kept OUTSIDE the control row so it never affects that layout. */}
       <div aria-live="polite" aria-atomic="true" style={VISUALLY_HIDDEN}>
         {announcement}
       </div>
 
       <s-divider></s-divider>
 
-      {/* Stage-wrap: the 300px sidebar shows only on Style/Settings; the stage is
-          always present. The `subdued` sidebar reads as a distinct panel against
-          the `base` stage with no border needed.
-
-          ⚠️ The grid template and the rail's hide class MUST move together
-          (feature 76). `display: none` drops the rail as a grid ITEM, so leaving
-          the template at `18.75rem 1fr` while hiding the rail would make the STAGE
-          the first child and render it inside the 300px column — a silent breakage
-          that looks like a CSS bug rather than a missing ternary. */}
+      {/* Stage-wrap: the 300px sidebar shows only on Style/Settings; the stage is always present.
+          ⚠️ The grid template and the rail's hide class MUST move together (feature 76): `display: none`
+          drops the rail as a grid ITEM, so leaving the template at `18.75rem 1fr` while hiding the rail
+          would render the STAGE inside the 300px column. */}
       {showSidebar ? (
         <s-grid gridTemplateColumns={railCollapsed ? "1fr" : "18.75rem 1fr"}>
-          {/* A named LANDMARK, not just a grey box (feature 57 Step 12). Sighted
-              users read "controls left, table right" instantly from the
-              background and position; without a region role there is nothing for
-              a screen-reader user to jump to and no way to skip past the rail to
-              reach the table — it is an unannounced run of controls that just
-              ends. One box sits behind BOTH tabs, so this lands for Settings too;
-              that is deliberate and recorded in the tracker so Phase C neither
-              redoes it nor reads it as "Settings a11y is handled." */}
+          {/* A named LANDMARK, not just a grey box (feature 57 Step 12): without a region role a
+              screen-reader user has nothing to jump to and no way to skip past the rail to the table.
+              One box sits behind BOTH tabs, so this lands for Settings too (recorded in the tracker so
+              Phase C neither redoes it nor reads it as "handled"). */}
           <s-box
-            // Hidden, NOT unmounted (feature 76), so the rail's React state
-            // survives the round trip: StyleTab's collapsible sections keep their
-            // open/closed state and the scroller keeps its offset, and expanding
-            // returns the merchant to exactly what they left. The `display: none`
-            // hangs off this attribute rather than a class because Polaris's JSX
-            // types reject `className` on an `<s-box>`; see the rule in
-            // `EditorShell.module.css` for why that beat a wrapper <div>. Absent,
-            // never `"false"` — an HTML attribute selector matches on presence.
+            // Hidden, NOT unmounted (feature 76), so the rail's React state survives: StyleTab's
+            // collapsible sections keep their open/closed state and the scroller keeps its offset. The
+            // `display: none` hangs off this attribute rather than a class because Polaris's JSX types
+            // reject `className` on an `<s-box>`. Absent, never `"false"` — the selector matches on presence.
             data-appx-rail-collapsed={railCollapsed ? "" : undefined}
             background="subdued"
             padding="base"
-            // The ONE side the box does not own: the scroller below owns its
-            // inline-end gutter instead, so its scrollbar rides the panel's real
-            // right edge rather than floating 1rem inside it. See the
-            // `.railScroller` comment for why the padding has to move rather
-            // than the scrollbar.
+            // The ONE side the box doesn't own: the scroller below owns its inline-end gutter, so its
+            // scrollbar rides the panel's real right edge rather than floating 1rem inside it.
             paddingInlineEnd="none"
             accessibilityRole="region"
             accessibilityLabel={activeTab === "style" ? "Style" : "Settings"}
           >
-            {/* The rail scrolls internally (see `railMaxHeight` above) so the long
-                Style controls never push the preview out of view. The landmark
-                stays on the `s-box`; the scroll and the inline-end gutter live
-                on this div. */}
+            {/* The rail scrolls internally (see `railMaxHeight`) so the long Style controls never push
+                the preview out of view. The landmark stays on the `s-box`; the scroll + gutter here. */}
             <div
               id={RAIL_REGION_ID}
               ref={railRef}
@@ -325,8 +252,7 @@ export function EditorShell({
   );
 }
 
-// A2 placeholder for the Style / Settings sidebar. Real controls land in Phases
-// B / C; until then the slot just names the tab so the reveal/hide is visible.
+// A2 placeholder for the Style / Settings sidebar, shown when a panel slot is unwired.
 function SidebarPlaceholder({ label }: { label: string }) {
   return (
     <s-stack direction="block" gap="small-200">

@@ -1,39 +1,25 @@
-// Assigned-product counts for the templates list (feature 48). The list column
-// "Assigned Products" shows, per template, the REAL number of products its
-// assignment scope resolves to — no longer a hardcoded 0.
+// Assigned-product counts for the templates list (feature 48). The "Assigned Products" column
+// shows, per template, the REAL number of products its assignment scope resolves to.
 //
-// Only two scope kinds resolve to a fixed number that lives in Postgres:
-//   NONE     -> 0 (no INCLUDE rule)
-//   PRODUCT  -> the count of distinct INCLUDE PRODUCT rows (a chosen product set)
-// The broad kinds have no stored count, so their product total is read live from
-// Shopify's Admin API (the merchant chose true counts over a scope label):
-//   ALL_PRODUCTS -> the shop's total product count, minus the template's EXCLUDE
-//                   carve-outs (feature 45)
-//   COLLECTION   -> the collection's `productsCount` (summed over a multi-collection
-//                   set; overlapping collections may over-count — see below)
-//   PRODUCT_TYPE -> productsCount(query: "product_type:'…'")
-//   VENDOR       -> productsCount(query: "vendor:'…'")
-// PRODUCT_TYPE / VENDOR / COLLECTION are hidden from the MVP picker but still exist
-// in legacy data (and server-side), so every kind is handled.
+// Two scope kinds resolve to a fixed number in Postgres — NONE -> 0; PRODUCT -> the count of
+// distinct INCLUDE PRODUCT rows. The broad kinds have no stored count, so their total is read live
+// from Shopify's Admin API: ALL_PRODUCTS -> shop total minus EXCLUDE carve-outs (feature 45);
+// COLLECTION -> summed `productsCount` (overlapping collections may over-count, see below);
+// PRODUCT_TYPE / VENDOR -> `productsCount(query:)`. PRODUCT_TYPE / VENDOR / COLLECTION are hidden
+// from the MVP picker but still exist in legacy data, so every kind is handled.
 //
-// COST: O(1) Admin API requests regardless of template count — every needed lookup
-// is collapsed into ONE batched, aliased `productsCount` / `collection` query
-// (rate-limit-friendly, priority #3). Templates that need no live lookup (only
-// PRODUCT / NONE) skip the API entirely.
+// COST: O(1) Admin requests regardless of template count — every lookup is collapsed into ONE
+// batched, aliased query (priority #3). Templates needing no live lookup (PRODUCT / NONE) skip it.
 //
-// Conventions mirror assignmentConflict.server.ts / routing.server.ts: the
-// `#graphql` operation was validated with `validate_graphql_codeblocks` against
-// API version 2025-10 (required scope: read_products); the query BUILDER, response
-// NARROWER, grouping, and per-template arithmetic are all pure + unit-tested, and
-// the live `admin.graphql` runner is mocked at the boundary. Shop isolation is
-// enforced two ways (priority #1): the Prisma read is `where { shopId }`, and the
-// `admin` client is session-bound, so a probe can only ever see THIS shop's catalog.
+// Conventions mirror assignmentConflict/routing.server.ts: the `#graphql` op was validated against
+// API 2025-10 (scope: read_products); the query builder, response narrower, grouping, and
+// arithmetic are pure + unit-tested; the live admin.graphql runner is mocked. Shop isolation
+// (priority #1): the Prisma read is `where { shopId }` and the admin client is session-bound.
 //
-// FAIL-SOFT (this is an admin-list nicety, not the storefront): a network / GraphQL
-// failure is NEVER fatal to the list — the batched query is wrapped so a failure
-// leaves the live-derived counts UNKNOWN (rendered "—"), while the Postgres-derived
-// PRODUCT / NONE counts still resolve. This is the opposite bias from the activation
-// gate (which fails CLOSED), and deliberately so: a wrong count here is cosmetic.
+// FAIL-SOFT (an admin-list nicety, not the storefront): a network / GraphQL failure is NEVER fatal
+// to the list — it leaves the live-derived counts UNKNOWN (rendered "—") while the Postgres-derived
+// PRODUCT / NONE counts still resolve. The opposite bias from the activation gate (fails CLOSED),
+// deliberately: a wrong count here is cosmetic.
 
 import { AssignmentMode } from "@prisma/client";
 import type { AdminApiContext } from "@shopify/shopify-app-react-router/server";
@@ -42,16 +28,15 @@ import type { AssignmentScopeValue } from "../utils/assignmentScope";
 
 // --- Types ------------------------------------------------------------------
 
-/** The minimal per-template assignment shape the counter folds a shop's rows into.
- *  `scope` is null when a template has no INCLUDE rule (it matches nothing → 0). */
+/** The minimal per-template assignment shape the counter folds a shop's rows into. `scope` is null
+ *  when a template has no INCLUDE rule (it matches nothing → 0). */
 export type TemplateAssignment = {
   templateId: string;
   scope: AssignmentScopeValue | null;
-  // Distinct INCLUDE scopeValues: PRODUCT/COLLECTION GIDs (1..N), the single
-  // string for PRODUCT_TYPE/VENDOR, or [] for ALL_PRODUCTS/NONE.
+  // Distinct INCLUDE scopeValues: PRODUCT/COLLECTION GIDs (1..N), the single string for
+  // PRODUCT_TYPE/VENDOR, or [] for ALL_PRODUCTS/NONE.
   includeValues: string[];
-  // Count of distinct EXCLUDE PRODUCT carve-out rows (only meaningful under
-  // ALL_PRODUCTS; the storefront renders nothing for these products).
+  // Count of distinct EXCLUDE PRODUCT carve-out rows (only meaningful under ALL_PRODUCTS).
   excludeCount: number;
 };
 
@@ -63,8 +48,8 @@ export type CountLookups = {
   vendors: string[];
 };
 
-/** Alias bookkeeping tying each lookup to its GraphQL alias, so the narrower can
- *  read the right field out of the aliased response. */
+/** Alias bookkeeping tying each lookup to its GraphQL alias, so the narrower can read the right
+ *  field out of the aliased response. */
 export type CountQueryAliases = {
   shopTotal: boolean;
   collection: Map<string, string>;
@@ -78,10 +63,8 @@ export type BuiltCountQuery = {
   aliases: CountQueryAliases;
 };
 
-/** Counts resolved from Shopify. A key ABSENT from a map means "unknown" (the
- *  request failed / the field was malformed) → the template's count is null.
- *  `shopTotal` is null when unknown. A deleted collection resolves to 0, not
- *  unknown (it genuinely covers no products). */
+/** Counts resolved from Shopify. A key ABSENT from a map means "unknown" (request failed /
+ *  malformed) → null count. A deleted collection resolves to 0, not unknown. */
 export type ResolvedCounts = {
   shopTotal: number | null;
   byCollection: Map<string, number>;
@@ -99,11 +82,10 @@ type RawAssignmentRow = {
 };
 
 /**
- * Fold a shop's flat ProductAssignment rows into one `TemplateAssignment` per
- * template. A template's INCLUDE rows share one scope KIND (the homogeneity
- * invariant, feature 46), so the first INCLUDE row's scope defines the template's
- * scope and every INCLUDE row contributes a distinct value. EXCLUDE PRODUCT rows
- * only bump `excludeCount`. Pure: never touches Prisma or mutates the input.
+ * Fold a shop's flat ProductAssignment rows into one `TemplateAssignment` per template. A
+ * template's INCLUDE rows share one scope KIND (homogeneity invariant, feature 46), so the first
+ * INCLUDE row's scope defines the template's scope and every INCLUDE row contributes a distinct
+ * value. EXCLUDE PRODUCT rows only bump `excludeCount`. Pure.
  */
 export function groupAssignments(
   rows: RawAssignmentRow[],
@@ -141,9 +123,8 @@ export function groupAssignments(
   return [...byTemplate.values()];
 }
 
-/** Collect the distinct live lookups needed across all templates. ALL_PRODUCTS
- *  needs the shop total; COLLECTION/PRODUCT_TYPE/VENDOR need their per-value
- *  counts. PRODUCT and NONE need nothing (resolved from Postgres). */
+/** Collect the distinct live lookups needed across all templates. ALL_PRODUCTS needs the shop
+ *  total; COLLECTION/PRODUCT_TYPE/VENDOR need their per-value counts; PRODUCT and NONE need none. */
 export function collectLookups(
   assignments: TemplateAssignment[],
 ): CountLookups {
@@ -182,22 +163,19 @@ export function collectLookups(
 // --- Pure: query builder ----------------------------------------------------
 
 /**
- * Escape a free-form merchant string (product_type / vendor) for use inside a
- * single-quoted Shopify search term: backslash first (so the quotes we add aren't
- * double-escaped), then the single quote — so a value like `O'Neil` can't break
- * out of the term and widen the query (injection safety). The value is passed as a
- * GraphQL variable, so no GraphQL-string escaping is needed on top of this.
+ * Escape a free-form merchant string (product_type / vendor) for a single-quoted Shopify search
+ * term: backslash first (so the quotes we add aren't double-escaped), then the single quote — so
+ * `O'Neil` can't break out of the term and widen the query (injection safety). The value is passed
+ * as a GraphQL variable, so no GraphQL-string escaping is needed on top.
  */
 export function escapeProductSearchValue(value: string): string {
   return value.replace(/\\/g, "\\\\").replace(/'/g, "\\'");
 }
 
 /**
- * Build ONE aliased `productsCount` / `collection` query covering every needed
- * lookup, or `null` when nothing needs a live count (all templates are PRODUCT /
- * NONE). Each collection/type/vendor value is passed as a GraphQL variable
- * (`$col0` / `$ptype0` / `$vendor0`), never inlined, so nothing merchant-supplied
- * reaches the query document. Pure.
+ * Build ONE aliased `productsCount` / `collection` query covering every lookup, or null when
+ * nothing needs a live count. Each value is passed as a GraphQL variable, never inlined, so nothing
+ * merchant-supplied reaches the query document. Pure.
  */
 export function buildAssignedCountQuery(
   lookups: CountLookups,
@@ -267,8 +245,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
 }
 
-/** Read a `Count` object's `.count` (a non-negative integer), or null if absent /
- *  malformed. */
+/** Read a `Count` object's `.count` (a non-negative integer), or null if absent / malformed. */
 function readCount(node: unknown): number | null {
   if (!isRecord(node)) return null;
   const count = node.count;
@@ -276,11 +253,9 @@ function readCount(node: unknown): number | null {
 }
 
 /**
- * Narrow an aliased count response into `ResolvedCounts`. A missing / malformed
- * field is simply left out of its map (→ "unknown" → null count downstream),
- * EXCEPT a `collection(id:)` that resolved to `null` (a deleted collection), which
- * is recorded as 0 — it genuinely covers no products. Pure; external JSON is
- * `unknown` until it clears these checks.
+ * Narrow an aliased count response into `ResolvedCounts`. A missing / malformed field is left out
+ * of its map (→ "unknown" → null downstream), EXCEPT a `collection(id:)` that resolved to null (a
+ * deleted collection), recorded as 0 — it genuinely covers no products. Pure.
  */
 export function parseAssignedCountResponse(
   json: unknown,
@@ -321,13 +296,11 @@ export function parseAssignedCountResponse(
 // --- Pure: per-template arithmetic ------------------------------------------
 
 /**
- * The number of products a single template's scope resolves to, or `null` when a
- * needed live count is unknown (the Admin request failed / was malformed). PRODUCT
- * and NONE never consult `resolved`, so they always yield a number even on API
- * failure. ALL_PRODUCTS subtracts the template's EXCLUDE carve-outs (clamped ≥ 0);
- * COLLECTION sums its collections (overlapping collections may over-count — an
- * accepted MVP approximation, since exact de-dup would require enumerating every
- * product GID). Pure.
+ * The number of products a template's scope resolves to, or null when a needed live count is
+ * unknown. PRODUCT and NONE never consult `resolved`, so they yield a number even on API failure.
+ * ALL_PRODUCTS subtracts the EXCLUDE carve-outs (clamped ≥ 0); COLLECTION sums its collections
+ * (overlapping collections may over-count — an accepted MVP approximation, since exact de-dup would
+ * require enumerating every product GID). Pure.
  */
 export function computeTemplateAssignedCount(
   assignment: TemplateAssignment,
@@ -371,16 +344,13 @@ export function computeTemplateAssignedCount(
 // --- Live orchestrator ------------------------------------------------------
 
 /**
- * Resolve each of a shop's templates to its assigned-product count, keyed by
- * templateId. Only templates that HAVE assignment rows appear in the map; a
- * template with no rows is absent (the caller treats a miss as 0 — a NONE template
- * matches nothing). A value of `null` means the count couldn't be determined live
- * (the Admin request failed) and should render as "—".
+ * Resolve each of a shop's templates to its assigned-product count, keyed by templateId. Only
+ * templates that HAVE assignment rows appear; a template with no rows is absent (the caller treats a
+ * miss as 0). A `null` value means the count couldn't be determined live (render "—").
  *
- * One Prisma read (shop-scoped) folds the rows; one batched Admin query resolves
- * every live lookup (skipped entirely when no template needs one). The Admin call
- * is fail-soft — a failure logs and leaves live-derived counts null while the
- * Postgres-derived PRODUCT / NONE counts still resolve.
+ * One shop-scoped Prisma read folds the rows; one batched Admin query resolves every live lookup
+ * (skipped when none is needed). The Admin call is fail-soft — a failure logs and leaves live counts
+ * null while PRODUCT / NONE still resolve.
  */
 export async function resolveAssignedProductCounts(
   admin: AdminApiContext,
@@ -420,8 +390,8 @@ export async function resolveAssignedProductCounts(
       }
       resolved = parseAssignedCountResponse(json, built.aliases);
     } catch (error) {
-      // Cosmetic count only — never break the list. Live-derived counts stay
-      // unknown (→ "—"); PRODUCT / NONE still resolve from Postgres.
+      // Cosmetic count only — never break the list. Live-derived counts stay unknown (→ "—");
+      // PRODUCT / NONE still resolve from Postgres.
       console.error("[assignedProductCounts] live count lookup failed", error);
     }
   }

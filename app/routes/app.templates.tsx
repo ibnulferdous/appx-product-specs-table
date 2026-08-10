@@ -47,31 +47,28 @@ import {
   type StatusFilter,
 } from "../utils/templateFilter";
 
-// One shared confirm modal for delete (not one <s-modal> per row): lighter DOM,
-// a single focus trap. The id is constant — `pendingDelete` carries which row.
+// One shared confirm modal for delete (not one <s-modal> per row): lighter DOM, one focus trap. The
+// id is constant — `pendingDelete` carries which row.
 const DELETE_MODAL_ID = "templates-list-delete-modal";
 
-// One shared rename modal (mirrors the delete modal): `pendingRename` carries which
-// row, the field value is seeded from the current name on open.
+// One shared rename modal: `pendingRename` carries which row; the field is seeded from the current
+// name on open.
 const RENAME_MODAL_ID = "templates-list-rename-modal";
 
-// One shared status modal (feature 36): `pendingStatus` carries which row, the
-// <s-select> value is seeded from that row's current status on open.
+// One shared status modal (feature 36): `pendingStatus` carries which row; the <s-select> is seeded
+// from that row's current status on open.
 const STATUS_MODAL_ID = "templates-list-status-modal";
 
-// The list row is the lightweight summary (name / status / rowCount / updatedAt)
-// from `listTemplateSummariesForDomain`. The "Assigned Products" count is no
-// longer carried on the row — it streams in separately as a templateId → count
-// map (feature 48, now deferred; see the loader), which each row reads under
-// <Suspense>.
+// The list row is the lightweight summary from `listTemplateSummariesForDomain`. The "Assigned
+// Products" count isn't on the row — it streams in separately as a templateId → count map (feature
+// 48, deferred), which each row reads under <Suspense>.
 type TemplateListItem = TemplateListSummary;
 
-// The streamed "Assigned Products" map: templateId → resolved count, or `null`
-// when the live Admin lookup couldn't determine it (rendered "—").
+// The streamed "Assigned Products" map: templateId → resolved count, or null when the live Admin
+// lookup couldn't determine it (rendered "—").
 type AssignedCounts = Record<string, number | null>;
 
-// The "Assigned Products" cell: a plain integer (thousands-separated for large
-// "All products" catalogs), or "—" when the live count is unavailable.
+// The "Assigned Products" cell: a plain integer (thousands-separated), or "—" when unavailable.
 function formatAssignedCount(count: number | null): string {
   return count === null ? "—" : count.toLocaleString();
 }
@@ -106,12 +103,9 @@ const EmptyTemplatesState = () => (
           paddingBlockEnd="none"
           direction="inline"
         >
-          {/* Feature 88 step 92: Create leads to the style gallery, not
-              straight to the editor. The gallery is UNSKIPPABLE — a merchant who
-              likes none of the five patterns picks "Blank", which lands on the
-              same scaffold this button used to open. Label unchanged: the
-              gallery is a step inside creating a template, not a different
-              destination. */}
+          {/* Feature 88 step 92: Create leads to the (unskippable) style gallery, not straight to
+              the editor. A merchant who likes none of the five patterns picks "Blank". Label
+              unchanged — the gallery is a step inside creating, not a different destination. */}
           <s-button href="/app/templates/choose-style" variant="primary">
             Create template
           </s-button>
@@ -121,8 +115,8 @@ const EmptyTemplatesState = () => (
   </s-section>
 );
 
-// Presentational: the page owns the fetcher, modal, App Bridge, and confirm
-// state; the row only renders and calls the handlers it gets as props.
+// Presentational: the page owns the fetcher, modal, App Bridge, and confirm state; the row only
+// renders and calls the handlers it gets as props.
 const TemplateTableRow = ({
   template,
   assignedCounts,
@@ -134,26 +128,23 @@ const TemplateTableRow = ({
   adminAppBase,
 }: {
   template: TemplateListItem;
-  // The streamed assigned-count map (deferred). Shared across every row; each
-  // reads its own count under <Suspense> once it resolves.
+  // The streamed assigned-count map (deferred). Shared across rows; each reads its own count under
+  // <Suspense> once it resolves.
   assignedCounts: Promise<AssignedCounts>;
-  // Disables this row's actions trigger while any mutation is in flight, so a
-  // second row action can't be opened on the shared fetcher mid-mutation.
+  // Disables this row's actions trigger while any mutation is in flight, so a second row action
+  // can't be opened on the shared fetcher mid-mutation.
   busy: boolean;
   onRequestRename: (id: string, name: string) => void;
   onRequestStatus: (id: string, name: string, status: string) => void;
   onDuplicate: (id: string) => void;
   onRequestDelete: (id: string, name: string) => void;
-  // Admin deep-link base (`admin.shopify.com/store/<store>/apps/<client-id>`),
-  // built in the loader. The row name links THROUGH the admin so "open in new
-  // tab" lands in the admin (which re-embeds the app) instead of loading the
-  // app's own origin standalone; a plain left-click still routes in place. All
-  // of that lives in the shared `AdminAppLink` — read its comment before
-  // touching link behavior here.
+  // Admin deep-link base, built in the loader. The row name links THROUGH the admin so "open in new
+  // tab" lands in the admin (which re-embeds the app) instead of the app's own origin standalone; a
+  // left-click routes in place. All of that lives in `AdminAppLink` — read its comment before
+  // touching link behavior.
   adminAppBase: string;
 }) => {
-  // The trigger + menu are per row, so each needs an id derived from the
-  // template id (a cuid — DOM-id safe).
+  // The trigger + menu are per row, so each needs an id derived from the template id (a cuid).
   const menuId = `template-actions-${template.id}`;
 
   return (
@@ -181,10 +172,9 @@ const TemplateTableRow = ({
       </s-table-cell>
       <s-table-cell>{template.rowCount}</s-table-cell>
       <s-table-cell>
-        {/* Streamed column (Fix #4): the table paints immediately; each cell
-            shows a subdued placeholder until the deferred count map resolves,
-            then swaps in the number. A streamed failure degrades to "—" via the
-            errorElement — never a broken row. */}
+        {/* Streamed column (Fix #4): the table paints immediately; each cell shows a placeholder
+            until the deferred count map resolves, then swaps in the number. A streamed failure
+            degrades to "—" via the errorElement. */}
         <Suspense fallback={<s-text color="subdued">…</s-text>}>
           <Await resolve={assignedCounts} errorElement={<>—</>}>
             {(counts: AssignedCounts) => (
@@ -255,9 +245,8 @@ const TemplateTable = ({
   busy: boolean;
   selectedStatus: StatusFilter;
   onSelectStatus: (status: StatusFilter) => void;
-  // Pagination (Phase 2): `paginate` shows the s-table's built-in prev/next
-  // controls (only when there's more than one page); the has*/on* props drive
-  // them. `listLoading` puts the table in its inert loading state while a
+  // Pagination (Phase 2): `paginate` shows the s-table's prev/next controls (only when >1 page); the
+  // has*/on* props drive them. `listLoading` puts the table in its inert loading state while a
   // page/status navigation is fetching.
   paginate: boolean;
   hasNextPage: boolean;
@@ -273,9 +262,8 @@ const TemplateTable = ({
 }) => (
   <s-section accessibilityLabel="Templates table">
     <s-stack direction="block" gap="base">
-      {/* Filter tabs are now buttons, not links: selecting a status filters the
-          already-loaded list in the browser (feature 28) — no server round trip,
-          so it's instant. The selected tab keeps the info badge look. */}
+      {/* Filter tabs are buttons: selecting a status re-runs the loader for that server-side-filtered
+          page (Phase 2). The selected tab keeps the info-badge look. */}
       <s-stack direction="inline" gap="base" alignItems="center">
         <s-text type="strong">Status</s-text>
         {STATUS_FILTER_OPTIONS.map((filter) =>
@@ -315,8 +303,8 @@ const TemplateTable = ({
             <s-table-header>Rows</s-table-header>
             <s-table-header>Assigned Products</s-table-header>
             <s-table-header>Last Updated</s-table-header>
-            {/* Actions column — visually unlabeled, like native index tables;
-                each row's trigger carries its own accessibilityLabel. */}
+            {/* Actions column — visually unlabeled, like native index tables; each row's trigger
+                carries its own accessibilityLabel. */}
             <s-table-header></s-table-header>
           </s-table-header-row>
           <s-table-body>
@@ -343,18 +331,15 @@ const TemplateTable = ({
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   const { admin, session } = await authenticate.admin(request);
 
-  // The shop-row upsert marks install/reinstall (a side effect) and yields
-  // shop.id for the assigned-count lookup — but it does NOT gate the list read.
-  // Kick it off and let it settle in the background so the shop.id round trip is
-  // off the critical path; only the deferred count enrichment below awaits it.
+  // The shop-row upsert marks install/reinstall and yields shop.id for the assigned-count lookup, but
+  // does NOT gate the list read. Kick it off in the background so the shop.id round trip is off the
+  // critical path; only the deferred count enrichment below awaits it.
   const shopPromise = upsertShop(session);
 
-  // Pagination + status filter are now SERVER-SIDE (Phase 2, reversing feature
-  // 28's client filter — a client filter over a paginated read would only filter
-  // the current page). Both live in the URL so a page/filter is bookmarkable and
-  // survives reload. `normalizeStatusFilter` rejects anything not a real tab
-  // (ALL/ACTIVE/DRAFT); `page` is sanitized to a finite 1-based int and then
-  // re-clamped to a real page inside the model.
+  // Pagination + status filter are SERVER-SIDE (Phase 2, reversing feature 28 — a client filter over
+  // a paginated read would only filter the current page). Both live in the URL so a page/filter is
+  // bookmarkable. `normalizeStatusFilter` rejects anything not a real tab; `page` is sanitized to a
+  // finite 1-based int and re-clamped inside the model.
   const url = new URL(request.url);
   const selectedStatus = normalizeStatusFilter(url.searchParams.get("status"));
   const modelStatus: TemplateStatus | null =
@@ -365,23 +350,20 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   );
   const page = Number.isFinite(requestedPage) ? requestedPage : 1;
 
-  // The critical-path read: ONE page of the shop's templates, keyed by the
-  // session domain (so it doesn't wait on `shopPromise`) and WITHOUT the `rows`
-  // blob — the row count is computed in Postgres (step 103 finding F3). Returns
-  // the page plus `totalAll` (drives the first-run empty state) and `pageCount`.
+  // The critical-path read: ONE page of the shop's templates, keyed by the session domain (so it
+  // doesn't wait on `shopPromise`) and WITHOUT the `rows` blob (row count computed in Postgres, F3).
+  // Returns the page plus `totalAll` (drives the empty state) and `pageCount`.
   const pageResult = await listTemplateSummariesForDomain(session.shop, {
     status: modelStatus,
     page,
   });
   const templates = pageResult.templates;
 
-  // "Assigned Products" (feature 48) needs a live Admin API round trip and is
-  // fail-soft / cosmetic ("—" on failure), so it must NOT block first paint.
-  // Return the promise UNAWAITED — React Router streams it and each cell fills in
-  // under <Suspense>. It resolves to a templateId → count map: a template with no
-  // assignment rows is 0 (a NONE match), a live-lookup failure is null ("—"). The
-  // chain is wrapped so any failure (including the shop upsert throwing) degrades
-  // every cell to "—" rather than tripping the streamed error boundary.
+  // "Assigned Products" (feature 48) needs a live Admin round trip and is fail-soft / cosmetic, so it
+  // must NOT block first paint. Return the promise UNAWAITED — React Router streams it and each cell
+  // fills in under <Suspense>. It resolves to a templateId → count map (no assignment rows = 0; a
+  // live-lookup failure = null → "—"). Wrapped so any failure (incl. the shop upsert throwing)
+  // degrades every cell to "—" rather than tripping the streamed error boundary.
   const assignedCounts: Promise<AssignedCounts> = shopPromise
     .then((shop) => resolveAssignedProductCounts(admin, shop.id))
     .then((counts) =>
@@ -396,8 +378,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
       Object.fromEntries(templates.map((template) => [template.id, null])),
     );
 
-  // Admin deep-link base for the template name links — see `adminAppLink.ts`
-  // for why an in-app link must be built this way.
+  // Admin deep-link base for the template name links — see `adminAppLink.ts`.
   const adminAppBase = buildAdminAppBase(
     session.shop,
     // eslint-disable-next-line no-undef
@@ -406,9 +387,8 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
 
   return {
     templates,
-    // `totalAll`, NOT the current page length: a shop with templates that don't
-    // match the active status filter must still see the table chrome + a "no
-    // match" row, never the first-run "create your first template" splash.
+    // `totalAll`, NOT the current page length: a shop with templates that don't match the active
+    // filter must still see the table chrome + a "no match" row, never the first-run splash.
     hasTemplates: pageResult.totalAll > 0,
     selectedStatus,
     page: pageResult.page,
@@ -420,17 +400,14 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   };
 };
 
-// No custom `shouldRevalidate`: status filtering + pagination are server-side
-// (Phase 2), so a ?status= or ?page= change MUST re-run the loader to fetch that
-// page. The default revalidation (every navigation + after every action) is
-// exactly what's wanted — feature 28's skip-on-status-change optimization is gone
-// with the client filter it served.
+// No custom `shouldRevalidate`: filtering + pagination are server-side (Phase 2), so a ?status= or
+// ?page= change MUST re-run the loader. Default revalidation is exactly what's wanted — feature 28's
+// skip-on-status-change optimization is gone with the client filter it served.
 
-// Row actions (feature 26). Same auth surface as the loader. Every branch is
-// shop-scoped through `shop.id` (priority #1 — the reused functions all filter on
-// `shopId`, so the client's `id` can never reach another shop's data) and returns
-// `{ ok }` DATA, not a redirect: React Router auto-revalidates the list loader
-// after the fetcher settles, so the table refreshes in place with no navigation.
+// Row actions (feature 26). Same auth surface as the loader. Every branch is shop-scoped through
+// `shop.id` (priority #1 — the reused functions all filter on `shopId`) and returns `{ ok }` DATA,
+// not a redirect: React Router auto-revalidates the list loader after the fetcher settles, so the
+// table refreshes in place.
 export const action = async ({ request }: ActionFunctionArgs) => {
   const { session, admin } = await authenticate.admin(request);
   const shop = await upsertShop(session);
@@ -446,10 +423,8 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     return { ok: false as const, error: "Missing template id" };
   }
 
-  // Rename: touch the name only — `renameTemplateForShop` never resends rows, so a
-  // list rename (which holds no in-memory rows) can't clobber them. The server
-  // re-validates the name (never trusts the client); pass the raw payload value
-  // through. Returns `{ ok }` DATA so the list revalidates the row in place.
+  // Rename: touch the name only — `renameTemplateForShop` never resends rows, so a list rename (which
+  // holds no in-memory rows) can't clobber them. The server re-validates the name.
   if (payload.intent === "rename") {
     const result = await renameTemplateForShop(shop.id, id, payload.name);
     if (!result.ok) {
@@ -458,28 +433,22 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     return { ok: true as const, intent: "rename" as const };
   }
 
-  // Change status (feature 36): rows-untouching, shop-scoped status write, THEN a
-  // storefront metaobject re-sync — the storefront gates visibility on the
-  // metaobject's `status` field (data-model.md §8/§10), so a to/from-ACTIVE change
-  // must re-sync or an ex-ACTIVE template would keep rendering (priority #2). The
-  // sync also upserts the metaobject for a never-synced draft first going Active.
-  // `setTemplateStatusForShop` validates the status and is shop-scoped (priority
-  // #1); the sync client is bound to this shop's Admin token. Returns `{ ok }` DATA
-  // so the list revalidates the badge in place; `syncError` (best-effort — Postgres
-  // is the source of truth) is surfaced so the merchant knows to retry the sync.
+  // Change status (feature 36): rows-untouching shop-scoped status write, THEN a metaobject re-sync —
+  // the storefront gates visibility on the metaobject's `status` field (§8/§10), so a to/from-ACTIVE
+  // change must re-sync or an ex-ACTIVE template keeps rendering (priority #2). The sync also upserts
+  // the metaobject for a never-synced draft first going Active. Returns `{ ok }` DATA so the list
+  // revalidates the badge; `syncError` (best-effort — Postgres is the source of truth) is surfaced.
   if (payload.intent === "status") {
-    // Read the current status first — the gate decision (is this a DRAFT→ACTIVE
-    // transition?) and the rebuild decision (did the ACTIVE set change?) both need
-    // it. Shop-scoped, so a foreign/unknown id reads nothing (priority #1).
+    // Read the current status first — the gate decision (DRAFT→ACTIVE?) and the rebuild decision (did
+    // the ACTIVE set change?) both need it. Shop-scoped, so a foreign/unknown id reads nothing.
     const existing = await getTemplateByIdForShop(shop.id, id);
     if (!existing) {
       return { ok: false as const, error: "Template not found" };
     }
     const current = existing.status;
 
-    // DRAFT→ACTIVE dry-run gate (feature 42): if the template's scope overlaps
-    // another ACTIVE template's scope, BLOCK — write nothing (atomic). Fails
-    // closed (an unverifiable Shopify probe blocks, never silently passes).
+    // DRAFT→ACTIVE dry-run gate (feature 42): if the scope overlaps another ACTIVE template's, BLOCK —
+    // write nothing (atomic). Fails closed (an unverifiable Shopify probe blocks, never passes).
     if (payload.status === "ACTIVE" && current !== "ACTIVE") {
       const gate = await evaluateActivationConflicts(admin, shop.id, id);
       if (!gate.ok) {
@@ -502,10 +471,9 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       result.data,
     );
 
-    // Rebuild + publish the shop routing map only when the ACTIVE set actually
-    // changed (to/from ACTIVE). Best-effort like syncError — Postgres already
-    // holds the durable status write; a routing failure is surfaced, not rolled
-    // back (data-model.md §9).
+    // Rebuild + publish the routing map only when the ACTIVE set actually changed (to/from ACTIVE).
+    // Best-effort like syncError — Postgres holds the durable write; a routing failure is surfaced,
+    // not rolled back (§9).
     let routingError: string | undefined;
     if (shouldRebuildRouting(current, result.data.status)) {
       const routing = await rebuildShopRouting(admin, shop.id);
@@ -522,8 +490,8 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     };
   }
 
-  // Duplicate: clone the SAVED template (DRAFT, fresh row ids) shop-scoped. The
-  // "(copy)" row surfaces at the top after revalidation (orderBy updatedAt desc).
+  // Duplicate: clone the SAVED template (DRAFT, fresh row ids) shop-scoped. The "(copy)" row surfaces
+  // at the top after revalidation (orderBy updatedAt desc).
   if (payload.intent === "duplicate") {
     const result = await duplicateTemplateForShop(shop.id, id);
     if (!result.ok) {
@@ -532,12 +500,11 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     return { ok: true as const, intent: "duplicate" as const };
   }
 
-  // Delete: mirror the detail route's ordering exactly — remove the storefront
-  // metaobject FIRST (best-effort) so it can't outlive its template (priority #2),
-  // THEN the durable Postgres row. Read the owned template shop-scoped first for
-  // the metaobject GID; a cross-shop/unknown id reads nothing and `deleteMany` is
-  // a no-op for it anyway (priority #1). The only divergence from the detail
-  // route is the return: `{ ok }` data so the list revalidates in place.
+  // Delete: mirror the detail route's ordering — remove the storefront metaobject FIRST (best-effort)
+  // so it can't outlive its template (priority #2), THEN the durable Postgres row. Read the owned
+  // template shop-scoped first for the GID; a cross-shop/unknown id reads nothing and `deleteMany` is
+  // a no-op (priority #1). Only divergence from the detail route: returns `{ ok }` data so the list
+  // revalidates in place.
   if (payload.intent === "delete") {
     const existing = await getTemplateByIdForShop(shop.id, id);
     if (existing) {
@@ -567,27 +534,24 @@ export default function TemplatesPage() {
   } = useLoaderData<typeof loader>();
   const shopify = useAppBridge();
 
-  // Status filter + page both live in the URL (?status=, ?page=) so the view is
-  // bookmarkable and survives reload. Both are now server-driven: changing either
-  // re-runs the loader (no custom shouldRevalidate). `selectedStatus`/`page` come
-  // from the loader (server-normalized + clamped) so the UI always reflects the
-  // page actually rendered, even if the URL param was stale.
+  // Status filter + page both live in the URL so the view is bookmarkable. Both are server-driven:
+  // changing either re-runs the loader. `selectedStatus`/`page` come from the loader (normalized +
+  // clamped) so the UI always reflects the page actually rendered, even if the URL param was stale.
   const [searchParams, setSearchParams] = useSearchParams();
   const navigation = useNavigation();
   // The table is briefly inert while a status/page navigation loads its data.
   const listLoading = navigation.state === "loading";
 
   const handleSelectStatus = (status: StatusFilter) => {
-    // Changing the filter resets to page 1 (omitting ?page= is page 1) — the old
-    // page number is meaningless against a different result set.
+    // Changing the filter resets to page 1 — the old page number is meaningless against a different
+    // result set.
     setSearchParams(status === "ALL" ? {} : { status }, {
       replace: true,
       preventScrollReset: true,
     });
   };
 
-  // Page turns preserve the current status filter and push history (so Back walks
-  // back through pages). Page 1 drops the ?page= param to keep URLs clean.
+  // Page turns preserve the current status filter and push history. Page 1 drops the ?page= param.
   const goToPage = (nextPage: number) => {
     const params = new URLSearchParams(searchParams);
     if (nextPage <= 1) {
@@ -600,21 +564,17 @@ export default function TemplatesPage() {
   const handleNextPage = () => goToPage(page + 1);
   const handlePreviousPage = () => goToPage(page - 1);
 
-  // One shared fetcher for every row mutation (rename / change-status / duplicate
-  // / delete). They MUST stay mutually exclusive in time — a second submit would
-  // interrupt the first mid-flight (e.g. a Delete cancelling an in-progress
-  // Duplicate) — which the `busy` gate below enforces. After it settles, React
-  // Router revalidates the list loader, so the table is already correct by the
-  // time the toast fires.
+  // One shared fetcher for every row mutation. They MUST stay mutually exclusive in time — a second
+  // submit would interrupt the first mid-flight (e.g. Delete cancelling an in-progress Duplicate) —
+  // which the `busy` gate enforces. After it settles, React Router revalidates the list loader.
   const fetcher = useFetcher<typeof action>();
   const [pendingDelete, setPendingDelete] = useState<{
     id: string;
     name: string;
   } | null>(null);
-  // Rename modal: `pendingRename` carries the target row; `renameValue` is the
-  // controlled field, seeded from the current name on open. A client mirror of
-  // `validateTemplateName` drives the field error + disables the primary button
-  // (the server re-validation in the action is the real gate; this is UX).
+  // Rename modal: `pendingRename` carries the target; `renameValue` is the controlled field, seeded
+  // from the current name. A client mirror of `validateTemplateName` drives the field error +
+  // disables the primary button (the server re-validation is the real gate; this is UX).
   const [pendingRename, setPendingRename] = useState<{
     id: string;
     name: string;
@@ -622,9 +582,8 @@ export default function TemplatesPage() {
   const [renameValue, setRenameValue] = useState("");
   const renameResult = validateTemplateName(renameValue);
 
-  // Status modal (feature 36): `pendingStatus` carries the target row (and its
-  // current status, so Save can be disabled when unchanged); `statusValue` is the
-  // controlled <s-select>, seeded from the current status on open.
+  // Status modal (feature 36): `pendingStatus` carries the target (and its current status, so Save
+  // can be disabled when unchanged); `statusValue` is the controlled <s-select>, seeded on open.
   const [pendingStatus, setPendingStatus] = useState<{
     id: string;
     name: string;
@@ -632,8 +591,8 @@ export default function TemplatesPage() {
   } | null>(null);
   const [statusValue, setStatusValue] = useState("");
 
-  // A JSON submission's payload lives on `fetcher.json` (not `fetcher.formData`);
-  // read it to scope the loading state to a delete specifically.
+  // A JSON submission's payload lives on `fetcher.json` (not `fetcher.formData`); read it to scope
+  // the loading state to a specific intent.
   const inFlightIntent =
     fetcher.state !== "idle" && fetcher.json
       ? (fetcher.json as { intent?: string }).intent
@@ -642,16 +601,14 @@ export default function TemplatesPage() {
   const renaming = inFlightIntent === "rename";
   const duplicating = inFlightIntent === "duplicate";
   const updatingStatus = inFlightIntent === "status";
-  // True while any row mutation is submitting OR its post-submit revalidation is
-  // still loading. Gates every submit handler and disables the row-action triggers
-  // so a merchant can't start a second mutation (e.g. Delete a template while a
-  // copy is still generating) on the shared fetcher.
+  // True while any row mutation is submitting OR its post-submit revalidation is loading. Gates every
+  // submit handler and disables the row-action triggers so a merchant can't start a second mutation
+  // on the shared fetcher.
   const busy = fetcher.state !== "idle";
 
-  // Duplicate is non-destructive on a list, so it fires immediately — no confirm.
-  // The `busy` guard blocks it while any other row mutation is in flight, and also
-  // stops a double-submit: the ⋯ menu closes on click, so a merchant could reopen
-  // it and click Duplicate again before the clone settles, creating two copies.
+  // Duplicate is non-destructive, so it fires immediately — no confirm. The `busy` guard blocks it
+  // while any other mutation is in flight, and stops a double-submit: the ⋯ menu closes on click, so
+  // a merchant could reopen and click Duplicate again before the clone settles, creating two copies.
   const handleDuplicate = (id: string) => {
     if (busy) return;
     fetcher.submit(
@@ -660,8 +617,8 @@ export default function TemplatesPage() {
     );
   };
 
-  // Delete never deletes on first click: open the shared confirm modal naming
-  // the target; the actual submit happens on Confirm.
+  // Delete never deletes on first click: open the shared confirm modal naming the target; the submit
+  // happens on Confirm.
   const handleRequestDelete = (id: string, name: string) => {
     setPendingDelete({ id, name });
     shopify.modal.show(DELETE_MODAL_ID);
@@ -678,9 +635,8 @@ export default function TemplatesPage() {
     setPendingDelete(null);
   };
 
-  // Rename persists immediately (the list has no SaveBar to ride): open the shared
-  // modal seeded with the current name; Confirm submits the trimmed name and the
-  // list revalidates the row in place. Cancel/Esc/outside-click rename nothing.
+  // Rename persists immediately (the list has no SaveBar): open the shared modal seeded with the
+  // current name; Confirm submits the trimmed name and the row revalidates. Cancel/Esc renames nothing.
   const handleRequestRename = (id: string, name: string) => {
     setPendingRename({ id, name });
     setRenameValue(name);
@@ -698,10 +654,8 @@ export default function TemplatesPage() {
     setPendingRename(null);
   };
 
-  // Change status persists immediately (the list has no SaveBar): open the shared
-  // modal seeded with the row's current status; Confirm submits the picked status
-  // and the list revalidates the badge in place. Cancel/Esc/outside-click change
-  // nothing.
+  // Change status persists immediately: open the shared modal seeded with the row's current status;
+  // Confirm submits the picked status and the badge revalidates. Cancel/Esc changes nothing.
   const handleRequestStatus = (id: string, name: string, status: string) => {
     setPendingStatus({ id, name, status });
     setStatusValue(status);
@@ -710,8 +664,8 @@ export default function TemplatesPage() {
   const statusUnchanged =
     pendingStatus !== null && statusValue === pendingStatus.status;
   const handleStatusConfirm = () => {
-    // No-op guards: nothing pending, a mutation in flight, or the status wasn't
-    // actually changed (skip a needless write + metaobject re-sync).
+    // No-op guards: nothing pending, a mutation in flight, or the status wasn't changed (skip a
+    // needless write + metaobject re-sync).
     if (!pendingStatus || busy || statusUnchanged) return;
     fetcher.submit(
       { intent: "status", id: pendingStatus.id, status: statusValue },
@@ -723,17 +677,15 @@ export default function TemplatesPage() {
     setPendingStatus(null);
   };
 
-  // Duplicate has no modal to host a spinner (delete/rename do) and the ⋯ menu
-  // closes on click, so there's nowhere to show inline progress. Toggle App
-  // Bridge's global loading indicator (the admin top progress bar) while the clone
-  // is in flight, so the merchant sees their request is being processed; the
-  // settle effect below then fires the "Template duplicated" toast.
+  // Duplicate has no modal to host a spinner and the ⋯ menu closes on click, so there's nowhere to
+  // show inline progress. Toggle App Bridge's global loading indicator (the admin top progress bar)
+  // while the clone is in flight; the settle effect below fires the "Template duplicated" toast.
   useEffect(() => {
     shopify.loading(duplicating);
   }, [duplicating, shopify]);
 
-  // Surface the success/error toast once the submission settles. On a successful
-  // delete, also close the modal + clear the pending target.
+  // Surface the success/error toast once the submission settles. On a successful delete, also close
+  // the modal + clear the pending target.
   useEffect(() => {
     if (fetcher.state !== "idle" || !fetcher.data) return;
     const data = fetcher.data;
@@ -754,15 +706,12 @@ export default function TemplatesPage() {
       setPendingRename(null);
       shopify.toast.show("Template renamed");
     } else if (data.intent === "status") {
-      // The status IS persisted (Postgres is the source of truth); the metaobject
-      // re-sync is best-effort, so surface a sync failure honestly rather than a
-      // bare success — otherwise a merchant could think an ex-ACTIVE table stopped
-      // rendering when its metaobject is still stale.
       shopify.modal.hide(STATUS_MODAL_ID);
       setPendingStatus(null);
-      // Both storefront-delivery writes are best-effort (Postgres is the source
-      // of truth); surface whichever failed so the merchant knows to retry rather
-      // than a bare success. The routing rebuild only ran on an ACTIVE-set change.
+      // Both storefront-delivery writes are best-effort (Postgres is the source of truth); surface
+      // whichever failed so the merchant knows to retry rather than a bare success — otherwise they
+      // could think an ex-ACTIVE table stopped rendering when its metaobject is still stale. The
+      // routing rebuild only ran on an ACTIVE-set change.
       const deliveryWarning = data.syncError ?? data.routingError;
       if (deliveryWarning) {
         shopify.toast.show(deliveryWarning, { isError: true });
@@ -774,11 +723,9 @@ export default function TemplatesPage() {
 
   return (
     <s-page heading="Templates" inlineSize={hasTemplates ? "large" : "base"}>
-      {/* Feature 88 step 92 — the list's Create entry point, repointed at the
-          style gallery alongside the empty state's. These two are the ONLY
-          links into the create flow, which is what makes the gallery
-          unskippable and what makes `basedOnPreset: null` mean "chose Blank"
-          on every template created from here on. */}
+      {/* Feature 88 step 92 — the list's Create entry, repointed at the style gallery alongside the
+          empty state's. These two are the ONLY links into the create flow, which is what makes the
+          gallery unskippable and `basedOnPreset: null` mean "chose Blank". */}
       <s-button
         slot="primary-action"
         variant="primary"
@@ -810,13 +757,12 @@ export default function TemplatesPage() {
         />
       )}
 
-      {/* Single shared delete-confirm modal — never deletes on first click;
-          Cancel / Esc / outside-click hide + clear and delete nothing. */}
+      {/* Single shared delete-confirm modal — never deletes on first click; Cancel / Esc /
+          outside-click hide + clear and delete nothing. */}
       <s-modal id={DELETE_MODAL_ID} heading="Delete template">
         <s-stack direction="block" gap="base">
-          {/* The banner carries the "permanent" warning; the paragraph must not
-              repeat it ("permanently removes"). Kept in step with the editor's
-              copy of this modal in `TemplateHeaderActions`. */}
+          {/* The banner carries the "permanent" warning; the paragraph must not repeat it. Kept in
+              step with the editor's copy of this modal in `TemplateHeaderActions`. */}
           <s-banner tone="warning">This action cannot be undone.</s-banner>
           <s-paragraph>
             Delete “{pendingDelete?.name ?? ""}”? This removes the template and
@@ -841,10 +787,8 @@ export default function TemplatesPage() {
         </s-button>
       </s-modal>
 
-      {/* Single shared rename modal — immediate-persist (no SaveBar on the list).
-          Seeded with the current name; the client mirror of validateTemplateName
-          disables Rename while the name is invalid. Cancel/Esc/outside-click clear
-          and rename nothing. */}
+      {/* Single shared rename modal — immediate-persist. Seeded with the current name; the client
+          mirror of validateTemplateName disables Rename while invalid. Cancel/Esc renames nothing. */}
       <s-modal id={RENAME_MODAL_ID} heading="Rename template">
         <s-text-field
           label="Template name"
@@ -874,10 +818,9 @@ export default function TemplatesPage() {
         </s-button>
       </s-modal>
 
-      {/* Single shared status modal (feature 36) — immediate-persist (no SaveBar on
-          the list). Seeded with the row's current status; Save is disabled while a
-          mutation is in flight OR the status is unchanged (skips a needless write +
-          storefront re-sync). Cancel/Esc/outside-click change nothing. */}
+      {/* Single shared status modal (feature 36) — immediate-persist. Seeded with the row's current
+          status; Save is disabled while a mutation is in flight OR the status is unchanged (skips a
+          needless write + re-sync). Cancel/Esc changes nothing. */}
       <s-modal id={STATUS_MODAL_ID} heading="Change status">
         <s-stack direction="block" gap="base">
           <s-select

@@ -7,39 +7,29 @@ import {
 import type { ScopeSelector } from "../utils/assignmentOverlap";
 import { getTemplateByIdForShop } from "./template.server";
 
-// Scope kinds that may carry MORE THAN ONE value on a single template (feature 46):
-// "selected products" / "selected collections". Every other kind is single-valued
-// PER TEMPLATE — ALL_PRODUCTS carries no value; a product has exactly one type and
-// one vendor. IMPORTANT: this is a DIFFERENT predicate from assignmentOverlap.ts's
-// private `SINGLE_VALUED` ({PRODUCT, PRODUCT_TYPE, VENDOR} — "single-valued PER
-// PRODUCT", which drives the DISJOINT set-algebra). They answer different questions
-// ("multi per template" vs "single per product") and disagree on PRODUCT and
-// ALL_PRODUCTS; do NOT conflate them.
+// Scope kinds that may carry MORE THAN ONE value on one template (feature 46): "selected
+// products" / "selected collections". Every other kind is single-valued per template.
+// ⚠️ DIFFERENT predicate from assignmentOverlap.ts's private `SINGLE_VALUED` ({PRODUCT,
+// PRODUCT_TYPE, VENDOR} — "single-valued PER PRODUCT", which drives the DISJOINT set-algebra).
+// They answer different questions and disagree on PRODUCT/ALL_PRODUCTS; do NOT conflate them.
 const MULTI_VALUE_SCOPES: ReadonlySet<AssignmentScopeValue> = new Set([
   "PRODUCT",
   "COLLECTION",
 ]);
 
-// Persistence for a template's assignment rules. The primary INCLUDE scope rule
-// (feature 37, "one scope per template", data-model.md §9) AND its EXCLUDE
-// carve-outs (feature 45 — the `mode: EXCLUDE`, `scope: PRODUCT` rows that carve
-// specific products out of a broad INCLUDE rule). The two modes are written by
-// SEPARATE functions that each touch ONLY their own `mode`, so a scope change never
-// disturbs the carve-outs and vice versa (the `@@unique(shopId, templateId, scope,
-// scopeValue, mode)` lets an INCLUDE row and an EXCLUDE row coexist per template).
-// No Shopify side effects here — rules live only in Postgres while a template is
-// DRAFT; projection to the storefront routing metafield happens at activation
-// (feature 42), never on a bare rule write.
+// Persistence for a template's assignment rules: the primary INCLUDE scope rule (feature 37,
+// "one scope per template", data-model.md §9) AND its EXCLUDE carve-outs (feature 45). The two
+// modes are written by SEPARATE functions that each touch ONLY their own `mode`, so a scope
+// change never disturbs the carve-outs and vice versa (the @@unique lets an INCLUDE row and an
+// EXCLUDE row coexist per template). No Shopify side effects — rules live only in Postgres while
+// DRAFT; projection to the routing metafield happens at activation (feature 42).
 //
-// Shop isolation (priority #1) is enforced on every path: reads/deletes are scoped
-// by `shopId`, and the write paths prove template ownership via
-// `getTemplateByIdForShop` before creating a rule, so a rule can never bind to
-// another shop's template.
+// Shop isolation (priority #1) on every path: reads/deletes are scoped by `shopId`, and the write
+// paths prove template ownership via `getTemplateByIdForShop` before creating a rule.
 
 /**
- * The template's single INCLUDE scope rule, or `null` if it has none. Read
- * shop-scoped — a foreign `templateId` (or one owned by another shop) matches no
- * row and returns `null`, never another shop's rule.
+ * The template's single INCLUDE scope rule, or null. Read shop-scoped — a foreign templateId
+ * matches no row and returns null, never another shop's rule.
  */
 export async function getAssignmentForTemplate(
   shopId: string,
@@ -51,13 +41,10 @@ export async function getAssignmentForTemplate(
 }
 
 /**
- * All of a template's INCLUDE rows as scope selectors (feature 46) — `[]` when the
- * template has no scope. INCLUDE-only and shop-scoped (a foreign/unknown template
- * matches nothing → `[]`), so EXCLUDE carve-out rows (feature 45) are never returned
- * as candidate selectors. Feeds the activation gate's candidate set and the editor
- * action's scope-change diff. With the multi-value relaxation a template may hold
- * 1..N PRODUCT/COLLECTION rows, so this returns the whole set (unlike the single-row
- * `getAssignmentForTemplate` the loader still uses for the single-select UI).
+ * All of a template's INCLUDE rows as scope selectors (feature 46) — [] when none. INCLUDE-only
+ * and shop-scoped, so EXCLUDE carve-out rows (feature 45) are never returned as candidates. Feeds
+ * the activation gate's candidate set and the editor's scope-change diff. A template may hold 1..N
+ * PRODUCT/COLLECTION rows, so this returns the whole set (unlike single-row getAssignmentForTemplate).
  */
 export async function getTemplateIncludeSelectors(
   shopId: string,
@@ -74,28 +61,21 @@ export async function getTemplateIncludeSelectors(
 }
 
 /**
- * Set (create-or-replace) a template's INCLUDE scope from a homogeneous SET of
- * selectors (feature 46). A template's INCLUDE rows all share one scope KIND:
- * exactly one row for ALL_PRODUCTS / PRODUCT_TYPE / VENDOR, or 1..N rows for
- * PRODUCT / COLLECTION (the multi-value kinds — `MULTI_VALUE_SCOPES`). Validates
- * every `(scope, scopeValue)` pair (`validateScope` — rejects unknown scopes, the
- * ALL_PRODUCTS-with-value / valued-scope-without-value mismatches, malformed GIDs)
- * BEFORE any DB call, enforces kind homogeneity + arity, dedupes by value, proves
- * the template belongs to the shop, then replaces the whole INCLUDE set atomically.
+ * Set (create-or-replace) a template's INCLUDE scope from a homogeneous SET of selectors (feature
+ * 46). A template's INCLUDE rows all share one scope KIND: exactly one row for ALL_PRODUCTS /
+ * PRODUCT_TYPE / VENDOR, or 1..N rows for PRODUCT / COLLECTION (MULTI_VALUE_SCOPES). Validates every
+ * pair (`validateScope`) BEFORE any DB call, enforces kind homogeneity + arity, dedupes by value,
+ * proves shop ownership, then replaces the whole INCLUDE set atomically.
  *
- * "One scope kind per template" is guaranteed here, not left to callers: a
- * `$transaction` deletes the template's existing INCLUDE row(s) and creates the new
- * set, so a scope change can't leave a stale rule behind. Only `mode: INCLUDE` rows
- * are replaced — EXCLUDE carve-outs (feature 45) survive — EXCEPT the Decision-C
- * cleanup: any `EXCLUDE PRODUCT` row whose GID is now in the new INCLUDE PRODUCT set
- * is deleted in the same transaction. A template that both INCLUDEs and EXCLUDEs the
- * same product is self-contradictory — `byProduct` beats the exclude gate on the
- * storefront (feature 45 Decision B), so the EXCLUDE is inert AND, left in place,
- * would fool the activation gate's exclude-subtraction into resolving a real
- * collision (Decision C). Invariant: a template's INCLUDE PRODUCT set and its
- * EXCLUDE PRODUCT set are disjoint.
+ * "One scope kind per template" is guaranteed here: a `$transaction` deletes the existing INCLUDE
+ * row(s) and creates the new set. Only INCLUDE rows are replaced — EXCLUDE carve-outs survive —
+ * EXCEPT the Decision-C cleanup: any `EXCLUDE PRODUCT` row whose GID is now in the new INCLUDE
+ * PRODUCT set is deleted in the same transaction. A template that both INCLUDEs and EXCLUDEs the
+ * same product is self-contradictory (byProduct beats the exclude gate on the storefront, Decision
+ * B) AND, left in place, would fool the activation gate's exclude-subtraction (Decision C).
+ * Invariant: a template's INCLUDE PRODUCT set and EXCLUDE PRODUCT set are disjoint.
  *
- * An empty set is rejected — callers CLEAR via `clearTemplateScope`, not `[]` here.
+ * An empty set is rejected — callers CLEAR via `clearTemplateScope`, not [] here.
  */
 export async function setTemplateScope(
   shopId: string,
@@ -109,9 +89,8 @@ export async function setTemplateScope(
     };
   }
 
-  // Validate every (scope, scopeValue) pair first — a single invalid selector
-  // rejects the whole write, before any DB call (defense in depth; the client and
-  // the action already validate). validateScope trims + normalizes each value.
+  // Validate every pair first — a single invalid selector rejects the whole write, before any DB
+  // call. validateScope trims + normalizes each value.
   const validated: {
     scope: AssignmentScopeValue;
     scopeValue: string | null;
@@ -133,8 +112,8 @@ export async function setTemplateScope(
     };
   }
 
-  // Arity: only PRODUCT / COLLECTION may carry more than one value. (This is the
-  // MULTI_VALUE_SCOPES predicate — NOT assignmentOverlap's per-product SINGLE_VALUED.)
+  // Arity: only PRODUCT / COLLECTION may carry more than one value (MULTI_VALUE_SCOPES — NOT
+  // assignmentOverlap's per-product SINGLE_VALUED).
   if (!MULTI_VALUE_SCOPES.has(kind) && validated.length > 1) {
     return { ok: false as const, error: "This scope takes a single value" };
   }
@@ -153,8 +132,8 @@ export async function setTemplateScope(
     return { ok: false as const, error: "Template not found" };
   }
 
-  // The new INCLUDE set's PRODUCT GIDs — drive the Decision-C EXCLUDE cleanup below
-  // (only a PRODUCT INCLUDE can collide with a PRODUCT-scoped EXCLUDE carve-out).
+  // The new INCLUDE set's PRODUCT GIDs — drive the Decision-C EXCLUDE cleanup below (only a PRODUCT
+  // INCLUDE can collide with a PRODUCT-scoped EXCLUDE carve-out).
   const includedProductGids =
     kind === "PRODUCT"
       ? rows.map((r) => r.scopeValue).filter((v): v is string => v !== null)
@@ -194,10 +173,9 @@ export async function setTemplateScope(
 }
 
 /**
- * Remove a template's INCLUDE scope rule (it then matches nothing). Shop-scoped
- * `deleteMany` — a foreign id matches nothing and is a no-op (`count === 0`),
- * never a cross-shop delete. Leaves EXCLUDE rows untouched (feature 45). Returns
- * the affected `count` so a caller can tell a real removal from a no-op.
+ * Remove a template's INCLUDE scope rule (it then matches nothing). Shop-scoped `deleteMany` — a
+ * foreign id is a no-op (`count === 0`), never a cross-shop delete. Leaves EXCLUDE rows untouched
+ * (feature 45). Returns `count` so a caller can tell a real removal from a no-op.
  */
 export async function clearTemplateScope(shopId: string, templateId: string) {
   const result = await prisma.productAssignment.deleteMany({
@@ -206,9 +184,8 @@ export async function clearTemplateScope(shopId: string, templateId: string) {
   return { ok: true as const, count: result.count };
 }
 
-/** The other-ACTIVE-template comparison row the dry-run gate (feature 42)
- *  partitions the candidate against — the template's identity (for messaging)
- *  plus its INCLUDE selector. */
+/** The other-ACTIVE-template comparison row the dry-run gate (feature 42) partitions the candidate
+ *  against — the template's identity (for messaging) plus its INCLUDE selector. */
 export type ActiveIncludeScope = {
   templateId: string;
   templateName: string;
@@ -217,18 +194,14 @@ export type ActiveIncludeScope = {
 };
 
 /**
- * The comparison set for the DRAFT→ACTIVE dry-run gate (feature 42): every OTHER
- * ACTIVE template in this shop that carries an INCLUDE scope, as
- * `{ templateId, templateName, scope, scopeValue }`.
+ * The comparison set for the DRAFT→ACTIVE dry-run gate (feature 42): every OTHER ACTIVE template in
+ * this shop that carries an INCLUDE scope.
  *
- * Shop isolation (priority #1): filtered `where { shopId }`, so a candidate can
- * only ever be compared against its own shop's ACTIVE rules — never another
- * shop's. `templateId: { not: excludeTemplateId }` drops the candidate itself so
- * an already-ACTIVE template being scope-edited (feature 44) can't "conflict"
- * with its own rule. Filtering on `template: { status: ACTIVE }` means a
- * scope-less ACTIVE template (no INCLUDE row) is naturally absent — it matches no
- * products, so it can't collide. One INCLUDE rule per template (feature 37), so
- * this yields at most one row per ACTIVE template.
+ * Shop isolation (priority #1): filtered `where { shopId }`. `templateId: { not: excludeTemplateId }`
+ * drops the candidate itself so an already-ACTIVE template being scope-edited can't "conflict" with
+ * its own rule. `template: { status: ACTIVE }` means a scope-less ACTIVE template (no INCLUDE row) is
+ * naturally absent — it matches no products, so it can't collide. One INCLUDE rule per template, so
+ * at most one row per ACTIVE template.
  */
 export async function getActiveIncludeScopesExcept(
   shopId: string,
@@ -258,21 +231,17 @@ export async function getActiveIncludeScopesExcept(
 }
 
 // --- EXCLUDE carve-outs (feature 45) ---------------------------------------
-// A carve-out is a `mode: EXCLUDE`, `scope: PRODUCT` row whose `scopeValue` is the
-// excluded product's GID. These carve specific products out of a broad INCLUDE
-// rule (e.g. "all products EXCEPT product X"): the storefront resolver renders
-// nothing for an excluded product's broad tiers, and the activation gate subtracts
-// them (feature 45 Decision A). Written as a set (create-or-replace), touching ONLY
-// EXCLUDE rows so the INCLUDE scope survives — the exact mirror of setTemplateScope.
+// A carve-out is a `mode: EXCLUDE`, `scope: PRODUCT` row whose scopeValue is the excluded product's
+// GID, carving specific products out of a broad INCLUDE rule ("all products EXCEPT X"): the
+// storefront renders nothing for an excluded product's broad tiers, and the activation gate
+// subtracts them (Decision A). Written as a set (create-or-replace), touching ONLY EXCLUDE rows —
+// the mirror of setTemplateScope.
 
 /**
- * Replace a template's EXCLUDE carve-out set with `gids` (each a product GID).
- * Validates every GID via the shared `validateScope("PRODUCT", ...)` (rejecting a
- * non-GID / malformed value BEFORE any DB call), proves the template belongs to the
- * shop (priority #1 — a foreign/unknown template writes nothing), then in ONE
- * `$transaction` deletes the template's existing EXCLUDE rows and creates the new
- * set. Only `mode: EXCLUDE` rows are touched, so the INCLUDE scope is untouched.
- * Duplicate GIDs are collapsed. An empty `gids` clears the carve-outs (delete only).
+ * Replace a template's EXCLUDE carve-out set with `gids` (each a product GID). Validates every GID
+ * via `validateScope("PRODUCT", ...)` BEFORE any DB call, proves shop ownership (priority #1), then
+ * in ONE `$transaction` deletes the existing EXCLUDE rows and creates the new set. Only EXCLUDE rows
+ * are touched, so the INCLUDE scope survives. Duplicates collapse. Empty `gids` clears (delete only).
  */
 export async function setTemplateExcludes(
   shopId: string,
@@ -283,8 +252,8 @@ export async function setTemplateExcludes(
     return { ok: false as const, error: "Invalid excludes" };
   }
 
-  // Validate each GID with the shared PRODUCT validator and dedupe. A single
-  // invalid GID rejects the whole write (atomic — no partial carve-out set).
+  // Validate each GID with the shared PRODUCT validator and dedupe. A single invalid GID rejects
+  // the whole write (atomic — no partial carve-out set).
   const validated: string[] = [];
   const seen = new Set<string>();
   for (const gid of gids) {
@@ -330,9 +299,9 @@ export async function setTemplateExcludes(
 }
 
 /**
- * The template's EXCLUDE carve-out GIDs (shop-scoped) for the editor loader. A
- * foreign/unknown template matches no row and returns `[]`. Null scopeValues are
- * defensively filtered (an EXCLUDE PRODUCT row always carries a GID).
+ * The template's EXCLUDE carve-out GIDs (shop-scoped) for the editor loader. A foreign/unknown
+ * template returns []. Null scopeValues are defensively filtered (an EXCLUDE PRODUCT row always
+ * carries a GID).
  */
 export async function getExcludesForTemplate(
   shopId: string,
@@ -353,11 +322,10 @@ export async function getExcludesForTemplate(
 }
 
 /**
- * The other ACTIVE templates' EXCLUDE carve-out GIDs, keyed by templateId, for the
- * activation gate (feature 45 Decision A — subtracting a carve-out that resolves a
- * PRODUCT-level overlap). Shop-scoped (priority #1) and excludes the candidate
- * itself. Only ACTIVE templates' carve-outs matter — a DRAFT/ARCHIVED template
- * doesn't cover any product, so its carve-outs can't resolve a live overlap.
+ * The other ACTIVE templates' EXCLUDE carve-out GIDs, keyed by templateId, for the activation gate
+ * (Decision A — subtracting a carve-out that resolves a PRODUCT-level overlap). Shop-scoped
+ * (priority #1), excludes the candidate itself. Only ACTIVE templates matter — a DRAFT/ARCHIVED
+ * template covers no product, so its carve-outs can't resolve a live overlap.
  */
 export async function getActiveExcludesByTemplate(
   shopId: string,

@@ -1,25 +1,22 @@
-// Fetch the shop's product metafield definitions from the Admin GraphQL API
-// (Editor Step 8). This is the editor's first call out to Shopify.
+// Fetch the shop's product metafield definitions from the Admin GraphQL API (Editor Step 8) — the
+// editor's first call out to Shopify.
 //
-// Native product fields are a platform-defined schema and live as a static
-// constant in `app/utils/shopifyFields.ts`. Metafields are the opposite —
-// merchant-defined `namespace`/`key` pairs that genuinely vary per shop — so
-// they must be fetched, shop-scoped, not hard-coded. Shop isolation here is
-// STRUCTURAL, not a Prisma `where`: `authenticate.admin(request)` binds the
-// GraphQL client to the current shop's Admin token, so this query can only ever
-// return THIS shop's definitions (priority #1 honored, enforced by the session).
+// Native product fields are a platform-defined schema (static in `app/utils/shopifyFields.ts`).
+// Metafields are the opposite — merchant-defined namespace/key pairs that vary per shop — so they
+// must be fetched, shop-scoped. Shop isolation here is STRUCTURAL: `authenticate.admin(request)`
+// binds the client to the current shop's Admin token, so this query can only return THIS shop's
+// definitions (priority #1).
 //
-// File split (per `code-standards.md` File Organization): the live `admin.graphql`
-// call lives here in `app/shopify/` ("All Shopify API calls"); the pure
-// `mapDefinitionsResponse` edge→summary transform is exported alongside it and is
-// the unit-tested part (the live call is mocked at the boundary, not tested).
+// File split (code-standards.md): the live admin.graphql call lives here in `app/shopify/`; the
+// pure `mapDefinitionsResponse` edge→summary transform is exported alongside and is the unit-tested
+// part (the live call is mocked at the boundary).
 
 import type { AdminApiContext } from "@shopify/shopify-app-react-router/server";
 
 /**
- * The flat summary the editor's field picker needs for one product metafield
- * definition. Deliberately lean (≈5 fields), mirroring `NativeShopifyField`'s
- * persisted-vs-display split so Step 9's search can filter it with the same rule.
+ * The flat summary the editor's field picker needs for one product metafield definition.
+ * Deliberately lean, mirroring `NativeShopifyField`'s persisted-vs-display split so Step 9's search
+ * can filter it with the same rule.
  */
 export interface MetafieldDefinitionSummary {
   /** The definition's gid — stable, handy for React keys and debugging. Never persisted. */
@@ -34,10 +31,9 @@ export interface MetafieldDefinitionSummary {
   type: string;
 }
 
-// `first: 250` is the Admin API's max page size; almost every shop's product
-// metafield definitions fit in a single page. MAX_PAGES is a safety backstop set
-// far above any realistic ceiling — if it is ever hit we log what was dropped
-// rather than silently truncating (the "no silent caps" principle).
+// `first: 250` is the Admin API's max page size; almost every shop fits in one page. MAX_PAGES is a
+// safety backstop far above any realistic ceiling — if hit, we log what was dropped rather than
+// silently truncating ("no silent caps").
 const PAGE_SIZE = 250;
 const MAX_PAGES = 10;
 
@@ -63,8 +59,7 @@ const PRODUCT_METAFIELD_DEFINITIONS_QUERY = `#graphql
   }`;
 
 // --- Pure narrowing helpers -------------------------------------------------
-// External JSON is `unknown`; narrow it at the entry point (code-standards.md
-// "validate/sanitize all external input") before it reaches app logic.
+// External JSON is `unknown`; narrow it at the entry point before it reaches app logic.
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
@@ -77,13 +72,12 @@ function asString(value: unknown): string {
 /**
  * One page's worth of edges, narrowed to summaries.
  *
- * Malformed-node rule (locked): `namespace` and `key` are the METAFIELD pill's
- * value-part contract — a definition missing either is unusable as a pill, so it
- * is DROPPED rather than defaulted (defaulting would mint a pill that resolves to
- * nothing on the storefront). `name` falls back to `namespace.key` and `type`
- * falls back to "" when absent, since those are display-only and never persisted.
+ * Malformed-node rule (locked): `namespace` and `key` are the METAFIELD pill's value-part contract
+ * — a definition missing either is unusable as a pill, so it is DROPPED rather than defaulted
+ * (defaulting would mint a pill that resolves to nothing on the storefront). `name` falls back to
+ * `namespace.key` and `type` to "" when absent, since those are display-only and never persisted.
  *
- * Pure: it reads `json` and returns a fresh array, never mutating the source.
+ * Pure: reads `json`, returns a fresh array.
  */
 export function mapDefinitionsResponse(
   json: unknown,
@@ -142,9 +136,8 @@ function readPageInfo(json: unknown): {
 
 /**
  * Fetch ALL of the current shop's product metafield definitions, paging through
- * `pageInfo.hasNextPage` / `endCursor` up to MAX_PAGES. Shop-scoped via the
- * `admin` client's session token (see file header). Throws on a network /
- * GraphQL failure so the resource-route loader can surface `{ ok: false }`.
+ * `pageInfo.hasNextPage` / `endCursor` up to MAX_PAGES. Shop-scoped via the admin client's session
+ * token. Throws on a network / GraphQL failure so the loader can surface `{ ok: false }`.
  */
 export async function fetchProductMetafieldDefinitions(
   admin: AdminApiContext,
@@ -167,8 +160,8 @@ export async function fetchProductMetafieldDefinitions(
     after = endCursor;
   }
 
-  // Cap hit with more pages still available: do not silently truncate — record
-  // that definitions beyond the cap were dropped so it is diagnosable.
+  // Cap hit with more pages available: do not silently truncate — record that definitions beyond
+  // the cap were dropped so it is diagnosable.
   console.warn(
     `[metafieldDefinitions] Reached the ${MAX_PAGES}-page safety cap ` +
       `(${summaries.length} definitions fetched); additional product metafield ` +

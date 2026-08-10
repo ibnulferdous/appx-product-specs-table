@@ -5,36 +5,27 @@ import type {
 import { useId, useRef } from "react";
 import styles from "./SpecTableEditor.module.css";
 
-// The editor's segmented control (reshell A2). Lives in its own module rather
-// than inside `EditorShell.tsx` so every segmented group in the editor is one
-// control — the tab group and the device toggle are the same radiogroup with
-// different options, and a second, divergent copy is exactly what this prevents.
-// Extracted verbatim (no prop, markup, or behaviour change) for feature 75's
-// preview modal, and kept when that modal was removed.
-//
-// It IMPORTS the tripwired `SpecTableEditor.module.css` (`.segGroup` / `.segBtn`)
-// and does not edit it; importing that module is fine, changing it is not.
+// The editor's segmented control (reshell A2). Its own module rather than inside `EditorShell.tsx` so
+// every segmented group is one control — the tab group and the device toggle are the same radiogroup
+// with different options. IMPORTS the tripwired `SpecTableEditor.module.css` (`.segGroup` / `.segBtn`)
+// but never edits it.
 
-// The icon-name union accepted by <s-icon type>, derived from the element's own
-// props so the segmented options stay in lockstep with Polaris (no separate
-// import, no drift).
+// The icon-name union accepted by <s-icon type>, derived from the element's own props so the options
+// stay in lockstep with Polaris (no separate import, no drift).
 export type SIconType = NonNullable<ComponentProps<"s-icon">["type"]>;
 
 export interface SegOption<T extends string> {
   value: T;
   label: string;
   icon: SIconType;
-  // Icon-only segments (the device previews) hide the visible label but keep it
-  // as the button's accessible name.
+  // Icon-only segments hide the visible label but keep it as the button's accessible name.
   hideLabel?: boolean;
 }
 
 // A single-select segmented control. <s-button-group> renders no slot
-// ([[polaris-web-component-gotchas]]), so the segments are plain <button>s; the
-// gray track + white active pill come from Polaris <s-box> background tokens
-// (`subdued` track, `base` active pill) — no hardcoded color. Semantics are a
-// real WAI-ARIA radiogroup: roving tabindex, with arrows / Home / End moving and
-// checking the focused segment.
+// ([[polaris-web-component-gotchas]]), so the segments are plain <button>s; the track + active pill
+// come from <s-box> background tokens (`subdued` / `base`), no hardcoded color. A real WAI-ARIA
+// radiogroup: roving tabindex, arrows / Home / End move and check the focused segment.
 export function SegmentedControl<T extends string>({
   ariaLabel,
   options,
@@ -49,13 +40,11 @@ export function SegmentedControl<T extends string>({
   const buttonsRef = useRef<Array<HTMLButtonElement | null>>([]);
   const activeIndex = options.findIndex((option) => option.value === value);
 
-  // Stable, instance-unique prefix so two SegmentedControls on the page don't
-  // collide on tooltip ids. Only `hideLabel` (icon-only) segments get a tooltip —
-  // labelled segments already show their text, so a tooltip would be redundant.
+  // Stable, instance-unique prefix so two SegmentedControls don't collide on tooltip ids. Only
+  // `hideLabel` (icon-only) segments get a tooltip — labelled ones already show their text.
   const tooltipBase = useId();
-  // `interestFor` is not in React's typings for a native <button>, so attach it via
-  // a spread (JSX spread skips excess-property checks). Empty object for labelled
-  // segments leaves the button untouched.
+  // `interestFor` isn't in React's typings for a native <button>, so attach it via a spread. Empty
+  // object for labelled segments leaves the button untouched.
   const interestProps = (option: SegOption<T>): Record<string, string> =>
     option.hideLabel ? { interestFor: `${tooltipBase}-${option.value}` } : {};
 
@@ -93,9 +82,8 @@ export function SegmentedControl<T extends string>({
 
   return (
     <s-box background="subdued" borderRadius="base" padding="small-400">
-      {/* A radiogroup container is intentionally NOT focusable — focus is managed
-          by roving tabindex on the radios (WAI-ARIA APG), so the key handler lives
-          on the buttons, not here. */}
+      {/* A radiogroup container is intentionally NOT focusable — focus is managed by roving tabindex
+          on the radios (WAI-ARIA APG), so the key handler lives on the buttons. */}
       {/* eslint-disable-next-line jsx-a11y/interactive-supports-focus */}
       <div role="radiogroup" aria-label={ariaLabel} className={styles.segGroup}>
         {options.map((option, index) => {
@@ -110,10 +98,8 @@ export function SegmentedControl<T extends string>({
               role="radio"
               aria-checked={isActive}
               aria-label={option.hideLabel ? option.label : undefined}
-              // Icon-only segments point at a sibling <s-tooltip> so sighted mouse
-              // users get the label on hover/focus (the aria-label already covers
-              // assistive tech). `interestFor` is the same invoker family as the
-              // `commandFor` this build already ships.
+              // Icon-only segments point at a sibling <s-tooltip> for sighted mouse users (the
+              // aria-label covers AT). `interestFor` is the same invoker family as `commandFor`.
               {...interestProps(option)}
               tabIndex={isActive ? 0 : -1}
               className={styles.segBtn}
@@ -143,9 +129,8 @@ export function SegmentedControl<T extends string>({
           );
         })}
       </div>
-      {/* Tooltips for the icon-only segments. Kept OUTSIDE the radiogroup so they
-          don't sit among the role="radio" children; `interestFor` on each button
-          references these by id, so their DOM position is free. */}
+      {/* Tooltips for the icon-only segments, kept OUTSIDE the radiogroup so they don't sit among the
+          role="radio" children; `interestFor` references them by id, so their DOM position is free. */}
       {options
         .filter((option) => option.hideLabel)
         .map((option) => (

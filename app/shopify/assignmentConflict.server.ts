@@ -1,61 +1,47 @@
-// Cross-dimension conflict check (feature 39) — the second half of the
-// DRAFT→ACTIVE dry-run (data-model.md §9). Feature 38's pure resolver
-// (`assignmentOverlap.ts`) settles most scope pairs by string set-algebra and
-// hands the genuinely cross-dimension / multi-valued ones back as `NEEDS_CHECK`.
-// This module resolves those: it renders each undecidable pair into a
-// `products(first: 1, query: A AND B)` existence probe, runs it against the
-// Admin API, and reports a concrete conflict when a product matches both scopes.
-// A non-empty result means ≥1 product is covered by both rules → they overlap →
-// activation must be blocked. Cost is O(needsCheck) tiny queries, never a
-// catalog scan (data-model.md §9).
+// Cross-dimension conflict check (feature 39) — the second half of the DRAFT→ACTIVE dry-run
+// (data-model.md §9). Feature 38's pure resolver settles most scope pairs by string set-algebra and
+// hands the genuinely cross-dimension / multi-valued ones back as `NEEDS_CHECK`. This module
+// resolves those: it renders each undecidable pair into a `products(first: 1, query: A AND B)`
+// existence probe, runs it against the Admin API, and reports a conflict when a product matches both
+// scopes. Cost is O(needsCheck) tiny queries, never a catalog scan.
 //
-// Same conventions as metafieldDefinitions.server.ts / metaobjects.server.ts:
-// the `#graphql` operation was validated with `validate_graphql_codeblocks`
-// against API version 2025-10; the query BUILDER and response NARROWER are pure
-// and unit-tested; the live `admin.graphql` runner is mocked at the boundary,
-// not unit-tested. Shop isolation is STRUCTURAL — `authenticate.admin(request)`
-// binds the client to this shop's Admin token, so a probe can only ever see THIS
-// shop's catalog (priority #1); no `shopId` is threaded because the token IS the
-// isolation.
+// Same conventions as metafieldDefinitions/metaobjects.server.ts: the `#graphql` op was validated
+// against API 2025-10; the query builder + response narrower are pure and unit-tested; the live
+// admin.graphql runner is mocked. Shop isolation is STRUCTURAL — the session-bound client can only
+// see THIS shop's catalog (priority #1); no shopId is threaded because the token IS the isolation.
 //
-// SAFETY BIAS (priority #2, the live storefront): a network / GraphQL failure is
-// NEVER narrowed to "no conflict" — that would let a conflicting template go
-// ACTIVE and break the disjoint invariant. The runner THROWS on any error;
-// feature 42 turns a thrown probe into "couldn't verify — activation blocked",
-// not a silent all-clear.
+// SAFETY BIAS (priority #2, the live storefront): a network / GraphQL failure is NEVER narrowed to
+// "no conflict" — the runner THROWS on any error, and feature 42 turns a thrown probe into
+// "couldn't verify — activation blocked", not a silent all-clear.
 
 import type { AdminApiContext } from "@shopify/shopify-app-react-router/server";
 import type { ScopeSelector, NeedsCheck } from "../utils/assignmentOverlap";
 
-/** A NEEDS_CHECK pair the Shopify probe CONFIRMED shares ≥1 product. Carries the
- *  other template (for feature 42/44 messaging) and a truthful, diagnosable
- *  reason — the rendered probe query. Final merchant-facing copy is feature 44. */
+/** A NEEDS_CHECK pair the Shopify probe CONFIRMED shares ≥1 product. Carries the other template (for
+ *  feature 42/44 messaging) and a truthful reason — the rendered probe query. */
 export type ConfirmedConflict<T> = {
   other: T;
   reason: string;
 };
 
 // --- Pure query builder -----------------------------------------------------
-// Renders one INCLUDE selector into a Shopify product-search query fragment
-// (data-model.md §9). ALL_PRODUCTS never reaches here (feature 38 short-circuits
-// it to OVERLAP), so it is a defensive throw, not a real branch.
+// Renders one INCLUDE selector into a Shopify product-search fragment (data-model.md §9).
+// ALL_PRODUCTS never reaches here (feature 38 short-circuits it to OVERLAP), so it is a defensive
+// throw, not a real branch.
 
 /**
- * Escape a free-form merchant string (product_type / vendor) for use inside a
- * single-quoted Shopify search term. Backslash first (so we don't double-escape
- * the quotes we add), then the single quote — so a value like `O'Neil` or one
- * containing a stray quote / `AND` cannot break out and widen the query
- * (injection safety, a correctness invariant).
+ * Escape a free-form merchant string (product_type / vendor) for a single-quoted Shopify search
+ * term. Backslash first, then the single quote — so `O'Neil` or a stray quote / `AND` cannot break
+ * out and widen the query (injection safety).
  */
 function escapeSearchValue(value: string): string {
   return value.replace(/\\/g, "\\\\").replace(/'/g, "\\'");
 }
 
 /**
- * Pull the numeric id out of a `gid://shopify/<Type>/<id>` selector value and
- * assert it is digits-only — defence-in-depth over feature 37's `gid://` shape
- * check, and so a non-numeric tail can never reach the query unquoted. Throws if
- * the value is not a well-formed GID for `expectedType`.
+ * Pull the numeric id out of a `gid://shopify/<Type>/<id>` selector and assert it is digits-only —
+ * defence-in-depth over feature 37's `gid://` shape check, so a non-numeric tail can never reach the
+ * query unquoted. Throws if the value isn't a well-formed GID for `expectedType`.
  */
 function numericIdFromGid(value: string, expectedType: string): string {
   const prefix = `gid://shopify/${expectedType}/`;
@@ -83,8 +69,8 @@ export function buildScopeFragment(selector: ScopeSelector): string {
   const { scope, scopeValue } = selector;
 
   if (scope === "ALL_PRODUCTS") {
-    // Guard: ALL_PRODUCTS is universal and is always resolved to OVERLAP by
-    // feature 38 before a probe is ever built. Reaching here is a caller bug.
+    // Guard: ALL_PRODUCTS is universal and is always resolved to OVERLAP by feature 38 before a
+    // probe is built. Reaching here is a caller bug.
     throw new Error(
       "[assignmentConflict] ALL_PRODUCTS cannot be a probe selector",
     );
@@ -114,9 +100,8 @@ export function buildScopeFragment(selector: ScopeSelector): string {
 }
 
 /**
- * AND two scope fragments into a single `products(query:…)` existence probe.
- * Order-free (feature 38 guarantees both sides are non-ALL_PRODUCTS), so the two
- * selectors may be passed in either order.
+ * AND two scope fragments into a single `products(query:…)` existence probe. Order-free (feature 38
+ * guarantees both sides are non-ALL_PRODUCTS), so the selectors may be passed in either order.
  */
 export function buildExistenceQuery(
   a: ScopeSelector,
@@ -126,10 +111,9 @@ export function buildExistenceQuery(
 }
 
 // --- Pure response narrower -------------------------------------------------
-// External JSON is `unknown`; narrow it before it reaches app logic. This reads
-// only WHETHER an edge exists (existence, not enumeration). A malformed / absent
-// shape → false; a *successful* empty response → false. GraphQL `errors` are NOT
-// handled here — the runner rejects them first (fail closed).
+// External JSON is `unknown`; narrow before it reaches app logic. Reads only WHETHER an edge exists
+// (existence, not enumeration). A malformed / absent shape → false; a successful empty response →
+// false. GraphQL `errors` are NOT handled here — the runner rejects them first (fail closed).
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
@@ -160,14 +144,12 @@ const CONFLICT_PROBE_QUERY = `#graphql
   }`;
 
 /**
- * Run one `products(first: 1, query: …)` existence probe per NEEDS_CHECK pair and
- * return only the CONFIRMED collisions (≥1 shared product) — the shape feature 42
- * merges into its `blocking` bucket. Probes run sequentially; the count is O(active
- * rules), tiny.
+ * Run one existence probe per NEEDS_CHECK pair and return only the CONFIRMED collisions (≥1 shared
+ * product) — the shape feature 42 merges into its `blocking` bucket. Probes run sequentially; the
+ * count is O(active rules), tiny.
  *
- * FAIL CLOSED: a non-ok HTTP response or a GraphQL `errors` array throws (the
- * whole check fails), never yields a conflict-free verdict — an unverifiable
- * probe must block activation, not silently pass (priority #2).
+ * FAIL CLOSED: a non-ok HTTP response or a GraphQL `errors` array throws (the whole check fails),
+ * never yields a conflict-free verdict — an unverifiable probe must block activation (priority #2).
  */
 export async function checkCrossDimensionConflicts<T extends ScopeSelector>(
   admin: AdminApiContext,

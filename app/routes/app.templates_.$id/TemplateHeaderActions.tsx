@@ -17,18 +17,14 @@ import {
 import type { RowEngine } from "./useRowEngine";
 import type { action as templateAction } from "./route";
 
-// The template-level header controls (feature 20): a read-only status badge plus a
-// "More actions" <s-menu> (Rename / Duplicate / Delete) with two lifecycle
-// <s-modal>s. Rendered as direct children of the page's <s-page> (via slot=...)
-// ABOVE the editor's inert freeze wrapper, so the commands stay reachable during
-// an in-flight save — which is exactly why template-level actions live in the
-// header, not the row-scoped editor body (the editor already has a per-row
-// Duplicate + delete ✕; verb+noun labels here disambiguate).
+// The template-level header controls (feature 20): a read-only status badge plus a "More actions"
+// <s-menu> (Rename / Duplicate / Delete) with two lifecycle <s-modal>s. Rendered as direct children of
+// <s-page> (via slot=...) ABOVE the editor's inert freeze wrapper, so the commands stay reachable
+// during an in-flight save.
 //
-// Rename rides the existing dirty/Save flow: it just sets `engine.name`, which
-// flips isDirty and opens the SaveBar; persistence happens on Save. Duplicate and
-// Delete are navigational — each uses its OWN fetcher (so their request state
-// never collides with the SaveBar's `saving`) and the route action redirects.
+// Rename rides the dirty/Save flow: it sets `engine.name`, flipping isDirty and opening the SaveBar;
+// persistence happens on Save. Duplicate and Delete are navigational — each uses its OWN fetcher (so
+// their request state never collides with the SaveBar's `saving`) and the action redirects.
 export function TemplateHeaderActions({
   engine,
   template,
@@ -39,14 +35,11 @@ export function TemplateHeaderActions({
   const shopify = useAppBridge();
   const { saving, isDirty, setName } = engine;
 
-  // Lifecycle actions need a persisted template; on the create-on-first-save
-  // sentinel there is nothing to clone or delete yet, so Duplicate/Delete are
-  // hidden. Rename stays enabled — it edits the in-memory name carried into
-  // create-on-first-save.
+  // Lifecycle actions need a persisted template; on the create-on-first-save sentinel there's nothing
+  // to clone or delete yet, so Duplicate/Delete are hidden. Rename stays enabled.
   const isNew = template.id === "new";
 
-  // Separate fetchers so Duplicate/Delete request state never collides with the
-  // SaveBar's saving state.
+  // Separate fetchers so Duplicate/Delete request state never collides with the SaveBar's saving state.
   const duplicateFetcher = useFetcher<typeof templateAction>();
   const deleteFetcher = useFetcher<typeof templateAction>();
   const duplicating = duplicateFetcher.state !== "idle";
@@ -56,8 +49,8 @@ export function TemplateHeaderActions({
   const [renameValue, setRenameValue] = useState(template.name);
   const renameResult = validateTemplateName(renameValue);
 
-  // Surface a failed Duplicate (the success path redirects, so it returns no
-  // data). Delete always redirects, so it has no error path to surface here.
+  // Surface a failed Duplicate (the success path redirects, returning no data). Delete always
+  // redirects, so it has no error path here.
   useEffect(() => {
     const data = duplicateFetcher.data;
     if (duplicateFetcher.state === "idle" && data && data.ok === false) {
@@ -67,11 +60,9 @@ export function TemplateHeaderActions({
     }
   }, [duplicateFetcher.state, duplicateFetcher.data, shopify]);
 
-  // Defense in depth: if a save somehow starts while a lifecycle modal is open,
-  // hide it — both modals portal OUTSIDE the editor's inert freeze (like the
-  // Insert-field modal and the SaveBar), so the freeze cannot reach their buttons.
-  // The menu items are also disabled while saving. Hiding an already-hidden modal
-  // is a no-op.
+  // Defense in depth: if a save starts while a lifecycle modal is open, hide it — both portal OUTSIDE
+  // the editor's inert freeze, so the freeze can't reach their buttons. The menu items are also
+  // disabled while saving.
   useEffect(() => {
     if (saving) {
       shopify.modal.hide(RENAME_MODAL_ID);
@@ -92,8 +83,8 @@ export function TemplateHeaderActions({
 
   const handleDuplicate = async () => {
     if (saving || duplicating) return;
-    // The clone reflects SAVED state; warn before discarding unsaved edits. When
-    // not dirty there is no save bar, so leaveConfirmation resolves immediately.
+    // The clone reflects SAVED state; warn before discarding unsaved edits. Not dirty → no save bar,
+    // so leaveConfirmation resolves immediately.
     if (isDirty) {
       try {
         await shopify.saveBar.leaveConfirmation();
@@ -110,19 +101,13 @@ export function TemplateHeaderActions({
   const handleOpenDelete = () => shopify.modal.show(DELETE_MODAL_ID);
   const handleDeleteConfirm = () => {
     if (deleting) return;
-    // The confirmation modal is the unsaved-edits guard: deleting discards any
-    // pending edits by definition (the copy below warns of this). Keep the modal
-    // open with the button in its loading state until the redirect navigates away.
+    // The confirmation modal is the unsaved-edits guard: deleting discards pending edits by definition.
     //
-    // Dismiss the contextual save bar BEFORE navigating. Delete redirects to the
-    // template LIST (route.tsx), which renders no <SaveBar>, and `open` here is
-    // bound to engine.isDirty — which never flips false on delete (we discard, not
-    // save). So nothing tells the host to close the "Unsaved changes" bar, and the
-    // React <SaveBar>'s unmount-time hide() does not reliably reach the host during
-    // a programmatic redirect (the element disconnects around the hide message), so
-    // the bar would linger on the list page. Hide it imperatively; hiding an
-    // already-hidden bar is a no-op. (Duplicate has no such issue — it lands on
-    // another editor whose fresh <SaveBar> mounts with open=false.)
+    // Dismiss the contextual save bar BEFORE navigating. Delete redirects to the LIST, which renders no
+    // <SaveBar>, and `open` here is bound to engine.isDirty — which never flips false on delete (we
+    // discard, not save). The React <SaveBar>'s unmount-time hide() doesn't reliably reach the host
+    // during a programmatic redirect, so the bar would linger on the list page. Hide it imperatively.
+    // (Duplicate has no such issue — it lands on another editor whose fresh <SaveBar> mounts open=false.)
     shopify.saveBar.hide(SAVE_BAR_ID);
     deleteFetcher.submit(
       { intent: "delete" },
@@ -133,8 +118,8 @@ export function TemplateHeaderActions({
 
   return (
     <>
-      {/* Read-only status indicator. Reads the PERSISTED status from the loader,
-          not engine state — after a Save revalidates the loader, it re-tones. */}
+      {/* Read-only status indicator. Reads the PERSISTED status from the loader, not engine state —
+          after a Save revalidates the loader, it re-tones. */}
       <s-badge slot="accessory" tone={BADGE_TONES[template.status]}>
         {template.status}
       </s-badge>
@@ -175,9 +160,8 @@ export function TemplateHeaderActions({
         )}
       </s-menu>
 
-      {/* Rename — edits the in-memory name only; the SaveBar persists it. Copy
-          stays neutral so it does not imply immediate DB persistence (notably on
-          the /new sentinel, where nothing is persisted until the first Save). */}
+      {/* Rename — edits the in-memory name only; the SaveBar persists it. Copy stays neutral so it
+          doesn't imply immediate DB persistence (notably on /new, where nothing persists until Save). */}
       <s-modal id={RENAME_MODAL_ID} heading="Rename template">
         <s-text-field
           label="Template name"
@@ -205,10 +189,7 @@ export function TemplateHeaderActions({
       {isNew ? null : (
         <s-modal id={DELETE_MODAL_ID} heading="Delete template">
           <s-stack direction="block" gap="base">
-            {/* The banner carries the "permanent" warning, so the paragraph
-                below must not repeat it ("permanently removes"), and the old
-                "Any unsaved edits will be lost" was moot — the template itself
-                is going away. */}
+            {/* The banner carries the "permanent" warning, so the paragraph must not repeat it. */}
             <s-banner tone="warning">This action cannot be undone.</s-banner>
             <s-paragraph>
               Deleting “{engine.name}” removes the template and its storefront

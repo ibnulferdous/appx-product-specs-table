@@ -1,30 +1,24 @@
 import { useId } from "react";
 import type { RowEngine } from "./useRowEngine";
 
-// The contextual bulk-action bar (feature 29) that takes over the toolbar's LEFT
-// cell while a selection exists — the standard Shopify/Polaris resource-list
-// "N selected" pattern. It holds the selection count and a critical Delete; the
-// `Rows: N / 200` counter in the toolbar's right cell stays visible alongside it.
-// Select-all / clear is driven by the tristate header checkbox in RowGrid, not a
-// button here. Presentational — every value + handler comes from the engine.
+// The contextual bulk-action bar (feature 29) that takes over the toolbar's LEFT cell while a
+// selection exists — the standard "N selected" pattern. Holds the count and a critical Delete;
+// select-all is driven by the tristate header checkbox in RowGrid, not here. Presentational.
 export function BulkActionsBar({ engine }: { engine: RowEngine }) {
   const { selectedCount, requestDeleteSelected, clearSelection } = engine;
 
   const countWord = selectedCount === 1 ? "row" : "rows";
 
-  // Instance-unique id linking the icon-only clear button to its <s-tooltip> via
-  // `interestFor` (same invoker family as the `commandFor` this build ships) — the
-  // codebase's icon-only tooltip pattern (see the SegmentedControl in EditorShell).
+  // Instance-unique id linking the icon-only clear button to its <s-tooltip> via `interestFor` — the
+  // codebase's icon-only tooltip pattern (see SegmentedControl).
   const clearTooltipId = useId();
 
   return (
     <>
       <s-stack direction="inline" gap="base" alignItems="center">
-        {/* Clear selection — the icon-only escape hatch the Polaris bulk-action bar
-            expects, so the merchant can drop a selection without scrolling back up
-            to the tristate header checkbox. Mirrors that checkbox's clear path.
-            `accessibilityLabel` names it for assistive tech; the <s-tooltip> below
-            (via `interestFor`) surfaces the same label to sighted hover/focus. */}
+        {/* Clear selection — an icon-only escape hatch so the merchant can drop a selection without
+            scrolling to the header checkbox. `accessibilityLabel` names it for AT; the <s-tooltip>
+            (via `interestFor`) surfaces the same label on hover/focus. */}
         <s-button
           variant="tertiary"
           icon="x"
@@ -35,15 +29,13 @@ export function BulkActionsBar({ engine }: { engine: RowEngine }) {
         <s-text fontVariantNumeric="tabular-nums">
           {selectedCount} {countWord} selected
         </s-text>
-        {/* Destructive: routes through requestDeleteSelected, which confirms via a
-            modal for 3+ rows (and select-all → Delete) and applies 1–2 immediately. */}
+        {/* Destructive: `requestDeleteSelected` confirms via a modal for 3+ rows and applies 1–2 now. */}
         <s-button tone="critical" onClick={requestDeleteSelected}>
           Delete
         </s-button>
       </s-stack>
-      {/* Tooltip for the icon-only clear button — kept OUTSIDE the inline stack so
-          it doesn't occupy a flex/gap slot; `interestFor` references it by id, so
-          its DOM position is free. */}
+      {/* Tooltip for the clear button — OUTSIDE the inline stack so it doesn't occupy a flex/gap slot;
+          `interestFor` references it by id, so its DOM position is free. */}
       <s-tooltip id={clearTooltipId}>Clear selection</s-tooltip>
     </>
   );

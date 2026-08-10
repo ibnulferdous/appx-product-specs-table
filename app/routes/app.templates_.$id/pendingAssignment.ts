@@ -1,17 +1,14 @@
 import { SCOPE_NONE, validateScope } from "../../utils/assignmentScope";
 import type { ScopeSelector } from "../../utils/assignmentOverlap";
 
-// Pure parsing / diffing helpers for the editor Save action's assignment handling
-// (features 44–46), extracted from `route.tsx` so they are unit-testable without
-// pulling in the route module's server + React imports. No DB, no Admin API — the
-// action wires these into the gate + the writes. The client mirrors the same
-// `validateScope` rule, so client and server accept exactly the same shapes.
+// Pure parsing / diffing helpers for the editor Save action's assignment handling (features 44–46),
+// extracted from `route.tsx` so they're unit-testable without the route's server + React imports. No
+// DB, no Admin API. The client mirrors the same `validateScope` rule, so both accept the same shapes.
 
 /**
- * A stable, collision-free key for comparing two INCLUDE selector SETS (feature
- * 46), order-independent. Two distinct selectors never collide (the scope literal
- * and the value are joined with a space that can't appear in a scope name), and
- * sorting makes a reorder a no-op. An empty set (NONE) is the empty string.
+ * A stable, collision-free, order-independent key for comparing two INCLUDE selector SETS (feature
+ * 46). Distinct selectors never collide (scope and value joined with a space that can't appear in a
+ * scope name), and sorting makes a reorder a no-op. An empty set (NONE) is the empty string.
  */
 export function selectorSetKey(selectors: ScopeSelector[]): string {
   return selectors
@@ -21,17 +18,14 @@ export function selectorSetKey(selectors: ScopeSelector[]): string {
 }
 
 /**
- * Parse the pending assignment scope out of a Save payload into a homogeneous
- * INCLUDE selector SET (feature 46). Accepts BOTH the multi-value `scopeValues`
- * array (feature 47's picker) and the legacy single `scopeValue` (the still
- * single-select UI), normalizing to `ScopeSelector[]`.
- *  - scope absent / not a string -> `provided:false` (a caller that doesn't touch
- *    scope; the edit path leaves the persisted set untouched).
+ * Parse the pending assignment scope out of a Save payload into a homogeneous INCLUDE selector SET
+ * (feature 46). Accepts BOTH the multi-value `scopeValues` array (feature 47's picker) and the legacy
+ * single `scopeValue`, normalizing to `ScopeSelector[]`.
+ *  - scope absent / not a string -> `provided:false` (leave the persisted set untouched).
  *  - scope === "NONE" -> `provided:true, selectors:[]` (clear the rule).
  *  - ALL_PRODUCTS -> exactly one null-valued selector.
- *  - a valued kind -> each value validated via the shared `validateScope` + deduped;
- *    an invalid value rejects the whole Save; an EMPTY valued set is rejected
- *    (incomplete — feature 47 disables Save on this; defense in depth here).
+ *  - a valued kind -> each value validated via `validateScope` + deduped; an invalid value rejects
+ *    the whole Save; an EMPTY valued set is rejected (incomplete — defense in depth).
  */
 export function parsePendingScope(payload: {
   scope?: unknown;
@@ -59,8 +53,7 @@ export function parsePendingScope(payload: {
     };
   }
 
-  // A valued kind: prefer the multi-value `scopeValues` array, else the legacy
-  // single `scopeValue`. An empty valued set is incomplete -> reject.
+  // A valued kind: prefer `scopeValues`, else the legacy single `scopeValue`. Empty -> reject.
   const rawValues: unknown[] = Array.isArray(payload.scopeValues)
     ? payload.scopeValues
     : payload.scopeValue !== undefined
@@ -89,11 +82,9 @@ export function parsePendingScope(payload: {
 
 /**
  * Parse the pending EXCLUDE carve-outs out of a Save payload (feature 45).
- *  - excludes absent / not an array -> `provided:false` (a caller that doesn't
- *    touch excludes; the edit path leaves the persisted carve-outs untouched).
- *  - an array -> each entry validated as a PRODUCT GID via the shared `validateScope`
- *    (defense in depth; the picker only supplies real GIDs) and de-duplicated. An
- *    invalid GID rejects the whole Save.
+ *  - excludes absent / not an array -> `provided:false` (leave the persisted carve-outs untouched).
+ *  - an array -> each entry validated as a PRODUCT GID via `validateScope` (defense in depth) and
+ *    de-duplicated. An invalid GID rejects the whole Save.
  */
 export function parsePendingExcludes(payload: {
   excludes?: unknown;
@@ -116,9 +107,8 @@ export function parsePendingExcludes(payload: {
 }
 
 /**
- * Drop any exclude GID that is also in the pending INCLUDE PRODUCT set (Decision C
- * — a product can't be both INCLUDE'd and EXCLUDE'd on one template; `byProduct`
- * beats the exclude gate on the storefront, so a lingering exclude is inert AND
+ * Drop any exclude GID also in the pending INCLUDE PRODUCT set (Decision C — a product can't be both
+ * INCLUDE'd and EXCLUDE'd; `byProduct` beats the exclude gate, so a lingering exclude is inert AND
  * would fool the activation gate's exclude-subtraction).
  */
 export function reconcileExcludes(

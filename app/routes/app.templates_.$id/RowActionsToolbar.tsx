@@ -2,12 +2,10 @@ import { MAX_TEMPLATE_ROWS } from "../../utils/rows";
 import { BulkActionsBar } from "./BulkActionsBar";
 import type { RowEngine } from "./useRowEngine";
 
-// The fixed action toolbar above the bounded rows scroller (reshell A1): Add row
-// / Add section / Duplicate / Insert field + the live "Rows: N / 200" counter. It
-// stays in view while the rows list scrolls beneath it — the core A3 win. While a
-// multi-select exists (feature 29), the LEFT cell is swapped for the contextual
-// BulkActionsBar; the right-cell counter stays put. Purely presentational; every
-// handler + disabled gate comes from the engine.
+// The fixed action toolbar above the rows scroller (reshell A1): Add row / Add section / Duplicate /
+// Insert field + a live "Rows: N / 200" counter. Stays in view while the list scrolls beneath. While a
+// multi-select exists (feature 29), the LEFT cell is swapped for the contextual BulkActionsBar; the
+// counter stays put. Presentational.
 export function RowActionsToolbar({ engine }: { engine: RowEngine }) {
   const {
     rows,
@@ -28,10 +26,8 @@ export function RowActionsToolbar({ engine }: { engine: RowEngine }) {
       {selectedCount > 0 ? (
         <BulkActionsBar engine={engine} />
       ) : (
-        /* `<s-stack direction="inline">`, not `<s-button-group>`: the group's
-            shadow root has no <slot> in the current Polaris CDN build, so its
-            child buttons render at 0×0 / vanish. Do not switch to a button
-            group — it regresses (confirmed in-browser, Step 2). */
+        /* `<s-stack direction="inline">`, not `<s-button-group>`: the group's shadow root has no
+            <slot> in the current Polaris CDN build, so its child buttons vanish (confirmed in-browser). */
         <s-stack direction="inline" gap="base" alignItems="center">
           <s-button
             variant="primary"
@@ -57,8 +53,7 @@ export function RowActionsToolbar({ engine }: { engine: RowEngine }) {
           >
             Duplicate
           </s-button>
-          {/* Disabled until a value cell has an active caret — a pill can only be
-              dropped into a value, never a label. Opens the Insert field modal. */}
+          {/* Disabled until a value cell has an active caret — a pill only goes into a value. */}
           <s-button
             variant="secondary"
             icon="metafields"

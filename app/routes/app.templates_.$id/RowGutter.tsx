@@ -19,47 +19,36 @@ export const RowGutter = memo(function RowGutter({
   isDragging,
 }: {
   rowNumber: number;
-  // Multi-select state for bulk delete (feature 29). `selected` is a plain
-  // boolean (so the memoized row only re-renders when ITS selection flips) and
-  // `onToggleSelected` is a memo-stable per-row toggle.
+  // Multi-select state for bulk delete (feature 29). `selected` is a plain boolean (so the memoized
+  // row re-renders only when ITS selection flips); `onToggleSelected` is a memo-stable per-row toggle.
   selected: boolean;
   onToggleSelected: () => void;
   onDelete: () => void;
-  // The drag handle's accessible name, e.g. "Reorder Battery Life row" (Step 11).
-  // The handle is icon-only, so without this it would announce as a nameless
-  // button. Derived from the row label via `describeRow`.
+  // The drag handle's accessible name, e.g. "Reorder Battery Life row" (icon-only handle would
+  // otherwise be a nameless button). Derived from the row label via `describeRow`.
   reorderLabel: string;
-  // dnd-kit drag wiring for the ⠿ handle. `attributes` (role=button, tabIndex=0,
-  // aria-roledescription, aria-describedby, aria-pressed) make it a real
-  // keyboard-focusable, screen-reader-operable control (Step 11 — Step 10
-  // withheld these and kept the handle aria-hidden for mouse-only drag).
-  // `listeners` are the sensor (pointer + keyboard) activation handlers.
+  // dnd-kit drag wiring for the ⠿ handle. `attributes` make it a real keyboard-focusable,
+  // screen-reader-operable control; `listeners` are the pointer + keyboard activation handlers.
   dragAttributes?: DraggableAttributes;
   dragListeners?: DraggableSyntheticListeners;
   setActivatorNodeRef?: (element: HTMLElement | null) => void;
   isDragging?: boolean;
 }) {
-  // The delete ✕ is muted at rest and goes critical (red) only while hovered or
-  // keyboard-focused, so the destructive control is discoverable without a column
-  // of always-on red competing with the content. s-icon's color lives in its
-  // shadow DOM (not overridable from light-DOM CSS), so the muted↔critical swap is
-  // driven by this state, not a :hover rule.
+  // The delete ✕ is muted at rest and goes critical (red) only on hover/focus, so the destructive
+  // control is discoverable without a column of always-on red. s-icon's color lives in its shadow DOM
+  // (not overridable from light-DOM CSS), so the swap is driven by this state, not a :hover rule.
   const [hot, setHot] = useState(false);
   return (
-    // Plain wrapper so the CSS module's `.gutter` class can mute the controls at
-    // rest and reveal them on row hover/active/focus — Polaris `s-*` elements
-    // reject `className`, so the muting lives on this div, not the <s-stack>.
-    // `data-selected` lifts the gutter out of the muted-at-rest state while the
-    // row is selected, so a ticked checkbox can never scroll out of sight.
+    // Plain wrapper so `.gutter` can mute the controls at rest and reveal them on row hover/focus —
+    // `s-*` elements reject `className`, so the muting lives on this div. `data-selected` lifts the
+    // gutter out of the muted state while selected, so a ticked checkbox can't scroll out of sight.
     <div
       className={styles.gutter}
       data-selected={selected ? "true" : undefined}
     >
       <s-stack direction="inline" gap="small-200" alignItems="center">
-        {/* Per-row select checkbox (feature 29), left of the drag handle. A
-            native <input> (matching the gutter's native button controls), tinted
-            with the captured Polaris link blue in the CSS module and labelled for
-            assistive tech. Its checked state drives the bulk-action bar. */}
+        {/* Per-row select checkbox (feature 29). A native <input>, tinted with the captured Polaris
+            link blue and labelled for AT; its checked state drives the bulk-action bar. */}
         <input
           type="checkbox"
           className={styles.selectCheckbox}
@@ -67,12 +56,9 @@ export const RowGutter = memo(function RowGutter({
           checked={selected}
           onChange={onToggleSelected}
         />
-        {/* Drag-to-reorder handle. A real <button> (dnd-kit's recommended, most
-            accessible activator) — keyboard-focusable and operable: Space/Enter to
-            pick up, arrow keys to move, Space/Enter to drop, Escape to cancel
-            (Step 11). Its native chrome is reset in the CSS module so it still
-            reads as the muted ⠿ affordance. `attributes` + `listeners` +
-            `setActivatorNodeRef` must all sit on this one element. */}
+        {/* Drag-to-reorder handle. A real <button> (dnd-kit's recommended activator) — keyboard
+            operable: Space/Enter to pick up, arrows to move, Space/Enter to drop, Escape to cancel.
+            `attributes` + `listeners` + `setActivatorNodeRef` must all sit on this one element. */}
         <button
           type="button"
           className={styles.dragHandle}
@@ -82,18 +68,15 @@ export const RowGutter = memo(function RowGutter({
           {...dragAttributes}
           {...dragListeners}
         >
-          {/* Decorative: the button's aria-label is the accessible name, so hide
-              the icon from assistive tech to avoid a double-announcement. */}
+          {/* Decorative: the button's aria-label is the accessible name. */}
           <s-icon
             type="drag-handle"
             color="subdued"
             aria-hidden="true"
           ></s-icon>
         </button>
-        {/* Delete control — a native <button> (matching the drag handle) holding a
-            muted ✕ that turns critical red on hover/focus. `onPointerEnter/Leave`
-            and `onFocus/Blur` drive the tone swap; the chrome reset + focus ring
-            live in the CSS module. */}
+        {/* Delete control — a native <button> holding a muted ✕ that turns critical red on
+            hover/focus. `onPointerEnter/Leave` + `onFocus/Blur` drive the tone swap. */}
         <button
           type="button"
           className={styles.deleteButton}

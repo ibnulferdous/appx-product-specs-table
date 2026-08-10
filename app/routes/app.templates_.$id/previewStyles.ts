@@ -1,21 +1,13 @@
 // Feature 49 · Step 4 — the stylesheet payload for the device-preview iframe.
 //
-// The preview must be styled by the SAME CSS the storefront ships, so its table
-// matches the product page exactly. The bytes below are a verbatim mirror of the
-// theme app extension's `extensions/product-specs-table/assets/spec-table.css`.
-//
-// Why a mirror and not a bundler import: importing the extension file across the
-// app/extensions boundary (Vite `?raw`) is fragile in the `shopify app dev`
-// server — it sits outside `server.fs.allow`, so the dev server blocks the read
-// and the editor fails to hydrate. Instead the CSS lives here as a plain string
-// (zero dev-server coupling) and a unit test (`specTablePreviewHtml.test.ts`)
-// reads the real extension file and asserts it EQUALS `SPEC_TABLE_CSS` — so the
-// mirror can never drift silently: change one, the test fails until both match.
-// That gives the single-source guarantee without the build-time import.
+// The preview must be styled by the SAME CSS the storefront ships. The bytes below are a verbatim
+// mirror of `extensions/product-specs-table/assets/spec-table.css`. A bundler import (Vite `?raw`)
+// is fragile in `shopify app dev` (the extension file sits outside `server.fs.allow`), so the CSS
+// lives here as a plain string and `specTablePreviewHtml.test.ts` asserts it EQUALS the extension
+// file — so the mirror can never drift silently.
 
-// Verbatim copy of extensions/product-specs-table/assets/spec-table.css.
-// Guarded against drift by the equality test — edit BOTH together (or better,
-// edit the extension file and re-copy here to satisfy the test).
+// Verbatim copy of extensions/product-specs-table/assets/spec-table.css. Guarded against drift by the
+// equality test — edit BOTH together (or edit the extension file and re-copy here).
 export const SPEC_TABLE_CSS = `/* Appx — Product Specs Table storefront stylesheet (feature 57, Step 3).
 
    The Style tab's knobs arrive as CSS custom properties (--appx-spec-*, set
@@ -791,24 +783,16 @@ export const SPEC_TABLE_CSS = `/* Appx — Product Specs Table storefront styles
 }
 `;
 
-// Minimal, neutral preview-page ambient. The storefront `spec-table.css` styles
-// only the TABLE; on a real product page the surrounding theme supplies the font
-// and text color. The preview has no theme, so without this base it falls back to
-// the browser-default serif — which no real storefront uses and which muddies the
-// "does it match the storefront" check. This is deliberately NOT the table's own
-// CSS (fidelity, above) and NOT merchant-theme replication (out of feature 49) —
-// just the neutral page the table sits on. Kept tiny: a body reset + a system
-// sans-serif stack + a neutral ink + the page scrollbar, no table styling, no
-// accent colors.
+// Minimal, neutral preview-page ambient. The storefront `spec-table.css` styles only the TABLE; a
+// real product page's theme supplies the font and text color. The preview has no theme, so without
+// this base it falls back to the browser-default serif, muddying the "does it match the storefront"
+// check. Kept tiny: a body reset + system sans-serif + neutral ink + the page scrollbar. NOT the
+// table's own CSS and NOT theme replication — just the neutral page it sits on.
 //
-// The `html` rule is page CHROME, not content (feature 73): once a device mockup
-// bounds its screen (Mobile always, Desktop when the table outgrows the viewport),
-// the framed document scrolls itself, and a full-width platform scrollbar inside a
-// small mockup reads as a UI artifact rather than as part of the previewed page.
-// `scrollbar-width` is the standard property (no `::-webkit-scrollbar` fork), it
-// degrades to the platform default where unsupported, and it is inert whenever the
-// document fits — a short desktop table shows no scrollbar at all. Preview-only,
-// like everything in this module: never shipped to the storefront.
+// The `html` rule is page CHROME (feature 73): once a device mockup bounds its screen the framed
+// document scrolls itself, and a full-width platform scrollbar inside a small mockup reads as a UI
+// artifact. `scrollbar-width` degrades to the platform default where unsupported and is inert when the
+// document fits. Preview-only, never shipped to the storefront.
 const PREVIEW_AMBIENT = `html {
   scrollbar-width: thin;
 }
@@ -819,22 +803,14 @@ body {
   color: #1a1a1a;
 }`;
 
-// Preview-ONLY affordances (feature 49, Step 7) — deliberately NOT part of
-// `SPEC_TABLE_CSS` (which stays byte-equal to the extension, drift-guarded) and
-// NOT shipped to the storefront. On a real product page a dynamic value resolves
-// to plain text and an empty template renders nothing; these rules exist only so
-// the in-editor preview READS clearly.
-//
-// - `.appx-spec-table__dynamic-pill` — the inert dynamic-field placeholder (Step 2
-//   markup). The storefront CSS has no such selector, so this collides with
-//   nothing. A neutral chip (NOT the editor's blue editable-token look; the iframe
-//   can't see the admin's captured `--appx-token-color` anyway) that reads as "a
-//   value that resolves per-product on the storefront". Self-contained colors,
-//   WCAG AA: text #4a5568 on #eef1f5 ≈ 6.65:1.
-// - `.appx-spec-table-preview-empty` — the empty-state block shown when there are
-//   no rows to preview. Muted, centered; text #6b7280 on the white preview ≈
-//   4.83:1 (AA). Light-surface colors on purpose — the preview is a light,
-//   storefront-like page, not the admin theme.
+// Preview-ONLY affordances (feature 49, Step 7) — NOT part of `SPEC_TABLE_CSS` (byte-equal to the
+// extension) and NOT shipped to the storefront. On a real page a dynamic value resolves to plain text
+// and an empty template renders nothing; these exist only so the in-editor preview READS clearly.
+// - `.appx-spec-table__dynamic-pill` — the inert dynamic-field placeholder. A neutral chip (not the
+//   editor's blue token look) reading as "a value that resolves per-product". WCAG AA: #4a5568 on
+//   #eef1f5 ≈ 6.65:1.
+// - `.appx-spec-table-preview-empty` — the empty-state block. Muted, centered; #6b7280 on white ≈
+//   4.83:1 (AA). Light-surface colors on purpose (the preview is a storefront-like page).
 const PREVIEW_AFFORDANCES = `.appx-spec-table__dynamic-pill {
   display: inline-block;
   padding: 0.05em 0.4em;
@@ -859,7 +835,6 @@ const PREVIEW_AFFORDANCES = `.appx-spec-table__dynamic-pill {
   margin: 0;
 }`;
 
-// The full <style> payload for the preview document: the ambient base first (so
-// the storefront rules win any future overlap), then the preview-only affordances,
-// then the storefront CSS verbatim.
+// The full <style> payload: ambient base first (so the storefront rules win any future overlap), then
+// the preview-only affordances, then the storefront CSS verbatim.
 export const PREVIEW_DOCUMENT_STYLES = `${PREVIEW_AMBIENT}\n${PREVIEW_AFFORDANCES}\n${SPEC_TABLE_CSS}`;

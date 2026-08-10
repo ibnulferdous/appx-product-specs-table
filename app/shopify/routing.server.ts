@@ -1,29 +1,19 @@
-// Shop routing metafield writer (feature 41) — makes the routing projection real
-// on Shopify. Reads a shop's ACTIVE assignment rules, folds them through feature
-// 40's pure `buildRoutingProjection`, persists the `ShopStorefrontRouting` cache
-// row (Postgres = source of truth), then `metafieldsSet`s the shop-level
-// `$app:routing` json metafield (the delivery copy Liquid reads, feature 43).
+// Shop routing metafield writer (feature 41). Reads a shop's ACTIVE assignment rules, folds
+// them through feature 40's pure `buildRoutingProjection`, persists the `ShopStorefrontRouting`
+// cache row (Postgres = source of truth), then `metafieldsSet`s the shop-level `$app:routing`
+// json metafield (the delivery copy Liquid reads, feature 43). The two UNBOUNDED per-product
+// maps (byProduct/excluded) are ALSO written to per-bucket `$app:appx_routing_shard` metaobjects,
+// reconciled by content hash so a rebuild rewrites only the buckets that changed (feature 108,
+// D5). Pure shard logic: `app/utils/routingShards.ts`.
 //
-// ROUTING SHARDS (Option 2, feature 108). The two UNBOUNDED per-product maps
-// (byProduct/excluded) are ALSO written out to per-bucket `$app:appx_routing_shard`
-// metaobjects, reconciled by content hash against the `shardState` ledger so a
-// rebuild rewrites only the buckets that changed (D5). ⚠️ Until the Unit D wire
-// flip, the shop metafield above STILL carries byProduct/excluded (v2), so the
-// storefront reads that and the shards are written-but-unread — a harmless
-// transitional double-write (pure shard logic: `app/utils/routingShards.ts`).
-//
-// Conventions mirror metaobjects.server.ts / templateSync.server.ts: every
-// `#graphql` operation was validated with `validate_graphql_codeblocks` against
-// API version 2025-10; the pure glue (flatten / metafield-input / response
-// narrowing) is exported + unit-tested; the live `admin.graphql` + Prisma calls
-// are mocked at the boundary. Shop isolation is enforced two ways (priority #1):
-// every Prisma read/write is `where { shopId }`, and the `admin` client is
+// Conventions mirror metaobjects/templateSync.server.ts: every `#graphql` op was validated
+// against API 2025-10; the pure glue (flatten / metafield-input / response narrowing) is
+// exported + unit-tested; the live admin.graphql + Prisma calls are mocked. Shop isolation
+// (priority #1): every Prisma read/write is `where { shopId }`, and the admin client is
 // session-bound so the metafield owner can only ever be THIS shop.
 //
-// ORDERING (data-model.md §8, code-standards "Data and Storage"): Postgres FIRST.
-// The cache row is upserted before the metafield write, and sync state is stamped
-// only after a confirmed write — a failed delivery write leaves a correct row with
-// stale/blank sync state, surfaced honestly, never a silent success.
+// Ordering (data-model.md §8): Postgres FIRST — the cache row is upserted before the metafield
+// write, and sync state is stamped only after a confirmed write, never a silent success.
 
 import type { AdminApiContext } from "@shopify/shopify-app-react-router/server";
 import prisma from "../db.server";
@@ -49,8 +39,8 @@ import {
   type PayloadBudget,
 } from "../utils/routingBudget";
 
-// The reserved app namespace + key the `[shop.metafields.app.routing]` TOML
-// definition resolves to. Liquid reads `shop.metafields["$app"].routing.value`.
+// The reserved app namespace + key the `[shop.metafields.app.routing]` TOML definition resolves
+// to. Liquid reads `shop.metafields["$app"].routing.value`.
 export const ROUTING_METAFIELD_NAMESPACE = "$app";
 export const ROUTING_METAFIELD_KEY = "routing";
 export const ROUTING_METAFIELD_TYPE = "json";
@@ -58,10 +48,9 @@ export const ROUTING_METAFIELD_TYPE = "json";
 // --- Pure glue (unit-tested) ------------------------------------------------
 
 /**
- * The minimal shape `flattenActiveRulesToRoutingRules` needs from an ACTIVE
- * template row: its metaobject handle plus its assignment rules. Structurally
- * matched by the Prisma select in `rebuildShopRouting` (Prisma's `AssignmentScope`
- * / `AssignmentMode` enum types ARE the string unions used here).
+ * The minimal shape `flattenActiveRulesToRoutingRules` needs from an ACTIVE template row: its
+ * metaobject handle plus its assignment rules. Structurally matched by the Prisma select in
+ * `rebuildShopRouting`.
  */
 export type ActiveTemplateForRouting = {
   shopifyMetaobjectHandle: string | null;
@@ -73,11 +62,10 @@ export type ActiveTemplateForRouting = {
 };
 
 /**
- * Flatten ACTIVE templates + their assignments into the flat `RoutingRule[]`
- * feature 40's builder consumes: each of a template's rules carries that
- * template's handle. A null handle becomes `""` — feature 40 skips blank-handle
- * rules (an unsynced template must not land a null pointer in the map), so we pass
- * them through rather than dropping here. Pure: never mutates the input.
+ * Flatten ACTIVE templates + assignments into the flat `RoutingRule[]` feature 40's builder
+ * consumes, each rule carrying its template's handle. A null handle becomes "" — feature 40
+ * skips blank-handle rules (an unsynced template must not land a null pointer in the map), so
+ * we pass them through rather than dropping here. Pure.
  */
 export function flattenActiveRulesToRoutingRules(
   templates: ActiveTemplateForRouting[],
@@ -98,13 +86,10 @@ export function flattenActiveRulesToRoutingRules(
 }
 
 /**
- * The `metafieldsSet` variables for the shop routing metafield: one metafield on
- * the shop (`ownerId`), reserved `$app` / `routing`, `json` type, value = the
- * projection COMPACTED to the delivery wire (`compactRoutingForDelivery`, Option 1).
- * The compaction is the ~4× byte down-payment against the 128KB `json` ceiling
- * (data-model.md §14); the storefront reader `spec-table-resolve.liquid` decodes the
- * same shape. Postgres still stores the un-compacted projection — this reshape is
- * delivery-only. Pure.
+ * The `metafieldsSet` variables for the shop routing metafield: value = the projection
+ * COMPACTED to the delivery wire (`compactRoutingForDelivery`, Option 1), the byte down-payment
+ * against the 128KB `json` ceiling (data-model.md §14). Postgres still stores the un-compacted
+ * projection; this reshape is delivery-only. Pure.
  */
 export function buildRoutingMetafieldInput(
   shopGid: string,
@@ -124,22 +109,16 @@ export function buildRoutingMetafieldInput(
 }
 
 /**
- * Measure the routing payload against the `json` metafield ceiling and log when it
- * is at or over budget (step 104, `data-model.md` §14).
+ * Measure the routing payload against the `json` metafield ceiling and log when at/over budget
+ * (step 104, data-model.md §14).
  *
- * 🚫 OBSERVES ONLY — it must never gate the write, and the caller must never
- * branch on its result. Refusing, truncating, or surfacing a merchant-facing
- * error at the ceiling is **step 105's** decision; 104 exists to produce the
- * number that decision needs. `routing.test.ts` pins this with a test that an
- * over-budget projection still reaches `metafieldsSet` (104 §D1).
+ * 🚫 OBSERVES ONLY — never gates the write, and the caller must never branch on its result.
+ * Refusing / truncating / surfacing a ceiling error is step 105's decision; 104 just produces
+ * the number. Pinned by a test that an over-budget projection still reaches `metafieldsSet`.
  *
- * ⚠️ Takes the SERIALIZED string, not the projection, so it measures the exact
- * bytes the mutation sends rather than a re-serialization that could drift from
- * it (104 §D2). The caller passes the value it already built.
- *
- * The ceiling is currently DORMANT: the runtime Admin client is
- * `ApiVersion.October25`, i.e. pre-2026-04, so writes still sit at the legacy 2MB
- * limit. `app/shopify.server.test.ts` is the tripwire that fires when that moves.
+ * ⚠️ Takes the SERIALIZED string, not the projection, so it measures the exact bytes the
+ * mutation sends. The ceiling is DORMANT: the runtime Admin client is October25 (pre-2026-04),
+ * still at the legacy 2MB limit; `app/shopify.server.test.ts` is the tripwire for when it moves.
  */
 function reportRoutingBudget(
   serialized: string,
@@ -148,11 +127,9 @@ function reportRoutingBudget(
   const budget = measurePayload(serialized);
   if (budget.level !== "ok") {
     const counts = countRoutingEntries(projection);
-    // Wire v3 (feature 108): the shop metafield carries only the BROAD tiers, so this
-    // shop-budget line names only those. `byProduct` / `excluded` moved to per-bucket
-    // shards, each with its own 128KB budget (data-model.md §14) — they no longer
-    // contribute a byte to `serialized`, so listing them here would misattribute the
-    // payload. `countRoutingEntries` still returns those counts for the shard budget.
+    // Wire v3 (feature 108): the shop metafield carries only the BROAD tiers, so this line names
+    // only those. byProduct / excluded moved to per-bucket shards with their own 128KB budget,
+    // and no longer contribute a byte here; `countRoutingEntries` still returns their counts.
     const broad = counts.byType + counts.byVendor + counts.byCollection;
     console.warn(
       `[routing] storefront routing payload is ${budget.level} budget: ` +
@@ -176,9 +153,9 @@ function asString(value: unknown): string {
 }
 
 /**
- * Narrow a `metafieldsSet` response into the written metafield's GID, or an
- * error. Any `userErrors` entry, a missing metafield, or a malformed payload is a
- * failure — never a silent success (priority #2; feature 42 surfaces it).
+ * Narrow a `metafieldsSet` response into the written metafield's GID, or an error. Any
+ * userErrors entry, a missing metafield, or a malformed payload is a failure — never a silent
+ * success (priority #2; feature 42 surfaces it).
  */
 export function readMetafieldsSetResult(
   json: unknown,
@@ -234,10 +211,10 @@ const METAFIELDS_SET_MUTATION = `#graphql
     }
   }`;
 
-// Routing SHARD upsert (Option 2, feature 108). The SAME validated `metaobjectUpsert`
-// shape as `upsertSpecTableMetaobject` (metaobjects.server.ts, validated @ 2025-10) —
-// only the target type + fields differ, so it is already covered by that validation.
-// Upsert-by-handle so a rebuild is idempotent and needs no stored per-shard GID (D5).
+// Routing SHARD upsert (feature 108). The SAME validated `metaobjectUpsert` shape as
+// `upsertSpecTableMetaobject` (metaobjects.server.ts) — only the target type + fields differ, so
+// it is already covered by that validation. Upsert-by-handle so a rebuild is idempotent and
+// needs no stored per-shard GID (D5).
 const ROUTING_SHARD_UPSERT_MUTATION = `#graphql
   mutation UpsertRoutingShard($handle: MetaobjectHandleInput!, $metaobject: MetaobjectUpsertInput!) {
     metaobjectUpsert(handle: $handle, metaobject: $metaobject) {
@@ -268,14 +245,10 @@ async function fetchShopGid(admin: AdminApiContext): Promise<string> {
 }
 
 /**
- * Resolve this shop's GID, preferring the value cached on the `Shop` row so a
- * routing rebuild costs zero Admin round-trips for the GID after the first time.
- * The GID is stable for the life of a shop, so a `{ shop { id } }` query on every
- * rebuild was pure waste. On a cache MISS (a shop that has never rebuilt routing)
- * we fetch it once via the Admin API and write it back — best-effort, so a failed
- * cache write never turns a good routing publish into an error; the next rebuild
- * simply re-fetches. Reading the miss path costs one cheap Postgres round-trip in
- * exchange for removing a Shopify round-trip from every subsequent rebuild.
+ * Resolve this shop's GID, preferring the value cached on the `Shop` row so a rebuild costs zero
+ * Admin round-trips for the GID after the first time (the GID is stable for a shop's life). On a
+ * cache MISS (a shop that has never rebuilt routing) fetch it once via Admin and write it back —
+ * best-effort, so a failed cache write never turns a good routing publish into an error.
  */
 async function resolveShopGid(
   admin: AdminApiContext,
@@ -291,8 +264,7 @@ async function resolveShopGid(
   try {
     await prisma.shop.update({ where: { id: shopId }, data: { shopGid: gid } });
   } catch (error) {
-    // A cache-write failure is not a publish failure — log and carry the fetched
-    // GID through so this rebuild still completes.
+    // A cache-write failure is not a publish failure — log and carry the fetched GID through.
     console.error("[routing] failed to cache shop GID", error);
   }
   return gid;
@@ -311,8 +283,8 @@ function coerceShardHashes(value: unknown): Record<string, string> {
   return out;
 }
 
-/** The three metaobject field entries for a shard payload (snake_case field keys the
- *  storefront reads: `by_product` / `excluded` / `wire_version`). */
+/** The three metaobject field entries for a shard payload (snake_case keys the storefront reads:
+ *  by_product / excluded / wire_version). */
 function shardFieldEntries(
   payload: ShardPayload,
 ): Array<{ key: string; value: string }> {
@@ -324,14 +296,14 @@ function shardFieldEntries(
   ];
 }
 
-// The field entries that empty a shard (both maps `{}`) — a cleared bucket reads as a
-// miss and falls through to the broad tiers (D5). Computed once; the value is constant.
+// Field entries that empty a shard (both maps `{}`) — a cleared bucket reads as a miss and falls
+// through to the broad tiers (D5). Constant; computed once.
 const EMPTY_SHARD_FIELDS = shardFieldEntries({ byProduct: {}, excluded: {} });
 
 /**
- * Upsert one routing shard metaobject by handle. Returns true on a confirmed write,
- * false on ANY failure (HTTP, userErrors, malformed) — never throws, so one shard's
- * failure cannot abort the reconciliation of the rest. Logs on failure.
+ * Upsert one routing shard metaobject by handle. Returns true on a confirmed write, false on ANY
+ * failure (HTTP, userErrors, malformed) — never throws, so one shard's failure cannot abort the
+ * reconciliation of the rest. Logs on failure.
  */
 async function upsertRoutingShard(
   admin: AdminApiContext,
@@ -369,14 +341,12 @@ async function upsertRoutingShard(
 }
 
 /**
- * Reconcile the shop's routing shards against the projection (D5). Splits the
- * per-product maps into per-bucket payloads, diffs them against the stored hash
- * ledger, and upserts ONLY the buckets that changed (a status toggle that leaves
- * per-product assignments untouched writes zero shards); buckets that emptied are
- * upserted to `{}` rather than deleted. Returns the NEW ledger (built from the write
- * outcomes — a failed shard keeps its old hash so the next rebuild retries it),
- * whether every write succeeded, and whether anything changed at all (so the caller
- * skips a no-op Postgres stamp). Never throws.
+ * Reconcile the shop's routing shards against the projection (D5). Splits the per-product maps
+ * into per-bucket payloads, diffs them against the stored hash ledger, and upserts ONLY the
+ * buckets that changed (a status toggle that leaves per-product assignments untouched writes zero
+ * shards); emptied buckets are upserted to `{}` rather than deleted. Returns the NEW ledger (a
+ * failed shard keeps its old hash so the next rebuild retries it), whether every write succeeded,
+ * and whether anything changed at all (so the caller skips a no-op Postgres stamp). Never throws.
  */
 async function reconcileRoutingShards(
   admin: AdminApiContext,
@@ -426,9 +396,9 @@ async function reconcileRoutingShards(
 }
 
 /**
- * Write the shop routing metafield (broad tiers). Resolves the shop GID (cached),
- * measures the payload (observe-only), issues `metafieldsSet`, and narrows the result.
- * Returns the metafield GID or an honest, merchant-facing error — never throws.
+ * Write the shop routing metafield (broad tiers). Resolves the shop GID (cached), measures the
+ * payload (observe-only), issues `metafieldsSet`, and narrows the result. Returns the metafield
+ * GID or an honest, merchant-facing error — never throws.
  */
 async function writeRoutingMetafield(
   admin: AdminApiContext,
@@ -438,8 +408,8 @@ async function writeRoutingMetafield(
   try {
     const shopGid = await resolveShopGid(admin, shopId);
     const variables = buildRoutingMetafieldInput(shopGid, projection);
-    // Measure the exact value we are about to send (104 §D2). Observation only —
-    // the write proceeds at any size; see `reportRoutingBudget`.
+    // Measure the exact value we are about to send (104 §D2). Observation only — the write
+    // proceeds at any size; see `reportRoutingBudget`.
     reportRoutingBudget(variables.metafields[0].value, projection);
     const response = await admin.graphql(METAFIELDS_SET_MUTATION, {
       variables,
@@ -464,15 +434,12 @@ async function writeRoutingMetafield(
 // --- Live orchestrator ------------------------------------------------------
 
 /**
- * Rebuild and publish a shop's storefront routing. Reads the shop's ACTIVE
- * templates + assignments, projects them (feature 40), upserts the
- * `ShopStorefrontRouting` cache row, then writes the `$app:routing` shop metafield
- * and stamps the row's sync state. Returns the written metafield GID or an honest
- * error (the row is already persisted regardless — Postgres is the source of
- * truth). An empty ACTIVE set writes an empty map, which CLEARS the storefront.
- *
- * Not yet wired into activation — feature 42 calls this on activate / deactivate /
- * scope-edit.
+ * Rebuild and publish a shop's storefront routing. Reads the shop's ACTIVE templates +
+ * assignments, projects them (feature 40), upserts the `ShopStorefrontRouting` cache row, then
+ * writes the `$app:routing` shop metafield + reconciles the per-product shards, and stamps the
+ * row's sync state. Returns the written metafield GID or an honest error (the row is persisted
+ * regardless — Postgres is the source of truth). An empty ACTIVE set writes an empty map, which
+ * CLEARS the storefront.
  */
 export async function rebuildShopRouting(
   admin: AdminApiContext,
@@ -491,9 +458,9 @@ export async function rebuildShopRouting(
   const rules = flattenActiveRulesToRoutingRules(templates);
   const projection = buildRoutingProjection(rules);
 
-  // 2. Persist the cache row FIRST (Postgres is the source of truth). Capture the
-  //    row: the upsert leaves `shardState` untouched, so the returned value is the
-  //    PRE-rebuild shard ledger we diff against below.
+  // 2. Persist the cache row FIRST (Postgres is the source of truth). The upsert leaves
+  //    `shardState` untouched, so the returned row carries the PRE-rebuild shard ledger we diff
+  //    against below.
   const routingData = {
     defaultTemplateHandle: projection.defaultTemplateHandle,
     byType: projection.byType,
@@ -512,21 +479,16 @@ export async function rebuildShopRouting(
     (routingRow as { shardState?: unknown }).shardState,
   );
 
-  // 3. Reconcile the per-product SHARDS (feature 108). Delivery-only, independent of
-  //    the shop GID. ⚠️ TRANSITIONAL (Unit C): the shop metafield in step 4 still
-  //    carries byProduct/excluded (v2 wire), so the storefront reads THAT and these
-  //    shards are written-but-unread until the Unit D wire flip. Writing them now
-  //    keeps Unit D a pure reader change and lets the writer be verified on its own.
+  // 3. Reconcile the per-product SHARDS (feature 108). Delivery-only, independent of the shop GID.
   const shards = await reconcileRoutingShards(admin, projection, storedHashes);
 
-  // 4. Write the delivery copy (shop metafield, broad tiers; still v2 until Unit D).
+  // 4. Write the delivery copy (shop metafield, broad tiers).
   const metafield = await writeRoutingMetafield(admin, shopId, projection);
 
-  // 5. Stamp outcomes in ONE update — but only when something actually changed. An
-  //    unchanged rebuild whose metafield write failed writes nothing (the pre-shard
-  //    contract). `shardState` is stamped from the write OUTCOMES, so a failed shard
-  //    keeps its old hash and is retried next rebuild; `syncedToShopifyAt` is stamped
-  //    only on FULL success (metafield + every shard), so a partial failure is honest.
+  // 5. Stamp outcomes in ONE update — but only when something actually changed. `shardState` is
+  //    stamped from the write OUTCOMES, so a failed shard keeps its old hash and is retried next
+  //    rebuild; `syncedToShopifyAt` is stamped only on FULL success (metafield + every shard), so
+  //    a partial failure is honest.
   if (metafield.ok || shards.changed) {
     const data: Record<string, unknown> = {};
     if (shards.changed) data.shardState = shards.shardState;

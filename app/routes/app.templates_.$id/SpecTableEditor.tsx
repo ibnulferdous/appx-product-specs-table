@@ -11,36 +11,25 @@ import { SAVE_BAR_ID, saveBarSaveAttrs } from "./editorShared";
 import type { RowEngine } from "./useRowEngine";
 import styles from "./SpecTableEditor.module.css";
 
-// The spec-table editor card (reshell A1; engine lifted in feature 20). The
-// `useRowEngine` instance is now owned one level up by the page component
-// (`TemplateOverview`) so the `<s-page>` header can read the same saving/dirty/
-// name state and drive header actions; this component takes that single `engine`
-// as a prop and renders only the editor body. The presentational `EditorShell`
-// card hosts the engine-driven `ContentTab` in its `stage` slot, and the App
-// Bridge `<SaveBar>` rides the engine's dirty/saving state. Behavior is unchanged
-// from the pre-reshell editor; the layout is the agreed mockup (tabbed card +
-// bounded inner-scroll). See `context/features/18-reshell-a1-extract-row-engine.md`
-// and `context/features/20-template-lifecycle-actions.md`.
+// The spec-table editor card (reshell A1; engine lifted in feature 20). The `useRowEngine` instance is
+// owned one level up (`TemplateOverview`) so the `<s-page>` header reads the same saving/dirty/name
+// state; this component takes that single `engine` as a prop and renders only the editor body. The
+// `EditorShell` card hosts the engine-driven `ContentTab` in its `stage` slot, and the App Bridge
+// `<SaveBar>` rides the engine's dirty/saving state. (features/18, features/20)
 export function SpecTableEditor({
   engine,
   adminAppBase,
 }: {
   engine: RowEngine;
-  // Passed straight through to the Settings tab, whose conflict banner links the
-  // colliding template (`AdminAppLink`). Not editor state — loader data.
+  // Passed through to the Settings tab, whose conflict banner links the colliding template. Loader data.
   adminAppBase: string;
 }) {
-  // Freeze the whole editor card while a save is in flight. `inert` blocks
-  // pointer, keyboard, and focus across the entire subtree — the contenteditable
-  // value cells, the toolbar, drag/paste, and the tab controls — and removes it
-  // from the tab order and a11y tree, so the merchant cannot keep editing into an
-  // in-flight save (those edits would never reach the server and would be lost).
-  // Set imperatively, not as JSX: on React 18 `inert` is not a managed prop, and
-  // because it is an HTML boolean attribute, rendering `inert="false"` would STILL
-  // freeze the card — toggling the attribute by hand avoids that footgun. The App
-  // Bridge <SaveBar> portals to the admin top bar, OUTSIDE this wrapper, so its
-  // Save/Discard buttons stay interactive (Save shows its loading spinner;
-  // App Bridge disables a loading button so it cannot be double-submitted).
+  // Freeze the whole editor card while a save is in flight. `inert` blocks pointer/keyboard/focus
+  // across the subtree and removes it from the tab order + a11y tree, so the merchant can't keep
+  // editing into an in-flight save (those edits would be lost). Set imperatively, not as JSX: on React
+  // 18 `inert` isn't a managed prop, and since it's an HTML boolean attribute, rendering `inert="false"`
+  // would STILL freeze the card. The App Bridge <SaveBar> portals OUTSIDE this wrapper, so its
+  // Save/Discard stay interactive.
   const freezeRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     const el = freezeRef.current;
@@ -72,30 +61,20 @@ export function SpecTableEditor({
         />
       </div>
 
-      {/* The Style rail's reset confirmation (feature 57 Step 12) — a sibling
-          AFTER the freeze <div> like the SaveBar, so it outlives the tab switch
-          that unmounts the rail its trigger lives in. See ResetStylingModal. */}
+      {/* The Style rail's reset confirmation (feature 57 Step 12) — a sibling AFTER the freeze <div>
+          like the SaveBar, so it outlives the tab switch that unmounts the rail its trigger lives in. */}
       <ResetStylingModal engine={engine} />
 
-      {/* Tips footer (feature 32) — a sibling AFTER the freeze <div>, so it sits
-          below the editor card, outside it, and outside the save-freeze (tips stay
-          readable/usable during a save). Manual-advance, one-tip-at-a-time; the
-          home for the keyboard-nav tip and all future editor tips. */}
+      {/* Tips footer (feature 32) — a sibling AFTER the freeze <div>, so it sits below the editor card
+          and outside the save-freeze (tips stay usable during a save). */}
       <EditorTips />
 
-      {/* The App Bridge contextual save bar (Step 9.5). Rendered at the wrapper
-          level (outside EditorShell) so the "Unsaved changes" state persists
-          across tab switches — it portals to the admin top bar regardless of the
-          active tab. Save persists to Postgres + the storefront metaobject;
-          Discard remounts the editor to the saved rows. Discard is disabled while
-          a save is in flight so it cannot remount (and tear down the in-flight
-          fetcher) mid-save.
-
-          The Save button's `loading` / `disabled` pair comes from
-          `saveBarSaveAttrs` — read its comment before touching it. These are
-          NATIVE <button>s (that is App Bridge's contract for the save bar), and a
-          boolean `loading` on a native tag is silently dropped by React 18, which
-          is exactly how this button shipped with no spinner. */}
+      {/* The App Bridge contextual save bar (Step 9.5), at the wrapper level so the "Unsaved changes"
+          state persists across tab switches (it portals to the admin top bar). Save persists to
+          Postgres + the metaobject; Discard remounts the editor to the saved rows (disabled while
+          saving so it can't tear down the in-flight fetcher). The Save button's `loading` / `disabled`
+          pair comes from `saveBarSaveAttrs` — read its comment; these are NATIVE <button>s and a
+          boolean `loading` is silently dropped by React 18. */}
       <SaveBar id={SAVE_BAR_ID} open={engine.isDirty}>
         <button
           variant="primary"
