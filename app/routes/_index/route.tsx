@@ -15,12 +15,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   return { showForm: Boolean(login) };
 };
 
-// Step 107 (D6) replaced the Shopify template's placeholder prose here. 🚫 The
-// page itself is NOT deleted: this is what renders when the app URL is hit
-// WITHOUT a `shop` param, and the `showForm` branch below is the shop-domain
-// login path — a working entry point that would have been removed to fix copy.
-// Structure, loader, form and `styles.module.css` are untouched; only the
-// heading, tagline and the three bullets changed.
+// Renders when the app URL is hit without a `shop` param (login entry point).
 export default function App() {
   const { showForm } = useLoaderData<typeof loader>();
 

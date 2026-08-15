@@ -8,14 +8,10 @@
 
 // Verbatim copy of extensions/product-specs-table/assets/spec-table.css. Guarded against drift by the
 // equality test — edit BOTH together (or edit the extension file and re-copy here).
-export const SPEC_TABLE_CSS = `/* Appx — Product Specs Table storefront stylesheet (feature 57, Step 3).
+export const SPEC_TABLE_CSS = `/* Appx — Product Specs Table storefront stylesheet.
 
-   The Style tab's knobs arrive as CSS custom properties (--appx-spec-*, set
-   on the wrapper by later steps) and BEM modifier classes on the
-   .appx-spec-table block. This file is DORMANT: no markup sets a property or
-   carries a modifier class yet, so every var() resolves to its fallback —
-   and each fallback is the exact literal this file shipped with before the
-   rewrite, so today's rendering is unchanged.
+   Knobs arrive as CSS custom properties (--appx-spec-*) and BEM modifier
+   classes on the .appx-spec-table block.
 
    Rules of the design:
    - Base rules use var(--appx-spec-*, <previous literal>). An absent var
@@ -152,7 +148,7 @@ export const SPEC_TABLE_CSS = `/* Appx — Product Specs Table storefront styles
   overflow: hidden;
 }
 
-/* --- Base (each fallback = the pre-Step-3 literal) ------------------------ */
+/* --- Base ----------------------------------------------------------------- */
 
 /* Typography vars sit on the table, not the wrapper, so em-based sizes
    multiply the theme's base font exactly once. */
@@ -172,9 +168,7 @@ export const SPEC_TABLE_CSS = `/* Appx — Product Specs Table storefront styles
   border-block-end: 1px solid var(--appx-spec-border-color, rgba(0, 0, 0, 0.1));
 }
 
-/* The font-weight var is the LABEL-weight knob: the 600 was always a
-   label-only literal, so the var lands here, not on the table — value text
-   keeps the theme's weight. */
+/* font-weight here is the LABEL-weight knob — value text keeps the theme's weight. */
 .appx-spec-table__label {
   width: var(--appx-spec-label-width, 33%);
   font-weight: var(--appx-spec-font-weight, 600);
@@ -289,10 +283,8 @@ export const SPEC_TABLE_CSS = `/* Appx — Product Specs Table storefront styles
    disclosure element is native, keyboard-operable, and announces its own
    expanded state.
 
-   NOTE: this file is mirrored verbatim into a TS template literal
-   (previewStyles.ts) and inlined into the preview document, which unit tests
-   scan as a string — so keep comments free of backticks and of literal
-   angle-bracket markup. */
+   NOTE: this file is mirrored into previewStyles.ts — keep comments free of
+   backticks and literal angle-bracket markup. */
 
 .appx-spec-table--collapsible .appx-spec-table__section-summary {
   /* display:list-item keeps the native disclosure marker in browsers that
