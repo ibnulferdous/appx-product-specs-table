@@ -160,6 +160,24 @@ saved presets, cuttable).
 > `context/features/` doc and in git. If a finding is load-bearing for future work it belongs
 > in Binding rules, Key Decisions or Open Questions, not in an entry here.
 
+- **Templates-list: inline Draft⇄Active status toggle on each row** — ✅ 2026-08-15, build
+  green, **fully live-verified on `appx-dev`**. An `s-switch` in the Status cell flips status
+  in one click (the ⋯ menu's "Change status" modal stays as the fallback, and remains the only
+  path for ARCHIVED rows, where the two-state toggle is hidden). Reuses the existing `status`
+  action verbatim — same conflict gate, metaobject re-sync, routing rebuild. UI-only, no
+  server/schema change. **Directional optimism ("confirm before flipping", merchant decision):**
+  ACTIVE→DRAFT (never refused) flips optimistically/instantly; DRAFT→ACTIVE (can be blocked by
+  the conflict gate) shows an `s-spinner` in the toggle's place and does NOT flip until the
+  server confirms — so a blocked activation never flashes Active-then-reverts. Driven by
+  `pendingStatusSubmit` off the shared fetcher. **Whole table goes inert during any row
+  mutation** (`loading={listLoading || busy}` on `<s-table>`) — dims + blocks interaction so a
+  merchant can't click a template-name link and navigate away mid-write. Live checks: instant
+  off-flip (no spinner); blocked activation → spinner → settles back to Draft (`updatedAt`
+  unchanged, toast "Can't activate: …overlaps the active template …"); allowed activation →
+  spinner → settles Active (`updatedAt` bumped); table dims during the write and a name-link
+  click mid-write does NOT navigate. ⚠️ Cloudflare tunnel
+  flaked mid-test once (known — [[ngrok-tunnel-for-app-dev]]); a status write was interrupted
+  and simply didn't persist (fail-safe, no partial state).
 - **Editor: multi-line paste into a value cell makes ONE multiline value, not N rows** — ✅
   2026-08-08, gate green (test **1418 / 57**), live-verified on `appx-dev`.
   [`115-…`](features/115-value-cell-multiline-paste.md) · rule → `data-model.md` §7

@@ -121,6 +121,8 @@ const TemplateTableRow = ({
   template,
   assignedCounts,
   busy,
+  pendingStatusSubmit,
+  onToggleStatus,
   onRequestRename,
   onRequestStatus,
   onDuplicate,
@@ -134,6 +136,13 @@ const TemplateTableRow = ({
   // Disables this row's actions trigger while any mutation is in flight, so a second row action
   // can't be opened on the shared fetcher mid-mutation.
   busy: boolean;
+  // The in-flight status submit (id + target status), read off the shared fetcher, or null. Drives
+  // the inline toggle + badge OPTIMISTICALLY for the row it targets: they show the pending status
+  // while the write settles and snap back to server state if it's blocked (no manual revert).
+  pendingStatusSubmit: { id: string; status: string } | null;
+  // The inline Draft⇄Active toggle's handler. Fires the same shop-scoped status write as the modal
+  // (conflict gate, metaobject re-sync, routing rebuild all included) — see the page action.
+  onToggleStatus: (id: string, currentStatus: string) => void;
   onRequestRename: (id: string, name: string) => void;
   onRequestStatus: (id: string, name: string, status: string) => void;
   onDuplicate: (id: string) => void;
@@ -146,6 +155,22 @@ const TemplateTableRow = ({
 }) => {
   // The trigger + menu are per row, so each needs an id derived from the template id (a cuid).
   const menuId = `template-actions-${template.id}`;
+
+  // Optimistic status for THIS row — but ONLY for the flip that can't be refused. A →DRAFT flip is
+  // always allowed, so paint it immediately. A →ACTIVE flip goes through the conflict gate and can
+  // be BLOCKED, so don't flip yet: keep the server status and show a spinner until the write
+  // confirms ("confirm before flipping" — avoids a flash-then-revert on a blocked activation). Once
+  // the write settles, `pendingStatusSubmit` clears and the row reflects the revalidated status.
+  const pendingForRow =
+    pendingStatusSubmit?.id === template.id ? pendingStatusSubmit.status : null;
+  const activating = pendingForRow === "ACTIVE";
+  const effectiveStatus = (pendingForRow === "DRAFT"
+    ? "DRAFT"
+    : template.status) as TemplateStatus;
+  const isActive = effectiveStatus === "ACTIVE";
+  // The toggle is a two-state Draft⇄Active control, so it's meaningless for an ARCHIVED row (a
+  // hidden status no longer offered). Those keep the badge + the ⋯ menu's "Change status" only.
+  const isArchived = template.status === "ARCHIVED";
 
   return (
     <s-table-row id={template.id}>
@@ -168,7 +193,31 @@ const TemplateTableRow = ({
         </AdminAppLink>
       </s-table-cell>
       <s-table-cell>
-        <s-badge tone={BADGE_TONES[template.status]}>{template.status}</s-badge>
+        <s-stack direction="inline" gap="small-200" alignItems="center">
+          <s-badge tone={BADGE_TONES[effectiveStatus]}>
+            {effectiveStatus}
+          </s-badge>
+          {/* Inline one-click status change (feature 36 follow-up): flips Draft⇄Active without the ⋯
+              menu → modal → Save path, which stays as the fallback. Same server write. A →ACTIVE
+              flip can be refused by the conflict gate, so while it's in flight we show a spinner in
+              the toggle's place (not an optimistic flip) and settle to the toggle at whatever status
+              the server confirmed. Disabled while any row mutation is in flight (shared fetcher).
+              Hidden for ARCHIVED — a two-state toggle can't represent it. */}
+          {!isArchived &&
+            (activating ? (
+              <s-spinner
+                accessibilityLabel={`Activating ${template.name}`}
+                size="base"
+              />
+            ) : (
+              <s-switch
+                accessibilityLabel={`${isActive ? "Set to draft" : "Activate"} ${template.name}`}
+                checked={isActive}
+                onChange={() => onToggleStatus(template.id, effectiveStatus)}
+                {...(busy ? { disabled: true } : {})}
+              />
+            ))}
+        </s-stack>
       </s-table-cell>
       <s-table-cell>{template.rowCount}</s-table-cell>
       <s-table-cell>
@@ -226,6 +275,8 @@ const TemplateTable = ({
   templates,
   assignedCounts,
   busy,
+  pendingStatusSubmit,
+  onToggleStatus,
   selectedStatus,
   onSelectStatus,
   paginate,
@@ -243,6 +294,8 @@ const TemplateTable = ({
   templates: TemplateListItem[];
   assignedCounts: Promise<AssignedCounts>;
   busy: boolean;
+  pendingStatusSubmit: { id: string; status: string } | null;
+  onToggleStatus: (id: string, currentStatus: string) => void;
   selectedStatus: StatusFilter;
   onSelectStatus: (status: StatusFilter) => void;
   // Pagination (Phase 2): `paginate` shows the s-table's prev/next controls (only when >1 page); the
@@ -295,7 +348,10 @@ const TemplateTable = ({
           hasPreviousPage={hasPreviousPage}
           onNextPage={onNextPage}
           onPreviousPage={onPreviousPage}
-          loading={listLoading}
+          // Inert while a page/status navigation loads OR any row mutation is in flight (`busy`):
+          // the loading state dims the whole table and blocks interaction, so a merchant can't
+          // click through a template-name link and navigate away mid-write.
+          loading={listLoading || busy}
         >
           <s-table-header-row>
             <s-table-header listSlot="primary">Template Name</s-table-header>
@@ -314,6 +370,8 @@ const TemplateTable = ({
                 template={template}
                 assignedCounts={assignedCounts}
                 busy={busy}
+                pendingStatusSubmit={pendingStatusSubmit}
+                onToggleStatus={onToggleStatus}
                 onRequestRename={onRequestRename}
                 onRequestStatus={onRequestStatus}
                 onDuplicate={onDuplicate}
@@ -654,6 +712,31 @@ export default function TemplatesPage() {
     setPendingRename(null);
   };
 
+  // Inline status toggle: the one-click Draft⇄Active path, no modal. Submits the SAME status intent
+  // as the modal (same conflict gate, metaobject re-sync, routing rebuild in the action) — so a
+  // blocked DRAFT→ACTIVE flip returns ok:false and its toast fires via the settle effect, while the
+  // row's optimistic badge/toggle revert on their own. The `busy` guard mirrors the other handlers,
+  // keeping the shared fetcher single-flight.
+  const handleToggleStatus = (id: string, currentStatus: string) => {
+    if (busy) return;
+    const nextStatus = currentStatus === "ACTIVE" ? "DRAFT" : "ACTIVE";
+    fetcher.submit(
+      { intent: "status", id, status: nextStatus },
+      { method: "post", encType: "application/json" },
+    );
+  };
+
+  // The in-flight status submit read off the shared fetcher (id + target). Passed to the rows so the
+  // one whose id matches paints its badge/toggle at the pending status until the write settles; on a
+  // block/error the server state is unchanged and this clears, so the row snaps back — no manual
+  // revert. Only a status intent carries a `status`, so other intents leave this null.
+  const pendingStatusSubmit =
+    fetcher.state !== "idle" &&
+    fetcher.json &&
+    (fetcher.json as { intent?: string }).intent === "status"
+      ? (fetcher.json as { id: string; status: string })
+      : null;
+
   // Change status persists immediately: open the shared modal seeded with the row's current status;
   // Confirm submits the picked status and the badge revalidates. Cancel/Esc changes nothing.
   const handleRequestStatus = (id: string, name: string, status: string) => {
@@ -741,6 +824,8 @@ export default function TemplatesPage() {
           templates={templates}
           assignedCounts={assignedCounts}
           busy={busy}
+          pendingStatusSubmit={pendingStatusSubmit}
+          onToggleStatus={handleToggleStatus}
           selectedStatus={selectedStatus}
           onSelectStatus={handleSelectStatus}
           paginate={pageCount > 1}
