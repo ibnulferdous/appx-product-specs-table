@@ -117,8 +117,9 @@ export function buildRoutingMetafieldInput(
  * the number. Pinned by a test that an over-budget projection still reaches `metafieldsSet`.
  *
  * ⚠️ Takes the SERIALIZED string, not the projection, so it measures the exact bytes the
- * mutation sends. The ceiling is DORMANT: the runtime Admin client is October25 (pre-2026-04),
- * still at the legacy 2MB limit; `app/shopify.server.test.ts` is the tripwire for when it moves.
+ * mutation sends. The ceiling is DORMANT: the runtime Admin client is January26 / 2026-01
+ * (pre-2026-04), still at the legacy 2MB limit; `app/shopify.server.test.ts` is the tripwire
+ * for when it moves to 2026-04+.
  */
 function reportRoutingBudget(
   serialized: string,

@@ -4,8 +4,8 @@
 // Shopify limits a `json` metafield WRITE to 128KB from API version 2026-04 on.
 // Apps using json fields before 2026-04-01 are grandfathered at the old 2MB
 // limit; **this app is not**. The ceiling is dormant only because the runtime
-// Admin client is still `ApiVersion.October25` — `app/shopify.server.test.ts` is
-// the tripwire that fires when that moves.
+// Admin client is `ApiVersion.January26` (2026-01), one release below the cutoff —
+// `app/shopify.server.test.ts` is the tripwire that fires when that moves to 2026-04+.
 //
 // ⚠️ This MEASURES and CLASSIFIES; it decides nothing. No caller may refuse a
 // write on the strength of a `level` returned here — overflow policy is kept out

@@ -832,11 +832,12 @@ grandfathered at the old 2MB limit.
 `type = "json"` declaration landed 2026-07-02 (`6d1cd3a`) — both after the cutoff.
 
 ⚠️ **The ceiling is dormant but armed.** The runtime Admin client is pinned to
-`ApiVersion.October25` (`app/shopify.server.ts:13`), i.e. pre-2026-04, so writes
-currently sit at 2MB. **`ApiVersion.April26` is the newest stable version the
-installed `@shopify/shopify-api` offers** — so the *next* routine version bump is
-precisely the one that arms a 16× reduction, under a live storefront delivery path,
-with no other code change.
+`ApiVersion.January26` (2026-01, `app/shopify.server.ts:13`), i.e. pre-2026-04, so
+writes currently sit at 2MB. **`ApiVersion.April26` is the newest stable version the
+installed `@shopify/shopify-api` offers** — so the *next* version bump is precisely
+the one that arms a 16× reduction, under a live storefront delivery path, with no
+other code change. (The TOML `webhooks.api_version` now matches the runtime at
+2026-01 — the old 2026-07/2025-10 split was reconciled 2026-08-15.)
 
 `app/shopify.server.test.ts` is the **tripwire**: it reads the app's own exported
 `apiVersion` and fails the suite the moment it reaches 2026-04, with a message

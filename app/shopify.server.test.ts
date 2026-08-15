@@ -37,7 +37,8 @@ beforeAll(async () => {
 // that used json fields before 2026-04-01 keep the old 2MB limit — this app does
 // NOT qualify: its first `type = "json"` declaration landed 2026-07-02 (commit
 // 6d1cd3a), after the cutoff. The only reason the ceiling is not live today is
-// that `shopify.server.ts` pins the runtime Admin client to `ApiVersion.October25`.
+// that `shopify.server.ts` pins the runtime Admin client to `ApiVersion.January26`
+// (2026-01) — one release below the cutoff. Any bump to 2026-04 or later trips this.
 //
 // So bumping that constant — exactly the kind of edit a dependency-update or
 // "use the latest API" chore produces — silently converts a 2MB limit into a
