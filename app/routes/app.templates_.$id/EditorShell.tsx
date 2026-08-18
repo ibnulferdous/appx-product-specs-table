@@ -1,5 +1,5 @@
 import type { CSSProperties, ReactNode } from "react";
-import { useId, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import { isPreviewView, type DeviceView, type ViewId } from "./deviceView";
 import { useScrollRegionHeight } from "./useScrollRegionHeight";
 import { SegmentedControl, type SegOption } from "./SegmentedControl";
@@ -115,10 +115,6 @@ export function EditorShell({
     showSidebar && !railCollapsed ? 1 : 0,
   );
 
-  // Stable, instance-unique id linking the rail toggle to its <s-tooltip>, so a sighted mouse user
-  // gets the same label the aria-label gives AT (matches SegmentedControl's device-toggle tooltips).
-  const railToggleTooltipId = useId();
-
   return (
     <s-box
       background="base"
@@ -153,38 +149,30 @@ export function EditorShell({
                 `:focus-visible` ring the tab segments use, imported from the tripwired module, and the
                 nested `<s-box>` supplies the hit area. (features/76 Step 0.2) */}
             {railTab ? (
-              <>
-                <button
-                  type="button"
-                  className={styles.segBtn}
-                  aria-label={railToggleLabel(railTab, railCollapsed)}
-                  aria-expanded={!railCollapsed}
-                  aria-controls={RAIL_REGION_ID}
-                  // Points at the sibling <s-tooltip> for a sighted mouse user (the aria-label covers
-                  // AT). `interestFor` isn't in React's typings for a native <button>, so it's spread in.
-                  {...({ interestFor: railToggleTooltipId } as Record<
-                    string,
-                    string
-                  >)}
-                  onClick={() => setRailCollapsed((collapsed) => !collapsed)}
+              <button
+                type="button"
+                className={styles.segBtn}
+                aria-label={railToggleLabel(railTab, railCollapsed)}
+                aria-expanded={!railCollapsed}
+                aria-controls={RAIL_REGION_ID}
+                // The native `title` gives a sighted mouse user the same label the aria-label gives
+                // AT. Used instead of Polaris `interestFor`/<s-tooltip>, which only drives Shopify
+                // web-component triggers — not this native <button>.
+                title={railToggleLabel(railTab, railCollapsed)}
+                onClick={() => setRailCollapsed((collapsed) => !collapsed)}
+              >
+                <s-box
+                  borderRadius="base"
+                  paddingBlock="small-300"
+                  paddingInline="small-200"
                 >
-                  <s-box
-                    borderRadius="base"
-                    paddingBlock="small-300"
-                    paddingInline="small-200"
-                  >
-                    {/* Presentational: the button is already named by its `aria-label`. */}
-                    <s-icon
-                      type="layout-sidebar-left"
-                      aria-hidden="true"
-                    ></s-icon>
-                  </s-box>
-                </button>
-                {/* Same copy as the aria-label; flips Show/Hide with the state. */}
-                <s-tooltip id={railToggleTooltipId}>
-                  {railToggleLabel(railTab, railCollapsed)}
-                </s-tooltip>
-              </>
+                  {/* Presentational: the button is already named by its `aria-label`. */}
+                  <s-icon
+                    type="layout-sidebar-left"
+                    aria-hidden="true"
+                  ></s-icon>
+                </s-box>
+              </button>
             ) : null}
           </s-stack>
           <SegmentedControl
