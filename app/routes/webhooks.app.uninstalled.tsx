@@ -8,12 +8,10 @@ export const action = async ({ request }: ActionFunctionArgs) => {
 
   console.log(`Received ${topic} webhook for ${shop}`);
 
-  // Record the uninstall on the Shop record so install state stays accurate.
-  // Idempotent: updateMany no-ops if the shop was already marked uninstalled.
+  // Idempotent: no-ops if already marked uninstalled.
   await markShopUninstalled(shop);
 
-  // Webhook requests can trigger multiple times and after an app has already been uninstalled.
-  // If this webhook already ran, the session may have been deleted previously.
+  // Session may already be gone from a prior delivery.
   if (session) {
     await db.session.deleteMany({ where: { shop } });
   }
