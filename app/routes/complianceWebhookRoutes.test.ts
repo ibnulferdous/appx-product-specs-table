@@ -136,7 +136,15 @@ function callAction(action: RouteAction) {
 
 /** Everything the handler wrote to the log, as one searchable string. */
 function loggedText(): string {
-  return logSpy.mock.calls.map((args) => args.join(" ")).join("\n");
+  // Serialize each argument: `args.join(" ")` would collapse a logged payload object to
+  // "[object Object]", hiding any email/phone/order-id inside it and letting the PII check pass.
+  return logSpy.mock.calls
+    .flatMap((args) =>
+      args.map((arg) =>
+        typeof arg === "string" ? arg : (JSON.stringify(arg) ?? String(arg)),
+      ),
+    )
+    .join("\n");
 }
 
 // ---------------------------------------------------------------------------
