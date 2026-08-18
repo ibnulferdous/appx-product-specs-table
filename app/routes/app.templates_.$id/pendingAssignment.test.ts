@@ -123,6 +123,14 @@ describe("selectorSetKey (order-independent set diff)", () => {
     );
   });
 
+  it("a repeated selector does NOT change the key (deduped set semantics)", () => {
+    // [A] and [A, A] are the same SET, so they must key the same — a duplicate
+    // must not manufacture a phantom change on the Save diff.
+    expect(key([sel("PRODUCT", P("A")), sel("PRODUCT", P("A"))])).toBe(
+      key([sel("PRODUCT", P("A"))]),
+    );
+  });
+
   it("the empty set (NONE) is the empty string", () => {
     expect(key([])).toBe("");
   });
@@ -167,10 +175,17 @@ describe("parsePendingExcludes (feature 45)", () => {
 });
 
 describe("sameGidSet", () => {
-  it("is order-independent and length-sensitive", () => {
+  it("is order-independent and compares as SETS, not lists", () => {
     expect(sameGidSet([P("1"), P("2")], [P("2"), P("1")])).toBe(true);
     expect(sameGidSet([P("1")], [P("1"), P("2")])).toBe(false);
     expect(sameGidSet([P("1"), P("2")], [P("1"), P("3")])).toBe(false);
     expect(sameGidSet([], [])).toBe(true);
+  });
+
+  it("ignores duplicate members (same set, different lengths)", () => {
+    // [A, A] and [A] are the same GID set, so they must NOT read as "changed" —
+    // a raw length check would wrongly fire the rebuild trigger here.
+    expect(sameGidSet([P("1"), P("1")], [P("1")])).toBe(true);
+    expect(sameGidSet([P("1"), P("1"), P("2")], [P("2"), P("1")])).toBe(true);
   });
 });
