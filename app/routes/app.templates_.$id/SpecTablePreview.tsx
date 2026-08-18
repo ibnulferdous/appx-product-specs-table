@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { EditorRow } from "../../utils/rows";
 import type { StylingValues } from "../../utils/tableStyling";
 import type { DeviceView } from "./deviceView";
@@ -98,6 +98,13 @@ export function SpecTablePreview({
       // the viewport and scrolls inside the window.
       browserScreenHeight(height, available);
 
+  // Building the full preview HTML document is not free, and this component re-renders on every height
+  // message and device switch. Key the work to the inputs that actually change the document.
+  const previewDoc = useMemo(
+    () => renderSpecTablePreviewDocument(rows, styling),
+    [rows, styling],
+  );
+
   const frame = (
     <iframe
       ref={frameRef}
@@ -109,7 +116,7 @@ export function SpecTablePreview({
       // opaque origin. Never add `allow-same-origin`: with scripts, the pair lets a frame remove its
       // own sandbox. Egress is further barred by the document's CSP.
       sandbox="allow-scripts"
-      srcDoc={renderSpecTablePreviewDocument(rows, styling)}
+      srcDoc={previewDoc}
       // Width is the per-device size (Step 5); height from the per-device sizing rule above. Either way
       // an over-tall document scrolls INSIDE the iframe. `undefined` (pre-measurement) falls back to
       // `.previewFrame`'s min-height.

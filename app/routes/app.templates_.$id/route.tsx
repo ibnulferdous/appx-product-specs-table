@@ -163,22 +163,22 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
     throw new Response("Template not found", { status: 404 });
   }
 
-  // The template's INCLUDE scope SET (features 44/46/47), shop-scoped and homogeneous in `scope`. For
-  // PRODUCT/COLLECTION we BATCH-resolve resource TITLEs (one query, not N) so each chip is readable
-  // (falls back to the GID on a miss). null when the set is empty → the picker opens on "None".
-  const selectors = await getTemplateIncludeSelectors(shop.id, template.id);
-  const assignment = await buildAssignmentSeed(admin, selectors);
-
-  // The template's EXCLUDE carve-outs (feature 45), each resolved to its product TITLE + thumbnail for
-  // a rich chip (feature 47; fails soft to the GID, never blocks the load). One batched query for the
-  // whole set. Loaded even when the scope isn't ALL_PRODUCTS (the UI hides the control, but the state
-  // must seed cleanly so Discard/dirty round-trips work).
-  const excludeGids = await getExcludesForTemplate(shop.id, template.id);
-  const excludeDetails = await resolveScopeResourceDetails(
-    admin,
-    "PRODUCT",
-    excludeGids,
-  );
+  // The template's INCLUDE scope SET (features 44/46/47) and EXCLUDE carve-outs (feature 45). The two
+  // reads don't depend on each other, so fire them together to save a round trip on editor load (the
+  // action already parallelizes the same pair on the save path). INCLUDE is shop-scoped and homogeneous
+  // in `scope`; for PRODUCT/COLLECTION we BATCH-resolve resource TITLEs (one query, not N) so each chip
+  // is readable (falls back to the GID on a miss). null when the include set is empty → the picker opens
+  // on "None". EXCLUDE chips resolve to product TITLE + thumbnail (feature 47; fails soft to the GID,
+  // never blocks the load), and are loaded even when the scope isn't ALL_PRODUCTS (the UI hides the
+  // control, but the state must seed cleanly so Discard/dirty round-trips work).
+  const [selectors, excludeGids] = await Promise.all([
+    getTemplateIncludeSelectors(shop.id, template.id),
+    getExcludesForTemplate(shop.id, template.id),
+  ]);
+  const [assignment, excludeDetails] = await Promise.all([
+    buildAssignmentSeed(admin, selectors),
+    resolveScopeResourceDetails(admin, "PRODUCT", excludeGids),
+  ]);
   const excludes = excludeGids.map((gid) => {
     const detail = excludeDetails.get(gid);
     return {
@@ -212,7 +212,7 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
   const { session, admin } = await authenticate.admin(request);
   const shop = await upsertShop(session);
 
-  const payload = (await request.json()) as {
+  type TemplateActionPayload = {
     rows?: unknown;
     name?: unknown;
     status?: unknown;
@@ -224,6 +224,15 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
     basedOnPreset?: unknown;
     intent?: unknown;
   };
+  // An absent or malformed JSON body must fail as the editor's { ok, error } contract (which
+  // TemplateHeaderActions and the editor both already surface), not escape to the route error
+  // boundary as an unexplained 500.
+  let payload: TemplateActionPayload;
+  try {
+    payload = (await request.json()) as TemplateActionPayload;
+  } catch {
+    return { ok: false as const, error: "Malformed request body" };
+  }
 
   // Create-on-first-save: the editor submits the seed + edits as JSON (same shape as an edit save),
   // so the create branch reads JSON, not FormData. Lifecycle actions are disabled on /new, so this
