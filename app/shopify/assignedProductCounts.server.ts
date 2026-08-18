@@ -201,7 +201,9 @@ export function buildAssignedCountQuery(
   };
 
   if (needShopTotal) {
-    bodyLines.push("shopTotal: productsCount { count }");
+    // `limit: null` uncaps the count — the root productsCount otherwise caps at 10,000 (Shopify
+    // 2025-07+), which would understate the shop total and corrupt the ALL_PRODUCTS subtraction.
+    bodyLines.push("shopTotal: productsCount(limit: null) { count }");
   }
 
   collectionGids.forEach((gid, i) => {
@@ -217,7 +219,9 @@ export function buildAssignedCountQuery(
   productTypes.forEach((type, i) => {
     const alias = `ptype${i}`;
     varDecls.push(`$${alias}: String!`);
-    bodyLines.push(`${alias}: productsCount(query: $${alias}) { count }`);
+    bodyLines.push(
+      `${alias}: productsCount(query: $${alias}, limit: null) { count }`,
+    );
     variables[alias] = `product_type:'${escapeProductSearchValue(type)}'`;
     aliases.type.set(type, alias);
   });
@@ -225,7 +229,9 @@ export function buildAssignedCountQuery(
   vendors.forEach((vendor, i) => {
     const alias = `vendor${i}`;
     varDecls.push(`$${alias}: String!`);
-    bodyLines.push(`${alias}: productsCount(query: $${alias}) { count }`);
+    bodyLines.push(
+      `${alias}: productsCount(query: $${alias}, limit: null) { count }`,
+    );
     variables[alias] = `vendor:'${escapeProductSearchValue(vendor)}'`;
     aliases.vendor.set(vendor, alias);
   });

@@ -615,8 +615,15 @@ export async function deleteTemplateForShop(
   shopId: string,
   templateId: string,
 ) {
-  const result = await prisma.template.deleteMany({
-    where: { id: templateId, shopId },
-  });
-  return { ok: true as const, count: result.count };
+  try {
+    const result = await prisma.template.deleteMany({
+      where: { id: templateId, shopId },
+    });
+    return { ok: true as const, count: result.count };
+  } catch (error) {
+    // Match the sibling write helpers' structured failure instead of letting a Prisma rejection
+    // escape as an unhandled 500; keep the cause in the logs for the operator.
+    console.error("deleteTemplateForShop failed", { shopId, templateId, error });
+    return { ok: false as const, error: "Could not delete template" };
+  }
 }

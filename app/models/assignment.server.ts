@@ -96,6 +96,12 @@ export async function setTemplateScope(
     scopeValue: string | null;
   }[] = [];
   for (const selector of selectors) {
+    // Untrusted input (the Array.isArray guard above proves it): a null/non-object element would
+    // throw a TypeError on the .scope read below, and that throw is OUTSIDE the caller's try — a
+    // client posting `[null]` would get a 500 instead of a clean validation rejection.
+    if (selector === null || typeof selector !== "object") {
+      return { ok: false as const, error: "Invalid scope" };
+    }
     const result = validateScope(selector.scope, selector.scopeValue);
     if (!result.ok) {
       return { ok: false as const, error: result.error };

@@ -200,7 +200,9 @@ describe("buildAssignedCountQuery", () => {
       vendors: [],
     })!;
     expect(built.query).toContain("query AssignedProductCounts {");
-    expect(built.query).toContain("shopTotal: productsCount { count }");
+    expect(built.query).toContain(
+      "shopTotal: productsCount(limit: null) { count }",
+    );
     expect(built.variables).toEqual({});
     expect(built.aliases.shopTotal).toBe(true);
   });
@@ -221,7 +223,7 @@ describe("buildAssignedCountQuery", () => {
       "col0: collection(id: $col0) { productsCount { count } }",
     );
     expect(built.query).toContain(
-      "ptype0: productsCount(query: $ptype0) { count }",
+      "ptype0: productsCount(query: $ptype0, limit: null) { count }",
     );
     // Variables carry the search terms; the merchant string is escaped.
     expect(built.variables.col0).toBe("gid://shopify/Collection/5");
