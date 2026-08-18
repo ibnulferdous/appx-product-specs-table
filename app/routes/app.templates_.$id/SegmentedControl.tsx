@@ -2,7 +2,7 @@ import type {
   ComponentProps,
   KeyboardEvent as ReactKeyboardEvent,
 } from "react";
-import { useId, useRef } from "react";
+import { useRef } from "react";
 import styles from "./SpecTableEditor.module.css";
 
 // The editor's segmented control (reshell A2). Its own module rather than inside `EditorShell.tsx` so
@@ -39,14 +39,6 @@ export function SegmentedControl<T extends string>({
 }) {
   const buttonsRef = useRef<Array<HTMLButtonElement | null>>([]);
   const activeIndex = options.findIndex((option) => option.value === value);
-
-  // Stable, instance-unique prefix so two SegmentedControls don't collide on tooltip ids. Only
-  // `hideLabel` (icon-only) segments get a tooltip — labelled ones already show their text.
-  const tooltipBase = useId();
-  // `interestFor` isn't in React's typings for a native <button>, so attach it via a spread. Empty
-  // object for labelled segments leaves the button untouched.
-  const interestProps = (option: SegOption<T>): Record<string, string> =>
-    option.hideLabel ? { interestFor: `${tooltipBase}-${option.value}` } : {};
 
   const moveTo = (rawIndex: number) => {
     const count = options.length;
@@ -97,10 +89,11 @@ export function SegmentedControl<T extends string>({
               type="button"
               role="radio"
               aria-checked={isActive}
+              // Icon-only segments carry the label as both the accessible name (AT) and a native
+              // `title` so sighted mouse users get a hover hint. `title` works on a native <button>,
+              // unlike Polaris `interestFor`, which only drives Shopify web-component triggers.
               aria-label={option.hideLabel ? option.label : undefined}
-              // Icon-only segments point at a sibling <s-tooltip> for sighted mouse users (the
-              // aria-label covers AT). `interestFor` is the same invoker family as `commandFor`.
-              {...interestProps(option)}
+              title={option.hideLabel ? option.label : undefined}
               tabIndex={isActive ? 0 : -1}
               className={styles.segBtn}
               onClick={() => onChange(option.value)}
@@ -129,15 +122,6 @@ export function SegmentedControl<T extends string>({
           );
         })}
       </div>
-      {/* Tooltips for the icon-only segments, kept OUTSIDE the radiogroup so they don't sit among the
-          role="radio" children; `interestFor` references them by id, so their DOM position is free. */}
-      {options
-        .filter((option) => option.hideLabel)
-        .map((option) => (
-          <s-tooltip key={option.value} id={`${tooltipBase}-${option.value}`}>
-            {option.label}
-          </s-tooltip>
-        ))}
     </s-box>
   );
 }
