@@ -1,0 +1,71 @@
+/* The gallery page's layout (feature 88 · step 91).
+ *
+ * ⚠️ This file owns the ARRANGEMENT of the cards and nothing about a card. The
+ * card sizes itself in `StylePresetCard.module.css`, whose every number is
+ * scale geometry; a card that knew it lived in a two-column grid could not be
+ * dropped anywhere else, and the two-per-row decision would end up recorded in
+ * the wrong file. If the layout seems to need a card change, change the card
+ * deliberately — do not nudge it from this side. */
+
+.gallery {
+  display: flex;
+  flex-direction: column;
+  /* Owned here rather than left to `<s-page>`'s child spacing, so the gap
+     between the help line and the grid is the same whatever the page component
+     does with arbitrary (non-`<s-section>`) children. */
+  gap: 1rem;
+  /* The query container for the one-column fallback below. A CONTAINER query,
+     not a media query: what decides whether two cards fit is the width
+     `<s-page>` hands us, and the relationship between that and the viewport is
+     `s-page`'s business (measured at ~221px of chrome, but that is an
+     observation, not a contract). Asking the box we actually get is exact and
+     survives Shopify retuning the page. */
+  container-type: inline-size;
+}
+
+.grid {
+  display: grid;
+  /* 🚫 NOT `auto-fit` / `auto-fill`. Two cards per row is a merchant decision
+     (2026-07-27), not a fallback: the card was sized by arithmetic against the
+     measured 966px `inlineSize="base"` page (see `StylePresetCard.module.css`
+     for how that number was obtained, and for the 1086px it replaced) —
+
+       card    = 440 preview + 24 padding + 2 border = 466px
+       one row = 466 x 2 + 16 gap                    = 948px    (18px slack)
+
+     — and an auto-fitting track would silently seat a third card on a wide
+     admin, turning that decision into a coincidence. Pinned by a test.
+
+     `minmax(0, 1fr)` rather than `1fr`: a `1fr` track's floor is its content's
+     min-content size, and the card carries an explicit 480px preview box. With
+     a bare `1fr` a narrow admin could not shrink the track, so the page would
+     scroll sideways and defeat the `max-width: 100%` escape the card ships. */
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+  /* The cards have a fixed width, so this only decides where the 18px of slack
+     goes: at the start of each track, keeping the two columns' left edges
+     aligned with the page rather than drifting apart. */
+  justify-items: start;
+}
+
+/* 🔴 Below the width two cards need, ONE column — added in step 91 after
+   looking at a narrowed admin.
+
+   This is not a retreat from the two-per-row decision; it is the decision
+   stated honestly. Two cards that no longer fit do not politely shrink: the
+   preview box crops, so each card shows a left-hand SLICE of its table and the
+   gallery's whole job — comparing five looks — degrades exactly when the
+   merchant can least afford it. One full card beats two clipped ones.
+
+   🚫 Still not `auto-fit`. The difference matters: `auto-fit` would also add a
+   THIRD column on a wide admin, which no decision ever asked for. This only
+   ever removes the second one, and only below the width where it stops working.
+
+   948px is the arithmetic from the card geometry — 466 x 2 + a 16px gap — so
+   the breakpoint is the fit itself rather than a guessed device width. It must
+   move with `--appx-preset-scale`; the two numbers are one decision. */
+@container (width < 948px) {
+  .grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

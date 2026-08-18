@@ -1,0 +1,254 @@
+/* Style-preset gallery cards (feature 88 · step 90).
+ *
+ * Two card shapes share one frame: `.card` + `.preview` (a scaled live table)
+ * for the five patterns, `.card` + `.blankPlate` for the "Blank" choice, which
+ * shows no table at all — its output is pixel-identical to Modern's, so a second
+ * thumbnail of the same table would read as a rendering bug.
+ *
+ * Colour: Polaris colour tokens are sealed in shadow DOM and unreachable from
+ * light-DOM CSS ([[polaris-web-component-gotchas]]), the same constraint
+ * `DevicePreview.module.css` works under. Same answer here: every literal is
+ * declared ONCE as a custom property on `.card` and referenced by `var()`, so
+ * the card look is retuned from one block. Neutral surfaces are fixed literals
+ * (they read against a light admin); hairlines and muted text derive from
+ * `currentColor` so they follow the theme ink. */
+
+.card {
+  /* The one place to retune the card look. */
+  --appx-preset-surface: #ffffff;
+  --appx-preset-hairline: color-mix(in srgb, currentColor 14%, transparent);
+  --appx-preset-hairline-hover: color-mix(
+    in srgb,
+    currentColor 35%,
+    transparent
+  );
+  --appx-preset-shadow: color-mix(in srgb, currentColor 12%, transparent);
+  --appx-preset-muted: color-mix(in srgb, currentColor 65%, transparent);
+  --appx-preset-blank-fill: color-mix(in srgb, currentColor 3%, #ffffff);
+  /* The action line's ink. A fixed literal, NOT derived from `currentColor`:
+     every other colour here is a neutral that only has to stay legible, while
+     this one carries a meaning — "this is interactive" — and a mixed-down grey
+     would say the opposite. #005bd3 is the admin's own interactive blue; it is
+     a literal for the same reason the surface is (Polaris colour tokens are
+     sealed in shadow DOM, [[polaris-web-component-gotchas]]). */
+  --appx-preset-action: #005bd3;
+
+  /* --- The scale geometry ------------------------------------------------
+     "Scale, don't shrink": the preview is the REAL table rendered at a real
+     desktop width and then visually scaled down, never the table rendered into
+     a 320px box.
+
+     ⚠️ `--appx-preset-render-width` MUST stay above the storefront
+     stylesheet's 749px mobile breakpoint. Below it the `--mobile-stacked`
+     rules fire and every card — Modern, Classic, Multi-column alike — renders
+     in its phone form, so all five thumbnails converge on the same stacked
+     shape and the gallery stops distinguishing anything. That single number is
+     what the whole scale-don't-shrink rule reduces to.
+
+     The render HEIGHT is a viewport, not a measurement: the frame crops
+     whatever does not fit rather than auto-sizing, so a future bundle that
+     renders taller crops cleanly instead of resizing the card.
+
+     420px is measured, not guessed — it is the tallest of the five (the
+     two-column family, ~395px at this width) plus slack. The first value was 470px
+     and every card carried a visible band of dead white under its last row;
+     the cards are all one height by design, so the viewport has to be sized to
+     the TALLEST pattern and no more. Multi-column still ends well short of the
+     bottom, and that is honest — it genuinely is a shorter table.
+
+     The SCALE is set by the page the cards sit on (merchant decision
+     2026-07-27: two cards per row, in an `inlineSize="base"` `<s-page>`).
+
+     🔴 The base width was MIS-MEASURED once, and the correction is the reason
+     this block reads the way it does. Step 90 recorded 1086px, read off a
+     screenshot; the real figure, measured in step 91 by asking the page itself
+     through a `@container` ladder, is **966px** — capped there, identical at a
+     1600px and a 2400px window. The 0.6 scale that 1086 justified never fit:
+     every card overran its grid track by ~26px and the previews were quietly
+     cropped. Measure a container by querying it, not by counting pixels in a
+     screenshot.
+
+       card    = 440 preview + 24 padding + 2 border = 466px
+       one row = 466 x 2 + 16 gap                    = 948px   (fits 966)
+
+     ⚠️ `route.module.css`'s one-column `@container` breakpoint is that 948 and
+     must move whenever this scale does — they are one decision in two files.
+
+     0.55 rather than the 0.4 first shipped, and the gain is not only fit:
+     label text goes from ~6.4px to ~8.8px, which is the difference between
+     seeing that a pattern has rows and being able to read them. */
+  --appx-preset-render-width: 800px;
+  --appx-preset-render-height: 420px;
+  --appx-preset-scale: 0.55;
+
+  display: flex;
+  flex-direction: column;
+  /* The preview box's scaled width IS the card's content width, so the frame
+     hugs the thumbnail exactly and every card in the gallery is the same size —
+     including Blank, which has no thumbnail to size itself from.
+     The `max-width` is the narrow-admin escape, and it 🔴 SUBTRACTS THIS BOX'S
+     OWN CHROME on purpose. These boxes are content-box (the 506px in the
+     arithmetic above is 480 + padding + border), so a plain `max-width: 100%`
+     caps the CONTENT at the grid track and lets the border box overrun it by
+     the padding and border — 26px per card, which is exactly the sideways
+     scroll the admin grew when the window was narrowed. Found live in step 91,
+     not by a test: at base width every card fits its track with room to spare,
+     so nothing overflows until the page is squeezed. Same reason on `.preview`
+     and `.blankPlate` below, with their own chrome subtracted. */
+  width: calc(var(--appx-preset-render-width) * var(--appx-preset-scale));
+  max-width: calc(100% - 1.5rem - 0.125rem);
+  gap: 0.75rem;
+  padding: 0.75rem;
+  border: 0.0625rem solid var(--appx-preset-hairline);
+  border-radius: 0.75rem;
+  background: var(--appx-preset-surface);
+  /* It is an anchor: kill the underline and inherit the admin ink, so it reads
+     as a card rather than as a link with a picture in it. */
+  text-decoration: none;
+  color: inherit;
+}
+
+.card:hover {
+  border-color: var(--appx-preset-hairline-hover);
+  box-shadow: 0 0.125rem 0.5rem var(--appx-preset-shadow);
+}
+
+/* Keyboard users must SEE which card they are on. `:focus-visible` only, so a
+   pointer click does not leave a ring behind; `outline-offset` puts the ring
+   outside the border rather than on top of it. */
+.card:focus-visible {
+  outline: 0.125rem solid currentColor;
+  outline-offset: 0.125rem;
+}
+
+/* The scaled viewport. `overflow: hidden` is what makes the render height a
+   crop rather than a stretch. */
+.preview {
+  display: block;
+  width: calc(var(--appx-preset-render-width) * var(--appx-preset-scale));
+  height: calc(var(--appx-preset-render-height) * var(--appx-preset-scale));
+  /* Minus its own 1px hairline on each side — see `.card`. */
+  max-width: calc(100% - 0.125rem);
+  overflow: hidden;
+  border-radius: 0.375rem;
+  border: 0.0625rem solid var(--appx-preset-hairline);
+  background: var(--appx-preset-surface);
+}
+
+.frame {
+  display: block;
+  width: var(--appx-preset-render-width);
+  height: var(--appx-preset-render-height);
+  border: none;
+  transform: scale(var(--appx-preset-scale));
+  transform-origin: top left;
+  /* ⚠️ Load-bearing, not cosmetic. An iframe swallows pointer events, so
+     without this the middle of every card — the part a merchant actually aims
+     at — would not activate the link wrapping it. */
+  pointer-events: none;
+}
+
+/* Blank's stand-in: the same footprint as a preview so the cards line up in the
+   grid, but a dashed empty plate that is obviously NOT a sixth look. */
+.blankPlate {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: calc(var(--appx-preset-render-width) * var(--appx-preset-scale));
+  height: calc(var(--appx-preset-render-height) * var(--appx-preset-scale));
+  /* Minus its own 2px dashed edge on each side — see `.card`. */
+  max-width: calc(100% - 0.25rem);
+  border-radius: 0.375rem;
+  border: 0.125rem dashed var(--appx-preset-hairline);
+  background: var(--appx-preset-blank-fill);
+  color: var(--appx-preset-muted);
+  font-size: 1.75rem;
+  line-height: 1;
+}
+
+.body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+}
+
+.title {
+  font-weight: 600;
+}
+
+/* The card's one explanatory line. On the five preset cards it is the derived
+ * `presetHighlights` readout — the pattern axes in words, because the preview
+ * renders two of them sub-pixel at 0.55 scale; on Blank it is a written
+ * sentence.
+ *
+ * 🚫 No chips, pills or borders round the phrases, and no second tone for them.
+ * Six cards × up to four bordered boxes is a lot of drawn edges beside a
+ * thumbnail whose entire subject IS drawn edges — the chrome would read as part
+ * of the pattern being previewed. The middle dots come from the DOM string
+ * rather than CSS generated content (see `StylePresetCard.tsx` for why that
+ * separator has to be real text), so there is nothing to style here beyond ink.
+ *
+ * 📌 It stayed at the description's muted tone when it replaced the description
+ * 2026-07-31 — the two-line version briefly gave the readout a darker ink to
+ * separate it from the sentence above, and with that sentence gone there is
+ * nothing left to separate it FROM. */
+.description {
+  font-size: 0.8125rem;
+  color: var(--appx-preset-muted);
+  /* Four phrases wrap to two lines on Classic and Multi-column. `balance` splits
+     them evenly rather than leaving one orphan below three — the cards are a
+     fixed height, so there is room for the second line either way and only its
+     shape is in question. */
+  text-wrap: balance;
+}
+
+/* The action line. It is text inside the anchor, not a control — see the note
+   in `StylePresetCard.tsx` for why a real button would be a downgrade here.
+   It sits OUTSIDE `.body` so the card's `gap` separates it from the name and
+   description as its own beat, rather than crowding the help text. */
+.action {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  /* 🔴 Pins the action to the BOTTOM of the card, and it is a fix rather than a
+     flourish — observed live 2026-07-31, on the admin, after the description
+     became the derived highlight line.
+     Cards in a grid row stretch to the row's height, so a card whose line wraps
+     to two rows is exactly as tall as its one-line neighbour and only its
+     CONTENT is taller. Without this, "Use this style →" sat ~16px lower on
+     Classic than on Modern beside it, and lower on Multi-column than on Minimal
+     — every row visibly ragged along the one element that is the same on five of
+     the six cards. The wrap is not avoidable (Classic names four axes), so the
+     alignment has to come from the layout.
+     ⚠️ Works only because `.card` is a flex column and the grid stretches it; if
+     either changes this silently stops doing anything. */
+  margin-block-start: auto;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  /* The only non-neutral ink on the card, and the entire point of the line:
+     admin blue is what a merchant already reads as "this does something". */
+  color: var(--appx-preset-action);
+}
+
+/* Split from the label purely so the hover nudge moves the arrow alone — the
+   words must not slide, or the line reads as jitter rather than direction. */
+.actionArrow {
+  transition: transform 120ms ease-out;
+}
+
+.card:hover .actionArrow {
+  transform: translateX(0.125rem);
+}
+
+/* The card is legible and complete without the nudge — it is decoration on top
+   of an affordance that is already stated in words, so it costs nothing to
+   drop. The COLOUR and the text stay; only the movement goes. */
+@media (prefers-reduced-motion: reduce) {
+  .actionArrow {
+    transition: none;
+  }
+
+  .card:hover .actionArrow {
+    transform: none;
+  }
+}
