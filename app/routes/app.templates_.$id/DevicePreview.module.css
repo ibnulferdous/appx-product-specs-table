@@ -1,0 +1,171 @@
+/* Device-preview mockups (feature 72).
+ *
+ * Wraps the read-only preview <iframe> (`.previewFrame`, which lives in the
+ * byte-clean-tripwired `SpecTableEditor.module.css` — left untouched) in device
+ * chrome: a phone bezel for the Mobile view, a browser window for Desktop. Only
+ * the chrome lives here; the iframe keeps `.previewFrame` and the two element
+ * selectors below just neutralize its own border/radius so the device frame owns
+ * the edge.
+ *
+ * Colour: Polaris colour tokens are sealed in shadow DOM and not exposed to
+ * light-DOM CSS ([[polaris-web-component-gotchas]]), the same reason `.previewFrame`
+ * already hardcodes `#ffffff`. To honour code-standards' "single source of truth,
+ * not abstinence" rule, every literal is declared ONCE as a custom property on
+ * `.stage` and referenced by `var()` below — retune the device look from this one
+ * block. Neutral surfaces are fixed literals (they read against a light admin, like
+ * the existing `#f6f7f9` band and will not adapt to a dark admin theme); hairlines,
+ * shadows and muted text derive from `currentColor` so they follow the theme ink.
+ * The three traffic-light dots keep their identity colours. Everything semantic in
+ * the table itself still inherits the theme via the iframed storefront CSS. */
+
+.stage {
+  /* The one place to retune the device chrome. */
+  --appx-device-body: color-mix(in srgb, currentColor 5%, #ffffff);
+  --appx-device-speaker: color-mix(in srgb, currentColor 28%, transparent);
+  --appx-device-screen: #ffffff;
+  --appx-device-chrome: color-mix(in srgb, currentColor 5%, transparent);
+  --appx-device-hairline: color-mix(in srgb, currentColor 12%, transparent);
+  --appx-device-shadow: color-mix(in srgb, currentColor 16%, transparent);
+  --appx-device-url-text: color-mix(in srgb, currentColor 55%, transparent);
+  /* Device drop-shadow GEOMETRY, shared by both mockups. `offset + blur` must stay
+     within `.stage`'s bottom padding below (see the note there) or the shadow is
+     sliced off mid-gradient instead of fading out. */
+  --appx-device-shadow-offset: 0.375rem;
+  --appx-device-shadow-blur: 1rem;
+  --appx-dot-red: #ff5f57;
+  --appx-dot-yellow: #febc2e;
+  --appx-dot-green: #28c840;
+
+  /* A transparent centering container — NO background/radius of its own. An earlier
+     faint tinted backdrop with a border-radius revealed white triangles of the stage
+     column at its rounded corners; the device already pops via its own border +
+     shadow, so the backdrop is dropped rather than fixed. */
+  display: flex;
+  justify-content: center;
+  /* This padding is also the device shadows' ONLY room to fade out. `overflow-x`
+     below makes the stage a scroll container, and CSS computes the other axis to
+     `auto` too, so the stage clips at its padding box — a shadow reaching past it
+     is cut mid-gradient, which reads as a hard line under the device (reported
+     2026-07-23). The stage can't simply be padded more: the phone is sized to the
+     measured viewport, so extra padding here pushes the card past the bottom of the
+     admin frame. The shadow is contained instead — keep
+     `--appx-device-shadow-offset + --appx-device-shadow-blur` ≤ this value. */
+  padding: 1.5rem;
+  /* A device wider than a very narrow editor column scrolls sideways here rather
+     than clipping or forcing the whole page to scroll horizontally. */
+  overflow-x: auto;
+}
+
+/* --- Mobile: phone mockup ------------------------------------------------- */
+
+/* The phone body: a light, thin outline (not a heavy dark slab) so the specs table
+   inside is the focus. A hairline border + soft shadow read it as a phone frame.
+   Its vertical chrome (padding + speaker + gap + border) must equal PHONE_CHROME_PX
+   in `deviceView.ts`, which subtracts it from the measured height before capping
+   the screen at PHONE_SCREEN_MAX_PX. */
+.phone {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.375rem;
+  padding: 0.5rem;
+  background: var(--appx-device-body);
+  border: 0.0625rem solid var(--appx-device-hairline);
+  border-radius: 1.5rem;
+  box-shadow: 0 var(--appx-device-shadow-offset) var(--appx-device-shadow-blur)
+    var(--appx-device-shadow);
+}
+
+/* Speaker / notch pill sitting in the top bezel (NOT over the screen, so it never
+   overlaps the storefront content). Decorative — `aria-hidden` in the markup. */
+.phoneSpeaker {
+  width: 2.5rem;
+  height: 0.25rem;
+  border-radius: 0.25rem;
+  background: var(--appx-device-speaker);
+}
+
+/* The screen: clips the iframe to rounded corners (slightly tighter than the body
+   so the thin bezel reads evenly). */
+.phoneScreen {
+  overflow: hidden;
+  border-radius: 1.1rem;
+  background: var(--appx-device-screen);
+}
+
+/* The iframe fills the screen edge-to-edge — the phone body owns the frame, so
+   drop `.previewFrame`'s own border/radius. Element selector beats the single-class
+   `.previewFrame` regardless of stylesheet order. */
+.phoneScreen iframe {
+  display: block;
+  border: none;
+  border-radius: 0;
+}
+
+/* --- Desktop: browser window --------------------------------------------- */
+
+.browser {
+  width: 100%;
+  overflow: hidden;
+  border-radius: 0.6rem;
+  border: 0.0625rem solid var(--appx-device-hairline);
+  box-shadow: 0 var(--appx-device-shadow-offset) var(--appx-device-shadow-blur)
+    var(--appx-device-shadow);
+  background: var(--appx-device-screen);
+}
+
+/* The chrome bar: traffic-light dots + a faux address pill. Decorative —
+   `aria-hidden` in the markup so AT reads only the iframe and its title. */
+.browserBar {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.55rem 0.75rem;
+  background: var(--appx-device-chrome);
+  border-bottom: 0.0625rem solid var(--appx-device-hairline);
+}
+
+.browserDots {
+  display: flex;
+  gap: 0.375rem;
+}
+
+.browserDot {
+  width: 0.7rem;
+  height: 0.7rem;
+  border-radius: 50%;
+}
+
+.dotRed {
+  background: var(--appx-dot-red);
+}
+
+.dotYellow {
+  background: var(--appx-dot-yellow);
+}
+
+.dotGreen {
+  background: var(--appx-dot-green);
+}
+
+.browserUrl {
+  flex: 1 1 auto;
+  min-width: 0;
+  margin-inline-start: 0.5rem;
+  padding: 0.25rem 0.6rem;
+  border-radius: 0.4rem;
+  background: var(--appx-device-screen);
+  border: 0.0625rem solid var(--appx-device-hairline);
+  font-size: 0.75rem;
+  color: var(--appx-device-url-text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.browserScreen iframe {
+  display: block;
+  border: none;
+  border-radius: 0;
+}
