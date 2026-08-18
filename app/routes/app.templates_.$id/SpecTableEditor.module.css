@@ -1,0 +1,436 @@
+/* Scoped styles for the spec-table editor's value cell.
+ *
+ * Polaris web components carry the chrome here — buttons, boxes, grids. These
+ * rules cover only what those primitives cannot express: the single inline
+ * contenteditable value surface (Step 4) where editable text, atomic dynamic-field
+ * tokens, and hard line breaks flow as one continuous value, plus the active-row
+ * accent. This is the custom token editor that `code-standards.md` ("Spec Table
+ * Editor") anticipates Polaris cannot model cleanly.
+ *
+ * Colors are Polaris color tokens (CSS custom properties) or `currentColor`, with
+ * one deliberate exception: the section-header band uses an explicit `#f6f7f9`
+ * (see `.rowSection`) because Polaris's surface colors are not exposed to light-DOM
+ * CSS. Everything else is spacing/sizing in rem. */
+
+/* Shared cell-field chrome for ALL three editable cells — the Label <input>, the
+ * Section <input>, and the Value contenteditable. One look so the columns read as
+ * the same control: identical border, radius, padding, and single-line height.
+ * Selecting a cell to edit swaps only the border COLOR (no width change → no
+ * layout shift), giving a spreadsheet-style "active cell" outline. Hex-free: the
+ * resting edge is a low-alpha `currentColor`; the active edge reuses the
+ * runtime-captured Polaris link blue (`--appx-token-color`, the same accent the
+ * active row and the value tokens use), degrading to `currentColor` when the
+ * capture is unavailable. `box-sizing: border-box` keeps both columns flush. */
+.cellField {
+  width: 100%;
+  box-sizing: border-box;
+  /* Stretch to the full grid-row height instead of inheriting the grid's
+     `alignItems="center"`. The row's track height is set by the tallest cell —
+     the multi-line Value contenteditable — so stretching the Value cell makes its
+     Label|Value divider (`border-inline-start` on `.surface`) span the full row
+     height, lining the vertical ticks up across rows. `align-self` overrides only
+     these cells (the gutter + borderless `.cellSection` stay centered). The
+     single-line Label <input> still vertically centers its text within the taller
+     box, so the Label reads centered as before. */
+  align-self: stretch;
+  font: inherit;
+  line-height: 1.25rem;
+  color: inherit;
+  background: transparent;
+  /* Borderless data cell. The row divider is now a single full-width hairline on
+     the `.row` wrapper (so it spans the gutter too), and the only vertical line is
+     the Label|Value divider drawn by the Value cell (`.surface`). The Label cell
+     and both outer column edges carry no border. Padding stays as the text inset. */
+  border: 0;
+  padding: 0.375rem 0.625rem;
+  outline: none;
+}
+
+/* The active-cell indicator (Google-Sheets style): an inset 2px ring painted with
+ * box-shadow rather than a border swap. `box-shadow` adds no box size, so there is
+ * zero layout shift, and because it is inset it fills the whole cell — the entire
+ * cell reads as the active input with no separate field inside. On plain `:focus`
+ * so it shows for both mouse-click and keyboard entry. Reuses the captured Polaris
+ * link blue (`--appx-token-color`), degrading to currentColor when unavailable.
+ * `.cellSection` opts in here too (it does not compose `.cellField`). */
+.cellField:focus,
+.cellSection:focus {
+  box-shadow: inset 0 0 0 0.125rem var(--appx-token-color, currentColor);
+}
+
+/* The Label / Section single-line native <input>. */
+.cellInput {
+  composes: cellField;
+  /* Top-align the single-line Label text with the Value cell's first line and the
+     gutter controls (the StarTech-style reference), instead of vertically centering
+     it in a tall multi-line row. `start` overrides the inherited `stretch` so the
+     input box stays one line tall at the row's top; the Value cell keeps `stretch`
+     for its full-height Label|Value divider. */
+  align-self: start;
+}
+
+/* The native <textarea> value host (feature 111). Shares the field chrome above
+ * so it matches the Label/Section inputs, then adds what a multiline text surface
+ * needs: `resize: none` + `overflow: hidden` because JS auto-grows the height to
+ * the content (`autoSize` in ValueCell), `min-height` keeps an empty cell one line
+ * tall, and `pre-wrap` / `overflow-wrap` soft-wrap long values. `font: inherit`
+ * (from `.cellField`) overrides the UA textarea font so it reads like the other
+ * cells. The native `placeholder` attribute supplies the empty-state hint. */
+.surface {
+  composes: cellField;
+  /* The only vertical line in a data row: the Label|Value column divider (the
+     Value cell's left edge). The outer right edge carries no border. */
+  border-inline-start: var(--appx-cell-line);
+  min-height: 1.25rem;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  cursor: text;
+  resize: none;
+  overflow: hidden;
+  display: block;
+}
+
+/* Section-header cell. Unlike Label/Value it is NOT a bordered grid cell — the
+ * full-width grey band (`.rowSection` on the row wrapper) is the separator. So
+ * this is borderless text only: semibold so the section reads as a heading, but
+ * at the SAME full-strength ink as the Label/Value cells (`color: inherit`)
+ * rather than a muted tint — the heading is conveyed by weight, not by case or
+ * dimming. The text renders in the merchant's own (sentence) case; no
+ * text-transform. Becomes editable with the same blue ring on focus. */
+.cellSection {
+  width: 100%;
+  box-sizing: border-box;
+  font: inherit;
+  font-weight: 600;
+  line-height: 1.25rem;
+  background: transparent;
+  border: 0;
+  outline: none;
+  padding: 0.375rem 0.625rem;
+  color: inherit;
+}
+
+/* Column header cells (Label / Value). The header/rows divider is a single
+ * full-width hairline on `.colHeader` (spanning the gutter too), and the only
+ * vertical line is the Label|Value divider on the Value header (`.headerCellLast`)
+ * — matching the data rows below. So the cells themselves are borderless; padding
+ * matches `.cellField` so the column divider lines up vertically with the rows. */
+.headerCell {
+  padding: 0.375rem 0.625rem;
+}
+
+/* The Value header carries the Label|Value column divider (its left edge); the
+ * outer right edge has no border, mirroring `.surface` in the data rows. */
+.headerCellLast {
+  border-inline-start: var(--appx-cell-line);
+}
+
+/* Persistent, muted reorder affordance (Step 10 mouse drag; Step 11 made it a
+ * real, keyboard-focusable <button> for accessible reorder). `touch-action: none`
+ * hands the gesture to dnd-kit's pointer sensor instead of the scroller, so a drag
+ * starting on the handle is not stolen by touch scrolling. The native <button>
+ * chrome is reset so the control still reads as the bare ⠿ icon, not a UA/Polaris
+ * button — no hex; color/font inherit, the icon supplies its own subdued tone. */
+.dragHandle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  appearance: none;
+  background: none;
+  border: none;
+  margin: 0;
+  padding: 0;
+  font: inherit;
+  color: inherit;
+  border-radius: 0.25rem;
+  cursor: grab;
+  touch-action: none;
+}
+
+.dragHandle[data-dragging="true"] {
+  cursor: grabbing;
+}
+
+/* Delete control — same chrome-reset native <button> as the drag handle, so the
+ * ✕ icon reads as a bare affordance rather than a UA/Polaris button. Muted vs
+ * critical color is the s-icon tone (swapped in RowGutter); this rule only resets
+ * the button and supplies the hit area + pointer. */
+.deleteButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  appearance: none;
+  background: none;
+  border: none;
+  margin: 0;
+  padding: 0;
+  font: inherit;
+  color: inherit;
+  border-radius: 0.25rem;
+  cursor: pointer;
+}
+
+.deleteButton:focus-visible {
+  outline: 0.125rem solid currentColor;
+  outline-offset: 0.125rem;
+}
+
+/* Keyboard focus ring (Step 11). The value surface sets outline:none, so the
+ * handle needs its own visible focus indicator; it must be reachable and clearly
+ * focused for keyboard reorder. currentColor keeps it hex-free; the `.gutter`
+ * container lifts the muted opacity to full on `:focus-within`, so a focused
+ * handle is never faint. */
+.dragHandle:focus-visible {
+  outline: 0.125rem solid currentColor;
+  outline-offset: 0.125rem;
+}
+
+/* Rows are flush table rows. The horizontal divider beneath every row is one
+ * full-width hairline on this wrapper, so it spans the gutter (drag handle +
+ * delete) as well as the data cells — the same treatment a section header row
+ * gets, giving one continuous edge-to-edge rule between rows. */
+.row {
+  position: relative;
+  border-block-end: var(--appx-cell-line);
+}
+
+/* Section-header row: a full-width grey band (spanning the gutter too) that makes
+ * the section unmistakable from the data rows. The band, not a bordered cell, is
+ * the separator — `.cellSection` inside is borderless; the hairline beneath comes
+ * from `.row`. The band tint is an explicit `#f6f7f9` (Polaris's surface-secondary
+ * grey) — a deliberate exception to the module's currentColor/token rule, since
+ * Polaris's color tokens are not exposed to light-DOM CSS (see
+ * [[polaris-web-component-gotchas]]); note it is a fixed light grey and will not
+ * adapt to a dark admin theme. When a section row is also the active row,
+ * `.rowActive`'s blue tint wins (declared later). */
+.rowSection {
+  background: #f6f7f9;
+}
+
+/* The row currently being dragged: lift it above its siblings so its transform
+ * reads clearly over the shifting rows, and soften it slightly. Transform and
+ * transition themselves are applied inline by dnd-kit. */
+.rowDragging {
+  position: relative;
+  z-index: 1;
+  opacity: 0.85;
+  cursor: grabbing;
+}
+
+/* Selected row (feature 29) — a light full-bleed blue fill so a bulk selection
+ * is legible at a glance while scanning/scrolling, not just via the small gutter
+ * checkbox. Reuses the captured Polaris link blue (the same accent the checkbox +
+ * active row use), degrading to currentColor when the capture is unavailable.
+ * Declared BEFORE `.rowActive` so the active row's accent-bar tint wins the
+ * background when a row is both selected and the active insertion target — the
+ * checkbox still marks it selected. A selected section row tints over its grey
+ * band for the same reason (this rule follows `.rowSection`). */
+.rowSelected {
+  background: color-mix(
+    in srgb,
+    var(--appx-token-color, currentColor) 8%,
+    transparent
+  );
+}
+
+/* Active row — the target the toolbar inserts below. A blue left accent bar plus
+ * a light full-bleed tint (painted on the full-width .row box so it respects the
+ * hairline dividers), instead of a floating grey card. Reuses the captured Polaris
+ * link blue so the accent matches the value-cell tokens; both degrade to
+ * currentColor when the capture is unavailable. */
+.rowActive {
+  box-shadow: inset 0.1875rem 0 0 0 var(--appx-token-color, currentColor);
+  background: color-mix(
+    in srgb,
+    var(--appx-token-color, currentColor) 6%,
+    transparent
+  );
+}
+
+/* The gutter (drag handle + delete) is muted at rest to keep the column quiet,
+ * then reveals fully when the row is hovered, active, or holds keyboard focus —
+ * the controls are there when wanted without adding visual noise to every row. */
+.gutter {
+  opacity: 0.55;
+  transition: opacity 0.1s ease;
+  /* Top-align the drag handle + delete with the Label/Value first line on a tall
+     multi-line row (they were vertically centered via the grid's `alignItems`). The
+     top inset matches the data cells' `padding` top (0.375rem) so the ⠿ / ✕ icons
+     sit on the first text line rather than floating above it. */
+  align-self: start;
+  padding-block-start: 0.375rem;
+}
+
+.row:hover .gutter,
+.rowActive .gutter,
+.gutter:focus-within,
+/* A selected row keeps its gutter fully visible (feature 29) so a ticked
+   checkbox can't fade out while scrolling — selection must stay legible. */
+.gutter[data-selected="true"] {
+  opacity: 1;
+}
+
+/* Per-row select checkbox (feature 29). Sits left of the drag handle in the
+   muted gutter; tinted with the captured Polaris link blue (the same accent the
+   active row + value tokens use) so it reads as a real admin control, degrading
+   to currentColor when the capture is unavailable. Hex-free, like the rest of
+   the module. */
+.selectCheckbox {
+  margin: 0;
+  cursor: pointer;
+  accent-color: var(--appx-token-color, currentColor);
+}
+
+/* Column header wrapper. Carries the full-width hairline that divides the header
+ * from the first row — spanning the gutter too, matching every row's bottom
+ * divider (`.row`). The cells inside are borderless except the Value header's
+ * Label|Value column divider. Scrolls with the rows. */
+.colHeader {
+  position: relative;
+  border-block-end: var(--appx-cell-line);
+}
+
+/* --- EditorShell chrome (reshell A2) --------------------------------------
+ * The shell card, control row, and segmented tabs/device-toggle are built from
+ * Polaris <s-box>/<s-grid>/<s-text>/<s-icon> (surfaces, borders, spacing, and
+ * the gray-track / white-active-pill colors all come from Polaris tokens —
+ * `subdued` track, `base` active pill — so there is no hardcoded color here).
+ * These few rules cover only what Polaris primitives cannot express: the
+ * space-between control-row layout, the segmented row of buttons, and the
+ * native <button> reset + focus ring (Polaris has no segmented-control and
+ * <s-button-group> renders no slot — see [[polaris-web-component-gotchas]]).
+ * No hex: layout/sizing in rem; the only color is `currentColor` on the focus
+ * ring (Polaris focus tokens are not exposed to light-DOM CSS). */
+
+/* Control row: tabs pinned left, device toggle pinned right; wraps on a narrow
+ * iframe so neither group is clipped. */
+.controlrow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+/* The radiogroup track's inner row of segment buttons. */
+.segGroup {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+/* Each segment is a real <button> (keyboard-focusable, role=radio); its visible
+ * pill — padding + the active `base` background — is the nested <s-box>, so the
+ * button itself is chrome-reset and only contributes hit area + the focus ring. */
+.segBtn {
+  display: inline-flex;
+  appearance: none;
+  background: none;
+  border: none;
+  margin: 0;
+  padding: 0;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  border-radius: 0.5rem;
+}
+
+/* The value surface sets outline:none on the document, so give the segment its
+ * own visible keyboard-focus ring. currentColor keeps it hex-free. */
+.segBtn:focus-visible {
+  outline: 0.125rem solid currentColor;
+  outline-offset: 0.125rem;
+}
+
+/* --- Editor freeze (in-flight save) ---------------------------------------
+ * While a save is running, SpecTableEditor sets `inert` on this wrapper to block
+ * ALL interaction with the editor card (pointer, keyboard, focus). The dim +
+ * progress cursor are the visible "frozen, saving…" cue so the merchant does not
+ * try to keep editing — edits made during the in-flight save could not reach it
+ * and would be lost. No color: just an opacity drop and a wait cursor. */
+.stageFreeze {
+  transition: opacity 0.12s ease;
+}
+
+.stageFreeze[inert] {
+  opacity: 0.55;
+  cursor: progress;
+}
+
+/* --- Bounded inner-scroll (reshell A3) ------------------------------------
+ * Only the rows list scrolls: the control row and toolbar stay fixed ABOVE this
+ * scroller, whose `max-height` is JS-measured by `useScrollRegionHeight` to fill
+ * the remaining iframe viewport. This fixes the core UX pain — today the whole
+ * admin iframe scrolls, so on a long table the merchant must scroll back to the
+ * top to reach Add row / Insert field. Layout/sizing only — no color. */
+
+/* The rows region. `max-height` comes from the hook; this supplies the scroll
+ * and the floor. `min-height` (mirrors MIN_SCROLLER_HEIGHT_REM in the hook) keeps
+ * the list usable if an early/raced measurement under-reports the available
+ * height. `overscroll-behavior: contain` stops a scroll past the list's top/bottom
+ * from chaining to the admin behind the iframe. */
+.rowsScroller {
+  overflow-y: auto;
+  min-height: 12rem;
+  overscroll-behavior: contain;
+  /* Shared grid hairline for every cell and header edge, published here so all
+     descendants inherit one source of truth. Hex-free per the module rule: a
+     low-alpha `currentColor` reads as a subtle grey on the card's light ink. */
+  --appx-cell-line: 0.0625rem solid
+    color-mix(in srgb, currentColor 14%, transparent);
+}
+
+/* --- Editor tips footer (feature 32) --------------------------------------
+ * A manual-advance tips strip rendered BELOW the editor card (outside it, outside
+ * the save-freeze). Layout only: the ‹ / › controls and the tip body sit in one
+ * inline row, centered under the card, that wraps gracefully on a narrow iframe.
+ * Subdued tone comes from the Polaris `<s-text color="subdued">` inside — no color
+ * here, so the strip stays hex-free and theme-faithful like the rest of the module. */
+.tipsFooter {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  padding-block: 0.75rem;
+  text-align: center;
+}
+
+/* The live region holding the current tip text + "Tip i of n" indicator. Capped
+ * width so a long tip wraps to a tidy block between the controls rather than
+ * stretching the whole footer; it gives up width first when the row wraps. */
+.tipBody {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.125rem;
+  min-width: 0;
+  max-width: 32rem;
+}
+
+/* --- Device preview iframe (feature 49, Steps 3–6) ------------------------
+ * Chrome for the sandboxed <iframe> that renders the read-only storefront markup
+ * (SpecTablePreview). This styles only the iframe ELEMENT — its sizing, border,
+ * and backdrop — NOT the storefront table inside it (its colors/fonts/padding
+ * come from the shared spec-table.css injected in Step 4; deeper theming is a
+ * Style-tab concern). The WIDTH is device-driven (Step 5): the per-view size
+ * arrives as an inline style from previewDeviceWidth(view) — desktop fills,
+ * mobile is 375px — while this rule supplies the clamp and
+ * centering: `max-width: 100%` shrinks a fixed frame wider than the column
+ * (rather than overflowing it), and `margin-inline: auto` centers a narrow fixed
+ * frame in the stage. The HEIGHT is now content-driven (Step 6): the exact pixel
+ * height arrives as an inline style, measured by the framed document's shim; this
+ * `min-height` is only the floor for the brief pre-measurement state and an
+ * empty/very short table, so the frame is never a collapsed sliver. No fixed
+ * height remains. Hex-free: the hairline border reuses the module's low-alpha
+ * currentColor; the surface is a plain white so the preview reads as a page, not
+ * the admin card. */
+.previewFrame {
+  display: block;
+  max-width: 100%;
+  margin-inline: auto;
+  min-height: 6rem;
+  border: 0.0625rem solid color-mix(in srgb, currentColor 14%, transparent);
+  border-radius: 0.5rem;
+  background: #ffffff;
+}

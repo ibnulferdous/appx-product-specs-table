@@ -1,0 +1,7 @@
+# yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
+# Exclude planning/spec markdown under context/ from automated review.
+# These are design docs, not shippable code, and they inflate the PR file
+# count past CodeRabbit's per-PR limit.
+reviews:
+  path_filters:
+    - "!context/**"

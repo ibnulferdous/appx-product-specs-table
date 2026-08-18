@@ -1,0 +1,80 @@
+/* EditorShell chrome that must live OUTSIDE `SpecTableEditor.module.css`.
+ *
+ * `SpecTableEditor.module.css` is held byte-clean against the Step 10 sign-off
+ * (`a7b304c`) as the tripwire for the Edit-grid-never-styled binding rule, so any
+ * new shell rule lands here instead. Layout/sizing only — no color — matching that
+ * module's conventions (rem units, hex-free).
+ */
+
+/* --- Style / Settings sidebar inner-scroll --------------------------------
+ * The Style rail is long enough that, unbounded, the whole admin iframe scrolls
+ * and the preview leaves the viewport. This caps the rail to the remaining iframe
+ * height and scrolls it internally, so the preview column stays in view. Mirrors
+ * the Content tab's `.rowsScroller` (reshell A3): the `max-height` px is measured
+ * by `useScrollRegionHeight` and applied inline; this class supplies the scroll,
+ * the `min-height` floor (matches MIN_SCROLLER_HEIGHT_REM in the hook), and
+ * `overscroll-behavior: contain` so a scroll past the rail's ends does not chain
+ * to the admin behind the iframe. The sidebar `s-box` keeps its `padding` and the
+ * region landmark; only the scroll lives here.
+ */
+.railScroller {
+  overflow-y: auto;
+  min-height: 12rem;
+  overscroll-behavior: contain;
+  /* The rail's inline-end gutter lives HERE, not on the wrapping `s-box`
+     (which sets `paddingInlineEnd="none"` for exactly this reason). A scrollbar
+     paints on its scrolling element's border edge, so while the box owned that
+     padding the scrollbar floated ~1rem inside the panel with a dead strip to
+     its right. Owning the gutter as the scroller's own padding puts the
+     scrollbar on the panel edge and keeps the controls inset as before. The
+     Polaris `base` space token with a 1rem fallback, so this stays in lockstep
+     with the box's other three sides. */
+  padding-inline-end: var(--s-space-base, 1rem);
+  /* A full-width platform scrollbar is heavy against a 18.75rem rail — it reads
+     as a window edge rather than as part of the panel. Same call, same standard
+     property as the device previews' `PREVIEW_AMBIENT` (feature 73): no
+     `::-webkit-scrollbar` fork, degrades to the platform default where
+     unsupported, and inert whenever the rail fits. */
+  scrollbar-width: thin;
+  /* Feature 76 collapses this rail with `display: none` and expects it to come
+     back at the offset the merchant left it at. Chrome's scroll anchoring fights
+     that: re-laying-out a whole hidden subtree resizes content above its chosen
+     anchor, and the compensation does not net to zero, so each collapse/expand
+     cycle walked the offset ~36px further down. Nothing in the rail grows above
+     the merchant's reading position on its own — the knobs are a fixed list — so
+     there is no anchoring benefit here to trade away. */
+  overflow-anchor: none;
+}
+
+/* --- Collapsed Style / Settings rail (feature 76) --------------------------
+ * The rail collapses to ZERO width, not to an icon stub: in the tight measured
+ * case the stage clears the storefront's 749px mobile breakpoint by only 18px,
+ * so a ~48px surviving strip would put the desktop preview back UNDER it. Which
+ * is also why the expand button lives in the control row instead of in the rail.
+ *
+ * Hidden, never unmounted — the rail's React state (StyleTab's collapsible
+ * sections, its scroll offset) survives the round trip, and `aria-controls` on
+ * the toggle keeps pointing at a node that exists. `display: none` specifically,
+ * not a visually-hidden recipe: the collapsed rail must also leave the tab order
+ * and the accessibility tree, or a merchant who collapsed it would Tab through
+ * invisible Style controls.
+ *
+ * Targeted by ATTRIBUTE, not by a CSS-module class, because Polaris's JSX types
+ * accept only a component's own props plus `key`/`ref`/`slot` — `className` on an
+ * `<s-box>` is a type error (Step 0.1). The documented alternative was a plain
+ * `<div>` grid child, but that would make the rail a nested item instead of the
+ * grid item itself, re-entering the unpainted-inline-end-sliver bug recorded in
+ * [[polaris-web-component-gotchas]] and changing how the grey panel stretches to
+ * the row height. A hyphenated attribute typechecks on `s-*` hosts and leaves the
+ * expanded markup byte-for-byte as it was, so this stays the smaller change. The
+ * `appx-` prefix keeps the necessarily-global selector unambiguous.
+ *
+ * ⚠️ This rule ONLY works paired with the grid template switching to `1fr`
+ * (`EditorShell.tsx`). `display: none` removes the rail as a grid ITEM, so with
+ * the template left at `18.75rem 1fr` the STAGE becomes the first child and
+ * renders inside the 300px column — a silent breakage that reads as a CSS bug
+ * rather than a missing ternary. Change the two together, always.
+ */
+:global(s-box[data-appx-rail-collapsed]) {
+  display: none;
+}
