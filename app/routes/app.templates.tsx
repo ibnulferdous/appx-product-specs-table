@@ -164,9 +164,9 @@ const TemplateTableRow = ({
   const pendingForRow =
     pendingStatusSubmit?.id === template.id ? pendingStatusSubmit.status : null;
   const activating = pendingForRow === "ACTIVE";
-  const effectiveStatus = (pendingForRow === "DRAFT"
-    ? "DRAFT"
-    : template.status) as TemplateStatus;
+  const effectiveStatus = (
+    pendingForRow === "DRAFT" ? "DRAFT" : template.status
+  ) as TemplateStatus;
   const isActive = effectiveStatus === "ACTIVE";
   // The toggle is a two-state Draft⇄Active control, so it's meaningless for an ARCHIVED row (a
   // hidden status no longer offered). Those keep the badge + the ⋯ menu's "Change status" only.
