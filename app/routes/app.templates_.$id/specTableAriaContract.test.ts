@@ -62,8 +62,12 @@ const SEMANTICS_STRIPPING_DISPLAY = /display:\s*(?:block|grid)/;
 
 function classesLosingTableSemantics(): Set<string> {
   const found = new Set<string>();
+  // At-rule preludes are stripped first so rules NESTED inside a `@media` block are scanned like
+  // top-level ones. Without this, `[^}]*` swallows the inner selector list into the DECLARATIONS
+  // capture, and the mobile-stacked breakpoint's classes are never collected.
+  const flattened = css.replace(/@[a-z-]+[^{}]*\{/g, "");
   // Each rule block: selector list up to `{`, then declarations up to `}`.
-  for (const match of css.matchAll(/([^{}]+)\{([^}]*)\}/g)) {
+  for (const match of flattened.matchAll(/([^{}]+)\{([^}]*)\}/g)) {
     const [, selectors, declarations] = match;
     if (!SEMANTICS_STRIPPING_DISPLAY.test(declarations)) continue;
     for (const cls of selectors.matchAll(/\.([A-Za-z0-9_-]+)/g)) {
@@ -81,6 +85,9 @@ describe("feature 70 — table semantics survive `display: block`", () => {
     expect(stripped.size).toBeGreaterThan(0);
     expect(stripped).toContain("appx-spec-table__label");
     expect(stripped).toContain("appx-spec-table__value");
+    // A class that only strips table semantics inside the `@media` breakpoint, so the at-rule
+    // flattening above can never silently regress and leave the mobile variant unscanned.
+    expect(stripped).toContain("appx-spec-table--mobile-stacked");
   });
 
   it("catches the GRID layout too, not only the two stacked ones (feature 85)", () => {

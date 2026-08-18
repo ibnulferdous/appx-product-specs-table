@@ -1,6 +1,7 @@
 import { useEffect, useRef, type RefObject } from "react";
 import type { EditorRow } from "../../utils/rows";
 import { resolveGridTarget, type GridColumn } from "../../utils/gridNav";
+import { useBrowserLayoutEffect } from "./editorShared";
 
 // --- Spreadsheet-style vertical cell navigation (feature 31, Step 2) ----------
 // DOM/keyboard glue wiring the pure Step 1 resolver (`resolveGridTarget`) to the live editor: one
@@ -20,8 +21,12 @@ export function useGridKeyboardNav(
   rows: EditorRow[],
 ) {
   // Read live rows through a ref so the listener attaches once and never closes over a stale array.
+  // Published after commit (never during render): React can replay or discard a render, so a ref
+  // write in the render body could leak rows from work that never committed to the live listener.
   const rowsRef = useRef(rows);
-  rowsRef.current = rows;
+  useBrowserLayoutEffect(() => {
+    rowsRef.current = rows;
+  }, [rows]);
   // The merchant's last DATA-cell column, so it survives a pass THROUGH a section row (which has no
   // column) — the sticky-column mechanism. Default "label" for the first-press-on-a-section case.
   const preferredColumn = useRef<GridColumn>("label");

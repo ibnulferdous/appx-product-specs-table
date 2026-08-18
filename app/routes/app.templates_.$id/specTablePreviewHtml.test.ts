@@ -306,8 +306,12 @@ describe("renderSpecTablePreviewDocument", () => {
         import.meta.url,
       ),
     );
-    const onDisk = readFileSync(cssPath, "utf8").replace(/\r\n/g, "\n");
-    expect(SPEC_TABLE_CSS).toBe(onDisk);
+    // Normalize line endings on BOTH sides: SPEC_TABLE_CSS is a source-file template literal, so a
+    // CRLF checkout would give it `\r\n` too — comparing only the on-disk side would fail on drift
+    // that isn't drift.
+    const normalizeEol = (value: string) => value.replace(/\r\n/g, "\n");
+    const onDisk = normalizeEol(readFileSync(cssPath, "utf8"));
+    expect(normalizeEol(SPEC_TABLE_CSS)).toBe(onDisk);
   });
 
   it("includes the minimal neutral preview-page ambient base", () => {
