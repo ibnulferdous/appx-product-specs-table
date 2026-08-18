@@ -42,10 +42,13 @@ retired, broken Ctrl+Z fixed, `ValuePart[]` unchanged; live-verified on `appx-de
 2. 🔴 **Billing** — the other hard blocker for a paid listing (`prd.md`,
    `app-store-review-checklist.md`).
 
-> 🟢 **Blocker 1 now has a domain.** `hiappx.com` purchased + `support@hiappx.com` live
-> (Zoho free) — 2026-08-08, closing **OQ-109-A**. The ordered path from here (DNS/email
-> hardening → dev/prod config split → production host → the deploy that re-anchors the
-> compliance URIs → public pages → listing + in-app support) is
+> 🟢 **Blocker 1 progress.** `hiappx.com` + `support@hiappx.com` live (Zoho free), landing
+> page + privacy policy published, demo store ready. **Phase 1 (dev/prod config split) DONE
+> 2026-08-18:** new dev app `appx-product-specs-table-dev` (`b9369cb1…`) in
+> `shopify.app.dev.toml`, existing `11731a3d…` is production with
+> `automatically_update_urls_on_dev = false`; both validate. **Next on the critical path:
+> Phase 2 — production host + prod Neon DB**, then the Phase 3 deploy that re-anchors the
+> compliance URIs off `example.com`. Full ordered path:
 > [`launch-support-checklist.md`](launch-support-checklist.md). ⚠️ That checklist does
 > **not** cover billing — blocker 2 stays independent.
 

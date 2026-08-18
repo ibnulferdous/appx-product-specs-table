@@ -24,9 +24,12 @@ You have the domain and the mailbox. What's left is making sure mail from
 `support@hiappx.com` actually lands in merchant inboxes instead of spam. This is
 invisible when it breaks, which is why it goes first.
 
-> **Status 2026-08-08:** MX ✅ · SPF ✅ · DKIM ✅ (selector `zmail`, verified).
-> Remaining: **DMARC (0.7)**, the **deliverability smoke test (0.8)**, and the
-> **subdomain map (0.3)**.
+> **Status 2026-08-17:** MX ✅ · SPF ✅ · DKIM ✅ · DMARC ✅ (selector `zmail`, `p=none`
+> monitor mode, verified via Zoho's own checker). DNS provider migrated to **Cloudflare**
+> the same day (see 0.3a); Spaceship stays registrar-only. Landing page is live at
+> `hiappx.com` over HTTPS, `www` 301-redirects to the apex (closes 4.1). Remaining: the
+> **deliverability smoke test (0.8)** and finishing the **subdomain map (0.3)** — the docs
+> host is still undecided (OQ-109-B).
 
 - [x] **0.1 — Domain purchased** — `hiappx.com`
 - [x] **0.2 — Support mailbox** — `support@hiappx.com` on Zoho Mail (free tier)
@@ -46,7 +49,29 @@ invisible when it breaks, which is why it goes first.
   click those links, and a merchant reading troubleshooting docs is often doing so
   precisely because the app is misbehaving.
 
+  **Confirmed as of 2026-08-17:** `hiappx.com` → the landing page (live, HTTPS, `www` 301s
+  to apex). `specs-demo.hiappx.com` → the Shopify demo dev store (`shops.myshopify.com`
+  CNAME, kept **DNS-only/unproxied** — Shopify owns its own TLS and cert renewal). Not part
+  of the table's original plan, but the natural demo-store slot for **D8**. `app.hiappx.com`
+  still pending Phase 2.5. Docs host still undecided — OQ-109-B.
+
   **Done when:** the table above is filled in with your final choices.
+
+- [x] **0.3a — DNS provider migrated to Cloudflare** — ✅ 2026-08-17. Nameservers switched
+      from Spaceship's default DNS to Cloudflare (`maciej.ns.cloudflare.com` /
+      `rosalie.ns.cloudflare.com`); **Spaceship remains the registrar only** — billing,
+      WHOIS, and the nameserver field itself stay there, but its DNS Records tab is now
+      inert. DNSSEC was **on** at Spaceship and had to be disabled and given ~1 hour to clear
+      before switching (an active DS record at the old signing key would have broken
+      resolution entirely on cutover) — it is currently off; re-enabling on Cloudflare's side
+      is a future option, not done. All pre-existing records (3× MX, SPF, DKIM,
+      zoho-verification, the `specs-demo` CNAME) were manually recreated in Cloudflare
+      *before* the nameserver switch and carried over with zero mail/storefront downtime.
+      🔴 **Grey-cloud (DNS only) is mandatory for MX/TXT (not proxyable) and for the
+      `specs-demo` CNAME** (proxying it breaks Shopify's own cert renewal — `ERR_TOO_MANY_REDIRECTS`
+      or a 526). The apex and `www` are the only proxied (orange-cloud) records, created
+      automatically when the Worker was attached as a Custom Domain (0.3 above). 🔴 **All
+      future DNS edits happen in Cloudflare, not Spaceship.**
 
 - [x] **0.4 — Zoho MX records** — ✅ 2026-08-08. Console (Email Configuration → MX):
       *"Your domain's MX Records are pointed to Zoho."* Domain ownership **Verified**
@@ -62,20 +87,17 @@ invisible when it breaks, which is why it goes first.
 - [x] **0.6 — DKIM** — ✅ 2026-08-08. Selector **`zmail`**, TXT published at
       `zmail._domainkey.hiappx.com`, console status **Verified**, DKIM toggle on.
 
-- [ ] **0.7 — Publish a DMARC record.** ⬅️ **NEXT — the only unfinished piece of the
-      authentication triad.**
+- [x] **0.7 — Publish a DMARC record.** ✅ 2026-08-17. Generated via Zoho's DMARC tab,
+      published at `_dmarc.hiappx.com` in Cloudflare DNS, verified by Zoho's own checker
+      ("DMARC Record is pointed for this domain"):
 
-  Zoho has a **DMARC** tab right below DKIM under Email Configuration; use it to generate
-  the record, or publish the TXT directly at `_dmarc.hiappx.com`:
+  `v=DMARC1; p=none; rua=mailto:support@hiappx.com; ruf=mailto:support@hiappx.com; sp=none; adkim=r; aspf=r`
 
-  `v=DMARC1; p=none; rua=mailto:support@hiappx.com`
-
-  Leave it at `p=none` for a few weeks, read the aggregate reports, then tighten to
-  `p=quarantine`. Going straight to `p=reject` on a fresh domain risks losing real mail.
-
-  ⚠️ Without DMARC, SPF and DKIM still pass individually but no policy ties them to the
-  `From:` domain — some receivers treat that as a weaker signal, and you get no reports
-  telling you who is sending as `hiappx.com`.
+  🔴 **Deliberately `p=none` (monitor-only)** — not yet blocking anything. Read the
+  aggregate reports landing at `support@hiappx.com` for a few weeks to confirm real mail
+  keeps passing alignment, then tighten to `p=quarantine` and eventually `p=reject`. This is
+  also why Cloudflare's dashboard still shows a "block fake emails" recommendation — it
+  wants an enforcing policy, which is intentionally not yet in place.
 
   **Done when:** the record resolves and Zoho's DMARC tab shows it.
 
@@ -84,7 +106,7 @@ invisible when it breaks, which is why it goes first.
       to a registered trademark (~$1k+/yr). It only paints a logo next to your name; it does
       nothing for deliverability. Revisit only if the brand is trademarked later.
 
-- [ ] **0.8 — Deliverability smoke test.** ⬅️ **The step that actually proves it works.**
+- [~] **0.8 — Deliverability smoke test.** Gmail leg done; Outlook/Hotmail + Yahoo still owed.
 
   🔴 **Zoho's three green checkmarks confirm the records are *published* — not that your
   mail reaches inboxes.** They are a config check, not a delivery check. Only a real send
@@ -94,7 +116,9 @@ invisible when it breaks, which is why it goes first.
   (ideally) a Yahoo address. Check **Inbox vs Spam** in each, then in Gmail use
   *Show original* and confirm three lines: `SPF: PASS`, `DKIM: PASS`, `DMARC: PASS`.
 
-  ⚠️ Do this **after** 0.7 — DMARC won't report PASS until the record exists.
+  ✅ **Gmail — 2026-08-17.** Landed in Inbox (not Spam). *Show original* confirmed all
+  three: `SPF: PASS` (IP `136.143.188.55`), `DKIM: PASS` (domain `hiappx.com`),
+  `DMARC: PASS`. Full chain verified end to end post-migration.
 
   **Done when:** all three land in Inbox with three PASSes.
 
@@ -289,25 +313,35 @@ end-to-end test of the production stack you will get before a real merchant runs
 
 ---
 
-## Phase 1 — Split the dev and production app configs
+## Phase 1 — Split the dev and production app configs ✅ COMPLETE (2026-08-18)
 
 **Do this before the production deploy.** It's a 30-minute decision that is painful to
 retrofit.
 
-- [ ] **1.1 — Understand the problem.**
+> **Status 2026-08-18: DONE.** Two apps, two configs, both validate, `config use` switches
+> cleanly both ways. Prod URL is now protected. Details in 1.2/1.3 below.
+> ⚠️ **One deferred cost (not blocking the production track):** the new dev app has **not**
+> yet been `shopify app deploy`'d and is **not** installed on the dev store, so its
+> metaobject definitions aren't anchored yet. The next time you run `shopify app dev` it
+> will prompt to install `appx-product-specs-table-dev` on a store — that's expected. Do it
+> whenever you next develop; the production host chain (Phase 2/3) does not need it.
 
-  `shopify.app.toml` currently has `automatically_update_urls_on_dev = true`. That is why
-  every `shopify app dev` run rewrites `application_url` to the ngrok tunnel — and it is
-  exactly what will clobber your production URL the next time you develop.
+- [x] **1.1 — Understand the problem.** ✅ `automatically_update_urls_on_dev = true` on the
+      prod config is what rewrote `application_url` on every `shopify app dev`. Now `false`
+      on prod; daily dev runs against the separate dev app instead.
 
-- [ ] **1.2 — Decide: one app or two?**
+- [x] **1.2 — Decide: one app or two?** ✅ **TWO APPS** (Shopify's documented practice).
 
   **Recommended — two apps, two config files** (this is Shopify's documented practice):
 
-  | File | App | `automatically_update_urls_on_dev` | Used for |
-  | --- | --- | --- | --- |
-  | `shopify.app.dev.toml` | a **new** dev app | `true` | daily `shopify app dev` |
-  | `shopify.app.toml` | the existing app (`11731a3d…`) → becomes **production** | `false` | `shopify app deploy` |
+  | File | App | client_id | `automatically_update_urls_on_dev` | Used for |
+  | --- | --- | --- | --- | --- |
+  | `shopify.app.dev.toml` | **new** dev app `appx-product-specs-table-dev` | `b9369cb1e4add9d745830901d9f65ee2` | `true` | daily `shopify app dev` |
+  | `shopify.app.toml` | existing app → **production** | `11731a3dd8c8c256a56ecd5af892ed56` | `false` ✅ set 2026-08-18 | `shopify app deploy` |
+
+  **Reason recorded:** the existing `11731a3d…` client_id already anchors the app-owned
+  metaobject definitions and 11 deployed versions, so it stays production at zero cost; a
+  fresh dev app absorbs the daily URL churn.
 
   Switch with `shopify app config use <name>` (already scripted as `npm run config:use`).
 
@@ -326,16 +360,20 @@ retrofit.
 
   **Done when:** decision recorded here, with a one-line reason.
 
-- [ ] **1.3 — Create the dev config** (if you chose two apps).
-
-  `shopify app config link` to generate the second file, or `npm run dev -- --reset` and
-  choose *Create new app*. Then copy `[access_scopes]`, `[webhooks]`, and the metaobject
-  definition blocks across so the two apps stay behaviourally identical.
+- [x] **1.3 — Create the dev config.** ✅ Generated via `shopify app config link --config=dev`
+      (created the new dev app), then reconciled the bare stub against production: copied
+      `[access_scopes]`, all five `[webhooks]` subscriptions (2 app + 3 compliance), both
+      metaobject definitions and the shop routing metafield. ⚠️ **Two drift-traps the CLI
+      stub introduced and we fixed:** the generated `scopes = ""` (empty) and
+      `api_version = "2026-10"` — corrected to the prod scopes and `2026-01` (matches the
+      version tripwire in `shopify.server.test.ts`).
 
   🔴 **The two TOMLs must not drift.** A scope or metaobject definition present in one and
-  not the other produces bugs that only reproduce in one environment.
+  not the other produces bugs that only reproduce in one environment. The dev file carries a
+  header comment stating its behavioural blocks must stay byte-identical to prod.
 
-  **Done when:** `shopify app config use` switches cleanly both ways and `shopify app config validate` passes on both.
+  **Done when:** ✅ `shopify app config use` switches cleanly both ways and
+  `shopify app config validate` passes on both (verified 2026-08-18).
 
 ---
 
@@ -355,22 +393,43 @@ A `Dockerfile` and a `docker-start` script (`prisma generate && prisma migrate d
 
   **Done when:** account created, payment method on file, region chosen **close to your
   Neon region** (cross-region DB latency will show up directly in Save times).
+  🟢 **Render account created 2026-08-18. Region decision: OHIO** — the prod Neon DB (2.2)
+  landed in `aws-us-east-2` (Ohio), so Render Ohio co-locates them. (The dev DB's us-east-1
+  region is irrelevant to prod.) Service type: **Web Service**, runtime **Docker**, branch
+  **`main`**, instance **Starter** (not Free — Free spins down and cold-starts on OAuth +
+  compliance webhooks).
 
-- [ ] **2.2 — Create the production Neon database.**
+- [x] **2.2 — Create the production Neon database.** ✅ 2026-08-18.
 
-  Do **not** ship on the dev branch/database. Create a production project or branch.
+  Separate Neon **project** `appx-product-specs-table-prod` (project id `tiny-snow-77500604`,
+  org `Appx Dev`), default branch `main` (`br-ancient-heart-ax0ihj7m`), db `neondb`, role
+  `neondb_owner`. **Region: `aws-us-east-2` (Ohio)** — the MCP create tool has no region
+  param and defaulted here; kept it because Render offers an Ohio region, so host + DB
+  co-locate. 🔴 **This is why 2.1's Render region is Ohio, not Virginia.**
 
-  **Done when:** you have a production `DATABASE_URL` and have run `prisma migrate deploy`
-  against it successfully.
+  All 11 migrations applied via `prisma migrate deploy` against the **direct** endpoint;
+  verified 8 tables present (6 data tables + `Session` + `_prisma_migrations`).
+  🔴 **Secrets (the pooled `DATABASE_URL` + direct `DIRECT_URL`) live only in the Render
+  env — never commit them.** ⚠️ This project's datasource uses BOTH `url`=`DATABASE_URL`
+  (pooled) and `directUrl`=`DIRECT_URL` (direct); **2.3 must set both**, or the boot-time
+  `prisma migrate deploy` in `docker-start` fails.
+
+  **Done when:** ✅ production DB exists and `prisma migrate deploy` succeeded against it.
 
 - [ ] **2.3 — Set production environment variables** on the host:
 
-  - `SHOPIFY_API_KEY` / `SHOPIFY_API_SECRET` (from the **production** app)
+  - `SHOPIFY_API_KEY` = `11731a3dd8c8c256a56ecd5af892ed56` (the **production** app's
+    client_id) / `SHOPIFY_API_SECRET` (from the **production** app — Partner Dashboard)
   - `SCOPES` = `write_metaobject_definitions,write_metaobjects,write_products`
   - `SHOPIFY_APP_URL` = `https://app.hiappx.com`
-  - `DATABASE_URL` — 🔴 **include `connect_timeout=30`.** Prisma's 5 s default is shorter
-    than a Neon cold-start wake and produces P1001 errors that look like outages.
-  - `NODE_ENV=production`
+  - `DATABASE_URL` — 🔴 the **pooled** (`-pooler`) prod endpoint. Include `connect_timeout=30`.
+    Prisma's 5 s default is shorter than a Neon cold-start wake and produces P1001 errors that
+    look like outages.
+  - `DIRECT_URL` — 🔴 **REQUIRED and easy to miss.** The **direct** (non-`-pooler`) prod
+    endpoint. The datasource's `directUrl` uses it, and `docker-start` runs
+    `prisma migrate deploy` at boot against it — omit it and the container fails to start.
+  - `NODE_ENV=production` (the Dockerfile already sets this; harmless to set again)
+  - 🚫 **Do NOT set `PORT`** — Render injects it and `react-router-serve` honors it.
 
   **Done when:** all set, and none of them are committed to git.
 
@@ -469,9 +528,12 @@ A `Dockerfile` and a `docker-start` script (`prisma generate && prisma migrate d
 
 These are listing requirements and support deflection, on the marketing host (not `app.`).
 
-- [ ] **4.1 — Landing page at `hiappx.com`.** Can be one static page: what the app does,
-      screenshots, link to the App Store listing, link to docs, `support@hiappx.com`.
-      **Done when:** live over HTTPS.
+- [x] **4.1 — Landing page at `hiappx.com`.** ✅ 2026-08-17, live over HTTPS. Separate repo
+      (`G:\hiappx-website`, Astro), deployed as a Cloudflare Workers static-assets project
+      (`appx-specs-table-landing-page`, custom domains `hiappx.com` + `www.hiappx.com`, the
+      latter 301-redirecting to the apex). ⚠️ Still owed from the original scope: listing
+      screenshots, a docs link (blocked on OQ-109-B), and the real App Store listing link —
+      the page currently says "Coming soon."
 
 - [ ] **4.2 — Privacy policy at `hiappx.com/privacy`.** 🔴 **Required — the only mandatory listing link.**
 
