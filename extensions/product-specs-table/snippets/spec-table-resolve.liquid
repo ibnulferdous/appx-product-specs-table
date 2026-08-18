@@ -1,0 +1,96 @@
+{% comment %}
+  Appx — Product Specs Table. Resolves the current product to its assigned template HANDLE from the
+  shop routing map + this product's routing shard (features 43 + 108).
+
+  Params (render scope is isolated — all passed explicitly):
+  - product: the current product.
+  - routing: the parsed `shop.metafields["$app"].routing.value`, in the COMPACT delivery shape from
+             `compactRoutingForDelivery`. WIRE v3 — BROAD TIERS ONLY:
+               { v, handles[], def, byType, byVendor, byCollection }
+             Every by*/def value is an INDEX into `handles`. A private wire contract with that
+             function; the two move together.
+  - shard:   THIS product's `$app:appx_routing_shard` metaobject (feature 108), passed in by the
+             block. Two json fields, read as `.value`:
+               by_product : { "<product id>": "<template handle STRING>" }  (D3)
+               excluded   : { "<product id>": 1 }                           (membership)
+             A product in a sparse bucket gets `shard == nil`, so both lookups are nil — a clean miss
+             that falls through to the broad tiers.
+
+  Emits the resolved handle STRING, or nothing (the block CAPTURES this output; a snippet can't return).
+
+  Resolution order (data-model §9, feature 45 Decision B). The ACTIVE set is disjoint, so at most one
+  key matches — the order is efficiency, not precedence. An EXPLICIT single-product assignment
+  (`shard.by_product`) is checked BEFORE the exclude gate, so an excluded product still reaches its own
+  dedicated table; the exclude gate then carves products out only of the BROAD tiers:
+    shard.by_product[<product id>]
+      -> shard.excluded? -> nothing
+      -> byType[type] -> byVendor[vendor]
+        -> byCollection[<collection id>] (scan) -> def
+  The per-product tier resolves to a handle STRING directly (D3); each broad tier resolves to a handle
+  INDEX (`hidx`) dereferenced through `routing.handles` once, only if the exclude gate let us in.
+
+  SHAPE NOTES:
+  - Keys are the BARE numeric id, so build `'' | append: product.id` (a string key to match the JSON
+    keys), not a `gid://` token. Same idiom builds the collection key.
+  - A broad-tier lookup returns a handle INDEX. The test is `!= blank`, never truthiness: index 0 is
+    valid and `0 == blank` is false, but an absent key is nil (blank). Dereferencing `handles` once
+    guards against `handles[nil]` coercing nil -> 0 and returning the wrong table. The per-product tier
+    needs no such guard — its value is already the final handle string (or nil).
+  - byType / byVendor keys are raw selector strings (a blank type/vendor indexes a nonexistent key).
+    TAG routing is NOT read — the compact shape omits `byTag` (post-MVP; always empty).
+
+  Collections are scanned in 50-item chunks (Shopify caps `for` at 50), breaking on the first hit.
+{% endcomment %}
+{%- liquid
+  assign hidx = ''
+  assign handle = ''
+
+  if routing != blank
+    assign pid = '' | append: product.id
+
+    # Explicit single-product assignment wins even for an excluded product (Decision B), checked
+    # BEFORE the exclude gate. From this product's shard; the value is the final handle STRING (D3).
+    assign handle = shard.by_product.value[pid]
+
+    # The broad tiers are carved out by the shard's `excluded` set: an excluded product matches none.
+    if handle == blank
+      unless shard.excluded.value[pid] != blank
+        assign hidx = routing.byType[product.type]
+
+        if hidx == blank
+          assign hidx = routing.byVendor[product.vendor]
+        endif
+
+        if hidx == blank
+          assign coll_chunks = product.collections.size | plus: 49 | divided_by: 50
+          for chunk in (1..coll_chunks)
+            assign coll_offset = chunk | minus: 1 | times: 50
+            for collection in product.collections offset: coll_offset limit: 50
+              assign cid = '' | append: collection.id
+              assign coll_hit = routing.byCollection[cid]
+              if coll_hit != blank
+                assign hidx = coll_hit
+                break
+              endif
+            endfor
+            if hidx != blank
+              break
+            endif
+          endfor
+        endif
+
+        if hidx == blank
+          assign hidx = routing.def
+        endif
+
+        # Dereference the broad-tier handle table ONCE, guarded so a miss (nil hidx) never indexes
+        # handles[0] by nil-coercion.
+        if hidx != blank
+          assign handle = routing.handles[hidx]
+        endif
+      endunless
+    endif
+  endif
+
+  echo handle
+-%}

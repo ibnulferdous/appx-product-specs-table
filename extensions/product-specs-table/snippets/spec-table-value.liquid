@@ -1,0 +1,123 @@
+{% comment %}
+  Appx — Product Specs Table. Resolves ONE data row's value cell against the live product (slice 2,
+  features/35).
+
+  Params (render scope is isolated — both passed explicitly):
+  - row:     one DATA row object from the metaobject `rows` json field
+  - product: the current product (drives SHOPIFY_FIELD / METAFIELD parts)
+
+  Contracts:
+  - Emits the resolved cell HTML only — no wrapper. The block captures this and applies the
+    whole-cell `hideWhenEmpty` gate; keep author-meaningful whitespace (TEXT edges like "Up to ").
+  - Every dynamic value is escaped before output. The only raw HTML emitted is `<br>` (LINE_BREAK,
+    and metafield multiline newlines via `newline_to_br` AFTER `escape`).
+  - Variant-sourced fields read `product.first_available_variant`, falling back to the FIRST variant
+    when all are unavailable (sold-out products must still show specs).
+  - Shopify caps `{% for %}` at 50 iterations, so the parts loop runs in 50-part chunks.
+  - Unknown/unresolvable tokens emit nothing (silent by design), incl. `total_inventory`.
+  - METAFIELD parts resolve down THREE paths, because `metafield_text` covers only part of the type
+    space: (1) metaobject-backed (`metaobject_reference`, `list.metaobject_reference` — all of
+    Shopify's `shopify.*` taxonomy choice-lists) → the filter WITH `field:`; (2) any OTHER list type
+    → rendered here item by item; (3) everything else → the filter, unparameterised.
+  - `selected_options` renders `variant.title` and emits nothing for single-variant products (never
+    "Default Title"). `inventory_quantity`: untracked inventory emits nothing (else "items sold").
+    `weight`: 0 means unset — emit nothing rather than "0 g".
+{% endcomment %}
+{%- liquid
+  assign variant = product.first_available_variant | default: product.variants.first
+  assign part_chunks = row.valueParts.size | plus: 49 | divided_by: 50
+-%}
+{%- for chunk in (1..part_chunks) -%}
+  {%- assign part_offset = chunk | minus: 1 | times: 50 -%}
+  {%- for part in row.valueParts offset: part_offset limit: 50 -%}
+    {%- case part.type -%}
+      {%- when "TEXT" -%}{{ part.text | escape }}
+      {%- when "LINE_BREAK" -%}<br>
+      {%- when "METAFIELD" -%}
+        {%- assign mf = product.metafields[part.namespace][part.key] -%}
+        {%- assign mf_type = mf.type | default: "" -%}
+        {%- if mf_type contains "metaobject_reference" -%}
+          {%- comment -%}
+            `metafield_text` renders NOTHING for `metaobject_reference` / `list.metaobject_reference`
+            unless given `field:` naming which field of the referenced metaobject to print (it has no
+            default field). Not an edge case: every choice-list attribute in Shopify's `shopify.*`
+            taxonomy is metaobject-backed, so the un-parameterised call silently emitted empty for them.
+
+            Taxonomy metaobjects name their display field `label`; custom definitions commonly use
+            `name` or `title`. Try in that order, first non-blank wins — a miss renders blank rather
+            than raising; all three blank stays SILENT. Going through the filter (not walking
+            `mf.value`) keeps the single/list split inside Shopify's implementation (sentence-format
+            lists, no 50-iteration `for` cap).
+          {%- endcomment -%}
+          {%- assign mo_text = mf | metafield_text: field: "label" -%}
+          {%- if mo_text == blank -%}{%- assign mo_text = mf | metafield_text: field: "name" -%}{%- endif -%}
+          {%- if mo_text == blank -%}{%- assign mo_text = mf | metafield_text: field: "title" -%}{%- endif -%}
+          {{- mo_text | escape -}}
+        {%- elsif mf_type contains "list." and mf_type != "list.single_line_text_field" -%}
+          {%- comment -%}
+            `metafield_text` supports NO list type except `list.single_line_text_field` and
+            `list.metaobject_reference` (both handled elsewhere), so every other list
+            (`list.number_integer`, `list.dimension`, …) rendered empty. Those are rendered here, one
+            item at a time.
+
+            🔴 The per-item shape is DUCK-TYPED, not switched on `mf_type`, deliberately. Shopify's
+            measurement family is open and growing (`dimension`, `weight`, `volume`, `voltage`, …) but
+            every one is the same `measurement` object (`.value` + `.unit`); a `case mf_type` would
+            silently drop each new member, testing for `.unit` cannot. Order runs most specific first;
+            a plain string/number/date answers nil to every test and falls through to `{{ item }}`.
+
+            SIZE: reference lists are CONNECTIONS (`.count`); non-reference lists are arrays (`.size`).
+            Lists run to 128 items (256 for metaobject refs) against the 50-iteration cap, so this
+            chunks like the parts loop.
+
+            ⚠️ DIVERGENCE, accepted: Shopify renders its two supported list types in localized
+            sentence format ("A, B, and C"); this joins with ", ". Matching it would hardcode an
+            English "and" (an i18n bug) or need a last-item lookahead the blank-skip makes unreliable —
+            and a comma list reads better in a spec table. Not worth regressing a live-verified path.
+          {%- endcomment -%}
+          {%- assign list_items = mf.value -%}
+          {%- assign list_size = list_items.count | default: list_items.size | default: 0 -%}
+          {%- assign list_chunks = list_size | plus: 49 | divided_by: 50 -%}
+          {%- assign printed = 0 -%}
+          {%- for list_chunk in (1..list_chunks) -%}
+            {%- assign list_offset = list_chunk | minus: 1 | times: 50 -%}
+            {%- for item in list_items offset: list_offset limit: 50 -%}
+              {%- capture item_text -%}
+                {%- if item.unit != blank -%}{{ item.value }} {{ item.unit }}
+                {%- elsif item.rating != blank -%}{{ item.rating }}
+                {%- elsif item.title != blank -%}{{ item.title }}
+                {%- elsif item.name != blank -%}{{ item.name }}
+                {%- elsif item.url != blank -%}{{ item.url }}
+                {%- elsif item.src != blank -%}{{ item.src }}
+                {%- else -%}{{ item }}
+                {%- endif -%}
+              {%- endcapture -%}
+              {%- assign item_text = item_text | strip -%}
+              {%- if item_text != blank -%}
+                {%- if printed > 0 -%}, {% endif -%}
+                {{- item_text | escape -}}
+                {%- assign printed = printed | plus: 1 -%}
+              {%- endif -%}
+            {%- endfor -%}
+          {%- endfor -%}
+        {%- else -%}
+          {{- mf | metafield_text | escape | newline_to_br -}}
+        {%- endif -%}
+      {%- when "SHOPIFY_FIELD" -%}
+        {%- case part.field -%}
+          {%- when "vendor" -%}{{ product.vendor | escape }}
+          {%- when "product_type" -%}{{ product.type | escape }}
+          {%- when "category" -%}{{ product.category.name | escape }}
+          {%- when "tags" -%}{{ product.tags | join: ", " | escape }}
+          {%- when "available_for_sale" -%}{%- if product.available -%}{{ "spec_table.available_yes" | t }}{%- else -%}{{ "spec_table.available_no" | t }}{%- endif -%}
+          {%- when "selected_options" -%}{%- unless product.has_only_default_variant -%}{{ variant.title | escape }}{%- endunless -%}
+          {%- when "price" -%}{{ variant.price | money }}
+          {%- when "compare_at_price" -%}{%- if variant.compare_at_price -%}{{ variant.compare_at_price | money }}{%- endif -%}
+          {%- when "sku" -%}{{ variant.sku | escape }}
+          {%- when "barcode" -%}{{ variant.barcode | escape }}
+          {%- when "weight" -%}{%- if variant.weight > 0 -%}{{ variant.weight_in_unit | weight_with_unit: variant.weight_unit }}{%- endif -%}
+          {%- when "inventory_quantity" -%}{%- if variant.inventory_management -%}{{ variant.inventory_quantity }}{%- endif -%}
+        {%- endcase -%}
+    {%- endcase -%}
+  {%- endfor -%}
+{%- endfor -%}
