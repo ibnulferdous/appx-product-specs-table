@@ -61,6 +61,7 @@ import {
   MODAL_TRANSITION_MS,
   PASTE_CAP_MODAL_ID,
   metafieldChoiceValue,
+  useBrowserLayoutEffect,
   type FieldSelection,
   type SavedCaret,
 } from "./editorShared";
@@ -294,11 +295,9 @@ export function useRowEngine({
   // Screen-reader announcements for the keyboard drag; dnd-kit renders the hidden live region.
   // ⚠️ The callbacks read CURRENT rows via a ref so they never close over a stale array.
   const rowsRef = useRef(rows);
-  rowsRef.current = rows;
   // Mirrored into a ref so the paste closure reads the LIVE selection without depending on
   // `activeRowId`, keeping `pasteGrid` stable across selection changes.
   const activeRowIdRef = useRef(activeRowId);
-  activeRowIdRef.current = activeRowId;
   const dndAnnouncements = useMemo<Announcements>(
     () => ({
       onDragStart: ({ active }) =>
@@ -332,7 +331,6 @@ export function useRowEngine({
   // closure would be stale (always false) — letting Undo mutate rows during a save started AFTER the
   // toast.
   const savingRef = useRef(saving);
-  savingRef.current = saving;
 
   // A blocked activation is discovered server-side on Save; these conflicts are held so the SettingsTab
   // can render a persistent banner naming the colliding templates. Cleared on a successful save and
@@ -358,7 +356,16 @@ export function useRowEngine({
     basedOnPreset,
   });
   const metaJsonRef = useRef(currentMetaJson);
-  metaJsonRef.current = currentMetaJson;
+  // Publish the four mirrored refs AFTER commit, never during render: React can replay or discard a
+  // render, so a render-body write could leak values from work that never committed into the deferred
+  // callbacks (dnd announcements, the paste closure, the Undo toast) that read them. Every read is in a
+  // callback or effect, so none needs the value before this runs.
+  useBrowserLayoutEffect(() => {
+    rowsRef.current = rows;
+    activeRowIdRef.current = activeRowId;
+    savingRef.current = saving;
+    metaJsonRef.current = currentMetaJson;
+  }, [rows, activeRowId, saving, currentMetaJson]);
   const [savedMetaJson, setSavedMetaJson] = useState(currentMetaJson);
   const isDirty = currentMetaJson !== savedMetaJson;
 
