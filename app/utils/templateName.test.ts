@@ -60,4 +60,18 @@ describe("copyName", () => {
     // The truncated result is still a valid name.
     expect(validateTemplateName(result).ok).toBe(true);
   });
+
+  it("never truncates inside an astral character (no unpaired surrogate)", () => {
+    // 247 ASCII + one astral char (2 UTF-16 code units): appending " (copy)"
+    // overflows the cap, so the truncation boundary lands on the astral char.
+    const source = `${"a".repeat(247)}😀`;
+    const result = copyName(source);
+    expect(result.length).toBeLessThanOrEqual(NAME_MAX_LENGTH);
+    expect(result.endsWith(" (copy)")).toBe(true);
+    // A code-unit slice would leave a lone high surrogate at the boundary; a
+    // code-point-safe truncation drops the whole astral char instead.
+    expect(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])/.test(result)).toBe(false);
+    expect(result).toBe(`${"a".repeat(247)} (copy)`);
+    expect(validateTemplateName(result).ok).toBe(true);
+  });
 });

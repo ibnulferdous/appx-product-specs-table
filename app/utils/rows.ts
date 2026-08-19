@@ -70,6 +70,9 @@ const SECTION_KEY_BASE = "section";
 export function slugifyKey(label: string): string {
   const slug = label
     .normalize("NFKD")
+    // Drop the combining marks NFKD produced; otherwise an accent inside a word
+    // becomes a `_` separator (`Ångström` → `a_ngstrom`).
+    .replace(/[\u0300-\u036f]/g, "")
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "_")
     .replace(/^_+|_+$/g, "");

@@ -39,5 +39,16 @@ export function copyName(sourceName: string): string {
   if (candidate.length <= NAME_MAX_LENGTH) {
     return candidate;
   }
-  return `${sourceName.slice(0, NAME_MAX_LENGTH - COPY_SUFFIX.length)}${COPY_SUFFIX}`;
+  // Truncate by code point, not code unit, so a cut inside an astral character
+  // never leaves an unpaired surrogate. The budget is still counted in UTF-16
+  // code units to honour the `NAME_MAX_LENGTH` cap.
+  const budget = NAME_MAX_LENGTH - COPY_SUFFIX.length;
+  let truncated = "";
+  for (const char of sourceName) {
+    if (truncated.length + char.length > budget) {
+      break;
+    }
+    truncated += char;
+  }
+  return `${truncated}${COPY_SUFFIX}`;
 }

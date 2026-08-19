@@ -69,8 +69,11 @@ export function partsToText(parts: ValuePart[]): string {
 // printed on the storefront. A `.` stays excluded: it is the ns/key separator, so
 // `{% mf a.b.c %}` must stay literal rather than split ambiguously.
 const NS_KEY = "[A-Za-z0-9_-]+";
+// Token whitespace is horizontal only (` ` / `\t`): a newline inside otherwise
+// token-shaped syntax must stay literal so its author-intended LINE_BREAK
+// survives, rather than being swallowed as token spacing.
 const TOKEN_RE = new RegExp(
-  `\\{%\\s*(?:field\\s+([a-z0-9_]+)|mf\\s+(${NS_KEY})\\.(${NS_KEY}))\\s*%\\}`,
+  `\\{%[ \\t]*(?:field[ \\t]+([a-z0-9_]+)|mf[ \\t]+(${NS_KEY})\\.(${NS_KEY}))[ \\t]*%\\}`,
   "g",
 );
 
