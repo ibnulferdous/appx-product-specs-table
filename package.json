@@ -35,7 +35,6 @@
     "@dnd-kit/sortable": "^10.0.0",
     "@dnd-kit/utilities": "^3.2.2",
     "@prisma/client": "^6.16.3",
-    "@react-router/dev": "^7.18.2",
     "@react-router/fs-routes": "^7.18.2",
     "@react-router/node": "^7.18.2",
     "@react-router/serve": "^7.18.2",
@@ -50,6 +49,7 @@
     "vite-tsconfig-paths": "^5.1.4"
   },
   "devDependencies": {
+    "@react-router/dev": "^7.18.2",
     "@shopify/api-codegen-preset": "^2.0.0",
     "@shopify/polaris-types": "^1.0.1",
     "@types/eslint": "^9.6.1",

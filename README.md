@@ -180,8 +180,10 @@ PRISMA_CLIENT_ENGINE_TYPE=binary
 
 ### Metaobject data disappears on the dev store
 
-`shopify app dev clean` wipes app-owned metaobject data that has never been
-deployed. Run `shopify app deploy` once to anchor the definitions.
+`shopify app dev clean` removes metaobject definitions that were created during
+the current `shopify app dev` session but are absent from the app's active
+version, along with any metaobjects that reference those definitions. Run
+`shopify app deploy` once to anchor the definitions in the active version.
 
 ## Resources
 

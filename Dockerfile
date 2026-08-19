@@ -4,7 +4,7 @@
 # `npm run build` is `react-router build`, which invokes vite — and vite is a
 # devDependency. So the build MUST run with dev deps present; a prod-only install
 # here fails with "vite: not found". Prisma generate mirrors the CI build step.
-FROM node:20-alpine AS builder
+FROM node:24-alpine AS builder
 RUN apk add --no-cache openssl
 WORKDIR /app
 
@@ -22,7 +22,7 @@ RUN npm run build
 # needed at runtime. docker-start runs `prisma generate && prisma migrate deploy`
 # before boot, so the schema + migrations must be present (prisma CLI and
 # @prisma/client are production dependencies).
-FROM node:20-alpine
+FROM node:24-alpine
 RUN apk add --no-cache openssl
 WORKDIR /app
 
