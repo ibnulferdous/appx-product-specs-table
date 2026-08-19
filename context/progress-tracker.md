@@ -163,6 +163,14 @@ saved presets, cuttable).
 > `context/features/` doc and in git. If a finding is load-bearing for future work it belongs
 > in Binding rules, Key Decisions or Open Questions, not in an entry here.
 
+- **Login / landing page rebranded (`_index`)** — ✅ 2026-08-19, gate green (typecheck · lint ·
+  format · build). Replaced the scaffold's plain black-serif page with an Appx-branded marketing
+  entry: gradient canvas, inline SVG logo mark, indigo brand palette, a two-column hero with a
+  stylized spec-table preview card, three feature cards, and a footer linking `hiappx.com` /
+  `support@hiappx.com`. **The login `Form` is behaviourally unchanged** — same `action="/auth/login"`,
+  `method="post"`, `name="shop"` input, and the `showForm`/`?shop` redirect loader. Standalone page
+  (no Polaris / App Bridge); `Inter` reused from `root.tsx`. Rendered desktop + mobile screenshots
+  to verify responsive layout. No schema/route/test change.
 - **Templates-list: inline Draft⇄Active status toggle on each row** — ✅ 2026-08-15, build
   green, **fully live-verified on `appx-dev`**. An `s-switch` in the Status cell flips status
   in one click (the ⋯ menu's "Change status" modal stays as the fallback, and remains the only
