@@ -11,8 +11,9 @@ import type { ScopeSelector } from "../../utils/assignmentOverlap";
  * scope name), and sorting makes a reorder a no-op. An empty set (NONE) is the empty string.
  */
 export function selectorSetKey(selectors: ScopeSelector[]): string {
-  return selectors
-    .map((s) => `${s.scope} ${s.scopeValue ?? ""}`)
+  // Deduplicate before sorting so a repeated selector can't make an otherwise-equal SET produce a
+  // different key ([A] and [A, A] must agree), matching the documented set semantics.
+  return [...new Set(selectors.map((s) => `${s.scope} ${s.scopeValue ?? ""}`))]
     .sort()
     .join("");
 }
@@ -126,7 +127,11 @@ export function reconcileExcludes(
 /** Set equality over two GID lists (order-independent) — drives the
  *  excludes-changed diff for the gate + rebuild triggers. */
 export function sameGidSet(a: string[], b: string[]): boolean {
-  if (a.length !== b.length) return false;
-  const set = new Set(a);
-  return b.every((gid) => set.has(gid));
+  // Compare as SETS, not lists: duplicates in either input must not read as "changed"
+  // (e.g. [A] and [A, A] are the same GID set).
+  const setA = new Set(a);
+  const setB = new Set(b);
+  if (setA.size !== setB.size) return false;
+  for (const gid of setA) if (!setB.has(gid)) return false;
+  return true;
 }

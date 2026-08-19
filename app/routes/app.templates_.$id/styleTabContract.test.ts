@@ -314,12 +314,12 @@ describe("feature 86 — the Style rail renders all eight groups", () => {
     // and the assertion above would silently weaken from a real check to an
     // arithmetic accident.
     //
-    // SEVEN, not nine. `stylingControls.test.ts` pins the predicate registry at
-    // 9 since feature 95, and the difference is the point: the other two guard
-    // COLORS, which this rail does not write as JSX at all — the nine swatches
+    // SEVEN, not eleven. `stylingControls.test.ts` pins the predicate registry
+    // at 11, and the difference is the point: the other four guard COLORS,
+    // which this rail does not write as JSX at all — the nine swatches
     // are one `.filter(…).map(…)` over `COLOR_KNOBS`, so their predicates are
     // carried on the knobs and applied inside `colorGrid`. That is why the
-    // counting test above is still sound at 9 predicates: a `visibleWhen` knob
+    // counting test above is still sound at 11 predicates: a `visibleWhen` knob
     // cannot empty a group (pinned in `stylingControls.test.ts`), so
     // `colorGrid(…)` still always renders a control.
     const guards = body.match(/\{shows[A-Za-z]+\(/g) ?? [];

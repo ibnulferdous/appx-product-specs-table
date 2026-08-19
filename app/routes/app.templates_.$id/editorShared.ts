@@ -138,8 +138,15 @@ export const RAIL_REGION_ID = "editor-rail";
  * The button's ICON deliberately doesn't change with state — a swapping toggle icon is permanently
  * ambiguous about whether it depicts the state or the action. `aria-expanded` + this label carry state.
  */
+// Keyed by every RailTab, so adding a tab id to `TabId` (which widens `RailTab`) is a COMPILE error
+// here rather than silently falling through to "Settings".
+const RAIL_PANEL_NAMES: Record<RailTab, string> = {
+  style: "Style",
+  settings: "Settings",
+};
+
 export function railToggleLabel(tab: RailTab, collapsed: boolean): string {
-  const panel = tab === "style" ? "Style" : "Settings";
+  const panel = RAIL_PANEL_NAMES[tab];
   return collapsed ? `Show ${panel} panel` : `Hide ${panel} panel`;
 }
 

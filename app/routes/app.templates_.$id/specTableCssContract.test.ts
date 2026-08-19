@@ -135,9 +135,11 @@ describe("spec-table.css ↔ styling vocabulary contract (feature 57 Step 3)", (
     });
 
     it("only fires when the PRECEDING section is closed (the no-repaint scope)", () => {
-      // ALL_OPEN is the default initial state. Drop `:not([open])` and every
-      // collapsible banded table already on a storefront gains a second
-      // hairline above every band — a repaint nobody asked for.
+      // The scope keeps the hairline off a band that is followed by its own
+      // rows, which already draw the edge. Drop `:not([open])` and every band
+      // gains a second hairline above it, open sections included.
+      // Note: the default initial state is FIRST_OPEN (changed 2026-07-30), so
+      // sections 2..n start closed and this rule is already live on default tables.
       expect(css).toContain(
         ".appx-spec-table__section-group:not([open])\n" +
           "  + .appx-spec-table__section-group",

@@ -1466,7 +1466,7 @@ describe("the hide-rule count (2026-07-29 took it from ten to eleven)", () => {
     // flat `th` and the collapsible `<summary>` alike — so unlike the section
     // gap none of them earns a predicate. Pinning the count is what turns "we
     // decided not to add one" into something a later change has to confront:
-    // an eighth entry here means a new control gained a hide rule, and it must
+    // a twelfth entry here means a new control gained a hide rule, and it must
     // inherit the preserve-on-hide law below rather than reimplement it.
     //
     // 6 -> 7 for feature 85's `showsGridMinColumnWidthControl`; 7 -> 9 for
