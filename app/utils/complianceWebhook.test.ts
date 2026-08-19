@@ -227,4 +227,24 @@ describe("formatComplianceLog", () => {
 
     expect(line).not.toContain("mismatch");
   });
+
+  it("escapes control characters in a body-derived shop_domain (no log forging)", () => {
+    // `shop_domain` is attacker-controlled; `readString` accepts newlines. A
+    // mismatched value carrying CR/LF must not split the single log line into
+    // forged extra entries.
+    const summary = parseComplianceSummary({
+      shop_domain: "evil.myshopify.com\nforged_line=injected",
+    });
+    const line = formatComplianceLog(
+      "SHOP_REDACT",
+      "real-shop.myshopify.com",
+      summary,
+    );
+
+    // Still one line — the newline survives only as an escape, not a real break.
+    expect(line).not.toContain("\n");
+    expect(line).toContain(
+      "payload_shop_domain_mismatch=evil.myshopify.com\\nforged_line=injected",
+    );
+  });
 });

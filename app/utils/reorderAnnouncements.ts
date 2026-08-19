@@ -8,7 +8,10 @@
 
 import type { EditorRow } from "./rows";
 
-// So a descriptor reads cleanly at the start of a sentence ("row 3" → "Row 3").
+// So a GENERATED positional descriptor reads cleanly at a sentence start
+// ("row 3" → "Row 3"). Never applied to a user's label: forcing "iPhone row" to
+// "IPhone row" would mangle meaningful casing and make the same row announce
+// differently across events (describeRow itself preserves the label).
 function capitalize(text: string): string {
   return text.length === 0 ? text : text[0].toUpperCase() + text.slice(1);
 }
@@ -27,16 +30,28 @@ export function describeRow(row: EditorRow, index: number): string {
 
 // Resolve a row id to its descriptor + index in one pass; index -1 (and the
 // generic "row" descriptor) when the id is not found (defensive — dnd-kit always
-// reports a live id).
+// reports a live id). `isFallback` marks a GENERATED descriptor (blank label or
+// not-found) — only those may be capitalized at a sentence start.
 function describeById(
   rows: EditorRow[],
   id: string,
-): { text: string; index: number } {
+): { text: string; index: number; isFallback: boolean } {
   const index = rows.findIndex((row) => row.id === id);
   if (index === -1) {
-    return { text: "row", index: -1 };
+    return { text: "row", index: -1, isFallback: true };
   }
-  return { text: describeRow(rows[index], index), index };
+  const row = rows[index];
+  return {
+    text: describeRow(row, index),
+    index,
+    isFallback: row.label.trim() === "",
+  };
+}
+
+// Sentence-start form of a resolved descriptor: capitalize only generated
+// fallbacks; a user label keeps its own casing.
+function sentenceStart(active: { text: string; isFallback: boolean }): string {
+  return active.isFallback ? capitalize(active.text) : active.text;
 }
 
 /** "Picked up …" — the drag has started; tell the user how to drive it. */
@@ -57,9 +72,9 @@ export function announceReorderOver(
   const active = describeById(rows, activeId);
   const overIndex = overId ? rows.findIndex((row) => row.id === overId) : -1;
   if (overIndex === -1) {
-    return `${capitalize(active.text)} is no longer over a drop position.`;
+    return `${sentenceStart(active)} is no longer over a drop position.`;
   }
-  return `${capitalize(active.text)} is now over position ${overIndex + 1} of ${rows.length}.`;
+  return `${sentenceStart(active)} is now over position ${overIndex + 1} of ${rows.length}.`;
 }
 
 /** "… was dropped at position N of M." — the drag committed. */
@@ -71,9 +86,9 @@ export function announceReorderEnd(
   const active = describeById(rows, activeId);
   const overIndex = overId ? rows.findIndex((row) => row.id === overId) : -1;
   if (overIndex === -1) {
-    return `${capitalize(active.text)} was dropped.`;
+    return `${sentenceStart(active)} was dropped.`;
   }
-  return `${capitalize(active.text)} was dropped at position ${overIndex + 1} of ${rows.length}.`;
+  return `${sentenceStart(active)} was dropped at position ${overIndex + 1} of ${rows.length}.`;
 }
 
 /** "Reordering cancelled. …" — Escape (or an invalid drop) reverted the move. */
@@ -82,5 +97,5 @@ export function announceReorderCancel(
   activeId: string,
 ): string {
   const active = describeById(rows, activeId);
-  return `Reordering cancelled. ${capitalize(active.text)} returned to its original position.`;
+  return `Reordering cancelled. ${sentenceStart(active)} returned to its original position.`;
 }

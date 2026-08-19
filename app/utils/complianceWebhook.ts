@@ -118,12 +118,22 @@ export function parseComplianceSummary(payload: unknown): ComplianceSummary {
  * @param topic Shopify's topic constant, e.g. `CUSTOMERS_REDACT`.
  * @param shop  The AUTHENTICATED shop domain, not `summary.shopDomain`.
  */
+// Escape control characters (notably `\r` / `\n`) before a value goes into a
+// line-based log message, so a body-derived string can't forge extra log lines.
+// `JSON.stringify` renders them as `\r` / `\n` escapes; slicing off the wrapping
+// quotes keeps the interpolation shape unchanged for ordinary values.
+function escapeLogValue(value: string): string {
+  return JSON.stringify(value).slice(1, -1);
+}
+
 export function formatComplianceLog(
   topic: string,
   shop: string,
   summary: ComplianceSummary,
 ): string {
-  const parts = [`Received ${topic} webhook for ${shop}`];
+  const parts = [
+    `Received ${escapeLogValue(topic)} webhook for ${escapeLogValue(shop)}`,
+  ];
 
   if (summary.shopId !== null) parts.push(`shop_id=${summary.shopId}`);
   if (summary.customerId !== null)
@@ -133,9 +143,12 @@ export function formatComplianceLog(
     parts.push(`data_request_id=${summary.dataRequestId}`);
   }
   // Only worth a line when it disagrees with the authenticated shop — a match is
-  // the normal case and says nothing.
+  // the normal case and says nothing. `shopDomain` is attacker-controlled body
+  // content, so it is escaped before it reaches the line.
   if (summary.shopDomain !== null && summary.shopDomain !== shop) {
-    parts.push(`payload_shop_domain_mismatch=${summary.shopDomain}`);
+    parts.push(
+      `payload_shop_domain_mismatch=${escapeLogValue(summary.shopDomain)}`,
+    );
   }
 
   return parts.join(" ");

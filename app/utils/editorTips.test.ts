@@ -29,6 +29,17 @@ describe("buildEditorTips — list shape", () => {
     const mac = buildEditorTips(true).map((t) => t.id);
     const other = buildEditorTips(false).map((t) => t.id);
     expect(mac).toEqual(other);
+    // Pin the full sequence too — the cross-platform check alone would miss a
+    // reorder that shifts BOTH outputs identically.
+    expect(mac).toEqual([
+      "keyboard-nav",
+      "device-views",
+      "gutter",
+      "insert-field",
+      "smart-pills",
+      "add-row",
+      "paste",
+    ]);
   });
 });
 

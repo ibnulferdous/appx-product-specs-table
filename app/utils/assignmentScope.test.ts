@@ -93,6 +93,19 @@ describe("validateScope", () => {
     });
   });
 
+  it("rejects a prefix-only GID that carries no identifier", () => {
+    // `startsWith` alone would accept these — a bare prefix has no resource id
+    // and must not become a persisted routing key.
+    expect(validateScope("PRODUCT", "gid://shopify/Product/")).toEqual({
+      ok: false,
+      error: "Product scope requires a product ID",
+    });
+    expect(validateScope("COLLECTION", "gid://shopify/Collection/")).toEqual({
+      ok: false,
+      error: "Collection scope requires a collection ID",
+    });
+  });
+
   it("rejects TAG (post-MVP) and any unknown scope", () => {
     expect(validateScope("TAG", "sale")).toEqual({
       ok: false,
