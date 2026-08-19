@@ -46,7 +46,6 @@
    control is a colour surface and a button chrome would fight it. */
 .swatch {
   display: inline-flex;
-  padding: 0;
   border: none;
   background: none;
   cursor: pointer;

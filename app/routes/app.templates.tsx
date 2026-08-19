@@ -470,12 +470,19 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   const { session, admin } = await authenticate.admin(request);
   const shop = await upsertShop(session);
 
-  const payload = (await request.json()) as {
+  let payload: {
     intent?: unknown;
     id?: unknown;
     name?: unknown;
     status?: unknown;
   };
+  // A malformed body throws a SyntaxError; without this guard it escapes as a bare 500,
+  // which the settle effect never toasts. Return the same envelope every other path uses.
+  try {
+    payload = await request.json();
+  } catch {
+    return { ok: false as const, error: "Malformed request" };
+  }
   const id = typeof payload.id === "string" ? payload.id : "";
   if (!id) {
     return { ok: false as const, error: "Missing template id" };
