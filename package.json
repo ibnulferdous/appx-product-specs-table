@@ -36,7 +36,7 @@
     "@dnd-kit/utilities": "^3.2.2",
     "@prisma/client": "^6.16.3",
     "@react-router/fs-routes": "^7.18.2",
-    "@react-router/node": "^7.18.2",
+    "@react-router/node": "^8.3.0",
     "@react-router/serve": "^7.18.2",
     "@shopify/app-bridge-react": "^4.2.12",
     "@shopify/shopify-app-react-router": "^1.1.0",
