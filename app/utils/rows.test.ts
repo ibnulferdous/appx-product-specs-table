@@ -67,6 +67,10 @@ describe("slugifyKey", () => {
     expect(slugifyKey("Café")).toBe("cafe");
   });
 
+  it("strips accents inside a word, not only at the end", () => {
+    expect(slugifyKey("Ångström Rating")).toBe("angstrom_rating");
+  });
+
   it("falls back to 'row' when nothing usable remains", () => {
     expect(slugifyKey("")).toBe("row");
     expect(slugifyKey("!!!")).toBe("row");
@@ -448,13 +452,12 @@ describe("rowsReducer", () => {
 
     it("no-ops (same reference) on a SECTION_HEADER id", () => {
       const rows = [sectionRow("s", "section")];
-      expect(
-        rowsReducer(rows, {
-          type: "SET_VALUE_PARTS",
-          id: "s",
-          valueParts: [{ type: "TEXT", text: "x" }],
-        }),
-      ).toEqual(rows);
+      const result = rowsReducer(rows, {
+        type: "SET_VALUE_PARTS",
+        id: "s",
+        valueParts: [{ type: "TEXT", text: "x" }],
+      });
+      expect(result[0]).toBe(rows[0]);
     });
 
     it("no-ops (same reference) on an unknown id — never flips dirty", () => {

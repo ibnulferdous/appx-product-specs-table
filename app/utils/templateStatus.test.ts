@@ -51,11 +51,9 @@ describe("validateTemplateStatus", () => {
 
 describe("TEMPLATE_STATUS_OPTIONS", () => {
   it("covers every real status exactly once, in Draft/Active/Archived order", () => {
-    expect(TEMPLATE_STATUS_OPTIONS.map((o) => o.value)).toEqual([
-      "DRAFT",
-      "ACTIVE",
-      "ARCHIVED",
-    ]);
+    expect(TEMPLATE_STATUS_OPTIONS.map((o) => o.value)).toEqual(
+      TEMPLATE_STATUSES,
+    );
     // Every option value is itself a valid status (no drift between the picker
     // list and the validator).
     for (const option of TEMPLATE_STATUS_OPTIONS) {

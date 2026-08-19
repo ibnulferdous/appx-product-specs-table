@@ -98,6 +98,13 @@ describe("filterNativeFields", () => {
     expect(tokensOf("available for")).toEqual(["available_for_sale"]);
   });
 
+  it("normalises separator-heavy queries (underscore, hyphen) like the tokens", () => {
+    // The query is normalised the same way as the haystacks, so a token typed
+    // verbatim with its own separators still matches.
+    expect(tokensOf("compare_at_price")).toEqual(["compare_at_price"]);
+    expect(tokensOf("compare-at")).toEqual(["compare_at_price"]);
+  });
+
   it("trims surrounding whitespace before matching", () => {
     expect(tokensOf("  vendor  ")).toEqual(["vendor"]);
   });
@@ -178,6 +185,12 @@ describe("filterMetafieldDefinitions", () => {
 
   it("matches the namespace prefix shared by several definitions", () => {
     expect(keysOf("custom")).toEqual(["battery_life", "chipset"]);
+  });
+
+  it("normalises a dotted namespace.key query like the token", () => {
+    // A query typed with the literal `.` and `_` separators is normalised the
+    // same way as the haystack, so it still matches.
+    expect(keysOf("custom.battery_life")).toEqual(["battery_life"]);
   });
 
   it("is case-insensitive", () => {

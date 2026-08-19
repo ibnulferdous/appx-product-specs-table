@@ -153,6 +153,20 @@ describe("textToParts — malformed tokens stay literal", () => {
       field,
     ]);
   });
+
+  it("does not swallow a newline as token whitespace", () => {
+    // Token spacing is horizontal only, so a newline inside token-shaped syntax
+    // keeps the syntax literal and preserves the author's LINE_BREAK.
+    expect(textToParts("{% field\nvendor %}")).toEqual([
+      { type: "TEXT", text: "{% field" },
+      { type: "LINE_BREAK" },
+      { type: "TEXT", text: "vendor %}" },
+    ]);
+    // The line break survives the round-trip back to text.
+    expect(partsToText(textToParts("{% field\nvendor %}"))).toBe(
+      "{% field\nvendor %}",
+    );
+  });
 });
 
 describe("textToParts — \\n ↔ LINE_BREAK", () => {

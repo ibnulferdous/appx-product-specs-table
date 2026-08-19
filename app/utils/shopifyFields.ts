@@ -52,13 +52,26 @@ export function findNativeField(field: string): NativeShopifyField | undefined {
   return NATIVE_SHOPIFY_FIELDS.find((entry) => entry.field === field);
 }
 
+// Collapse runs of non-alphanumerics to single spaces (after trim + lowercase)
+// so the query and the haystacks compare on the same token shape — `product_type`
+// and `custom.battery_life` match despite their separators.
+function normalizeSearchText(value: string): string {
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ");
+}
+
 /**
- * The shared matching rule for the modal's search box. Callers lowercase and
- * normalise the haystacks they pass, so one rule serves both the native-field and
- * metafield lists.
+ * The shared matching rule for the modal's search box. Both the needle and the
+ * haystacks are normalised through `normalizeSearchText`, so one rule serves both
+ * the native-field and metafield lists regardless of separator style.
  */
 function matchesQuery(needle: string, ...haystacks: string[]): boolean {
-  return haystacks.some((haystack) => haystack.includes(needle));
+  const normalizedNeedle = normalizeSearchText(needle);
+  return haystacks.some((haystack) =>
+    normalizeSearchText(haystack).includes(normalizedNeedle),
+  );
 }
 
 /**
