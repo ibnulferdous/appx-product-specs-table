@@ -160,6 +160,74 @@ export function collectLookups(
   };
 }
 
+// --- Pure: chunking ---------------------------------------------------------
+
+// Max aliased lookups per batched query. Shopify caps a SINGLE query at 1,000 cost points on every
+// plan, and each aliased `productsCount` / `collection` object costs ~1 point — so a shop with a few
+// hundred assigned collections would otherwise emit one document that Shopify rejects outright,
+// nulling EVERY live count at once. 100 keeps each query far under the cap with headroom for the
+// nested `collection { productsCount }` field. The `shopTotal` field rides along on the first chunk.
+export const MAX_LOOKUPS_PER_QUERY = 100;
+
+/**
+ * Partition the distinct live lookups into chunks that each stay within Shopify's single-query cost
+ * limit (`MAX_LOOKUPS_PER_QUERY` aliases). The chunks run SEQUENTIALLY in the orchestrator and their
+ * results merge, so one rejected chunk leaves only its own values unknown instead of blanking the
+ * whole column. `needShopTotal` rides on the first chunk (one extra alias). Returns [] only when
+ * nothing needs a live lookup. Pure.
+ */
+export function chunkCountLookups(
+  lookups: CountLookups,
+  chunkSize: number = MAX_LOOKUPS_PER_QUERY,
+): CountLookups[] {
+  const { needShopTotal, collectionGids, productTypes, vendors } = lookups;
+
+  // Flatten the three valued lookups into one sequence so a chunk's TOTAL alias count is bounded,
+  // regardless of how the values split across kinds.
+  const items: Array<{
+    kind: "collection" | "type" | "vendor";
+    value: string;
+  }> = [
+    ...collectionGids.map((value) => ({ kind: "collection" as const, value })),
+    ...productTypes.map((value) => ({ kind: "type" as const, value })),
+    ...vendors.map((value) => ({ kind: "vendor" as const, value })),
+  ];
+
+  if (items.length === 0) {
+    // Only the shop total (or nothing) is needed — one chunk, or none.
+    return needShopTotal
+      ? [
+          {
+            needShopTotal: true,
+            collectionGids: [],
+            productTypes: [],
+            vendors: [],
+          },
+        ]
+      : [];
+  }
+
+  const chunks: CountLookups[] = [];
+  for (let i = 0; i < items.length; i += chunkSize) {
+    const chunk: CountLookups = {
+      needShopTotal: false,
+      collectionGids: [],
+      productTypes: [],
+      vendors: [],
+    };
+    for (const item of items.slice(i, i + chunkSize)) {
+      if (item.kind === "collection") chunk.collectionGids.push(item.value);
+      else if (item.kind === "type") chunk.productTypes.push(item.value);
+      else chunk.vendors.push(item.value);
+    }
+    chunks.push(chunk);
+  }
+
+  // The shop total is one alias — attach it to the first chunk.
+  if (needShopTotal) chunks[0].needShopTotal = true;
+  return chunks;
+}
+
 // --- Pure: query builder ----------------------------------------------------
 
 /**
@@ -369,16 +437,20 @@ export async function resolveAssignedProductCounts(
 
   const assignments = groupAssignments(rows as RawAssignmentRow[]);
   const lookups = collectLookups(assignments);
-  const built = buildAssignedCountQuery(lookups);
 
-  let resolved: ResolvedCounts = {
+  const resolved: ResolvedCounts = {
     shopTotal: null,
     byCollection: new Map(),
     byType: new Map(),
     byVendor: new Map(),
   };
 
-  if (built) {
+  // One batched query PER CHUNK, run sequentially (feature 48). Chunking keeps each document under
+  // Shopify's single-query cost limit; running them separately also ISOLATES failures — a rejected
+  // chunk leaves only its own values unknown while every other chunk's counts still merge in.
+  for (const chunk of chunkCountLookups(lookups)) {
+    const built = buildAssignedCountQuery(chunk);
+    if (!built) continue;
     try {
       const response = await admin.graphql(built.query, {
         variables: built.variables,
@@ -394,10 +466,17 @@ export async function resolveAssignedProductCounts(
       ) {
         throw new Error("GraphQL errors");
       }
-      resolved = parseAssignedCountResponse(json, built.aliases);
+      const parsed = parseAssignedCountResponse(json, built.aliases);
+      if (parsed.shopTotal !== null) resolved.shopTotal = parsed.shopTotal;
+      for (const [gid, count] of parsed.byCollection)
+        resolved.byCollection.set(gid, count);
+      for (const [type, count] of parsed.byType)
+        resolved.byType.set(type, count);
+      for (const [vendor, count] of parsed.byVendor)
+        resolved.byVendor.set(vendor, count);
     } catch (error) {
-      // Cosmetic count only — never break the list. Live-derived counts stay unknown (→ "—");
-      // PRODUCT / NONE still resolve from Postgres.
+      // Cosmetic count only — never break the list. This chunk's live-derived counts stay unknown
+      // (→ "—"); other chunks and the PRODUCT / NONE counts still resolve.
       console.error("[assignedProductCounts] live count lookup failed", error);
     }
   }

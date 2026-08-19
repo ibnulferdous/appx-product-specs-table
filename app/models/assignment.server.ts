@@ -17,6 +17,15 @@ const MULTI_VALUE_SCOPES: ReadonlySet<AssignmentScopeValue> = new Set([
   "COLLECTION",
 ]);
 
+// Upper bound on how many values ONE assignment write may carry. Both write paths validate every
+// element and then write one row per element inside a transaction, so an authenticated client could
+// otherwise post tens of thousands of GIDs — holding a write transaction open, inflating the rows
+// the routing projection reads, and degrading the database. Mirrors `parseRowsWithinCap`'s
+// server-side cap on template rows. Shared by setTemplateScope AND setTemplateExcludes so both reject
+// oversized input identically, before any DB call. 1000 is far above any realistic hand-built
+// selection while still bounding the write.
+const MAX_ASSIGNMENT_VALUES = 1000;
+
 // Persistence for a template's assignment rules: the primary INCLUDE scope rule (feature 37,
 // "one scope per template", data-model.md §9) AND its EXCLUDE carve-outs (feature 45). The two
 // modes are written by SEPARATE functions that each touch ONLY their own `mode`, so a scope
@@ -124,6 +133,15 @@ export async function setTemplateScope(
     return { ok: false as const, error: "This scope takes a single value" };
   }
 
+  // Bound the write (shared cap): reject an oversized selector set before touching the DB, so no
+  // client can hold a write transaction open with tens of thousands of rows.
+  if (validated.length > MAX_ASSIGNMENT_VALUES) {
+    return {
+      ok: false as const,
+      error: `An assignment can have at most ${MAX_ASSIGNMENT_VALUES} values`,
+    };
+  }
+
   // Dedupe by value (ALL_PRODUCTS's null collapses to one; arity already caps it).
   const seen = new Set<string | null>();
   const rows = validated.filter((v) => {
@@ -173,7 +191,10 @@ export async function setTemplateScope(
       });
     });
     return { ok: true as const, count: rows.length };
-  } catch {
+  } catch (error) {
+    // Keep the cause diagnosable: a P2002 @@unique conflict, an FK failure after a concurrent
+    // template delete, and a dropped connection otherwise all collapse into one opaque message.
+    console.error("setTemplateScope failed", { shopId, templateId, error });
     return { ok: false as const, error: "Could not save assignment" };
   }
 }
@@ -206,8 +227,10 @@ export type ActiveIncludeScope = {
  * Shop isolation (priority #1): filtered `where { shopId }`. `templateId: { not: excludeTemplateId }`
  * drops the candidate itself so an already-ACTIVE template being scope-edited can't "conflict" with
  * its own rule. `template: { status: ACTIVE }` means a scope-less ACTIVE template (no INCLUDE row) is
- * naturally absent — it matches no products, so it can't collide. One INCLUDE rule per template, so
- * at most one row per ACTIVE template.
+ * naturally absent — it matches no products, so it can't collide. An ACTIVE template's INCLUDE rows
+ * share one scope KIND but may be MANY (1..N rows for PRODUCT/COLLECTION, feature 46), so this can
+ * return several rows per ACTIVE template; `evaluateActivationConflicts` deduplicates conflicts by
+ * templateId downstream. `orderBy` gives callers a stable, deterministic entry order.
  */
 export async function getActiveIncludeScopesExcept(
   shopId: string,
@@ -226,6 +249,7 @@ export async function getActiveIncludeScopesExcept(
       scopeValue: true,
       template: { select: { name: true } },
     },
+    orderBy: [{ templateId: "asc" }, { scope: "asc" }, { scopeValue: "asc" }],
   });
 
   return rows.map((row) => ({
@@ -256,6 +280,15 @@ export async function setTemplateExcludes(
 ): Promise<{ ok: true; count: number } | { ok: false; error: string }> {
   if (!Array.isArray(gids)) {
     return { ok: false as const, error: "Invalid excludes" };
+  }
+
+  // Bound the write (shared cap) BEFORE the validation loop, so an oversized payload can never
+  // reach the transaction and no partial carve-out set is written.
+  if (gids.length > MAX_ASSIGNMENT_VALUES) {
+    return {
+      ok: false as const,
+      error: `An assignment can have at most ${MAX_ASSIGNMENT_VALUES} values`,
+    };
   }
 
   // Validate each GID with the shared PRODUCT validator and dedupe. A single invalid GID rejects
@@ -299,7 +332,9 @@ export async function setTemplateExcludes(
       }
     });
     return { ok: true as const, count: validated.length };
-  } catch {
+  } catch (error) {
+    // Keep the cause diagnosable rather than collapsing every Prisma failure into one message.
+    console.error("setTemplateExcludes failed", { shopId, templateId, error });
     return { ok: false as const, error: "Could not save excludes" };
   }
 }

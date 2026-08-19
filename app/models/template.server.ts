@@ -204,7 +204,16 @@ export async function listTemplateSummariesForDomain(
     pageSize?: number;
   } = {},
 ): Promise<TemplateListPage> {
-  const pageSize = options.pageSize ?? TEMPLATES_PAGE_SIZE;
+  // Normalize pagination at the boundary: a non-finite / zero / negative / fractional input must
+  // never reach LIMIT or OFFSET. pageSize falls back to the default unless it is a positive integer;
+  // page floors to at least 1 here (its upper clamp against pageCount happens below).
+  const rawPageSize = options.pageSize;
+  const pageSize =
+    typeof rawPageSize === "number" &&
+    Number.isFinite(rawPageSize) &&
+    rawPageSize >= 1
+      ? Math.floor(rawPageSize)
+      : TEMPLATES_PAGE_SIZE;
   const status = options.status ?? null;
 
   // Counts in one round trip: `totalAll` (whole shop) drives the empty state, `totalFiltered`
@@ -227,9 +236,12 @@ export async function listTemplateSummariesForDomain(
   const totalFiltered = Number(counts[0]?.totalFiltered ?? 0);
 
   const pageCount = Math.max(1, Math.ceil(totalFiltered / pageSize));
-  // Clamp the requested page: a stale `?page=99` lands on the last real page, a bogus value
-  // floors to 1.
-  const page = Math.min(Math.max(1, Math.floor(options.page ?? 1)), pageCount);
+  // Clamp the requested page: a stale `?page=99` lands on the last real page, a bogus/non-finite
+  // value floors to 1 (Math.floor(NaN) is NaN, so guard finiteness before the min clamp).
+  const flooredPage = Math.floor(options.page ?? 1);
+  const requestedPage =
+    Number.isFinite(flooredPage) && flooredPage >= 1 ? flooredPage : 1;
+  const page = Math.min(requestedPage, pageCount);
   const offset = (page - 1) * pageSize;
 
   // Reuse the same status predicate on the data read (a WHERE, not a FILTER).
@@ -309,7 +321,10 @@ export async function createTemplateForShop(
     });
 
     return { ok: true as const, data: template };
-  } catch {
+  } catch (error) {
+    // Log the Prisma cause: a P2002 conflict, a P2025 miss, and a dropped connection otherwise all
+    // collapse into one opaque message. Keep the user-facing text unchanged.
+    console.error("createTemplateForShop failed", { shopId, error });
     return { ok: false as const, error: "Could not create template" };
   }
 }
@@ -459,7 +474,8 @@ export async function saveTemplateForShop(
       ok: true as const,
       data: { ...template, styling: existing.styling ?? null },
     };
-  } catch {
+  } catch (error) {
+    console.error("saveTemplateForShop failed", { shopId, id, error });
     return { ok: false as const, error: "Could not save template" };
   }
 }
@@ -506,7 +522,8 @@ export async function renameTemplateForShop(
       data: { name: nameResult.name }, // ONLY name; rows + status untouched
     });
     return { ok: true as const, data: template };
-  } catch {
+  } catch (error) {
+    console.error("renameTemplateForShop failed", { shopId, id, error });
     return { ok: false as const, error: "Could not rename template" };
   }
 }
@@ -538,7 +555,8 @@ export async function setTemplateStatusForShop(
       include: { styling: true },
     });
     return { ok: true as const, data: template };
-  } catch {
+  } catch (error) {
+    console.error("setTemplateStatusForShop failed", { shopId, id, error });
     return { ok: false as const, error: "Could not update status" };
   }
 }
@@ -599,7 +617,12 @@ export async function duplicateTemplateForShop(
       },
     });
     return { ok: true as const, data: template };
-  } catch {
+  } catch (error) {
+    console.error("duplicateTemplateForShop failed", {
+      shopId,
+      templateId,
+      error,
+    });
     return { ok: false as const, error: "Could not duplicate template" };
   }
 }
@@ -623,7 +646,11 @@ export async function deleteTemplateForShop(
   } catch (error) {
     // Match the sibling write helpers' structured failure instead of letting a Prisma rejection
     // escape as an unhandled 500; keep the cause in the logs for the operator.
-    console.error("deleteTemplateForShop failed", { shopId, templateId, error });
+    console.error("deleteTemplateForShop failed", {
+      shopId,
+      templateId,
+      error,
+    });
     return { ok: false as const, error: "Could not delete template" };
   }
 }

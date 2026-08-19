@@ -135,9 +135,14 @@ async function resolveChunkInto(
         image: readImageUrl(node),
       });
     }
-  } catch {
+  } catch (error) {
     // Display-only: a lookup failure must not break the editor load. This chunk's identity entries
-    // stand; other chunks are unaffected.
+    // stand; other chunks are unaffected. Warn (never throw) so the silent degradation to raw GIDs
+    // stays diagnosable, matching the truncation warning in metafieldDefinitions.server.ts.
+    console.warn(
+      `[scopeResourceLabel] chunk of ${ids.length} ids failed to resolve; those chips degrade to raw GIDs.`,
+      error,
+    );
   }
 }
 

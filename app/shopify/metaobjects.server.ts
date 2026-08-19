@@ -253,9 +253,19 @@ export async function upsertSpecTableMetaobject(
   const errors = isRecord(json)
     ? readUserErrors(isRecord(json.data) ? json.data.metaobjectUpsert : null)
     : [];
+  // Fallback to TOP-LEVEL GraphQL errors when there are no nested userErrors: a throttled or
+  // query-validation failure returns `{ errors: [...] }` with no `data`, which would otherwise throw
+  // a cause-less message and leave the caller's log with nothing to act on. `errors` entries carry a
+  // `.message`, the same shape `readUserErrors` reads.
+  const detail =
+    errors.length > 0
+      ? errors
+      : isRecord(json)
+        ? readUserErrors({ userErrors: json.errors })
+        : [];
   throw new Error(
     `Could not sync the spec table metaobject${
-      errors.length ? `: ${errors.join("; ")}` : ""
+      detail.length ? `: ${detail.join("; ")}` : ""
     }`,
   );
 }

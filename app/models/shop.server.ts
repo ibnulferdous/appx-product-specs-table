@@ -75,38 +75,50 @@ export type ShopEraseResult =
  *
  * Idempotent: `deleteMany` on an already-gone row returns `{ count: 0 }` where `delete` would throw
  * P2025, and Shopify retries any non-200 forever.
+ *
+ * 🔒 ATOMIC. The shop delete and the session sweep run inside ONE interactive transaction. `Session`
+ * has no FK to `Shop`, so the cascade never reaches it — the sweep is a SEPARATE statement, and if it
+ * failed after the shop delete had already committed, the retry would find the shop gone
+ * (`count === 0`), classify it `not-found`, and skip the sweep forever, leaving orphaned access
+ * tokens behind. Wrapping both in a transaction means a sweep failure rolls the shop delete back too,
+ * so Shopify's retry re-runs the whole erase.
  */
 export async function eraseShopData(
   shopDomain: string,
 ): Promise<ShopEraseResult> {
-  const { count } = await prisma.shop.deleteMany({
-    where: { myshopifyDomain: shopDomain, isInstalled: false },
-  });
-
-  if (count === 0) {
-    // Ambiguous alone: the shop is absent, or installed and the guard declined. The distinction only
-    // matters to the log line, so it costs one query in the zero case and none on the happy path.
-    // ⚠️ Deliberately NOT filtered by `isInstalled` — this read exists to tell "installed, so
-    // declined" apart from "absent"; the guard here would report a still-installed shop as not-found.
-    const existing = await prisma.shop.findUnique({
-      where: { myshopifyDomain: shopDomain },
-      select: { id: true },
+  return prisma.$transaction(async (tx) => {
+    const { count } = await tx.shop.deleteMany({
+      where: { myshopifyDomain: shopDomain, isInstalled: false },
     });
-    return {
-      erased: false,
-      reason: existing ? "still-installed" : "not-found",
-    };
-  }
 
-  // Only once the shop is actually gone. Deleting sessions first — or unconditionally — would log a
-  // live, reinstalled merchant out of an app we just decided NOT to erase.
-  //
-  // By construction this should find nothing (the uninstall path already deletes sessions). It stays
-  // as the sweep for a missed/failed uninstall delivery — the case where an orphaned access token
-  // would otherwise outlive the shop record.
-  const { count: sessionsDeleted } = await prisma.session.deleteMany({
-    where: { shop: shopDomain },
+    if (count === 0) {
+      // Ambiguous alone: the shop is absent, or installed and the guard declined. The distinction
+      // only matters to the log line, so it costs one query in the zero case and none on the happy
+      // path. ⚠️ Deliberately NOT filtered by `isInstalled` — this read exists to tell "installed, so
+      // declined" apart from "absent"; the guard here would report a still-installed shop as
+      // not-found.
+      const existing = await tx.shop.findUnique({
+        where: { myshopifyDomain: shopDomain },
+        select: { id: true },
+      });
+      return {
+        erased: false as const,
+        reason: existing
+          ? ("still-installed" as const)
+          : ("not-found" as const),
+      };
+    }
+
+    // Only once the shop is actually gone. Deleting sessions first — or unconditionally — would log a
+    // live, reinstalled merchant out of an app we just decided NOT to erase.
+    //
+    // By construction this should find nothing (the uninstall path already deletes sessions). It
+    // stays as the sweep for a missed/failed uninstall delivery — the case where an orphaned access
+    // token would otherwise outlive the shop record. A throw here rolls back the shop delete above.
+    const { count: sessionsDeleted } = await tx.session.deleteMany({
+      where: { shop: shopDomain },
+    });
+
+    return { erased: true as const, sessionsDeleted };
   });
-
-  return { erased: true, sessionsDeleted };
 }

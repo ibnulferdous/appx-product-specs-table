@@ -25,6 +25,11 @@ const { prismaMock } = vi.hoisted(() => ({
     session: {
       deleteMany: vi.fn(),
     },
+    // eraseShopData wraps the shop delete + session sweep in one interactive transaction. The mock
+    // invokes the callback with the same spies (tx === prismaMock), so the existing assertions on
+    // prismaMock.shop / prismaMock.session hold, and a rejection inside the callback propagates out
+    // of $transaction exactly as a real rollback would surface to the webhook handler.
+    $transaction: vi.fn(),
   },
 }));
 
@@ -32,6 +37,10 @@ vi.mock("../db.server", () => ({ default: prismaMock }));
 
 beforeEach(() => {
   vi.resetAllMocks();
+  // resetAllMocks clears the $transaction implementation too — restore it.
+  prismaMock.$transaction.mockImplementation(
+    async (cb: (tx: typeof prismaMock) => unknown) => cb(prismaMock),
+  );
 });
 
 // upsertShop only reads session.shop, so a minimal session is all we need.
@@ -276,5 +285,31 @@ describe("eraseShopData", () => {
     await eraseShopData(DOMAIN);
 
     expect(prismaMock.shop.findUnique).not.toHaveBeenCalled();
+  });
+
+  it("rolls the shop delete back when the session sweep fails, so a retry finishes the erase", async () => {
+    // 🔴 Atomicity guarantee. `Session` has no FK to `Shop`, so the sweep is a separate statement.
+    // If it fails AFTER the shop delete commits, the retry sees the shop already gone and never
+    // sweeps — orphaning access tokens. Both deletes share one transaction, so the first delivery's
+    // sweep failure propagates (the handler returns non-200, Shopify retries) and the retry, with a
+    // working sweep, completes.
+    prismaMock.shop.deleteMany.mockResolvedValue({ count: 1 });
+    prismaMock.session.deleteMany
+      .mockRejectedValueOnce(new Error("connection lost"))
+      .mockResolvedValueOnce({ count: 2 });
+
+    await expect(eraseShopData(DOMAIN)).rejects.toThrow("connection lost");
+
+    const retry = await eraseShopData(DOMAIN);
+    expect(retry).toEqual({ erased: true, sessionsDeleted: 2 });
+  });
+
+  it("runs the erase inside one interactive transaction", async () => {
+    prismaMock.shop.deleteMany.mockResolvedValue({ count: 1 });
+    prismaMock.session.deleteMany.mockResolvedValue({ count: 0 });
+
+    await eraseShopData(DOMAIN);
+
+    expect(prismaMock.$transaction).toHaveBeenCalledTimes(1);
   });
 });
