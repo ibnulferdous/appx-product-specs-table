@@ -3,6 +3,8 @@ import type { AdminApiContext } from "@shopify/shopify-app-react-router/server";
 import {
   groupAssignments,
   collectLookups,
+  chunkCountLookups,
+  MAX_LOOKUPS_PER_QUERY,
   escapeProductSearchValue,
   buildAssignedCountQuery,
   parseAssignedCountResponse,
@@ -168,6 +170,72 @@ describe("collectLookups", () => {
   });
 });
 
+// --- chunkCountLookups ------------------------------------------------------
+
+describe("chunkCountLookups", () => {
+  const noLookups = {
+    needShopTotal: false,
+    collectionGids: [],
+    productTypes: [],
+    vendors: [],
+  };
+
+  it("returns no chunks when nothing needs a live lookup", () => {
+    expect(chunkCountLookups(noLookups)).toEqual([]);
+  });
+
+  it("emits a single shop-total-only chunk when no valued lookups exist", () => {
+    expect(chunkCountLookups({ ...noLookups, needShopTotal: true })).toEqual([
+      {
+        needShopTotal: true,
+        collectionGids: [],
+        productTypes: [],
+        vendors: [],
+      },
+    ]);
+  });
+
+  it("bounds each chunk by the combined alias count across all kinds", () => {
+    const chunks = chunkCountLookups(
+      {
+        needShopTotal: true,
+        collectionGids: ["c1", "c2"],
+        productTypes: ["Drones"],
+        vendors: ["DJI"],
+      },
+      2, // small chunk size to force a split
+    );
+    // 4 valued lookups at 2 per chunk → 2 chunks.
+    expect(chunks).toHaveLength(2);
+    // The shop total rides on the first chunk only.
+    expect(chunks[0].needShopTotal).toBe(true);
+    expect(chunks[1].needShopTotal).toBe(false);
+    // Every valued lookup appears exactly once across the chunks.
+    const seen = chunks.flatMap((c) => [
+      ...c.collectionGids,
+      ...c.productTypes,
+      ...c.vendors,
+    ]);
+    expect(seen.sort()).toEqual(["DJI", "Drones", "c1", "c2"]);
+    // No chunk exceeds the requested size.
+    for (const c of chunks) {
+      expect(
+        c.collectionGids.length + c.productTypes.length + c.vendors.length,
+      ).toBeLessThanOrEqual(2);
+    }
+  });
+
+  it("keeps everything in one chunk under the default cap", () => {
+    const chunks = chunkCountLookups({
+      needShopTotal: true,
+      collectionGids: ["c1", "c2"],
+      productTypes: [],
+      vendors: [],
+    });
+    expect(chunks).toHaveLength(1);
+  });
+});
+
 // --- escapeProductSearchValue ----------------------------------------------
 
 describe("escapeProductSearchValue", () => {
@@ -200,7 +268,9 @@ describe("buildAssignedCountQuery", () => {
       vendors: [],
     })!;
     expect(built.query).toContain("query AssignedProductCounts {");
-    expect(built.query).toContain("shopTotal: productsCount { count }");
+    expect(built.query).toContain(
+      "shopTotal: productsCount(limit: null) { count }",
+    );
     expect(built.variables).toEqual({});
     expect(built.aliases.shopTotal).toBe(true);
   });
@@ -221,7 +291,7 @@ describe("buildAssignedCountQuery", () => {
       "col0: collection(id: $col0) { productsCount { count } }",
     );
     expect(built.query).toContain(
-      "ptype0: productsCount(query: $ptype0) { count }",
+      "ptype0: productsCount(query: $ptype0, limit: null) { count }",
     );
     // Variables carry the search terms; the merchant string is escaped.
     expect(built.variables.col0).toBe("gid://shopify/Collection/5");
@@ -462,6 +532,79 @@ describe("resolveAssignedProductCounts", () => {
 
     expect(counts.get("t1")).toBeNull(); // live count unknown → "—"
     expect(counts.get("t2")).toBe(1); // still resolves from Postgres
+    errorSpy.mockRestore();
+  });
+
+  // A `graphql` mock that answers per aliased variable, so a many-lookup query splits into several
+  // chunked calls and each call's aliases are resolved independently. `countFor` maps a search
+  // value (collection GID / type / vendor) to its product count.
+  function mockAdminByVariables(
+    countFor: (value: string) => number,
+    failCall?: number, // 1-based call index that should reject
+  ): AdminApiContext {
+    let call = 0;
+    return {
+      graphql: vi.fn(
+        async (
+          query: string,
+          opts?: { variables?: Record<string, string> },
+        ) => {
+          call += 1;
+          if (failCall !== undefined && call === failCall) {
+            throw new Error(`chunk ${call} down`);
+          }
+          const vars = opts?.variables ?? {};
+          const data: Record<string, unknown> = {};
+          if (query.includes("shopTotal:")) data.shopTotal = { count: 1000 };
+          for (const [alias, value] of Object.entries(vars)) {
+            if (alias.startsWith("col")) {
+              data[alias] = { productsCount: { count: countFor(value) } };
+            } else {
+              data[alias] = { count: countFor(value) };
+            }
+          }
+          return { ok: true, status: 200, json: async () => ({ data }) };
+        },
+      ),
+    } as unknown as AdminApiContext;
+  }
+
+  it("splits an over-cap set of lookups into several sequential queries and merges them", async () => {
+    // One template assigned to MAX_LOOKUPS_PER_QUERY + 25 distinct collections forces two chunks.
+    const total = MAX_LOOKUPS_PER_QUERY + 25;
+    const rows = Array.from({ length: total }, (_, i) =>
+      row("t1", "COLLECTION", `gid://shopify/Collection/${i}`),
+    );
+    prismaMock.productAssignment.findMany.mockResolvedValue(rows);
+    const admin = mockAdminByVariables(() => 1); // every collection holds 1 product
+
+    const counts = await resolveAssignedProductCounts(admin, "shop_A");
+
+    expect(admin.graphql).toHaveBeenCalledTimes(2);
+    expect(counts.get("t1")).toBe(total); // every chunk's counts merged back in
+  });
+
+  it("isolates a failing chunk: other chunks' templates still resolve", async () => {
+    // t1's collections fill the first chunk; t2's fill the second. Failing the 2nd call leaves t2
+    // unknown while t1 still resolves — the old single-query path would have nulled both.
+    const t1Rows = Array.from({ length: MAX_LOOKUPS_PER_QUERY }, (_, i) =>
+      row("t1", "COLLECTION", `gid://shopify/Collection/a${i}`),
+    );
+    const t2Rows = Array.from({ length: 10 }, (_, i) =>
+      row("t2", "COLLECTION", `gid://shopify/Collection/b${i}`),
+    );
+    prismaMock.productAssignment.findMany.mockResolvedValue([
+      ...t1Rows,
+      ...t2Rows,
+    ]);
+    const admin = mockAdminByVariables(() => 1, 2); // second chunk rejects
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    const counts = await resolveAssignedProductCounts(admin, "shop_A");
+
+    expect(admin.graphql).toHaveBeenCalledTimes(2);
+    expect(counts.get("t1")).toBe(MAX_LOOKUPS_PER_QUERY); // first chunk resolved
+    expect(counts.get("t2")).toBeNull(); // failed chunk → unknown
     errorSpy.mockRestore();
   });
 });

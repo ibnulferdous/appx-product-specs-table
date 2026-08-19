@@ -268,6 +268,33 @@ describe("listTemplateSummariesForDomain", () => {
     expect(dataNumbers).toEqual([25, 0]);
   });
 
+  it("keeps pageCount and page at 1 when the shop has no templates (first-run empty state)", async () => {
+    mockCountThenData({ totalAll: 0, totalFiltered: 0 }, []);
+
+    const result = await listTemplateSummariesForDomain("shop-a.myshopify.com");
+
+    expect(result.pageCount).toBe(1);
+    expect(result.page).toBe(1);
+    expect(result.templates).toEqual([]);
+    const dataNumbers = callValues(1).filter((v) => typeof v === "number");
+    expect(dataNumbers).toEqual([25, 0]);
+  });
+
+  it("floors a non-numeric (NaN) page to 1 (offset 0)", async () => {
+    // Number("abc") is NaN; Math.floor(NaN) stays NaN, which would poison OFFSET — the boundary
+    // guard must classify it as page 1.
+    mockCountThenData({ totalAll: 10, totalFiltered: 10 }, []);
+
+    const result = await listTemplateSummariesForDomain(
+      "shop-a.myshopify.com",
+      { page: Number("abc") },
+    );
+
+    expect(result.page).toBe(1);
+    const dataNumbers = callValues(1).filter((v) => typeof v === "number");
+    expect(dataNumbers).toEqual([25, 0]);
+  });
+
   it("applies a status filter to the data read and narrows totalFiltered", async () => {
     // 5 total, 2 Active: the filter narrows totalFiltered (drives pageCount) but
     // leaves totalAll whole (drives the first-run empty state).
@@ -597,7 +624,7 @@ describe("saveTemplateForShop", () => {
   });
 
   it("rejects an over-cap payload server-side without reading or writing", async () => {
-    const tooMany = Array.from({ length: 201 }, (_, i) => ({
+    const tooMany = Array.from({ length: MAX_TEMPLATE_ROWS + 1 }, (_, i) => ({
       ...aRow,
       id: `r${i}`,
       key: `row_${i}`,

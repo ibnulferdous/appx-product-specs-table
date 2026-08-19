@@ -448,3 +448,46 @@ describe("upsertSpecTableMetaobject — styling fields (feature 57 · Step 7)", 
     expect(fields.updated_at).toBe("2026-07-19T00:00:00.000Z");
   });
 });
+
+describe("upsertSpecTableMetaobject — failure path (the sync's only failure signal)", () => {
+  const upsertArgs = {
+    templateId: "t1",
+    status: "ACTIVE",
+    rows: [],
+    styling: DEFAULT_STYLING_VALUES,
+    updatedAt: "2026-07-19T00:00:00.000Z",
+  };
+
+  it("throws with the user-error text when the upsert returns no metaobject", async () => {
+    const { admin } = mockAdmin([
+      {
+        data: {
+          metaobjectUpsert: {
+            metaobject: null,
+            userErrors: [
+              {
+                field: ["handle"],
+                message: "Handle is invalid",
+                code: "INVALID",
+              },
+            ],
+          },
+        },
+      },
+    ]);
+
+    await expect(upsertSpecTableMetaobject(admin, upsertArgs)).rejects.toThrow(
+      "Handle is invalid",
+    );
+  });
+
+  it("falls back to top-level GraphQL errors when there are no nested userErrors", async () => {
+    // A throttled / query-validation failure returns `{ errors: [...] }` with no `data` — the cause
+    // must still reach the thrown message so the caller's log isn't blank.
+    const { admin } = mockAdmin([{ errors: [{ message: "Throttled" }] }]);
+
+    await expect(upsertSpecTableMetaobject(admin, upsertArgs)).rejects.toThrow(
+      "Throttled",
+    );
+  });
+});
