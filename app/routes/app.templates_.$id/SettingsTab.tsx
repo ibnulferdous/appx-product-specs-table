@@ -195,11 +195,21 @@ export function SettingsTab({
   // final selection, so we REPLACE the set (dedupe defensively). A cancel returns undefined → keep it.
   const pickResources = async () => {
     const type = scope === "PRODUCT" ? "product" : "collection";
-    const selected = (await shopify.resourcePicker({
-      type,
-      multiple: true,
-      selectionIds: scopeValues.map((item) => ({ id: item.value })),
-    })) as PickedResource[] | undefined;
+    let selected: PickedResource[] | undefined;
+    try {
+      selected = (await shopify.resourcePicker({
+        type,
+        multiple: true,
+        selectionIds: scopeValues.map((item) => ({ id: item.value })),
+      })) as PickedResource[] | undefined;
+    } catch {
+      // A rejected picker (vs. a cancel, which resolves undefined) would otherwise be a silent no-op —
+      // the merchant sees nothing change with no explanation. Surface it and keep the current set.
+      shopify.toast.show("Couldn’t open the picker. Try again.", {
+        isError: true,
+      });
+      return;
+    }
     if (!selected) return;
     // Capture each resource's title + thumbnail for the rich chip (dedupe by GID).
     const byGid = new Map<string, ScopeValueSeed>();
@@ -221,11 +231,20 @@ export function SettingsTab({
   // above: the picker returns the full final selection, so unchecking one removes it (per-chip trash
   // works too). A cancel returns undefined → keep the current set.
   const addExcludes = async () => {
-    const selected = (await shopify.resourcePicker({
-      type: "product",
-      multiple: true,
-      selectionIds: excludes.map((gid) => ({ id: gid })),
-    })) as PickedResource[] | undefined;
+    let selected: PickedResource[] | undefined;
+    try {
+      selected = (await shopify.resourcePicker({
+        type: "product",
+        multiple: true,
+        selectionIds: excludes.map((gid) => ({ id: gid })),
+      })) as PickedResource[] | undefined;
+    } catch {
+      // See pickResources: a rejected picker must give feedback rather than silently keep the set.
+      shopify.toast.show("Couldn’t open the picker. Try again.", {
+        isError: true,
+      });
+      return;
+    }
     if (!selected) return;
     const byGid = new Map<string, ExcludeSeed>();
     for (const product of selected) {
@@ -361,10 +380,12 @@ export function SettingsTab({
           }
           onInput={(event: Event) => {
             const value = readValue(event);
-            // Single-valued free text: the value IS its own label, no thumbnail. An empty field
-            // clears the set (incomplete — not a value), keeping the kind.
+            // Single-valued free text: the value IS its own label, no thumbnail. Emptiness is judged on
+            // the TRIMMED text so a whitespace-only entry stays incomplete (a blank rule matches no
+            // product — an Active-but-invisible template). The raw value is kept so multi-word entries
+            // like "Sport Coat" can be typed without the interior/trailing space being eaten mid-keystroke.
             setScopeValues(
-              value === "" ? [] : [{ value, label: value, image: null }],
+              value.trim() === "" ? [] : [{ value, label: value, image: null }],
             );
           }}
           error={scopeIncomplete ? "Enter a value." : undefined}
