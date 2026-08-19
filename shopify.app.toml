@@ -69,7 +69,7 @@ name = "Appx Spec Table"
 description = "Storefront-ready copy of an Appx spec table template."
 
   [metaobjects.app.appx_spec_table.access]
-  admin = "merchant_read_write"
+  admin = "merchant_read"
   storefront = "public_read"
 
 [metaobjects.app.appx_spec_table.fields.template_id]
@@ -124,7 +124,7 @@ name = "Appx Routing Shard"
 description = "Per-bucket slice of the shop routing map (per-product assignments + carve-outs)."
 
   [metaobjects.app.appx_routing_shard.access]
-  admin = "merchant_read_write"
+  admin = "merchant_read"
   storefront = "public_read"
 
 [metaobjects.app.appx_routing_shard.fields.by_product]
@@ -151,5 +151,5 @@ name = "Appx Storefront Routing"
 description = "Maps product attributes to the assigned Appx spec-table handle."
 
   [shop.metafields.app.routing.access]
-  admin = "merchant_read_write"
+  admin = "merchant_read"
   storefront = "public_read"
