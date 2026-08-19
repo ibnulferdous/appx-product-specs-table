@@ -163,6 +163,14 @@ saved presets, cuttable).
 > `context/features/` doc and in git. If a finding is load-bearing for future work it belongs
 > in Binding rules, Key Decisions or Open Questions, not in an entry here.
 
+- **CodeRabbit review pass (7 slices) applied → `dev` merged to `main`** — ✅ 2026-08-19.
+  PR #11 (`dev → main`) merged as a merge commit (`main` @ `41c734a`) after the CodeRabbit
+  findings from review vehicles #14–#20 were triaged (real fixes applied, lint-only noise
+  skipped) and consolidated onto `dev`; full gate green (typecheck · lint · **1444 tests** ·
+  build). Notable code fix: malformed-body guard on the templates action. Notable schema
+  change: **partial unique index blocking duplicate `ALL_PRODUCTS` assignment rules**
+  (migration `20260819022834_add_all_products_unique`, documented in `data-model.md` §9).
+  Review PRs #14–#20 closed (not merged); needs `prisma migrate deploy` at release.
 - **Templates-list: inline Draft⇄Active status toggle on each row** — ✅ 2026-08-15, build
   green, **fully live-verified on `appx-dev`**. An `s-switch` in the Status cell flips status
   in one click (the ⋯ menu's "Change status" modal stays as the fallback, and remains the only
