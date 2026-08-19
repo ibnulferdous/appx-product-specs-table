@@ -19,8 +19,16 @@ export function extractHtmlTableGrid(html: string): string[][] | null {
   if (!table) return null;
 
   const grid: string[][] = [];
-  for (const tr of Array.from(table.querySelectorAll("tr"))) {
-    const cells = Array.from(tr.querySelectorAll("td, th"));
+  // `querySelectorAll` is descendant-wide: a cell holding a nested table would
+  // otherwise contribute that inner table's rows/cells to the outer grid. Keep
+  // only rows whose nearest table is THIS one, and only each row's direct cells.
+  const rows = Array.from(table.querySelectorAll("tr")).filter(
+    (tr) => tr.closest("table") === table,
+  );
+  for (const tr of rows) {
+    const cells = Array.from(tr.children).filter((child) =>
+      child.matches("td, th"),
+    );
     if (cells.length === 0) continue; // a structural <tr> carrying no cells
     grid.push(cells.map(cellText));
   }

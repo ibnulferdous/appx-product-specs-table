@@ -119,12 +119,21 @@ export function validateScope(
     return { ok: false, error: "This scope requires a value" };
   }
 
-  if (typedScope === "PRODUCT" && !raw.startsWith("gid://shopify/Product/")) {
+  // A bare prefix (`gid://shopify/Product/`) passes `startsWith` but carries no
+  // id, so require at least one character after it — otherwise an unusable
+  // routing key could be persisted.
+  const PRODUCT_PREFIX = "gid://shopify/Product/";
+  const COLLECTION_PREFIX = "gid://shopify/Collection/";
+  if (
+    typedScope === "PRODUCT" &&
+    (!raw.startsWith(PRODUCT_PREFIX) || raw.length === PRODUCT_PREFIX.length)
+  ) {
     return { ok: false, error: "Product scope requires a product ID" };
   }
   if (
     typedScope === "COLLECTION" &&
-    !raw.startsWith("gid://shopify/Collection/")
+    (!raw.startsWith(COLLECTION_PREFIX) ||
+      raw.length === COLLECTION_PREFIX.length)
   ) {
     return { ok: false, error: "Collection scope requires a collection ID" };
   }

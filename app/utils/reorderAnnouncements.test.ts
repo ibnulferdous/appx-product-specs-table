@@ -137,3 +137,28 @@ describe("announceReorderCancel", () => {
     );
   });
 });
+
+describe("mixed-case labels keep their casing across every announcement", () => {
+  // A user label like "iPhone" carries meaningful lowercase-first casing. The
+  // sentence-start transform must NOT force it to "IPhone", or the same row
+  // would be announced inconsistently (describeRow already preserves it).
+  const mixed: EditorRow[] = [dataRow("a", "iPhone"), dataRow("b", "Charger")];
+
+  it("preserves the label at a sentence start in over / end / cancel", () => {
+    expect(announceReorderOver(mixed, "a", "b")).toBe(
+      "iPhone row is now over position 2 of 2.",
+    );
+    expect(announceReorderEnd(mixed, "a", "b")).toBe(
+      "iPhone row was dropped at position 2 of 2.",
+    );
+    expect(announceReorderEnd(mixed, "a", null)).toBe(
+      "iPhone row was dropped.",
+    );
+    expect(announceReorderCancel(mixed, "a")).toBe(
+      "Reordering cancelled. iPhone row returned to its original position.",
+    );
+    expect(announceReorderOver(mixed, "a", null)).toBe(
+      "iPhone row is no longer over a drop position.",
+    );
+  });
+});
