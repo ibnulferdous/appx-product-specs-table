@@ -217,6 +217,12 @@ model ProductAssignment {
   // Prevent literal duplicate rows within one template. Cross-template semantic
   // overlaps are NOT a DB constraint — they are blocked at DRAFT -> ACTIVE by the
   // dry-run resolver, which lets DRAFTs coexist with unresolved conflicts.
+  //
+  // NOTE: this composite unique does NOT block duplicate ALL_PRODUCTS rows —
+  // those store scopeValue = NULL and Postgres treats NULLs as distinct here. A
+  // companion PARTIAL unique index over the NULL-scopeValue rows closes that gap;
+  // it lives in migration 20260819022834_add_all_products_unique because Prisma's
+  // schema DSL cannot express a WHERE (partial) index. Keep both in sync.
   @@unique([shopId, templateId, scope, scopeValue, mode])
   @@index([shopId, scope])
   @@index([shopId, scope, scopeValue])
