@@ -1,0 +1,6 @@
+# Revisions skipped by `git blame` (bulk, non-semantic changes).
+# Enable locally once:  git config blame.ignoreRevsFile .git-blame-ignore-revs
+# GitHub honors this file automatically. Add one full 40-char SHA per line.
+
+# style: apply Prettier to codebase (2026-06-20)
+606de560d30ee17b5df091bc661fe666316bb370

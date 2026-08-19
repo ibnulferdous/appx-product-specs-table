@@ -9,7 +9,6 @@ import { upsertShop } from "../models/shop.server";
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   const { session } = await authenticate.admin(request);
 
-  // Upsert the shop in the database
   await upsertShop(session);
 
   // eslint-disable-next-line no-undef
@@ -30,7 +29,7 @@ export default function App() {
   );
 }
 
-// Shopify needs React Router to catch some thrown responses, so that their headers are included in the response.
+// Shopify needs React Router to catch thrown responses so their headers propagate.
 export function ErrorBoundary() {
   return boundary.error(useRouteError());
 }

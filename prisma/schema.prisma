@@ -60,7 +60,13 @@ model Shop {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  templates Template[]
+  templates         Template[]
+  // Polymorphic assignment rules (scope + value) that bind templates to products/attributes.
+  assignments       ProductAssignment[]
+  // Sparse per-product override state (materialized single-product overrides only).
+  assignmentIndexes ProductAssignmentIndex[]
+  // Projected shop-level routing map mirrored to the shop routing metafield.
+  storefrontRouting ShopStorefrontRouting?
 
   @@index([isInstalled])
 }
@@ -91,6 +97,10 @@ model Template {
   updatedAt  DateTime  @updatedAt
   archivedAt DateTime?
 
+  assignments       ProductAssignment[]
+  assignmentIndexes ProductAssignmentIndex[]
+  styling           TableStyling?
+
   @@unique([shopId, shopifyMetaobjectHandle])
   @@index([shopId])
   @@index([shopId, status])
@@ -100,4 +110,223 @@ enum TemplateStatus {
   DRAFT
   ACTIVE
   ARCHIVED
+}
+
+model TableStyling {
+  id         String   @id @default(cuid())
+  templateId String   @unique
+  template   Template @relation(fields: [templateId], references: [id], onDelete: Cascade)
+
+  // Layout knobs (Style-tab spec 2026-07-18). String knobs hold app-validated
+  // constants (shared TS constants + server re-validation, not Prisma enums —
+  // matching the fontSize/fontWeight convention); null = the flagged default.
+  rowLayout            String? // "TWO_COLUMN" (null default) | "STACKED" | "GRID"
+  gridMinColumnWidthPx Int? // 160–640; null = the stylesheet literal 240px. The narrowest a GRID track may get — a MINIMUM WIDTH, never a column count, so the track count falls out of the container width (auto-fit + minmax) and the layout is responsive with no media query. Only meaningful when rowLayout is GRID
+  mobileLayout         String? // "STACKED" (null default) | "SAME_AS_DESKTOP" — only meaningful when rowLayout is TWO_COLUMN
+  sectionHeaderStyle   String? // "BANDED" (null default) | "TEXT_ONLY" (band off, 2px rule kept — labelled "Underlined" in the rail) | "PLAIN" (neither, feature 87)
+  // Section-header typography + spacing (feature 81). null = inherit the
+  // stylesheet literal, so an untouched table is unchanged. Applies to both the
+  // flat th and the collapsible summary.
+  headerFontSizePx     Int? // 10–184; null = the size the title already renders at. Absolute px, NOT an em keyword: the collapsible summary is a sibling of the table that carries --appx-spec-font-size, so an em would resolve against a different base in each shape
+  headerFontWeight     String? // "REGULAR" | "MEDIUM" | "BOLD"; null = the literal 700
+  headerCase           String? // "DEFAULT" | "UPPERCASE"; null = as typed
+  headerPaddingBlockPx Int? // 0–48; null = the literal 0.75rem. The ONE integer knob with a 0 floor — null means the default rather than "off", so 0 is a first spelling, not a second (contrast the container knobs)
+  sectionsCollapsible  Boolean @default(false)
+  sectionsInitialState String? // "FIRST_OPEN" (null default, changed from ALL_OPEN 2026-07-30) | "ALL_OPEN" | "ALL_CLOSED" — only meaningful when sectionsCollapsible
+  sectionGapPx         Int? // 1–48; null = no gap. Space between collapsible sections — only meaningful when sectionsCollapsible (a flat section header is a table row, which takes no margin)
+  rowDividerStyle      String? // "LINES" (null default) | "STRIPES" | "NONE"
+  columnDividerStyle   String? // "NONE" (null default) | "LINE" — the vertical rule at the label/value seam; fixed 1px, colored by borderColor. Suppressed in stacked layouts (no seam).
+  density              String? // "DEFAULT" (null default) | "COMPACT" | "SPACIOUS"
+
+  headerBgColor        String?
+  // The 2px rule under an Underlined section header (feature 96). null does NOT
+  // mean "inherit the theme": it falls back to borderColor and then to
+  // currentColor, so an untouched underline still tracks the Divider color
+  // swatch exactly as it always has. Only read while sectionHeaderStyle is
+  // TEXT_ONLY — BANDED and PLAIN both hardcode the rule away.
+  headerUnderlineColor String?
+  headerTextColor      String? // the section title's own text color (feature 81)
+  labelBgColor         String?
+  valueBgColor         String?
+  stripeBgColor        String? // zebra-stripe surface — used when rowDividerStyle = "STRIPES"
+  borderColor          String?
+  labelTextColor       String?
+  valueTextColor       String?
+
+  // Container: how wide the table is and what frames it. Unlike the color and
+  // typography fields above, null here is the DEFAULT rather than "inherit the
+  // theme" — there is no theme value to inherit. null means, in order: full
+  // width, left-aligned, no outer border, outline follows borderColor, square
+  // corners. Bounds live in app/utils/tableStyling.ts and are clamped on parse.
+  tableMaxWidthPx     Int? // 240–1600
+  tableAlign          String? // "LEFT" (null default) | "CENTER" | "RIGHT" — only meaningful when tableMaxWidthPx is set
+  outerBorderWidthPx  Int? // 1–12; null = no outer border
+  outerBorderColor    String? // null = fall back to borderColor, then the stylesheet literal
+  outerBorderRadiusPx Int? // 1–48; null = square corners
+
+  // Typography (2026-07-18 addendum — adopts the Horizon theme-editor pattern:
+  // bounded segments, preset-first with a Custom px escape hatch; null = inherit).
+  fontSize      String? // "SMALL" | "MEDIUM" | "LARGE" (theme-relative presets, em-scale) OR an all-digit px string ("18"), app-clamped to 10–184
+  fontWeight    String? // "REGULAR" | "MEDIUM" | "BOLD"
+  fontStyle     String? // "NORMAL" | "ITALIC" (kept — merchant decision 2026-07-18)
+  lineHeight    String? // "TIGHT" | "NORMAL" | "LOOSE" — density's vertical-rhythm partner
+  labelCase     String? // "DEFAULT" | "UPPERCASE" — label column only
+  labelWidthPct Int?
+
+  // Provenance only: the preset id these values were copied from at pick time
+  // (a built-in preset id or a saved-preset id). Informational (gallery UI,
+  // support/debugging) — never re-read as a live link; the template owns its
+  // values outright (copy semantics, see data-model.md §5).
+  basedOnPreset String?
+
+  extraStyles Json @default("{}")
+}
+
+model ProductAssignment {
+  id     String @id @default(cuid())
+  shopId String
+  shop   Shop   @relation(fields: [shopId], references: [id], onDelete: Cascade)
+
+  templateId String
+  template   Template @relation(fields: [templateId], references: [id], onDelete: Cascade)
+
+  // Polymorphic scope — one selector method per rule (Kaching-style single picker).
+  scope AssignmentScope
+  // INCLUDE = "this template covers the scope"; EXCLUDE = a carve-out exception
+  // (e.g. ALL_PRODUCTS INCLUDE + PRODUCT EXCLUDE for a discontinued SKU).
+  mode  AssignmentMode  @default(INCLUDE)
+
+  // Selector value for the scope. NULL only for ALL_PRODUCTS (matches everything).
+  //   PRODUCT      -> gid://shopify/Product/123456
+  //   PRODUCT_TYPE -> exact product type string
+  //   VENDOR       -> exact vendor string
+  //   COLLECTION   -> gid://shopify/Collection/123456
+  scopeValue String?
+
+  // DORMANT in MVP. The rigid block-on-conflict model keeps the ACTIVE rule set
+  // disjoint, so there is no runtime tie to break and no merchant-facing priority
+  // knob. Retained un-surfaced for a possible post-MVP same-tier tiebreak on
+  // multi-valued scopes (collection/tag). See data-model.md §9 "Conflict handling".
+  priority Int @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  resolvedProducts ProductAssignmentIndex[]
+
+  // Prevent literal duplicate rows within one template. Cross-template semantic
+  // overlaps are NOT a DB constraint — they are blocked at DRAFT -> ACTIVE by the
+  // dry-run resolver, which lets DRAFTs coexist with unresolved conflicts.
+  //
+  // NOTE: this composite unique does NOT block duplicate ALL_PRODUCTS rows —
+  // those store scopeValue = NULL and Postgres treats NULLs as distinct here. A
+  // companion PARTIAL unique index over the NULL-scopeValue rows closes that gap;
+  // it lives in migration 20260819022834_add_all_products_unique because Prisma's
+  // schema DSL cannot express a WHERE (partial) index. Keep both in sync.
+  @@unique([shopId, templateId, scope, scopeValue, mode])
+  @@index([shopId, scope])
+  @@index([shopId, scope, scopeValue])
+  @@index([shopId, templateId])
+}
+
+enum AssignmentScope {
+  ALL_PRODUCTS
+  PRODUCT
+  PRODUCT_TYPE
+  VENDOR
+  COLLECTION
+  // TAG — post-MVP; multi-valued like COLLECTION
+}
+
+enum AssignmentMode {
+  INCLUDE
+  EXCLUDE
+}
+
+// 🔴 DORMANT since 2026-08-04 — NOTHING WRITES THIS TABLE (data-model.md §9).
+// It was the SPARSE per-product override cache, populated only for single-product
+// overrides materialized as a per-product `$app:spec_table` metafield (the bounded
+// fallback) plus any hard PRODUCT-vs-PRODUCT conflict. That metafield definition was
+// removed, so the case cannot arise. Kept, not dropped: dropping it is a migration
+// with no benefit while the `byProduct` 128KB replacement is undesigned, and
+// `shop/redact` already deletes from it (step 105). Broad rules
+// (type/vendor/collection/tag/all-products) were never indexed here — the shop
+// routing map delivers them, so this table was never O(catalog).
+model ProductAssignmentIndex {
+  id     String @id @default(cuid())
+  shopId String
+  shop   Shop   @relation(fields: [shopId], references: [id], onDelete: Cascade)
+
+  // Required when status is APPLIED. Optional for unresolved conflicts.
+  templateId String?
+  template   Template? @relation(fields: [templateId], references: [id], onDelete: Cascade)
+
+  // The assignment rule that produced this resolved product state.
+  sourceAssignmentId String?
+  sourceAssignment   ProductAssignment? @relation(fields: [sourceAssignmentId], references: [id], onDelete: SetNull)
+
+  // For the resolved product: gid://shopify/Product/123456
+  shopifyProductGid String
+
+  // Scope snapshot used during resolution (PRODUCT for materialized overrides).
+  scope      AssignmentScope?
+  scopeValue String?
+
+  status         AssignmentIndexStatus @default(APPLIED)
+  conflictReason String?
+
+  // Storefront pointer that WAS written to the product's `$app:spec_table`
+  // metaobject_reference — that metafield no longer exists (see the model comment).
+  appliedTemplateHandle String?
+  syncedToShopifyAt     DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([shopId, shopifyProductGid])
+  @@index([shopId, templateId])
+  @@index([shopId, status])
+  @@index([sourceAssignmentId])
+}
+
+enum AssignmentIndexStatus {
+  APPLIED
+  CONFLICT
+  STALE
+}
+
+// Projected disjoint routing map — the mirror of the shop `$app:routing` json
+// metafield that Liquid reads on the storefront. Rebuilt from the ACTIVE, disjoint
+// ProductAssignment rows on every activate/deactivate. Postgres stays the source of
+// truth; the metafield is the delivery copy. Each map is { scopeValue -> handle }.
+model ShopStorefrontRouting {
+  id     String @id @default(cuid())
+  shopId String @unique
+  shop   Shop   @relation(fields: [shopId], references: [id], onDelete: Cascade)
+
+  defaultTemplateHandle String? // ALL_PRODUCTS winner
+  byType                Json    @default("{}") // productType    -> template handle
+  byVendor              Json    @default("{}") // vendor         -> template handle
+  byCollection          Json    @default("{}") // collectionGid  -> template handle
+  byTag                 Json    @default("{}") // tag            -> template handle (post-MVP)
+  byProduct             Json    @default("{}") // productGid     -> template handle (bounded overrides)
+  excludedProductGids   Json    @default("[]") // EXCLUDE carve-outs -> render nothing
+
+  // Delivery sync state for the shop-level metafield.
+  shopMetafieldGid  String?
+  syncedToShopifyAt DateTime?
+
+  // Routing shard reconciliation state (Option 2, feature 108). Maps an occupied
+  // bucket key ("<product.id mod ROUTING_SHARD_COUNT>") -> the content hash of the
+  // shard payload last written to the `$app:appx_routing_shard` metaobject for that
+  // bucket. Lets a rebuild upsert ONLY shards whose content changed (D5): a status
+  // toggle that leaves per-product assignments untouched writes zero shards. Keys
+  // absent here that appear in a rebuild are new shards to write; keys here absent
+  // from the rebuild are emptied shards to upsert to `{}`. Delivery-only bookkeeping
+  // — the source-of-truth byProduct/excludedProductGids maps above stay GID-faithful
+  // and un-sharded (D6). NOT delivered to the storefront.
+  shardState        Json    @default("{}")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }

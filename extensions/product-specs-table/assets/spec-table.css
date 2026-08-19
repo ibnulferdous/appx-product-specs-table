@@ -1,0 +1,765 @@
+/* Appx — Product Specs Table storefront stylesheet.
+
+   Knobs arrive as CSS custom properties (--appx-spec-*) and BEM modifier
+   classes on the .appx-spec-table block.
+
+   Rules of the design:
+   - Base rules use var(--appx-spec-*, <previous literal>). An absent var
+     means the merchant's theme wins — the zero-config promise.
+   - One rule set per modifier member, defaults included, at equal
+     specificity (two classes), so no knob needs an importance override or
+     wins by accident.
+   - Source order is deliberate where two knobs meet on one property: the
+     layout rules come AFTER dividers/density so stacked-mode refinements
+     layer over whichever divider/density member is active, and the mobile
+     media query comes LAST so it beats the desktop layout rules below the
+     breakpoint. */
+
+/* --- Container stretch -----------------------------------------------------
+   The block must be as wide as the space the theme gives it, NOT as wide as
+   its own content.
+
+   Shopify wraps every app block in a div of its own, and a theme section that
+   centres its children (Horizon sets align-items: center on a column flex
+   container) turns that div into a shrink-to-fit flex item — so the rendered
+   width becomes the table's max-content width. Measured live on the dev store:
+   one 9-section table rendered 1264px with its sections open and 206px with
+   them closed, inside 1438px of available space. Opening a disclosure resized
+   the whole table.
+
+   The fix has to land on SHOPIFY's wrapper, not ours. Setting a width on
+   .appx-spec-table is a no-op here (verified): a percentage resolves against
+   the already-shrunk parent, and a child's percentage does not feed back into
+   the parent's intrinsic sizing. :has() is the only way to reach up from a
+   stylesheet that ships no markup of its own for that element.
+
+   align-self, NOT width: 100%, and the difference matters. In the column-flex
+   case both give the full 1438px, but align-self addresses the CROSS axis — so
+   in a theme that lays app blocks out in a ROW it applies to the height and
+   leaves the width alone, where width: 100% would make the block fight its
+   siblings. Verified both ways. justify-self covers the same case for a grid
+   parent; it is inert in flex.
+
+   Deliberately NOT scoped to a modifier class: a table that resizes when a
+   shopper opens a section is wrong in every theme, so this is a base rule, not
+   a knob. The max-width / alignment knobs layer on top of it. Browsers without
+   :has() simply keep the old content-driven behaviour. */
+.shopify-app-block:has(> .appx-spec-table) {
+  align-self: stretch;
+  justify-self: stretch;
+}
+
+/* Every container fallback is an OFF state, so an untouched table renders
+   exactly as it did before these knobs existed: no width cap, no outer border,
+   square corners.
+
+   max-width, not width. A width of 900px overflows a 360px phone; a max-width
+   of 900px caps a wide screen and shrinks below it, so the knob cannot collide
+   with the 749px mobile breakpoint or with the stacked layouts.
+
+   The outer border's color falls back THROUGH the row-rule color before
+   reaching a literal: a merchant who sets only the shared Border swatch gets an
+   outline that matches their row rules for free, and the dedicated swatch is
+   there for the case where the frame should differ from the rules. */
+.appx-spec-table {
+  box-sizing: border-box;
+  margin-block: 1rem;
+  max-width: var(--appx-spec-table-max-width, 100%);
+  border: var(--appx-spec-outer-border-width, 0) solid
+    var(
+      --appx-spec-outer-border-color,
+      var(--appx-spec-border-color, rgba(0, 0, 0, 0.1))
+    );
+  border-radius: var(--appx-spec-outer-radius, 0);
+}
+
+/* --- Table alignment -------------------------------------------------------
+   Only observable once a max-width is set, which is why the rail hides the
+   control at full width. Auto inline margins, so the alignment is done by the
+   box itself and needs nothing from the theme's container. All three members
+   get a rule (defaults included) at equal specificity, per the file's design
+   rules — LEFT is not left to the base rule's absence. */
+
+.appx-spec-table--align-left {
+  margin-inline: 0 auto;
+}
+
+.appx-spec-table--align-center {
+  margin-inline: auto;
+}
+
+.appx-spec-table--align-right {
+  margin-inline: auto 0;
+}
+
+/* --- Outer border refinements ---------------------------------------------
+   Presence flags, emitted only when the matching knob is set (see
+   tableStylingCss.ts) — so neither rule can touch a table that has not opted
+   in. */
+
+/* The last visible row's own bottom rule sits directly on the wrapper border
+   and reads as one thick line. Three cases, because the block has two markup
+   shapes: the flat table, the last section of a collapsible table, and a
+   collapsible table whose final section is CLOSED (its summary is then the last
+   thing painted, and in the text-only style it carries the same heavy rule).
+
+   :not(--layout-grid) because the whole exception rests on an assumption the
+   GRID layout breaks (feature 85): that the last row in DOM order is the row
+   sitting against the frame. Across several tracks the last DOM pair is the
+   bottom-RIGHT one, while the rest of the bottom track row is just as much
+   against the frame — so the exception would drop one pair's rule and leave its
+   neighbours', which measures and reads as a defect (verified in the harness:
+   items 0-6 kept a 1px rule, item 7 did not). CSS cannot select "every item in
+   the last grid row", so the exception stands down there and every pair keeps
+   its rule: a uniformly slightly-heavier bottom edge beats one gap in a line.
+   Non-grid tables are unaffected - the :not() only raises specificity. */
+.appx-spec-table--outer-border:not(.appx-spec-table--layout-grid)
+  > .appx-spec-table__table:last-child
+  tbody
+  tr:last-child
+  > *,
+.appx-spec-table--outer-border:not(.appx-spec-table--layout-grid)
+  > details:last-child
+  > .appx-spec-table__table
+  tbody
+  tr:last-child
+  > *,
+.appx-spec-table--outer-border:not(.appx-spec-table--layout-grid)
+  > details:last-child:not([open])
+  > .appx-spec-table__section-summary {
+  border-block-end: none;
+}
+
+/* A rounded corner does not clip a descendant's background on its own, so the
+   section band and the stripe fills would square off the curve without this.
+   Scoped to the flag: an over-wide table is better overflowing visibly than
+   clipped where a shopper cannot reach it. */
+.appx-spec-table--outer-radius {
+  overflow: hidden;
+}
+
+/* --- Base ----------------------------------------------------------------- */
+
+/* Typography vars sit on the table, not the wrapper, so em-based sizes
+   multiply the theme's base font exactly once. */
+.appx-spec-table__table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--appx-spec-font-size, inherit);
+  font-style: var(--appx-spec-font-style, inherit);
+  line-height: var(--appx-spec-line-height, inherit);
+}
+
+.appx-spec-table__row th,
+.appx-spec-table__row td {
+  padding: 0.5rem 0.75rem;
+  text-align: left;
+  vertical-align: top;
+  border-block-end: 1px solid var(--appx-spec-border-color, rgba(0, 0, 0, 0.1));
+}
+
+/* font-weight here is the LABEL-weight knob — value text keeps the theme's weight. */
+.appx-spec-table__label {
+  width: var(--appx-spec-label-width, 33%);
+  font-weight: var(--appx-spec-font-weight, 600);
+  background: var(--appx-spec-label-bg, transparent);
+  color: var(--appx-spec-label-color, inherit);
+  text-transform: var(--appx-spec-label-transform, none);
+}
+
+.appx-spec-table__value {
+  background: var(--appx-spec-value-bg, transparent);
+  color: var(--appx-spec-value-color, inherit);
+}
+
+/* The five feature-81 knobs land here and on the collapsible summary below,
+   with every fallback being the literal that shipped before them — an untouched
+   table renders byte-identically.
+
+   padding-block + padding-inline as LONGHANDS, not the two-value padding
+   shorthand they replace. A shorthand containing a var is IACVT
+   (invalid-at-computed-value-time)
+   if that var is ever malformed, and IACVT drops the WHOLE shorthand to its
+   initial value: zero padding on all four sides, not just the one axis. The var
+   can only be a validated px integer today, so this is defense in depth — but
+   longhands make the failure mode impossible rather than merely unlikely.
+
+   The inline axis stays a literal 0.75rem on purpose. It matches the row cells
+   exactly, so a section title and the labels under it share one text edge; a
+   knob over all four sides would break that alignment the moment it was used. */
+.appx-spec-table__section {
+  padding-block: var(--appx-spec-header-padding-block, 0.75rem);
+  padding-inline: 0.75rem;
+  text-align: left;
+  font-size: var(--appx-spec-header-font-size, inherit);
+  font-weight: var(--appx-spec-header-font-weight, 700);
+  text-transform: var(--appx-spec-header-transform, none);
+  color: var(--appx-spec-header-color, inherit);
+  background: var(--appx-spec-header-bg, transparent);
+  border-block-end: 2px solid
+    var(
+      --appx-spec-header-underline-color,
+      var(--appx-spec-border-color, currentColor)
+    );
+}
+
+/* --- Section header style ------------------------------------------------- */
+
+/* Banded: the header paints as a real band and the band edge replaces the
+   heavy rule. The fallback is a faint neutral so the band reads even before
+   a merchant picks a header color. */
+.appx-spec-table--section-banded .appx-spec-table__section {
+  background: var(--appx-spec-header-bg, rgba(0, 0, 0, 0.06));
+  border-block-end: none;
+}
+
+/* Text only: no band, but the rule stays — this is the UNDERLINED look, and
+   the merchant-facing label says so (feature 87). Same declarations as the
+   base rule; stated explicitly so all three members read as one rule set per
+   member at equal specificity, rather than one member meaning "whatever the
+   base rule happens to do".
+
+   This is the ONLY member that paints the rule, so it is the only one the
+   underline colour reaches (feature 96). The chain is nested rather than flat,
+   and each link is load-bearing:
+
+   - --appx-spec-header-underline-color is the dedicated knob, emitted only when
+     a merchant sets it, so an untouched table never sees this link at all;
+   - --appx-spec-border-color is the Divider color swatch, which dressed this
+     rule outright before feature 96 — keeping it as the inner fallback is what
+     makes the new knob a zero-repaint addition rather than a restyle;
+   - currentColor is the pre-Step-3 literal and resolves to the title's own
+     colour.
+
+   That two-link chain is also why this swatch is the one control in the rail
+   with no empty-state help text: no sentence short enough for the rail can
+   state both links truthfully (see ColorKnob.emptyHelpText). */
+.appx-spec-table--section-text-only .appx-spec-table__section {
+  background: transparent;
+  border-block-end: 2px solid
+    var(
+      --appx-spec-header-underline-color,
+      var(--appx-spec-border-color, currentColor)
+    );
+}
+
+/* Plain (feature 87): neither the band nor the rule. The third member exists
+   because the two above between them could not produce a bare bold title —
+   TEXT_ONLY drops only the background, so a merchant asking for "just the
+   title" still got a 2px rule under it.
+
+   Nothing stands in for the missing rule. Contrast the banded shape, where the
+   feature-80 hairline exists precisely because BANDED DROPS an edge it would
+   otherwise have and two closed bands would merge into one slab; here the
+   absent edge is the whole point of the member, and a title has no fill to
+   merge with the next one. A merchant who wants the sections held apart sets
+   the section gap, which is available whenever collapsing is on. */
+.appx-spec-table--section-plain .appx-spec-table__section {
+  background: transparent;
+  border-block-end: none;
+}
+
+/* --- Collapsible sections (Step 9a) ---------------------------------------
+   The ON shape replaces each section-header row with a native disclosure
+   wrapping that section's own table, so the summary must inherit the look
+   the section-header cell had. The two knobs COMPOSE: a merchant who picked
+   "Text only" must not get a band back the moment they enable collapsing,
+   so --section-banded and --section-text-only each get a summary variant
+   mirroring their section-header rule above.
+
+   A template with the flag but no section headers degrades to the flat
+   shape; the class then simply has nothing to act on, which is fine — it is
+   a presence flag, not a layout switch. No JavaScript is involved: the
+   disclosure element is native, keyboard-operable, and announces its own
+   expanded state.
+
+   NOTE: this file is mirrored into previewStyles.ts — keep comments free of
+   backticks and literal angle-bracket markup. */
+
+.appx-spec-table--collapsible .appx-spec-table__section-summary {
+  /* display:list-item keeps the native disclosure marker in browsers that
+     drop it otherwise; list-style-position:inside keeps the triangle within
+     the padding box, aligned with the section text rather than hanging off
+     the edge.
+
+     list-style-type is set EXPLICITLY rather than left to the default, and
+     this is not belt-and-braces: themes commonly ship a bare element-level
+     summary rule setting list-style to none, to style their own accordions
+     (Horizon does), which would otherwise leave our disclosures with no visible
+     affordance on the storefront while the theme-less preview still showed
+     one — found live on the dev store, 2026-07-19. Our two-class selector
+     beats the theme's element selector, so the marker is ours to control. */
+  display: list-item;
+  list-style-position: inside;
+  list-style-type: disclosure-closed;
+  cursor: pointer;
+  /* The same five feature-81 knobs as the flat rule above, same fallbacks, same
+     longhand-padding reasoning. Both shapes must carry them or the section
+     header would restyle itself when a merchant toggled Collapsible.
+
+     The disclosure marker sits in the text flow (list-style-position: inside),
+     so it inherits the font size here and scales with the title for free. */
+  padding-block: var(--appx-spec-header-padding-block, 0.75rem);
+  padding-inline: 0.75rem;
+  text-align: left;
+  font-size: var(--appx-spec-header-font-size, inherit);
+  font-weight: var(--appx-spec-header-font-weight, 700);
+  text-transform: var(--appx-spec-header-transform, none);
+  color: var(--appx-spec-header-color, inherit);
+  background: var(--appx-spec-header-bg, transparent);
+  border-block-end: 2px solid
+    var(
+      --appx-spec-header-underline-color,
+      var(--appx-spec-border-color, currentColor)
+    );
+}
+
+/* The open counterpart, so the marker actually reports state rather than
+   sitting on one glyph. Same two-class weight as the rule above plus the
+   attribute, so it wins only while the section is open. */
+.appx-spec-table--collapsible
+  details[open]
+  > .appx-spec-table__section-summary {
+  list-style-type: disclosure-open;
+}
+
+.appx-spec-table--collapsible.appx-spec-table--section-banded
+  .appx-spec-table__section-summary {
+  background: var(--appx-spec-header-bg, rgba(0, 0, 0, 0.06));
+  border-block-end: none;
+}
+
+/* The underlined member's summary counterpart, carrying the same nested colour
+   chain as its flat twin above. Both shapes or neither: a merchant who set an
+   underline colour and then enabled collapsing must not watch it revert to the
+   Divider color, which is the same composition hazard feature 87 fixed for the
+   band and the rule themselves. It is also what lets ONE visibility predicate
+   cover both shapes in the rail. */
+.appx-spec-table--collapsible.appx-spec-table--section-text-only
+  .appx-spec-table__section-summary {
+  background: transparent;
+  border-block-end: 2px solid
+    var(
+      --appx-spec-header-underline-color,
+      var(--appx-spec-border-color, currentColor)
+    );
+}
+
+/* The summary counterpart of the plain rule above. The summary is a SIBLING of
+   the section table rather than a cell inside it, so it carries its own copy of
+   every header declaration; a member that styled only the flat shape would give
+   a merchant their band or rule back the moment they enabled collapsing.
+
+   Three classes against the two-class collapsible base rule, matching the two
+   members above exactly. The three members are mutually exclusive, so they
+   never contest a property with each other and source order is not load-bearing
+   here. */
+.appx-spec-table--collapsible.appx-spec-table--section-plain
+  .appx-spec-table__section-summary {
+  background: transparent;
+  border-block-end: none;
+}
+
+/* --- Section separation (feature 80, Part A) -------------------------------
+   The banded rule above drops the summary's bottom rule because the band edge
+   IS the separator. That is true while a band is followed by ROWS, and false
+   when it is followed by ANOTHER BAND — a state only collapsible sections can
+   reach: close every disclosure and the bands stack into one unbroken slab
+   with no edge between them (reported on the live storefront, 2026-07-26). A
+   band touching a band with no edge is wrong in every theme, so this is a base
+   rule and not a knob, the same call the container-stretch rule at the top of
+   this file makes.
+
+   border-block-START, not -end. The banded rule owns the bottom edge, so
+   claiming the opposite side means the two rules never contest a property:
+   no specificity tie, no source-order dependency, no importance override.
+
+   Scoped to a CLOSED preceding section — the state the rule exists to fix, and
+   nothing wider: an OPEN section is followed by its rows, which already draw
+   the edge, so an unconditional rule would add a second hairline above every
+   band. ⚠️ This scope used to carry a SECOND justification — ALL_OPEN was the
+   default, so it also kept the rule off every collapsible banded table already
+   live. That half EXPIRED 2026-07-30 when the default became FIRST_OPEN:
+   sections 2..n now start closed, so a default banded collapsible table paints
+   these hairlines on arrival — on sections 3..n, measured, since section 2's
+   predecessor is the open first one and this rule needs a CLOSED predecessor.
+   That is the rule working rather than a regression: a closed band under a
+   closed band is precisely the unbroken slab feature 80 was reported for. The open attribute is live, so the
+   separator also appears and disappears as a shopper toggles a section — no
+   JavaScript involved.
+
+   It stands down when a gap is set (below): whitespace already separates the
+   bands there, and the hairline would paint as a stray line across the top of
+   every band but the first.
+
+   Known and accepted: an OPEN but empty section renders a zero-height table,
+   so its band still abuts the next one. Closing that case means dropping the
+   not-open scope, which repaints every default table to fix a state that needs
+   a named section with no visible rows followed by another section. */
+.appx-spec-table--collapsible.appx-spec-table--section-banded:not(
+    .appx-spec-table--section-gap
+  )
+  .appx-spec-table__section-group:not([open])
+  + .appx-spec-table__section-group
+  > .appx-spec-table__section-summary {
+  border-block-start: 1px solid
+    var(--appx-spec-border-color, rgba(0, 0, 0, 0.1));
+}
+
+/* --- Section gap (feature 80, Part B) --------------------------------------
+   The merchant-facing half of the same report: space between the sections
+   themselves, so the bands read as separate groups rather than a stack.
+
+   Gated on the PRESENCE CLASS rather than left to the custom property's own
+   fallback. A rule declared for every collapsible table would set
+   margin-block-start on every disclosure, and an explicit 0 from a two-class
+   selector beats a theme's own element-level details margin — silently
+   restyling tables whose merchant never touched this knob. The class is
+   emitted only when the knob is set, so an untouched table keeps no margin
+   declaration at all.
+
+   not(:first-child), not the adjacent-sibling combinator: rows appearing
+   before the first section header render in a leading bare table with no
+   disclosure around it, and the sibling form would skip that one boundary.
+   This form covers it and still never adds a leading gap inside the frame.
+
+   Only the collapsible shape has section-group elements. The flat shape gets
+   the same gap from the rule directly below, which targets its section ROW
+   instead. The two can never both fire: the collapsible renderer emits no
+   section-row and the flat renderer emits no section-group. */
+.appx-spec-table--section-gap
+  .appx-spec-table__section-group:not(:first-child) {
+  margin-block-start: var(--appx-spec-section-gap, 0);
+}
+
+/* --- Section gap, flat shape (feature 94) -----------------------------------
+   The same knob reaching the shape that has no disclosures. A flat section
+   header is a tr, and what a tr DISPLAYS as is decided by the row-layout rules
+   further down this file: table-row under two-column, but block under stacked
+   and block-plus-grid-item under grid. Margin applies in the last two, so the
+   gap is expressible there — feature 80 fenced this knob to the collapsible
+   shape when the thing that actually cannot express a gap is the TABLE
+   FORMATTING CONTEXT, which only two-column keeps.
+
+   Layout-scoped rather than written bare. The unscoped form would be a silent
+   no-op under two-column: a declaration that reads as though it works
+   everywhere and quietly does nothing in the default layout. Naming the two
+   layouts makes the selector state the constraint it is subject to.
+
+   Two-column is deliberately absent and has no rule of its own. Padding on the
+   section cell grows the band rather than opening a gap; a transparent
+   border-block-start loses the collapsed-border width contest and silently
+   deletes the preceding row's own divider; a spacer row would put a cell-less
+   row into the role=table chain. Whether border-collapse: separate, scoped to
+   this knob, can do it is an open question recorded in progress-tracker.md.
+
+   not(:first-child) for the same two reasons as the rule above: rows can
+   appear BEFORE the first section header, so a leading gap inside the frame is
+   never wanted; and under stacked the tbody is a block, so a first-child top
+   margin would collapse out through it and push the whole table down instead
+   of separating anything.
+
+   One visible result, two mechanisms. Under stacked this is a collapsing block
+   margin (the max of the adjoining margins); under grid it is a grid item
+   margin, which never collapses. They agree today only because every
+   neighbouring margin is 0 — a future rule giving a row a bottom margin would
+   change stacked and not grid. */
+.appx-spec-table--section-gap.appx-spec-table--layout-stacked
+  .appx-spec-table__section-row:not(:first-child),
+.appx-spec-table--section-gap.appx-spec-table--layout-grid
+  .appx-spec-table__section-row:not(:first-child) {
+  margin-block-start: var(--appx-spec-section-gap, 0);
+}
+
+/* Keyboard users must be able to SEE which summary they are on — <details>
+   gives operability for free, but not a visible focus ring in every theme. */
+.appx-spec-table--collapsible .appx-spec-table__section-summary:focus-visible {
+  outline: 2px solid currentColor;
+  outline-offset: -2px;
+}
+
+/* --- Row dividers ---------------------------------------------------------- */
+
+.appx-spec-table--dividers-lines .appx-spec-table__label,
+.appx-spec-table--dividers-lines .appx-spec-table__value {
+  border-block-end: 1px solid var(--appx-spec-border-color, rgba(0, 0, 0, 0.1));
+}
+
+.appx-spec-table--dividers-stripes .appx-spec-table__label,
+.appx-spec-table--dividers-stripes .appx-spec-table__value {
+  border-block-end: none;
+}
+
+/* nth-child, not nth-of-type: in the flat shape section-header rows are
+   table rows too, and banding must count real rendered rows.
+
+   In the COLLAPSIBLE shape each section owns its own <tbody>, so striping
+   RESTARTS at every section. That is deliberate (locked Step 9a): within a
+   disclosure, alternation is a within-section reading aid, and continuing a
+   global parity across a collapsed boundary would look arbitrary the moment
+   a section is closed. Do NOT "fix" this with nth-of-type gymnastics or
+   server-computed odd/even classes — that is real complexity bought for a
+   look nobody asked for. */
+.appx-spec-table--dividers-stripes
+  .appx-spec-table__row:nth-child(even)
+  .appx-spec-table__label,
+.appx-spec-table--dividers-stripes
+  .appx-spec-table__row:nth-child(even)
+  .appx-spec-table__value {
+  background: var(--appx-spec-stripe-bg, rgba(0, 0, 0, 0.04));
+}
+
+.appx-spec-table--dividers-none .appx-spec-table__label,
+.appx-spec-table--dividers-none .appx-spec-table__value {
+  border-block-end: none;
+}
+
+/* --- Column divider --------------------------------------------------------
+   The row knob's vertical partner, and the piece that completes a full grid:
+   rows already have LINES, the container already has an outline, and this is
+   the one INTERIOR vertical edge a two-column table has.
+
+   It hangs off the LABEL's inline-end rather than the value's inline-start, so
+   the rule sits at the label/value seam and nowhere else. That placement is
+   what makes the two shapes work without a single special case:
+
+   - a section header is a th[colspan=2], so it is not a label and the rule
+     stops at every section band (the look both reference storefronts have);
+   - in the collapsible shape each section owns its own table, so the rule is
+     per-section and needs no knowledge of disclosures;
+   - it is interior, so border-collapse has nothing to resolve it against and
+     it can never double against the wrapper's outer border.
+
+   border-INLINE-end, not border-right: the seam follows the writing direction,
+   so an RTL storefront gets the rule on the correct side for free. Same logical
+   convention as border-block-end everywhere above.
+
+   1px and --appx-spec-border-color are hardcoded on purpose (merchant decision
+   2026-07-26): the column rule must always match the row rules, so it takes no
+   width knob and no color swatch of its own. If it ever needs to differ, that
+   is a new knob and a new decision — do not quietly parameterise this.
+
+   Both members get a rule at equal specificity per the file's design rules;
+   NONE is not left to the base rule's absence. Placed BEFORE the layout block
+   below so the stacked refinements can drop the rule by source order. */
+
+.appx-spec-table--column-divider-none .appx-spec-table__label {
+  border-inline-end: none;
+}
+
+.appx-spec-table--column-divider-line .appx-spec-table__label {
+  border-inline-end: 1px solid var(--appx-spec-border-color, rgba(0, 0, 0, 0.1));
+}
+
+/* --- Density (owns row-cell padding and nothing else) --------------------- */
+
+.appx-spec-table--density-default .appx-spec-table__label,
+.appx-spec-table--density-default .appx-spec-table__value {
+  padding: 0.5rem 0.75rem;
+}
+
+.appx-spec-table--density-compact .appx-spec-table__label,
+.appx-spec-table--density-compact .appx-spec-table__value {
+  padding: 0.25rem 0.75rem;
+}
+
+.appx-spec-table--density-spacious .appx-spec-table__label,
+.appx-spec-table--density-spacious .appx-spec-table__value {
+  padding: 1rem 0.75rem;
+}
+
+/* --- Row layout ------------------------------------------------------------
+   AFTER dividers/density on purpose (see header): the stacked refinements
+   below must layer over the active divider/density member at equal
+   specificity via source order. */
+
+.appx-spec-table--layout-two-column .appx-spec-table__table {
+  display: table;
+}
+
+.appx-spec-table--layout-two-column .appx-spec-table__table tbody {
+  display: table-row-group;
+}
+
+.appx-spec-table--layout-two-column .appx-spec-table__section-row,
+.appx-spec-table--layout-two-column .appx-spec-table__row {
+  display: table-row;
+}
+
+.appx-spec-table--layout-two-column .appx-spec-table__section,
+.appx-spec-table--layout-two-column .appx-spec-table__label,
+.appx-spec-table--layout-two-column .appx-spec-table__value {
+  display: table-cell;
+}
+
+.appx-spec-table--layout-two-column .appx-spec-table__label {
+  width: var(--appx-spec-label-width, 33%);
+}
+
+/* Stacked: each label sits full-width above its own value. display:block
+   removes the implicit table semantics from these elements — a known
+   trade-off recorded for Step 12's a11y pass; DOM order still reads as
+   label-then-value pairs. */
+.appx-spec-table--layout-stacked .appx-spec-table__table,
+.appx-spec-table--layout-stacked .appx-spec-table__table tbody,
+.appx-spec-table--layout-stacked .appx-spec-table__section-row,
+.appx-spec-table--layout-stacked .appx-spec-table__row,
+.appx-spec-table--layout-stacked .appx-spec-table__section,
+.appx-spec-table--layout-stacked .appx-spec-table__label,
+.appx-spec-table--layout-stacked .appx-spec-table__value {
+  display: block;
+}
+
+/* The label keeps its own padding but drops its divider — the pair must read
+   as one unit, so the active divider style lands after the VALUE only. The
+   value is pulled toward its label with a longhand padding-block-start,
+   which layers over density's earlier shorthand. */
+/* border-inline-end joins width/border-block-end here for the same reason they
+   are here: a stacked label is a full-width block with its value underneath, so
+   there is no label/value SEAM for a column rule to sit on — left in, it would
+   paint as a stray vertical stub against the right edge. Equal specificity to
+   the column-divider rule above and later in the file, so source order drops
+   it; no importance override, per this file's design rules. */
+.appx-spec-table--layout-stacked .appx-spec-table__label {
+  width: auto;
+  border-block-end: none;
+  border-inline-end: none;
+}
+
+.appx-spec-table--layout-stacked .appx-spec-table__value {
+  padding-block-start: 0.25rem;
+}
+
+/* --- Row layout: GRID (feature 85) -----------------------------------------
+   Pairs become blocks exactly as in the stacked rule above, and the tbody
+   becomes the grid that flows them. auto-fit plus minmax is the whole
+   responsive story: the track count falls out of the available width, so this
+   layout needs no media query and no mobile variant. At a 375px viewport a
+   240px minimum fits exactly one track, which is the mobile behaviour for
+   free — do NOT add a --layout-grid rule to the media query below.
+
+   min(…, 100%) inside the minmax is what makes that claim true for EVERY
+   minimum, not just small ones. A bare minmax(400px, 1fr) in a 375px container
+   lays a 400px track and overflows the page — measured at 25px of overflow for
+   a 400px minimum and 265px for a 640px one. Clamping the minimum to the
+   container width costs nothing anywhere else (min() picks the px value
+   whenever it fits) and makes horizontal overflow unreachable by construction
+   rather than by trusting the merchant's number.
+
+   Across-then-down fill order, which is what grid does natively. The
+   down-then-across look (CSS multicol) is deliberately NOT offered: this markup
+   declares itself a table via role=table / role=row / role=rowheader, a screen
+   reader announces DOM order, and multicol would make visual order and DOM
+   order diverge while the ARIA chain kept insisting they agree. */
+.appx-spec-table--layout-grid .appx-spec-table__table,
+.appx-spec-table--layout-grid .appx-spec-table__section-row,
+.appx-spec-table--layout-grid .appx-spec-table__row,
+.appx-spec-table--layout-grid .appx-spec-table__section,
+.appx-spec-table--layout-grid .appx-spec-table__label,
+.appx-spec-table--layout-grid .appx-spec-table__value {
+  display: block;
+}
+
+/* tbody is deliberately ABSENT from the list above (contrast the stacked rule,
+   which includes it) — it takes display: grid here instead. Listing it in both
+   would be a same-specificity source-order accident waiting to happen. */
+.appx-spec-table--layout-grid .appx-spec-table__table tbody {
+  display: grid;
+  grid-template-columns: repeat(
+    auto-fit,
+    minmax(min(var(--appx-spec-grid-min-column, 240px), 100%), 1fr)
+  );
+}
+
+/* A section header interrupts the flow and claims every track. 1 / -1 addresses
+   the explicit track lines auto-fit generates. */
+.appx-spec-table--layout-grid .appx-spec-table__section-row {
+  grid-column: 1 / -1;
+}
+
+/* Identical to the stacked refinements, and for identical reasons: the pair
+   must read as one unit, so the label drops its own bottom rule and the value
+   is pulled toward it. border-inline-end goes for the third time here — a grid
+   item is a full-width block with its value underneath, so there is no
+   label/value seam for a column rule to sit on and a survivor paints as a stray
+   stub. Equal specificity to the column-divider rule earlier in the file, so
+   source order drops it; no importance override, per this file's design
+   rules. */
+.appx-spec-table--layout-grid .appx-spec-table__label {
+  width: auto;
+  border-block-end: none;
+  border-inline-end: none;
+}
+
+.appx-spec-table--layout-grid .appx-spec-table__value {
+  padding-block-start: 0.25rem;
+}
+
+/* Zebra striping is DOM-order parity, and across several tracks DOM-order
+   parity paints a CHECKERBOARD rather than alternating rows — nth-child cannot
+   know how many tracks the browser chose. The fill stands down; the LINES and
+   NONE members are unaffected and both behave correctly here.
+
+   ⚠️ This selector MIRRORS the fill rule's shape on purpose, including the
+   :nth-child(even) it looks like it could drop. Two reasons, and the first was
+   a measured bug, not a precaution:
+
+   1. SPECIFICITY, not source order, is what decides here. The fill rule is four
+      classes (--dividers-stripes + __row + :nth-child + __label); the obvious
+      short form of this rule is only three, so it LOSES no matter where it sits
+      in the file and the checkerboard paints anyway. Mirroring the shape makes
+      this five, so it wins outright. Do not "simplify" it back.
+   2. Narrowing to even rows is also what keeps this from overreaching: a broad
+      transparent background on every label and value would wipe out a
+      merchant's own labelBgColor / valueBgColor in Grid mode. Only the STRIPE
+      is meant to stand down.
+
+   The rail hides the Stripes option in Grid mode, so this is NOT dead defensive
+   code: the rail is not the only writer. A template saved before the option was
+   hidden, a B2 preset, and the orphan case (a merchant who chose Stripes and
+   then switched to Grid) all deliver this combination. Here is where it is
+   actually enforced. */
+.appx-spec-table--layout-grid.appx-spec-table--dividers-stripes
+  .appx-spec-table__row:nth-child(even)
+  .appx-spec-table__label,
+.appx-spec-table--layout-grid.appx-spec-table--dividers-stripes
+  .appx-spec-table__row:nth-child(even)
+  .appx-spec-table__value {
+  background: transparent;
+}
+
+/* --- Mobile default --------------------------------------------------------
+   749px matches Dawn's mobile breakpoint, so the table flips where the
+   surrounding theme does — and it puts the editor preview widths on the
+   intended sides (mobile 375px stacked; desktop two-column). Scoped entirely
+   inside the mobile-stacked modifier and LAST
+   in the file so it beats the desktop layout rules at equal specificity.
+
+   appx-spec-table--mobile-same-as-desktop is DELIBERATELY rule-less: "same
+   as desktop" means no mobile override exists. Writing rules to undo the
+   stacked ones would be a specificity fight with no benefit — do not "fix"
+   this by adding them. */
+@media (max-width: 749px) {
+  .appx-spec-table--mobile-stacked .appx-spec-table__table,
+  .appx-spec-table--mobile-stacked .appx-spec-table__table tbody,
+  .appx-spec-table--mobile-stacked .appx-spec-table__section-row,
+  .appx-spec-table--mobile-stacked .appx-spec-table__row,
+  .appx-spec-table--mobile-stacked .appx-spec-table__section,
+  .appx-spec-table--mobile-stacked .appx-spec-table__label,
+  .appx-spec-table--mobile-stacked .appx-spec-table__value {
+    display: block;
+  }
+
+  /* Same reasoning as the desktop stacked rule: no seam below the breakpoint,
+     so no column rule. This block is LAST in the file, so it drops the rule for
+     a table that is two-column on desktop and stacked on a phone. */
+  .appx-spec-table--mobile-stacked .appx-spec-table__label {
+    width: auto;
+    border-block-end: none;
+    border-inline-end: none;
+  }
+
+  .appx-spec-table--mobile-stacked .appx-spec-table__value {
+    padding-block-start: 0.25rem;
+  }
+}

@@ -1,0 +1,555 @@
+# Feature 93 — Accent themes (the gallery's colour-theme swatch row)
+
+**Status:** ✅ **COMPLETE — 6 of 6 steps done 2026-07-30; the feature is LIVE and
+verified end to end, admin → Postgres → metaobject → storefront.**
+🔴 **One decision is open and it is the merchant's:** step 102 observed §D3's
+dark-theme risk and it came back **illegible**, with a second failure §D3 never
+named. Nothing is broken on a light theme and nothing regressed; see §Open
+questions 2 for what it costs to fix and what it costs to accept.
+Specced 2026-07-30; all seven
+open decisions were answered by the merchant the same day and are recorded
+verbatim below. **This file is the binding design; it is not an implementation
+plan.** Each step file carries its own instructions and completion gate:
+
+| Step | File                              | Scope                                          | Status                       |
+| ---- | --------------------------------- | ---------------------------------------------- | ---------------------------- |
+| 97   | `97-accent-vocabulary.md`         | `ACCENT_PRESETS` pure domain + palette         | ✅ **2026-07-30**, → 1179    |
+| 98   | `98-accent-render-harness.md`     | 5 × 6 render matrix at 1:1, lock the underline | ✅ **2026-07-30**, 35 renders |
+| 99   | `99-accent-seed-path.md`          | `&accent=` → resolved styling                  | ✅ **2026-07-30**, → 1184    |
+| 100  | `100-accent-swatch-row.md`        | the swatch row component                       | ✅ **2026-07-30**, → 1209    |
+| 101  | `101-accent-gallery-wiring.md`    | gallery state + live restyle + hrefs           | ✅ **2026-07-30**, → 1227, live-verified |
+| 102  | `102-accent-live-verification.md` | admin → Postgres → metaobject → storefront     | ✅ **2026-07-30**, 1227 unmoved, 6/6 items |
+
+✅ **Nothing in the design has needed revision.** Step 98 confirmed the reach
+table 5 of 5 and the provisional underline value, and measured `borderColor`'s
+reach as a contrast *improvement*. The palette is unchanged from approval. Step 99
+closed the seed path in **one line with no call-site change**, which is the
+forward-compatibility claim feature 88 made, collected.
+
+⚠️ **One consequence of D4 landed and is worth knowing before step 101:** a `null`
+`basedOnPreset` no longer implies default styling. `?accent=blue` with no `?style=`
+seeds five colours and stamps nothing. That is the parser staying total as decided
+— the Blank card never emits the param — but step 92's central guard was written on
+the old shortcut and had to be restated in two halves, one per scope. See
+`99-accent-seed-path.md` §D5.
+
+**Parent feature:** `88-style-preset-gallery.md` §"Feature 93 — accent themes
+(forward compatibility)" — read it first. This file does not restate the
+taxonomy, the bundles, or the create-time-only decision.
+**Depends on:** nothing unbuilt. Feature 88 (all four steps, live-verified) cut
+the seams; feature 96 shipped `headerUnderlineColor`, which this feature is the
+second consumer of.
+**Migration:** **none.** An accent writes five columns that already exist in
+`TableStyling`, and it gets no provenance column of its own — see D6.
+
+---
+
+## The ask
+
+> "In caching bundle app, there is a color picker. From there merchants can choose
+> colors that match their brand. Can we add something like this? Merchants can
+> select a theme color on the 'Choose style' page. When merchants click on a
+> color, all the preset cards will reflect that theme color."
+
+This is the other half of the Kaching screen feature 88 adopted. Feature 88 built
+the card gallery and deliberately left the swatch row for here, cutting six seams
+so this feature would be additive rather than a rewrite.
+
+**Four of those six seams landed in code and are load-bearing today:**
+
+| Seam                                                                       | Where                       | Collected  |
+| -------------------------------------------------------------------------- | --------------------------- | ---------- |
+| `seedStylingFromPreset(presetId, accent = {})` — merge order already fixed | `stylePresets.ts:301`       | ✅ step 99 |
+| `resolveGalleryParams(URLSearchParams)` — takes params, not a string       | `stylePresets.ts:346`       | ✅ step 99 |
+| Card previews built in the browser from resolved values, not from an id    | `StylePresetCard.tsx:132`   | step 101   |
+| The gallery header-right slot left deliberately empty                      | `choose-style/route.tsx:57` | step 101   |
+
+✅ **The first two paid off exactly as designed.** Step 99's entire diff is
+`stylePresets.ts` + its test; the editor loader and its contract test are
+byte-unchanged. A `string` signature there would have cost a route edit and a
+contract-test edit to reach the same behaviour.
+
+The two that did not: the gallery holds **no client state** (it is a pure
+function of frozen constants), and `ACCENT_PRESETS` does not exist. Those are
+steps 101 and 97.
+
+---
+
+## 🔴 The finding that reshaped the feature
+
+**Tinting one field does not work here, and Kaching's design does not transfer.**
+
+Kaching tints one thing — the band behind a deal's title — and every one of their
+cards has that band. Ours do not. A pattern picks a `sectionHeaderStyle`, and
+that choice decides which CSS rule paints the header. Measured against
+`spec-table.css`, two of the three members **hardcode** the band away:
+
+```css
+.appx-spec-table--section-banded .appx-spec-table__section {
+  background: var(--appx-spec-header-bg, rgba(0, 0, 0, 0.06));
+}
+.appx-spec-table--section-plain .appx-spec-table__section {
+  background: transparent;
+}
+.appx-spec-table--section-text-only .appx-spec-table__section {
+  background: transparent;
+}
+```
+
+So an accent writing only `headerBgColor` paints **nothing on three of the five
+cards** — Classic and Minimal (both `PLAIN`) and Accordion (`TEXT_ONLY`). A
+merchant clicks a colour on a gallery of five cards and three sit still. That is
+the feature failing on its own screen, and it is the reason the accent is a
+**set** of fields rather than one.
+
+> 📌 **The count is two as of 2026-07-30** — Classic took `TEXT_ONLY` and Accordion
+> took `BANDED`, so only Classic and Minimal have no band. The argument is
+> unchanged and is deliberately **not** re-stated on the current bundles: it is a
+> claim about `sectionHeaderStyle` having members that hardcode the band away, and
+> a merchant can select those in the rail whatever the cards happen to ship. A
+> one-field accent would still fail on two of five, and on any template a merchant
+> has since edited.
+
+✅ **`headerTextColor` is the field that makes the set total.** None of the three
+member rules overrides `color:` — each sets `background` and `border-block-end`
+only — so the section title is tintable under every header style. It is the sole
+live field on Minimal, which has no band, no rule, no frame and no stripes.
+
+---
+
+## The rule (unchanged from feature 88)
+
+**A bundle sets structure, an accent sets colour, and they compose without
+knowing about each other.** The merge order is already law at
+`stylePresets.ts:301`: an accent's colours win over a bundle's, and no bundle has
+ever set a colour (pinned by `stylePresets.test.ts` — "the comparison scope
+contains no color field").
+
+🚫 **`accentFor(preset, token)` is rejected.** An accent that varies by pattern —
+tint the band on Modern, the rule on Classic, the title on Minimal — would work
+and would cost exactly the composition promise above. Every later feature that
+merges the two would inherit the exception. The set below is chosen so one
+pattern-blind accent lands somewhere on every card.
+
+---
+
+## Merchant decisions 2026-07-30
+
+### D1 · Create-time only — the swatch row lives on the gallery and nowhere else
+
+> "The swatch row lives on the gallery and nowhere else, exactly like the cards."
+
+Inherits feature 88's create-time-only decision unchanged. **No Style-rail
+control, no rail group, and no "re-apply an accent" path.**
+
+✅ **No capability is lost, and this is why it is cheap:** an accent lands in five
+**real colour columns** the merchant can already edit individually in the rail's
+feature-86 groups. Nothing is locked away — only the shortcut is create-time.
+
+⚠️ **The consequence, accepted:** a merchant rebranding blue → green edits five
+swatches per template by hand. Recorded as a known cost, not an oversight; the
+question was put and answered.
+
+### D2 · Headers, frame and stripe — five fields
+
+> "Headers and frame. Section titles, the band behind them, the rule under them,
+> and the outer border. Stripe joins the accent as a fifth field."
+
+```ts
+headerBgColor; // the band, under BANDED
+headerTextColor; // the section title, under all three members
+headerUnderlineColor; // the 2px rule, under TEXT_ONLY
+borderColor; // the outline, the row rules, the column divider
+stripeBgColor; // the alternating fill, under STRIPES
+```
+
+🚫 **The table body is NOT tinted.** `labelTextColor` / `valueTextColor` /
+`labelBgColor` / `valueBgColor` stay out: a whole column of coloured text reads
+as a themed widget dropped onto the page rather than part of the merchant's
+storefront, and it would multiply D3's risk from two titles to every row.
+
+### D3 · Tint the section title, mid-tone hues
+
+> "Tint it."
+
+⚠️ **This is the feature's one accepted risk and it must not be lost.** Today
+**every text colour in the spec table defaults to `inherit`** — the table borrows
+the theme's own text colour, so it is legible on a white theme and a black theme
+without the app knowing which it is on. There is **no `prefers-color-scheme` rule
+anywhere in `spec-table.css`** (verified 2026-07-30). An accent writes an
+_absolute_ hex, which opts one string out of that inheritance.
+
+🚫 **And we cannot warn the merchant.** The binding rule of 2026-07-20 — _no
+contrast checking ships_ — holds: the app cannot compute contrast against a theme
+colour it never sees. Whichever way this goes, it goes silently.
+
+**Mitigation, not a fix:** the six palette hues below are light-optimized by
+design, and the title tones are dark inks. A merchant on a dark theme will get a
+dark title on a dark ground. Accepted because the alternative (no title tint)
+makes Minimal show nothing at all, which is the defect this feature exists to
+avoid. Step 98 measures the actual numbers; step 102 observes it on a real
+storefront.
+
+#### 🔴 OBSERVED 2026-07-30 (step 102) — the risk is REAL, and it is bigger than this section said
+
+The prediction was right and incomplete. Full numbers, capture and method:
+`102-accent-live-verification.md` §V5. Three findings, in order of how much they
+change the picture:
+
+1. ✅ **Banded presets are SAFE, which this section never claimed.** Modern and
+   Multi-column put the title on the accent's **own** band — both colours
+   absolute, so the pair travels together and lands at **6.98–13.15** on any
+   theme. The risk is **not uniform across the gallery**: it is confined to the
+   three presets whose title sits on the theme's own ground (Classic, Minimal,
+   Accordion), plus Classic's stripe.
+   ✅ **Two presets, as of later the same day.** Accordion moved to `BANDED` (doc
+   88's third revision), which puts its title on the accent's own band and moves
+   it into the safe group above — the title risk is now **Classic and Minimal**.
+   ⚠️ Its **stripe** stays exposed, and per the 2026-07-30 divider swap the stripe
+   collision in finding 3 is Accordion's rather than Classic's.
+2. 🔴 **The title fails as predicted: 1.21–2.35** on a dark ground across the six
+   accents (AA wants 4.5). Graphite is worst at 1.21, Blue best at 2.35 — none is
+   close, so this is not a "tune the worst one" problem.
+3. 🔴 **`stripeBgColor` is a SECOND collision, worse than the title, and this
+   section did not name it.** The theme's now-light body ink lands on an opaque
+   near-white fill: **1.02–1.07 — the row's text vanishes.** In the capture, two
+   striped rows are blank while the unstriped row between them reads normally.
+
+🔬 **Why the stripe cannot be fixed by re-tuning the hex.** The stylesheet's
+default is `background: var(--appx-spec-stripe-bg, rgba(0, 0, 0, 0.04))`
+(`spec-table.css:510`) — a **translucent black**, which darkens whatever ground it
+lands on and is therefore theme-agnostic _by construction_. An accent replaces it
+with an **opaque** hex. Every stripe value in the palette is near-white because it
+must be on a light theme, so the failure is **the opacity, not the hue**. The band
+has the same default shape (`rgba(0, 0, 0, 0.06)`) and does **not** fail, because
+the only text on a band is the accent's own absolute title — which is finding 1.
+
+⚠️ **What this does NOT mean.** Nothing regressed and nothing is broken on a light
+theme: the same measurements on white are **12.86** (title) and **19.24** (ink on
+stripe). The feature works as designed for the case it was designed for. What
+changed is that "accepted risk, unobserved" became "accepted risk, measured" — and
+the measurement is what §Open question 2 now has to be decided against.
+
+### D4 · Blank ignores the accent
+
+> "Blank ignores the accent."
+
+The Blank card's copy is _"Start with your theme's own styles — nothing added."_
+Applying an accent would add five colours and make that sentence false — and the
+merchant could not see it coming, because Blank is the one card that renders no
+preview. Blank keeps meaning _nothing at all_, exactly as it is modelled
+everywhere else (no bundle, no `?style=`, `basedOnPreset` null).
+
+🔴 **D4 is a decision about the CARD'S HREF, not about the parser.** The Blank
+card simply never emits an `accent` param; `resolveGalleryParams` stays **total**
+and still honours `?accent=` without `?style=`. Making the parser reject that
+combination would add a validation branch to buy nothing — the gallery never
+generates the URL, so only a hand-typed one reaches it, and a working
+theme-coloured blank table is a fine answer to a hand-typed URL.
+
+⚠️ **Consequence:** the swatch row visibly does nothing for one of six cards.
+Invisible in practice — Blank shows no preview either way.
+
+### D5 · Six fixed accents, plus Theme
+
+✅ **Built in step 100.** "Theme" is a hardcoded first option whose value is `null`,
+and the swatch chips are **two-tone** — each accent's Band hex fills the chip, its
+Title hex rings it. Both come from the bundle, so no seventh colour role was added:
+filling with the Band alone gives six near-white circles (every Band tone below is
+above 0.85 luminance), and the Title alone discards the pairing the merchant is
+choosing. "Theme" gets a dashed neutral chip, borrowing the Blank card's vocabulary
+since both mean "nothing added". 🔴 The selected state carries a checkmark **and** an
+offset outline, because a control whose entire content is colour cannot signal
+selection with colour (WCAG 1.4.1) — and `aria-checked` does not cover that, being
+for assistive tech rather than eyes.
+
+Palette approved 2026-07-30 from a 1:1 render study of the banded + stripes +
+outline combination. **Every value below is merchant-approved and must be copied
+byte-for-byte** — these are not derived at runtime from a hue.
+
+| Accent     | Band      | Title     | Border    | Stripe    |
+| ---------- | --------- | --------- | --------- | --------- |
+| Graphite   | `#e6ebf7` | `#1c2333` | `#c2c9d8` | `#f3f6fb` |
+| Blue       | `#e6effc` | `#0a4e9e` | `#b3cbec` | `#f1f6fd` |
+| Teal       | `#ddf3ee` | `#04564a` | `#a6d3c9` | `#f4fbf9` |
+| Amber      | `#fbeeda` | `#5f3f06` | `#e5d0a2` | `#fef9f1` |
+| Terracotta | `#fbe9e4` | `#79220d` | `#e8c2b5` | `#fdf4f2` |
+| Plum       | `#f4e8f8` | `#501760` | `#d5bade` | `#f9f3fb` |
+
+✅ **"Theme" is first and pre-selected, and writes zero colours** (feature 88,
+unchanged). Picking a card still inherits the storefront exactly as it does
+today, which is the promise the whole module is arranged to protect.
+
+🚫 **No custom hex field in this feature.** It is the honest answer to "match my
+brand" — no fixed palette contains a merchant's exact colour — and it is
+deliberately deferred: it multiplies D3's risk (a merchant can pick a hue that
+vanishes on their own theme) and nothing is blocked without it, since all ten
+swatches remain hand-settable in the rail.
+
+✅ **`headerUnderlineColor` = each accent's Title hex, CONFIRMED by measurement**
+(step 98, 2026-07-30). It was dead in the banded + stripes combination the palette
+was approved from, so the study produced no hex for it, and step 97 shipped the
+Title hex as an explicitly provisional placeholder.
+
+Step 98 measured Accordion at 1:1 and confirmed it: the underline computes
+`1.81818px` at the title tone while the row rules in the same table sit at the
+border tone (contrast to white **1.657** for the rules, ≈**14** for the
+underline). Falling back to `borderColor` — which is what an absent value does —
+would have made the header underline and the row rules **the same colour**, i.e. a
+heading indistinguishable from the boundaries around it. ⚠️ **Measured on Accordion
+because Accordion was `TEXT_ONLY` then; since 2026-07-30 it is `BANDED` and
+Classic is the only card an underline reaches.** The finding transfers intact —
+Classic ships row LINES at the border tone under the same underline — but do not
+go looking for a rule on the Accordion card to re-check it against. 🚫 So it still
+must never equal
+`borderColor`: if a revision ever wants the pale tone there, the correct change is
+to **drop the field from `ACCENT_SCOPED_FIELDS`**, not to write the value twice.
+
+### D6 · `borderColor`, not `outerBorderColor` — and interior rules tint too
+
+> "Yes — tint them all."
+
+The outline needs **no dedicated field**: the stylesheet already falls back
+through `borderColor`, so a value the accent writes anyway colours the frame.
+
+```css
+border: var(--appx-spec-outer-border-width, 0) solid
+  var(
+    --appx-spec-outer-border-color,
+    var(--appx-spec-border-color, rgba(0, 0, 0, 0.1))
+  );
+```
+
+✅ **Two things this buys.** The dedicated `outerBorderColor` swatch stays free
+for a merchant who wants a different frame; and the same fallback logic colours
+the `TEXT_ONLY` underline (Accordion's when this was written, Classic's since
+2026-07-30), so the chain is consistent rather than special-cased.
+
+⚠️ **`borderColor` reaches four surfaces, and the merchant said tint them all.**
+Per feature 95 it dresses the row rules, the column divider, the feature-80
+collapsible separator, and the outline whenever `outerBorderColor` is unset. The
+palette was approved on a combination with **both** interior rule sets switched
+off (`STRIPES` kills the row rules, `BANDED` kills the band's), so the study only
+ever showed the outline.
+
+✅ **Step 98 measured the surfaces the study never showed, and they IMPROVE on the
+neutral.** The feared failure was a tint fainter than the `rgba(0,0,0,0.1)` grey
+it replaces — a legibility regression disguised as a colour choice. Measured
+contrast to white: the neutral is **1.254**; every accent's row rule lands between
+**1.513** (Amber, weakest) and **1.764** (Plum), i.e. **21–41% more contrasty**.
+And it reads as intentional: tinting the rules ties them to the band, where
+leaving them neutral would have put **grey rules under a coloured band**. Numbers
+and the side-by-side: `98-accent-render-harness.md` §Q3.
+
+### D7 · Accent colours stay OUT of `PRESET_SCOPED_FIELDS`
+
+🔴 **This reverses a forward-reference stated in three places** —
+`stylePresets.ts:60` ("Append-only. Feature 93 appends the accent's color
+fields"), doc 88 §"`PRESET_SCOPED_FIELDS` is append-only", and
+`stylePresets.test.ts:83` ("so feature 93 has exactly one place to revisit when
+accent colors join the scope"). All three are wrong and step 97 corrects them.
+
+**Appending recreates the exact bug the constant was invented to prevent.** Doc
+88's own argument:
+
+> the moment an accent writes `headerBgColor`, every template reads "Customized"
+> the instant it is created, without the merchant touching anything.
+
+Walk it: a merchant picks Modern + Blue, so the row stores
+`headerBgColor: #e6effc`. `isCustomizedFromPreset` compares against
+`stylePresetValues(preset)`, which resolves **the bundle alone** — Modern's
+bundle is `{}`, so its `headerBgColor` is `null`. Different ⇒ "Customized", on a
+template nobody has touched.
+
+**It cannot be repaired by a smarter baseline.** Comparing against bundle **+
+accent** requires knowing _which_ accent was picked, and doc 88 rules that out:
+
+> an accent needs no provenance column, because its effect lands in real colour
+> columns the merchant can see and edit in the rail
+
+No stored accent ⇒ no baseline ⇒ the colour half of the comparison is not wrong,
+it is **undefined**. So the scope stays structure-only, `stylePresets.ts:392`
+("Changing a COLOR never makes this true, by construction") is correct as
+written, and the existing "the comparison scope contains no color field" guard is
+**kept, not deleted**.
+
+⚠️ **What is given up:** the app will never be able to answer "has this table
+drifted from its original colours". Nothing today consumes that, and nothing in
+B3's saved-preset phase needs it — B3 asks "is this still the shared _preset_",
+which is the same structure-only question.
+
+---
+
+## What each preset actually shows under an accent
+
+✅ **MEASURED and confirmed 5 of 5 — step 98, 2026-07-30.** Originally derived by
+reading `spec-table.css` against the bundles and flagged as a prediction; step 98
+rendered all 5 presets × (Theme control + 6 accents) at 800px scale 1 and read
+every surface with `getComputedStyle`. Every predicted-live field carries the
+accent hex and every predicted-dead field is byte-identical to its control. Full
+table of values: `98-accent-render-harness.md` §Q1.
+
+🔍 **One nuance the prediction missed.** On the four presets with no frame the
+outline's **colour resolves to the accent hex while its width stays `0px`** — so
+"dead" means zero width, not colour-not-applied. A merchant who later turns on an
+outer border gets the accent's tone already there.
+
+🔴 **The table below was MEASURED against the step-98 bundles, and two of those
+bundles changed on 2026-07-30** (doc 88's second revision: Classic went `PLAIN` +
+`STRIPES` → `TEXT_ONLY` + LINES, and the stripes moved to Accordion; then its
+third: Accordion went `TEXT_ONLY` → `BANDED`). The reach is derived from the
+resolved bundle, so it followed with no code change — but the measured column is
+now historical for those two rows and the **Now** column below is reasoned from
+the same mechanism rather than re-measured.
+
+| Preset       | Header (now) | Dividers (now) | Frame | Live accent fields — as measured (step 98)  | Now                                            |
+| ------------ | ------------ | -------------- | ----- | ------------------------------------------- | ---------------------------------------------- |
+| Modern       | `BANDED`     | `LINES`        | —     | band · title · **row rules**                | unchanged                                       |
+| Classic      | `TEXT_ONLY`  | `LINES`        | 1px   | title · stripe · **column rule + outline**  | title · **underline** · row rules · column rule + outline; **stripe now dead** |
+| Minimal      | `PLAIN`      | `NONE`         | —     | **title only**                              | unchanged                                       |
+| Multi-column | `BANDED`     | `NONE`         | —     | band · title                                | unchanged                                       |
+| Accordion    | `BANDED`     | `STRIPES`      | —     | title · underline · **row rules**           | **band** · title · **stripe**; underline now dead (BANDED has no rule), row rules dead (stripes suppress them) |
+
+📌 **`headerUnderlineColor` now reaches EXACTLY ONE card, Classic.** Not a reason
+to drop the field — it is the only tone that keeps a heading from matching the row
+boundaries around it (§the underline, below), and the rail exposes it to every
+merchant on `TEXT_ONLY` regardless of which card they started from. But a future
+palette revision testing the underline has one card to look at, not two.
+
+⚠️ **Minimal showing title-only is expected, not a defect** — it is precisely why
+D3 had to be answered before anything was built. If D3 had gone the other way,
+Minimal would show nothing at all.
+
+⚠️ **Accordion's `sectionGapPx: 12` disables the feature-80 separator rule**
+(`:not(--section-gap)`), so that surface is **not** live here. (It used to also
+inherit `LINES`; since 2026-07-30 it sets `STRIPES` explicitly, and `STRIPES` sets
+`border-block-end: none` on every label and value, so its row rules are gone.)
+
+🔴 **Which card carries §Open question 2's stripe collision has MOVED.** The
+dark-theme measurement below names Classic as the preset whose `stripeBgColor`
+falls to 1.02–1.07 contrast. That is now **Accordion** — the numbers and the
+mechanism are unchanged (an opaque near-white replacing a translucent black), only
+the card is different.
+
+✅ **And the TITLE half of the risk shrank to two cards, later the same day.**
+Accordion went `TEXT_ONLY` → `BANDED` (doc 88's third revision), so its title now
+sits on the accent's **own** band — the case measured at **6.98–13.15** and safe on
+any theme, because both colours are absolute and travel together. The dark-theme
+title risk is therefore **Classic and Minimal only**. ⚠️ Accordion does not leave
+the open question: it still carries the stripe collision, which is the worse of the
+two and has nothing to do with the header style.
+
+---
+
+## ✅ Observed live 2026-07-30 (step 101)
+
+The ask is satisfied: clicking a colour restyles all five preset cards, and the card's
+link carries the choice into the scaffold. Verified on `appx-dev` in the embedded
+admin.
+
+| Claim                                                            | Result                                                                                |
+| ---------------------------------------------------------------- | ------------------------------------------------------------------------------------- |
+| All five preset cards reflect the accent; Blank does not (D4)     | ✅ both directions — selecting and returning to Theme reverts every card               |
+| The title tint is visible on **Minimal**, its only live field (D3) | ✅ Theme near-black vs Terracotta reddish-brown vs Plum purple, at 0.55 card scale     |
+| `borderColor` reaches Classic's stripes, column rule and outline  | ✅ all three plum-tinted; the band correctly stays transparent under `PLAIN`            |
+| Accordion's underline + row rules tint (D5/D6)                    | ✅ — ⚠️ observed while Accordion was `TEXT_ONLY`; it is `BANDED` since 2026-07-30, so what tints there now is the band |
+| The href carries both params in the right slots                   | ✅ `?style=banded&accent=plum`                                                          |
+| The seeded scaffold matches the card it came from                 | ✅ plum band + plum title in the editor's storefront preview                            |
+| Five-iframe flicker (the cost profile's open question)            | ✅ none visible; no mitigation needed — see `101` §gate 4 for the stated limit          |
+
+⚠️ **Two things this does NOT discharge.** §D3's dark-theme risk is untouched — the
+admin's content area stays light whatever the admin chrome does, so a dark ground was
+never rendered here. And nothing has reached Postgres or a metaobject yet. Both are
+step 102.
+
+---
+
+## ✅ Observed live 2026-07-30 (step 102) — the rest of the chain
+
+Both debts above are now paid. One accent watched end to end: a template created
+from `?style=classic&accent=plum`, saved, activated, assigned to a real product,
+and read at every stage. Full evidence: `102-accent-live-verification.md`
+§Results.
+
+| Claim                                                          | Result                                                                         |
+| -------------------------------------------------------------- | -------------------------------------------------------------------------------- |
+| The five colours survive Save → Postgres                        | ✅ all five hexes exact; the four body colours + `outerBorderColor` stay NULL (D2) |
+| `basedOnPreset` holds the pattern only (D7)                     | ✅ `"classic"`                                                                     |
+| The metaobject carries `styling` **and** `styling_css.vars`     | ✅ both; the storefront's inline `style` is byte-identical to `vars`               |
+| A real product page renders the accent                          | ✅ title, stripe, column rule and outline read exact by `getComputedStyle`         |
+| The dead surfaces are dead in the way step 98 predicted         | ✅ band transparent under `PLAIN`; underline **0px but coloured `#501760`**         |
+| The five values are in the Style rail and editable (D1)         | ✅ shown and edit-accepting — ⚠️ two are gated behind Header style, see below       |
+| §D3's dark-theme risk                                           | 🔴 **illegible** — see §D3's own observation block                                  |
+
+⚠️ **D1's sentence needs one qualifier.** "Five real colour columns the merchant
+can already edit individually in the rail" is true, but the band and underline
+controls only **appear** under the header style that has that surface: `Plain`
+(what Classic seeds) shows neither; `Banded` reveals Background `#F4E8F8` already
+holding the accent's value, `Underlined` reveals Underline colour `#501760`. That
+is the feature-96 gating behaving correctly — nothing is unreachable — but the
+claim reads as though all five are always on screen, and they are not.
+
+---
+
+## Cost profile
+
+**No migration. No new field in `STYLING_FIELD_NAMES`. No Liquid, no TOML, no
+metaobject-definition change, no new CSS rule.** The seventh feature paid for by
+"server precomputes `styling_css`; Liquid only prints" — every field an accent
+writes is a nullable colour that already serializes to `vars` and already
+renders.
+
+⚠️ **The one measured risk is the gallery's five iframes.** Feature 88 measured
+them at 130.4 ms to load all five, 24.7 ms first-to-last, 180 KB of `srcDoc`, and
+0.09 ms to build all five documents in JS. An accent click re-memos and
+**reloads all five frames**. The JS cost is negligible and the total is ~7× under
+the 1 s threshold, so no shared-stylesheet fallback is needed — but _flicker on
+every swatch click_ is a distinct question the load measurement does not answer,
+and step 101 owes it.
+
+---
+
+## Deliberately out of scope
+
+- **A custom hex accent** — D5. Deferred, not rejected.
+- **A Style-rail accent control / re-theming an existing template** — D1.
+- **Tinting the table body** (`labelTextColor`, `valueTextColor`, the two body
+  backgrounds) — D2.
+- **Contrast checking or any legibility warning** — the 2026-07-20 binding rule.
+- **Corner radius and `columnDividerStyle` as accent fields** — both are
+  structure, and both already take `borderColor` for free where they are live.
+- **B3 saved presets** (`StylePreset` model, shop-level themes) — steps 15+ of
+  the Phase B plan, still cuttable.
+
+---
+
+## Open questions
+
+1. ✅ **CLOSED — `headerUnderlineColor`'s value.** Confirmed as each accent's Title
+   hex by measurement (step 98); see D5.
+
+2. 🔴 **OPEN, and now a decision rather than a question — what do we do about the
+   dark-theme result?** Step 102 answered the observation half: **illegible**, on
+   two surfaces, with numbers in §D3. Nobody has decided the response, and
+   ⚠️ **it must not be closed by silence** — that is the exact failure mode D3
+   warned about ("whichever way this goes, it goes silently").
+
+   The two failures need **different** answers, and only the first is a palette
+   revision in the sense this file originally meant:
+
+   | Failure                              | Options                                                                                                                                    | Cost                                                                                                                        |
+   | ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------- |
+   | **Title on the theme's ground** (1.21–2.35) | (a) accept and document · (b) revise the six Title hexes toward mid-tones legible on both grounds                                    | (b) is six edited literals + the pinned test — but it **degrades the light-theme look the merchant approved from a render study**, and no single opaque hue is good on both. |
+   | **Stripe under light ink** (1.02–1.07)      | (a) accept and document · (b) **drop `stripeBgColor` from `ACCENT_SCOPED_FIELDS`** · (c) make the six stripe values **translucent** (`rgba` over the theme's ground, matching the stylesheet's own `rgba(0,0,0,0.04)` default) | (b) costs Classic its stripe tint and is the remedy shape D5 already prescribes for a dead field. (c) keeps the tint AND theme-agnosticism — still data, not logic — but is unmeasured and would need its own render study. |
+
+   🚫 **Contrast-checking code is not on this list** and does not become an option
+   because the risk was confirmed. The 2026-07-20 binding rule stands: the app
+   cannot see a merchant's theme colour at runtime. (Step 102's ratios were
+   computed off-line by the verifier against a ground *we* chose — that is not a
+   capability the app has.)
+
+   📌 **Not urgent, and worth saying so.** On a light theme every value measures
+   12.86–19.24, and banded presets are safe on **any** theme. This is a bounded
+   defect on a specific combination, not a shipping blocker — but it is now a
+   known one, with a date and a measurement, which is what step 102 existed to
+   produce.

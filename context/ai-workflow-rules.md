@@ -1,12 +1,12 @@
 # AI Workflow Rules
 
-The standing rules in `AGENTS.md` (one feature unit at a time, update `progress-tracker.md`, checklist before moving on) apply to every session. This file covers the additional workflow detail that is not already in `AGENTS.md`.
+The standing rules in `CLAUDE.md` (one feature unit at a time, update `progress-tracker.md`, checklist before moving on) apply to every session. This file covers the additional workflow detail that is not already in `CLAUDE.md`.
 
 ---
 
 ## Spec-Driven Approach
 
-Always implement against the context files — do not infer or invent behavior from scratch. Read the relevant files in the order defined in `AGENTS.md` before writing any code. If a requirement is ambiguous or missing, add it as an open question in `progress-tracker.md` and stop — do not guess and implement.
+Always implement against the context files — do not infer or invent behavior from scratch. Read the relevant files in the order defined in `CLAUDE.md` before writing any code. If a requirement is ambiguous or missing, add it as an open question in `progress-tracker.md` and stop — do not guess and implement.
 
 ---
 

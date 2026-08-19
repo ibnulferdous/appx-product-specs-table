@@ -1,7 +1,7 @@
 ## Application Building Context
 
 **App:** Appx — Product Specs Table
-**Stack:** Shopify App Template (Remix / React Router, TypeScript) · PostgreSQL via Neon · Prisma · AG Grid (free) · Theme App Extension (Liquid + plain JS)
+**Stack:** Shopify App Template (Remix / React Router, TypeScript) · PostgreSQL via Neon · Prisma · Custom React spec-table editor (@dnd-kit drag-and-drop) · Theme App Extension (Liquid + plain JS)
 
 ---
 
@@ -20,35 +20,52 @@ Think like a senior Shopify app engineer: respect the platform's constraints (ra
 
 ---
 
-Read the following files in order before implementing or making any architectural decision:
+## Context Files — Read On Demand
 
-1. `context/prd.md` — product requirements: problem
-   statement, core user flow, MVP features, data
-   sources, storefront display rules, styling,
-   pricing strategy, technical stack, success
-   criteria, and in/out-of-scope boundaries
+These context files are the project's source of truth.
+To keep each session lean, **read only what the current
+task needs** — do not bulk-read all of them up front, and
+do not re-read a file already seen this session.
 
-2. `context/data-model.md` — technical source of
-   truth: Prisma schema, row JSON structures,
-   assignment logic, Shopify metaobject strategy,
-   and architecture invariants
+**Always read at session start:**
 
-3. `context/code-standards.md` — coding conventions,
-   file organization rules, stack-specific standards
-   (Remix, Polaris, Prisma, AG Grid)
+- `context/progress-tracker.md` — current phase, current
+  goal, completed work, in-progress items, next up, open
+  questions, and session notes. This is the entry point;
+  it tells you what (if anything) else to open.
 
-4. `context/ai-workflow-rules.md` — spec-driven
-   approach, when to split work, protected files,
-   and which context file to update for each type
-   of change
+**Read only when the task touches that area:**
 
-5. `context/progress-tracker.md` — current phase,
-   current goal, completed work, in-progress items,
-   next up, open questions, and session notes
+- `context/prd.md` — product requirements: problem
+  statement, core user flow, MVP features, data sources,
+  storefront display rules, styling, pricing strategy,
+  technical stack, success criteria, scope boundaries.
+  Read when scoping a feature or resolving a "should it do
+  X?" question.
 
-Read `context/feature-roadmap.md` only when a
-decision could block a post-MVP feature — e.g.,
-schema design or feature boundary choices.
+- `context/data-model.md` — technical source of truth:
+  Prisma schema, row JSON structures, assignment logic,
+  Shopify metaobject strategy, architecture invariants.
+  Read before any schema, persistence, row-JSON, or
+  metaobject change.
+
+- `context/code-standards.md` — coding conventions, file
+  organization rules, stack-specific standards (Remix,
+  Polaris, Prisma, custom spec-table editor). Read before
+  writing or restructuring code in an unfamiliar area.
+
+- `context/ai-workflow-rules.md` — spec-driven approach,
+  when to split work, protected files, and which context
+  file to update for each type of change. Read when
+  unsure how to sequence or scope the work.
+
+- `context/feature-roadmap.md` — read only when a decision
+  could block a post-MVP feature (e.g., schema design or
+  feature boundary choices).
+
+When in doubt about whether a change affects an area,
+open that file before deciding — read-on-demand means read
+when relevant, not skip when relevant.
 
 ---
 

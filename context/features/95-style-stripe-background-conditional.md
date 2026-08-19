@@ -1,0 +1,306 @@
+# Feature 95 — the two dead colour swatches hide themselves
+
+**Status:** ✅ **COMPLETE 2026-07-28** — built and live-verified in the embedded
+admin, both parts, 10 of 10 checks (see "Verification").
+**Scope:** Style rail only. No schema, no migration, no CSS, no Liquid, no
+metaobject change, **zero storefront diff**.
+
+Two parts, one mechanism, both landed the same day:
+
+1. **`Stripe background`** hides unless `Row dividers` is `Stripes` — the
+   original report, below.
+2. **`Header background`** hides unless `Header style` is `Banded` — the open
+   question part 1 closed with, answered immediately (see "Part 2").
+
+---
+
+## The report
+
+> On the editor, on the row section, there is an option for "Row dividers".
+> There we can select Stripes. We can also choose "Stripe background". Make it
+> conditional. Show "Stripe background" only when "Row dividers" = "Stripes".
+> Otherwise hide it.
+
+Correct as reported. `stripeBgColor` is the swatch with the narrowest referent
+in the rail: it feeds **exactly one declaration** in `spec-table.css`.
+
+```css
+.appx-spec-table--dividers-stripes
+  .appx-spec-table__row:nth-child(even)
+  .appx-spec-table__label,
+.appx-spec-table--dividers-stripes
+  .appx-spec-table__row:nth-child(even)
+  .appx-spec-table__value {
+  background: var(--appx-spec-stripe-bg, rgba(0, 0, 0, 0.04));
+}
+```
+
+`--appx-spec-stripe-bg` appears nowhere else in the stylesheet. Outside
+`--dividers-stripes` the var is emitted, inherited, and read by nothing. So the
+control is not one whose effect is merely hard to see — it is one with **no
+referent**, which is the bar `showsGridMinColumnWidthControl` (feature 85)
+already set for earning a hide.
+
+## This REVERSES a written merchant decision, deliberately
+
+Feature 86 decision 4 (2026-07-26) reads:
+
+> **4. Stripe background stays visible too.** Same shape of question, same
+> answer, and it matches the existing written decision for `headerBgColor`
+> ("only visible while Banded, but that is a composition fact rather than a
+> reason to hide"). The caveat lives in help text, where it already does.
+
+The merchant reversed it on 2026-07-28. What changed is not the principle but
+which fact it was applied to: decision 4 was made in the same breath as
+decision 3 (`Divider color` stays visible), and inherited its reasoning without
+the surface count being checked. They are not the same case.
+
+| Field           | Surfaces it dresses                                                                                             | Verdict                                                                               |
+| --------------- | --------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------- |
+| `borderColor`   | row rules · column divider (f79) · section separator (f80) · outline whenever `outerBorderColor` is unset (f78) | **stays visible** — at `NONE` rows it is still the only control for two live surfaces |
+| `stripeBgColor` | the even-row stripe fill, and nothing else                                                                      | **hides**                                                                             |
+
+🚫 **Decision 3 is NOT reopened.** The asymmetry inside one 2-up grid is the
+feature: one field / one surface / one rule is what earns a hide, and only the
+stripe has it.
+
+## The predicate — an AND, and the second clause is not defensive
+
+```ts
+export function showsStripeBackgroundControl(styling: StylingValues): boolean {
+  return styling.rowDividerStyle === "STRIPES" && styling.rowLayout !== "GRID";
+}
+```
+
+🔴 **The orphan case is why `=== "STRIPES"` alone is wrong.** Grid does not
+offer Stripes (`rowDividerOptionsFor`, feature 85), but `GRID` + `STRIPES` is
+still _reachable from stored data_ — a merchant who chose Stripes on a
+two-column table and then switched to Grid keeps the stored value, and the
+select labels it **"Stripes — not available in Grid"**. `spec-table.css` stands
+the fill down to `transparent` there. A naive predicate would put a live colour
+picker directly beneath a select saying the thing it colours is unavailable.
+
+`!== "GRID"` rather than a `TWO_COLUMN`/`STACKED` membership test, for the same
+reason `showsSectionGapControl` is written that way (feature 94): the EXCLUDED
+case is the one with a reason, so a fourth `ROW_LAYOUTS` member inherits
+"stripes paint", which is right.
+
+A pure READ like the other seven. Registered in `VISIBILITY_PREDICATES`, so the
+shared preserve-on-hide law test covers it automatically: Stripes → Lines →
+Stripes returns the merchant's own hex, never the default grey.
+
+## The attachment point — `ColorKnob.visibleWhen`, not a JSX guard
+
+⚠️ **The first hide rule over a COLOR, and colours have no JSX line to wrap.**
+The other seven are `{showsX(styling) && <s-select …/>}`. All nine swatches are
+generated by one `.filter(…).map(…)` over `COLOR_KNOBS` inside `colorGrid`, so
+the guard has to be a property of the knob:
+
+```ts
+visibleWhen?: (styling: StylingValues) => boolean;
+```
+
+The predicate itself still lives in `stylingControls.ts` beside the other seven
+and is registered under the same law — only the _attachment point_ differs. A
+one-off `{showsStripeBackgroundControl(styling) && …}` in the rail would have
+meant splitting the Rows grid into a hand-written swatch plus a filtered one,
+which is exactly the per-group duplication feature 86 Step 4 removed.
+
+⚠️ **The hazard this opened, and it is guarded.** `colorGrid(group)` renders its
+`<s-grid>` unconditionally and fills it by filter, so a group whose swatches
+were ALL gated would paint an **empty grid** — dead space in the rail, and a
+silent hole in `styleTabContract.test.ts`'s "no group collapses to a bare
+heading" count, which treats `colorGrid(…)` as one control that always renders
+and cannot see inside it. Pinned in `stylingControls.test.ts`, derived from the
+data: gating a second swatch is fine, gating the last one in a group fails and
+names the group. Rows is safe today because `Divider color` is unconditional.
+
+## The help text had to change too
+
+Before: `"Alternating rows — needs Row dividers set to Stripes."`
+After: `"The fill on alternating rows."`
+
+The caveat and the hide are two answers to one problem, and shipping both leaves
+the weaker one on screen: prose telling a merchant what to switch on describes a
+state they can no longer be in while reading it. A test pins this as a property
+**of gating** rather than a blanket ban on caveats — `Divider color`, which is
+not gated, keeps its coupling text and must.
+
+## Part 2 — `Header background` hides too (same day, merchant call)
+
+The open question this doc closed with was answered immediately: **hide it as
+well.** Same mechanism, one more `visibleWhen`, and the CSS was checked the same
+way before writing a line.
+
+`--appx-spec-header-bg` appears in **four** rules — but only two are live:
+
+| rule                                               | selector weight | reads the var?         |
+| -------------------------------------------------- | --------------- | ---------------------- |
+| `.appx-spec-table__section`                        | 1 class         | ✅ but **unreachable** |
+| `.appx-spec-table--collapsible .__section-summary` | 2 classes       | ✅ but **unreachable** |
+| `--section-banded .__section`                      | 2 classes       | ✅ live                |
+| `--collapsible--section-banded .__section-summary` | 3 classes       | ✅ live                |
+
+⚠️ **The two base rules are dead for this var, and that is what makes the hide
+safe rather than merely tidy.** `stylingToModifierClasses` emits a
+section-header class **unconditionally** — defaults included, by its own stated
+rule — and every member selector outspecifies the base one. `TEXT_ONLY` and
+`PLAIN` both hardcode `background: transparent`, so they win and the var is
+never consulted. So the predicate needs no second clause:
+
+```ts
+export function showsHeaderBackgroundControl(styling: StylingValues): boolean {
+  return styling.sectionHeaderStyle === "BANDED";
+}
+```
+
+**No collapsing clause either, and feature 87 is why.** Its composition hazard
+was that a member styling only the flat `th` hands the band back the moment
+collapsing is enabled; the fix was to mirror every member rule onto the
+`<summary>`. That mirroring is exactly what lets one predicate cover both
+shapes — asserted over `SECTION_HEADER_STYLES × {collapsible, flat}` so it stops
+reading as obvious if a future member is ever added to one shape only.
+
+🔴 **This reverses a comment in `stylingControls.ts` itself** ("a composition
+fact rather than a reason to hide the swatch: the merchant may legitimately set
+it before switching"). That objection is genuinely weaker here than it sounds,
+and the difference from the stripe case is worth keeping: **`BANDED` is
+`SECTION_HEADER_STYLES[0]`, so it is the DEFAULT.** The swatch is visible on an
+untouched template and only disappears once a merchant actively picks Underlined
+or Plain — "I wanted to set the colour first" needs an order of work nobody
+arrives in. Pinned in a test, because the argument rests on it.
+
+✅ **`Title color` stays ungated**, and the asymmetry inside that pair is a fact
+about the stylesheet, not a preference: `color:` on the base rule is never
+overridden by a member, so a section title is coloured under all three. It is
+also what keeps the Section headers grid from ever painting empty — the same
+role `Divider color` plays in Rows.
+
+🚫 **NOT extended to "the template has no section header rows."** That is row
+DATA, not styling state, and no rule in this file has ever read it. The rail
+would start hiding controls in response to the merchant's content, which is a
+different and much larger claim.
+
+## Costs — the feature-87 profile again
+
+|                              |                                                                                   |
+| ---------------------------- | --------------------------------------------------------------------------------- |
+| Migration                    | none                                                                              |
+| New field                    | none (both columns and both wire values untouched)                                |
+| CSS / Liquid / TOML / markup | none                                                                              |
+| Storefront diff              | **zero** — hiding is rail-only; a hidden value still serializes and still renders |
+| Hide-predicate count         | **7 → 9** (first change to this number since feature 85)                          |
+| JSX guard count              | **unchanged at 7** — both new rules ride `visibleWhen`                            |
+| Tests                        | 1120 → **1147**                                                                   |
+
+## Tests (+27) and what each is for
+
+- The 8th and 9th `VISIBILITY_PREDICATES` entries — both inherit the
+  preserve-on-hide law (never writes, hex survives the hidden state, and the
+  hidden value is asserted non-default so the check is not a tautology). The
+  header entry hides via **`PLAIN`**, the member that landed last, so it doubles
+  as the check that a newly-added style inherits "no band".
+- `SECTION_HEADER_STYLES`-derived: exactly one member shows the header swatch,
+  and it is `BANDED` — a fourth member added later defaults to hidden and has to
+  come and say otherwise.
+- The header predicate ignores collapsing, asserted across every member × both
+  shapes (feature 87's composition hazard, inverted into a guarantee).
+- `Title color` is in the group and is **not** gated — the empty-grid backstop.
+- 🚫 **The BAR, asserted rather than left in prose**: exactly two knobs carry
+  `visibleWhen`, and they are `headerBgColor` and `stripeBgColor` — a list, not
+  a count, so `borderColor` (a no-op under Row dividers = None too, but the
+  dresser of four surfaces) cannot quietly join.
+- The full AND matrix, 7 rows, including 🔴 `GRID` + `STRIPES` → **hidden**.
+- `ROW_DIVIDER_STYLES`-derived: exactly one member shows the swatch, and it is
+  `STRIPES`. A fourth member added later defaults to hidden, which is right.
+- **The two mechanisms agree about Grid** — derived from `rowDividerOptionsFor`
+  rather than restated, so the select's option filter and the swatch's hide
+  cannot drift into contradicting each other on screen.
+- Stripes → Lines → Stripes on a frozen input.
+- Every group keeps ≥1 unconditional swatch (the empty-grid hazard).
+- A gated swatch's help text carries no `needs …` clause; `borderColor`'s does.
+- Registry ↔ rail: each registered swatch predicate is actually wired to a knob
+  — catches a predicate exported, documented and registered but never attached,
+  which nothing else can see.
+- `styleTabContract`: the rail actually applies `knob.visibleWhen`, and the JSX
+  guard count is pinned at **7** with a comment saying why it is not 9.
+
+✅ **Mutation-tested, three ways:**
+
+- dropping `&& rowLayout !== "GRID"` → **2 failures**, and the diff names the
+  orphan case;
+- dropping the `visibleWhen` clause from `colorGrid` → **1 failure**, on the
+  guard written for exactly that (every other test still passes, which is the
+  point of adding it);
+- weakening the header predicate to `!== "PLAIN"` (i.e. letting Underlined keep
+  the swatch) → **1 failure**, on the `SECTION_HEADER_STYLES`-derived assertion
+  rather than on a hand-listed one.
+
+## Verification — ✅ 10 of 10, live in the embedded admin 2026-07-28
+
+Run on the DRAFT scaffold `cms3avu6f000gvpf40o9t3hqd` ("Untitled template",
+**0 assigned products**, 6 rows including one `Section title` header row).
+**Nothing was saved** — every change rode the SaveBar and ended in `Discard`.
+
+**Part 2 — Header background**
+
+1. ✅ Baseline **Banded**: both swatches present, `Background` reading its empty
+   state "The default grey band."
+2. ✅ **Underlined** → `Background` gone, `Title color` remains, reflowing into
+   the left cell at half width. No empty grid, no leftover gap.
+3. ✅ **Plain** → still gone. Both non-banded members behave identically, as the
+   two `transparent` rules predict.
+4. ✅ **Preserve-on-hide, observed**: set `#E6F4EA` at Banded → Plain → Banded,
+   and the hex came back with its swatch. Not a default, not an empty field.
+5. ✅ **The collapsing shape**, feature 87's composition hazard: with
+   `Enable collapsing` ON, Plain still hides `Background`. One predicate really
+   does cover both shapes.
+6. ✅ **The new help text is live and it proves the commit**: the field flipped
+   from the empty-state gloss to **"The band behind a section title."** — the
+   caveat-free copy — which only renders when `styling.headerBgColor !== null`.
+
+**Part 1 — Stripe background**
+
+7. ✅ **Lines** → the Rows group ends with `Divider color` ALONE. The pair is
+   gone and the group reads cleanly at four controls.
+8. ✅ **Stripes** → the pair returns; set `#F9B8B8` (the merchant's own colour
+   from the report screenshot) and the help text became **"The fill on
+   alternating rows."**
+9. ✅ **None** → `Stripe background` hidden while **`Divider color` stays** —
+   feature 86 decision 3 and feature 95 visible side by side in one screenshot.
+   Round trip None → Stripes returned `#F9B8B8`.
+10. 🔴 **THE ORPHAN, and it is the check that mattered.** Row layout → **Grid**
+    with `STRIPES` still stored: the select shows `Stripes` with
+    **"Stripes do not apply in Grid layout. Pick Lines or None."** and the
+    `Stripe background` swatch is **absent**. A naive `=== "STRIPES"` predicate
+    would have put a live pink colour picker directly beneath that sentence.
+    Switching back to Two-column restored the swatch **still holding
+    `#F9B8B8`** — so the Grid trip preserves the value too.
+
+✅ **Postgres untouched, measured not assumed.** After `Discard`, the row's
+`updatedAt` is still `2026-07-27T14:06:40Z` — the day before — and
+`sectionHeaderStyle` / `headerBgColor` / `rowDividerStyle` / `stripeBgColor` are
+all `NULL`. The rail also re-read as Banded / Lines with both swatches empty.
+
+⚠️ **NOT observed: the storefront paint.** This scaffold's data rows have empty
+values, so the preview renders one line and there is no visible band or stripe
+to watch change. Acceptable here in a way it would not be for features 87/94:
+feature 95 is **zero storefront diff by construction** — it hides controls and
+touches no CSS, no Liquid and no serialization — so there is no rendering claim
+to falsify. What needed observing was the RAIL, and it was.
+
+🔬 **Method note, and it corrects a standing one.** Clicking an option inside an
+open native `<select>` popup **does nothing and silently clicks the page
+underneath** — the first attempt left Header style on `Banded` and moved focus to
+the field below. The recipe that then worked ~10× without a miss: click the
+select → `Escape` → arrow keys. Wheel-scroll DID reach the rail this whole
+session, so the older "use Tab, not scroll" note is session-dependent as its own
+text says. Both recorded in the `embedded-admin-iframe-automation` memory.
+
+## Open questions
+
+- ✅ **Both questions this doc opened are closed.** `headerBgColor` was answered
+  the same day (part 2). The remaining swatch that _looks_ like a candidate is
+  `borderColor`, and it is on file as a permanent NO in three places (feature 86
+  decision 3, `ColorKnob.visibleWhen`, and a test that lists the two gated
+  fields by name).
