@@ -7,6 +7,7 @@ import {
   parseActiveSubscriptions,
   resolveBillingState,
   getBillingState,
+  BillingResponseError,
   type ActiveSubscription,
 } from "./billing.server";
 
@@ -85,24 +86,42 @@ describe("parseActiveSubscriptions", () => {
     expect(() => parseActiveSubscriptions("nonsense")).toThrow();
   });
 
-  it("drops entries missing an id or name", () => {
-    const subs = parseActiveSubscriptions({
-      data: {
-        currentAppInstallation: {
-          activeSubscriptions: [
-            { name: "Go" }, // no id
-            { id: "gid://shopify/AppSubscription/2" }, // no name
-            {
-              id: "gid://shopify/AppSubscription/3",
-              name: "Plus",
-              status: "ACTIVE",
-            },
-          ],
+  it("throws on an entry missing an id or name (fail closed, not dropped)", () => {
+    // Dropping a malformed entry could collapse an only-malformed response to [], which reads as
+    // a genuine "no subscription" and would eject a PAYING merchant. It must fail to
+    // determined:false instead (CodeRabbit PR #28, Major).
+    expect(() =>
+      parseActiveSubscriptions({
+        data: {
+          currentAppInstallation: {
+            activeSubscriptions: [{ name: "Go" }], // no id
+          },
         },
-      },
-    });
-    expect(subs.map((s) => s.name)).toEqual(["Plus"]);
-    expect(subs[0].test).toBe(false); // defaulted
+      }),
+    ).toThrow(BillingResponseError);
+    expect(() =>
+      parseActiveSubscriptions({
+        data: {
+          currentAppInstallation: {
+            activeSubscriptions: [{ id: "gid://shopify/AppSubscription/2" }], // no name
+          },
+        },
+      }),
+    ).toThrow(BillingResponseError);
+    // A malformed entry throws even when a valid one is also present — the whole response is
+    // untrustworthy, so we fail to determine rather than partially parse.
+    expect(() =>
+      parseActiveSubscriptions({
+        data: {
+          currentAppInstallation: {
+            activeSubscriptions: [
+              { id: "gid://shopify/AppSubscription/3", name: "Plus" },
+              { name: "Go" }, // no id
+            ],
+          },
+        },
+      }),
+    ).toThrow(BillingResponseError);
   });
 });
 
@@ -198,6 +217,23 @@ describe("getBillingState", () => {
   it("reports determined:false on a malformed HTTP 200 body (loader must not redirect)", async () => {
     // Structurally-invalid success body: must fail open, NOT redirect as if unsubscribed.
     const admin = mockAdmin({ data: {} });
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const state = await getBillingState(admin);
+    expect(state.determined).toBe(false);
+    expect(state.hasActiveSubscription).toBe(false);
+    spy.mockRestore();
+  });
+
+  it("reports determined:false on a valid envelope with an invalid subscription record", async () => {
+    // A 200 whose activeSubscriptions array holds only a malformed entry (no id/name) must NOT
+    // collapse to "unsubscribed" and redirect a paying merchant — it fails open (CodeRabbit #28).
+    const admin = mockAdmin({
+      data: {
+        currentAppInstallation: {
+          activeSubscriptions: [{ status: "ACTIVE", test: false }], // no id, no name
+        },
+      },
+    });
     const spy = vi.spyOn(console, "error").mockImplementation(() => {});
     const state = await getBillingState(admin);
     expect(state.determined).toBe(false);

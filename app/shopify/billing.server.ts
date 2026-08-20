@@ -79,11 +79,15 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 /**
  * Narrow a `currentAppInstallation.activeSubscriptions` response into a list of
- * ActiveSubscription. Two failure modes are kept distinct:
- *   - A structurally-invalid ENVELOPE (missing `currentAppInstallation`, or
- *     `activeSubscriptions` not an array) throws `BillingResponseError` — a malformed 200 is a
- *     failure to determine state, not a successful "no subscription", and must not redirect.
- *   - Malformed individual ENTRIES (missing id/name) are dropped, not defaulted.
+ * ActiveSubscription. Any structural malformation throws `BillingResponseError` — a malformed
+ * 200 is a FAILURE to determine state, not a successful "no subscription", and must route to
+ * `determined: false` (fail-open) rather than redirect:
+ *   - A malformed ENVELOPE (missing `currentAppInstallation`, or `activeSubscriptions` not an
+ *     array) throws.
+ *   - A malformed individual ENTRY (not an object, or missing a string id/name) throws too —
+ *     dropping it would let a response of only-malformed entries collapse to `[]`, which reads
+ *     as a genuine "no subscription" and could eject a PAYING merchant to the plan page. Failing
+ *     closed to `determined: false` upholds the "never eject a paying merchant" fail bias.
  * A valid, empty `activeSubscriptions` array returns `[]` (a genuine "no subscription"). Pure.
  */
 export function parseActiveSubscriptions(json: unknown): ActiveSubscription[] {
@@ -101,8 +105,15 @@ export function parseActiveSubscriptions(json: unknown): ActiveSubscription[] {
 
   const subs: ActiveSubscription[] = [];
   for (const node of raw) {
-    if (!isRecord(node)) continue;
-    if (typeof node.id !== "string" || typeof node.name !== "string") continue;
+    if (
+      !isRecord(node) ||
+      typeof node.id !== "string" ||
+      typeof node.name !== "string"
+    ) {
+      throw new BillingResponseError(
+        "malformed activeSubscriptions response: a subscription entry is missing a string id or name",
+      );
+    }
     subs.push({
       id: node.id,
       name: node.name,

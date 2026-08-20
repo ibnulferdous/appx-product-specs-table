@@ -206,6 +206,14 @@ saved presets, cuttable).
 > `context/features/` doc and in git. If a finding is load-bearing for future work it belongs
 > in Binding rules, Key Decisions or Open Questions, not in an entry here.
 
+- **Billing (blocker #2) — CodeRabbit PR #28 re-review pass** — 🛠️ 2026-08-20, gate green (test
+  **1500 / 61**). CodeRabbit's own web-search **confirmed the loader-gate approach is valid**
+  (`currentAppInstallation.activeSubscriptions`), retiring its earlier Critical #1 push toward the
+  Partner API. Fixed its Major #1: `parseActiveSubscriptions` now **throws `BillingResponseError`
+  on a malformed subscription entry** (missing id/name) instead of dropping it — a response of only
+  malformed entries no longer collapses to `[]` and ejects a paying merchant (fail-open). **Deferred**
+  its Major #2 (cap-check/write TOCTOU race → OQ-BILLING-A) and two Minor doc nits. Dashboard: App
+  Store registration paid + 4 plans drafted (see the blocker-2 blockquote in Current Goal).
 - **Billing (blocker #2) — slice 2 of 2: assigned-product cap enforcement + "Manage plan" link**
   — 🛠️ 2026-08-20, gate green (test **1499 / 61**, typecheck · lint · format · build). ⚠️ **NOT
   live-verified** (same two operator steps as slice 1). **Cap semantics decided 2026-08-20**
@@ -768,6 +776,14 @@ per-product overflow materialization + a bulk apply-to-all styling route.
 
 ## Open Questions
 
+- 🆕 **OQ-BILLING-A — serialize the assigned-product cap check with the assignment write (TOCTOU).**
+  (raised 2026-08-20, CodeRabbit PR #28 Major, **deferred**.) `evaluateAssignmentCap`
+  (`app/shopify/billingCap.server.ts`) reads the shop total and returns before
+  `app/routes/app.templates_.$id/route.tsx` persists, so two concurrent activating saves can both
+  pass the cap and both write, nudging the shop marginally over. Accepted for launch (soft cap,
+  narrow trigger, single prod instance — see data-model §11.2). Fix if it matters: a per-shop
+  transaction lock / optimistic version check spanning the cap decision and the write, plus a
+  concurrent-save test. Not a launch blocker.
 - 🆕 **OQ-109-E — does the app get a separate dev config, or stay one app?** (raised
   2026-08-08.) `automatically_update_urls_on_dev = true` means every `shopify app dev` run
   rewrites `application_url` — which will clobber the production URL the moment it is set.

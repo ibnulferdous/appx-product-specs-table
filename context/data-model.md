@@ -715,6 +715,15 @@ unlimited (`null` cap). Shopify does **not** enforce this — the app does.
   a merchant out of saving (mirrors §13's cosmetic-count fail-soft, and the loader gate's
   fail-open). The block fires only on a **determined** overage. Unlimited (Max, `null` cap) skips
   the projection entirely — no Admin calls.
+- **KNOWN LIMITATION — cap check is not serialized with the write (TOCTOU).** `evaluateAssignmentCap`
+  reads the current total and returns *before* the assignment persists, so two concurrent active
+  saves can both read the same total, both pass, and both write — nudging the shop marginally past
+  the cap (CodeRabbit PR #28, Major, **deferred 2026-08-20**). Accepted for launch because: the cap
+  is a soft business limit (a few products over is harmless, not a data-safety breach), the trigger
+  is narrow (one merchant firing two simultaneous activating saves), and prod runs as a **single**
+  long-running instance (see the hosting decision — no cross-instance race). Proper fix if it ever
+  matters: a per-shop transaction lock / optimistic version check spanning the cap decision and the
+  write. Tracked in progress-tracker follow-ups.
 
 ### 11.3 Manage-plan access (App Store req 1.2.3)
 
