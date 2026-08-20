@@ -71,11 +71,32 @@ The app uses color deliberately and keeps it organized: every color — admin da
 
 ---
 
-## Pricing Strategy — Early Bird (First 100 Installs)
+## Pricing Strategy — Shopify App Pricing (four public plans)
 
-- Free for the first 3 months after install
-- Verified review reward: 1–2 additional free months (reward given after submission — fully Shopify policy compliant)
-- Applies only to installs during the defined launch window
+Billing uses **Shopify App Pricing** — the Dashboard-defined, Shopify-hosted plan page — **not**
+the legacy code-defined Billing API (`billing: { lineItems }` in `shopifyApp()`). Four public
+plans, gated by **assigned-product count** (the number of distinct products the shop's ACTIVE
+templates resolve to):
+
+| Plan | Price     | Assigned-product cap | Free trial              |
+| ---- | --------- | -------------------- | ----------------------- |
+| Free | $0/mo     | 25                   | — (permanent free tier) |
+| Go   | $4.99/mo  | 250                  | 60 days                 |
+| Plus | $9.99/mo  | 1,000                | 60 days                 |
+| Max  | $14.99/mo | Unlimited            | 60 days                 |
+
+- Plans are defined in **Partner Dashboard → Distribution → Manage listing → Pricing content**
+  (≤1 free public plan and 4 < the 8-public-plan cap — both satisfied). The plan **Display
+  names** must be exactly `Free` / `Go` / `Plus` / `Max`; the app reads the active
+  subscription's name and maps it to a cap (`app/utils/billingPlans.ts`).
+- Shopify hosts the plan-selection page and automates recurring charges, proration, free
+  trials, price changes, and no-charge review testing. 🔴 **Shopify does NOT enforce the
+  per-plan caps — the app does:** the root loader redirects a shop with no active subscription
+  to the hosted plan page, and the assignment path blocks/​warns once the cap is reached.
+- Trial days are tracked over a 180-day window; a reinstall does **not** reset the trial.
+
+⟨Supersedes the retired **Early Bird / free-for-3-months / review-reward** concept — a
+pre-build idea, dropped 2026-08-16. See the `shopify-app-pricing-vs-billing-api` decision.⟩
 
 ---
 
@@ -98,7 +119,7 @@ The app uses color deliberately and keeps it organized: every color — admin da
 2. The storefront table renders correctly on the top 10 Shopify themes, on desktop and mobile, and passes basic accessibility checks.
 3. All three data source types (manual TEXT, native Shopify fields, metafields) correctly populate row values on the storefront.
 4. The app sustains normal performance with up to 200 rows per table and up to 100 products assigned to templates.
-5. The first 100 merchants receive correct early bird pricing and review reward without any manual intervention.
+5. Billing gates correctly with no manual intervention: a shop with no active subscription is redirected to the hosted Shopify App Pricing page, and product assignments beyond the active plan's cap are prevented.
 
 ---
 
@@ -116,7 +137,7 @@ The app uses color deliberately and keeps it organized: every color — admin da
 - Styling customization: layout knobs (row layout, section header style, collapsible sections, row dividers, density, mobile behavior), colors, font size/style, column width; built-in style-preset gallery on template creation; merchant-saved presets (phase-2 slice, cuttable without rework)
 - Simple onboarding flow
 - Archive and hard-delete template actions
-- Early bird pricing and review reward flow
+- Billing via Shopify App Pricing: four-tier plan gating in the app root loader + assigned-product cap enforcement
 
 ### Out of Scope (Post-MVP)
 

@@ -39,18 +39,53 @@ retired, broken Ctrl+Z fixed, `ValuePart[]` unchanged; live-verified on `appx-de
    compliance webhooks are the one class Shopify delivers with **no dev session running**
    (`shop/redact` arrives 48 h after uninstall). See `app-store-review-checklist.md` §3 and
    `context/features/106-privacy-webhook-routes-and-subscriptions.md`.
-2. 🔴 **Billing** — the other hard blocker for a paid listing (`prd.md`,
-   `app-store-review-checklist.md`).
+2. 🔴 **Billing (Shopify App Pricing) — slice 1 (gate) built 2026-08-20; slice 2 + Dashboard pending.**
+   The root-loader gate is coded + gate-green (Recently Shipped). Remaining: (a) operator creates the
+   4 plans in the Partner Dashboard + sets `SHOPIFY_APP_HANDLE`; (b) **slice 2** — assigned-product
+   cap enforcement at assignment time + an in-app "Manage plan" link (App Store req 1.2.3). See
+   Current Goal item 2 and `prd.md` §Pricing.
 
 > 🟢 **Blocker 1 progress.** `hiappx.com` + `support@hiappx.com` live (Zoho free), landing
-> page + privacy policy published, demo store ready. **Phase 1 (dev/prod config split) DONE
-> 2026-08-18:** new dev app `appx-product-specs-table-dev` (`b9369cb1…`) in
-> `shopify.app.dev.toml`, existing `11731a3d…` is production with
-> `automatically_update_urls_on_dev = false`; both validate. **Next on the critical path:
-> Phase 2 — production host + prod Neon DB**, then the Phase 3 deploy that re-anchors the
-> compliance URIs off `example.com`. Full ordered path:
-> [`launch-support-checklist.md`](launch-support-checklist.md). ⚠️ That checklist does
-> **not** cover billing — blocker 2 stays independent.
+> page + privacy policy published, demo store ready. Done 2026-08-18: **Phase 1 dev/prod
+> config split** (new dev app `appx-product-specs-table-dev` `b9369cb1…`; prod `11731a3d…`
+> has `automatically_update_urls_on_dev = false`); **Phase 2.2 prod Neon DB** (project
+> `tiny-snow-77500604`, `us-east-2`/Ohio, all 11 migrations applied); **Dockerfile
+> multi-stage fix** (prevents a first-deploy `vite: not found`); **dependency security pass**
+> (react-router 7.17→7.18.2, deepmerge-ts override →8.0.1; `npm audit` = 0). Repo made
+> **public** for CodeRabbit; secrets-scanned clean. **All merged to `main` via PR #11** after
+> CodeRabbit review. **Phase 2.4 DONE 2026-08-19: Render Web Service is LIVE** at
+> `https://appx-product-specs-table.onrender.com` (Docker · `main` · Ohio · Starter · 7 env
+> vars, no `PORT`; boot-time `prisma migrate deploy` reached prod Neon and applied the pending
+> `20260819022834_add_all_products_unique`; server bound to injected port 10000). **Phase 2.5
+> DONE: custom domain `specs-app.hiappx.com`** (Render custom domain, Cloudflare CNAME DNS-only,
+> TLS cert issued; Render env `SHOPIFY_APP_URL` updated to match). **Phase 3 DONE 2026-08-19 —
+> BLOCKER 1 CLEARED:** prod `shopify.app.toml` `application_url` + `redirect_urls` rewritten to
+> `https://specs-app.hiappx.com`, `shopify app deploy` on the prod config released version
+> `appx-product-specs-table-12` (application_url + auth + webhooks all updated) — the 3 compliance
+> webhook URIs no longer point at `example.com`. Config switched back to dev after. **VERIFIED
+> 2026-08-19:** clean install of the prod app on `specs-demo-5jyf2f2v` (dev server OFF) completed
+> OAuth via `specs-app.hiappx.com` and loaded the embedded app home + Templates empty state — prod
+> server + prod Neon + OAuth confirmed working end-to-end. **FULL STOREFRONT PATH VERIFIED ON PROD
+> 2026-08-19:** rebuilt template `XO G28` (Active, 13 rows, 30 assigned products) through the prod
+> app; it renders live on the demo storefront product page ("Multi-column template – Blue") — the
+> complete chain app write → metaobject sync → routing map → theme extension → Liquid render all
+> confirmed on production. Demo-store rebuild underway (more style demos optional content work).
+> 🟢 **App renamed 2026-08-19** — prod `11731a3d…` → **"AppX Product Specs Table"** (`shopify.app.toml`
+> `name`, version `-13`); dev `b9369cb1…` → **"AppX Product Specs Table -dev"** (version `dev-2`; its
+> first full `deploy` also registered metaobjects/shop/extension on the dev app to match prod). CLI
+> stripped the deprecated `include_config_on_deploy` from the dev TOML (neither TOML carries it now).
+> The App Store **listing name** is a separate field set later at "Choose distribution".
+> **Blocker 2 — Billing / Shopify App Pricing: IN PROGRESS (slice 1 of 2 built 2026-08-20).**
+> The App Pricing **gate** is coded + gate-green (root loader redirects a no-subscription shop to
+> Shopify's hosted plan page; plan model + `activeSubscriptions` read done — see Recently Shipped).
+> 🔴 **Two operator actions unblock live-verify:** (a) create the 4 plans in **Partner Dashboard →
+> Distribution → Manage listing → Pricing content** with Display names exactly `Free`/`Go`/`Plus`/`Max`
+> (Free $0/25, Go $4.99/250, Plus $9.99/1000, Max $14.99/∞; 60-day trial on the three paid);
+> (b) set **`SHOPIFY_APP_HANDLE`** in the Render env to the app handle (the slug in
+> `admin.shopify.com/store/<store>/apps/<handle>`). Then **slice 2**: assigned-product cap enforcement
+> + in-app "Manage plan" link. Optional: signed compliance-webhook 200 check.
+> Full ordered path: [`launch-support-checklist.md`](launch-support-checklist.md). ⚠️ That
+> checklist does **not** cover billing — blocker 2 stays independent.
 
 Everything upstream is done and live-verified on the dev store:
 
@@ -163,6 +198,20 @@ saved presets, cuttable).
 > `context/features/` doc and in git. If a finding is load-bearing for future work it belongs
 > in Binding rules, Key Decisions or Open Questions, not in an entry here.
 
+- **Billing (blocker #2) — App Pricing gate, slice 1 of 2** — 🛠️ 2026-08-20, gate green
+  (test **1448 / 59**, typecheck · lint · format · build). ⚠️ **NOT live-verified** — needs the
+  Dashboard plans + `SHOPIFY_APP_HANDLE` (see Current Goal item 2). Built: pure plan model
+  `app/utils/billingPlans.ts` (4 tiers Free/Go/Plus/Max → assigned-product caps 25/250/1000/∞;
+  🔴 unknown/absent plan falls back to the **Free** cap, never unlimited); `app/shopify/billing.server.ts`
+  reads `currentAppInstallation.activeSubscriptions` (chosen over `billing.check` because the $0 Free
+  plan counts as active AND it yields the plan name for cap enforcement — one query, both jobs;
+  validated vs API 2026-01); root loader `app/routes/app.tsx` redirects to the hosted plan page
+  (`…/charges/<app_handle>/pricing_plans`, `target:"_top"`) when a shop has no active subscription.
+  🔴 **FAIL BIAS:** redirect ONLY on a *determined* absence — a transient Admin failure
+  (`determined:false`) never ejects a paying merchant; on failure the plan resolves null → Free cap.
+  PRD §Pricing reconciled to the 4-tier decision (retired the Early-Bird concept). **Slice 2
+  (next): assigned-product cap enforcement at assignment time + an in-app "Manage plan" link**
+  (App Store req 1.2.3 — upgrade/downgrade without support).
 - **CodeRabbit review pass (7 slices) applied → `dev` merged to `main`** — ✅ 2026-08-19.
   PR #11 (`dev → main`) merged as a merge commit (`main` @ `41c734a`) after the CodeRabbit
   findings from review vehicles #14–#20 were triaged (real fixes applied, lint-only noise
@@ -611,8 +660,11 @@ by handle. Multi-value applies to PRODUCT + COLLECTION only. No migrations neede
 
 1. 🔴 **Production `application_url` + `redirect_urls`, then re-deploy** — the App Store
    blocker. See Current Goal item 1 and `app-store-review-checklist.md` §3.
-2. 🔴 **Billing** — the other hard blocker for a paid listing (`prd.md`,
-   `app-store-review-checklist.md`).
+2. 🔴 **Billing (Shopify App Pricing) — slice 1 (gate) built 2026-08-20; slice 2 + Dashboard pending.**
+   The root-loader gate is coded + gate-green (Recently Shipped). Remaining: (a) operator creates the
+   4 plans in the Partner Dashboard + sets `SHOPIFY_APP_HANDLE`; (b) **slice 2** — assigned-product
+   cap enforcement at assignment time + an in-app "Manage plan" link (App Store req 1.2.3). See
+   Current Goal item 2 and `prd.md` §Pricing.
 3. **Step 107 Unit B — the onboarding dashboard** (`admin-screen-plan.md` §Screen 1). Where
    `/app` gets its real content: three states, the four-step checklist, and — the one that
    matters for the App Store theme-extension requirement — **the theme-editor deep link**.
