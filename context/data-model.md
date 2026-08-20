@@ -682,6 +682,13 @@ The active plan is **not** persisted; it is read live from Shopify each loader r
 tier by Display name in `app/utils/billingPlans.ts`). There is no entitlement row to drift out
 of sync with Shopify's billing state.
 
+> **Plans are live in the Dashboard as of 2026-08-20** (drafted, App Pricing not yet enabled):
+> `Free` $0 · `Go` $4.99/mo · `Plus` $9.99/mo (or $99.99/yr) · `Max` $14.99/mo (or $145.99/yr),
+> all paid tiers 60-day trial. **The billing interval (monthly vs annual) is invisible to this
+> code** — the subscription `name` is identical for both, and the cap is keyed off the name — so
+> the annual option required no code change. Handles (`free`/`go`/`plus`/`max`) match the tier ids
+> and back the Partner-API fallback if `activeSubscriptions[].name` ever proves unreliable.
+
 ### 11.2 The cap, and what counts (decided 2026-08-20)
 
 Each tier caps the shop's **total assigned products**: Free 25 · Go 250 · Plus 1,000 · Max

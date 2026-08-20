@@ -39,11 +39,15 @@ retired, broken Ctrl+Z fixed, `ValuePart[]` unchanged; live-verified on `appx-de
    compliance webhooks are the one class Shopify delivers with **no dev session running**
    (`shop/redact` arrives 48 h after uninstall). See `app-store-review-checklist.md` §3 and
    `context/features/106-privacy-webhook-routes-and-subscriptions.md`.
-2. 🔴 **Billing (Shopify App Pricing) — slice 1 (gate) built 2026-08-20; slice 2 + Dashboard pending.**
-   The root-loader gate is coded + gate-green (Recently Shipped). Remaining: (a) operator creates the
-   4 plans in the Partner Dashboard + sets `SHOPIFY_APP_HANDLE`; (b) **slice 2** — assigned-product
-   cap enforcement at assignment time + an in-app "Manage plan" link (App Store req 1.2.3). See
-   Current Goal item 2 and `prd.md` §Pricing.
+2. 🟡 **Billing (Shopify App Pricing) — both slices built 2026-08-20; 4 plans DRAFTED in Dashboard
+   2026-08-20; live-verify pending.** Slices 1 (gate) + 2 (cap enforcement + Manage-plan link) are
+   coded + gate-green (Recently Shipped). **App Store registration paid + done 2026-08-20**; the 4
+   public plans (`Free`/`Go`/`Plus`/`Max`, handles matching) are drafted in the App Pricing setup
+   flow — **App Pricing not yet enabled** (readiness checklist's only relevant item for us:
+   "tested end-to-end on a dev shop"). Annual added on Plus ($99.99/yr) + Max ($145.99/yr) — invisible
+   to code (name-keyed). Remaining before Enable + release: (a) set `SHOPIFY_APP_HANDLE` on Render;
+   (b) dev-store live-verify that `activeSubscriptions[].name` returns the Display name (settles
+   deferred CodeRabbit #1). See `prd.md` §Pricing and data-model §11.
 
 > 🟢 **Blocker 1 progress.** `hiappx.com` + `support@hiappx.com` live (Zoho free), landing
 > page + privacy policy published, demo store ready. Done 2026-08-18: **Phase 1 dev/prod
@@ -75,18 +79,21 @@ retired, broken Ctrl+Z fixed, `ValuePart[]` unchanged; live-verified on `appx-de
 > first full `deploy` also registered metaobjects/shop/extension on the dev app to match prod). CLI
 > stripped the deprecated `include_config_on_deploy` from the dev TOML (neither TOML carries it now).
 > The App Store **listing name** is a separate field set later at "Choose distribution".
-> **Blocker 2 — Billing / Shopify App Pricing: IN PROGRESS (slice 1 of 2 built 2026-08-20).**
-> The App Pricing **gate** is coded + gate-green (root loader redirects a no-subscription shop to
-> Shopify's hosted plan page; plan model + `activeSubscriptions` read done — see Recently Shipped).
-> 🔴 **Two operator actions unblock live-verify:** (a) create the 4 plans in **Partner Dashboard →
-> Distribution → Manage listing → Pricing content** with Display names exactly `Free`/`Go`/`Plus`/`Max`
-> (Free $0/25, Go $4.99/250, Plus $9.99/1000, Max $14.99/∞; 60-day trial on the three paid);
-> (b) set **`SHOPIFY_APP_HANDLE`** in the Render env to the app handle (the slug in
-> `admin.shopify.com/store/<store>/apps/<handle>`). Then **slice 2**: assigned-product cap enforcement
->
-> - in-app "Manage plan" link. Optional: signed compliance-webhook 200 check.
->   Full ordered path: [`launch-support-checklist.md`](launch-support-checklist.md). ⚠️ That
->   checklist does **not** cover billing — blocker 2 stays independent.
+> **Blocker 2 — Billing / Shopify App Pricing: IN PROGRESS (both slices built + 4 plans drafted 2026-08-20).**
+> Slices 1 (gate) + 2 (cap enforcement + Manage-plan link) are coded + gate-green (see Recently
+> Shipped). **App Store registration paid + completed 2026-08-20** (one-time $19; registered as
+> Individual). **4 public plans DRAFTED 2026-08-20** via Distribution → Pricing → Shopify App Pricing
+> setup, Display names exactly `Free`/`Go`/`Plus`/`Max`, handles `free`/`go`/`plus`/`max`: Free $0/25,
+> Go $4.99/250 (monthly only), Plus $9.99/1000 (+$99.99/yr), Max $14.99/∞ (+$145.99/yr); 60-day trial
+> on the three paid; "Free for partners and developers" enabled on the paid tiers for dev-store testing.
+> 🔴 **App Pricing NOT yet enabled** — the "Enable Shopify App Pricing" switch is deliberately unflipped.
+> **Two things gate the Enable + live-verify:** (a) set **`SHOPIFY_APP_HANDLE`** in the Render env to the
+> app handle (the slug in `admin.shopify.com/store/<store>/apps/<handle>` = `appx-product-specs-table`);
+> (b) dev-store end-to-end run of a real subscription, confirming `activeSubscriptions[].name` returns the
+> Display name (settles deferred CodeRabbit #1; the Partner-API-by-handle fallback is the plan B).
+> Optional: signed compliance-webhook 200 check. Full ordered path:
+> [`launch-support-checklist.md`](launch-support-checklist.md). ⚠️ That checklist does **not** cover
+> billing — blocker 2 stays independent.
 
 Everything upstream is done and live-verified on the dev store:
 
@@ -687,11 +694,15 @@ by handle. Multi-value applies to PRODUCT + COLLECTION only. No migrations neede
 
 1. 🔴 **Production `application_url` + `redirect_urls`, then re-deploy** — the App Store
    blocker. See Current Goal item 1 and `app-store-review-checklist.md` §3.
-2. 🔴 **Billing (Shopify App Pricing) — slice 1 (gate) built 2026-08-20; slice 2 + Dashboard pending.**
-   The root-loader gate is coded + gate-green (Recently Shipped). Remaining: (a) operator creates the
-   4 plans in the Partner Dashboard + sets `SHOPIFY_APP_HANDLE`; (b) **slice 2** — assigned-product
-   cap enforcement at assignment time + an in-app "Manage plan" link (App Store req 1.2.3). See
-   Current Goal item 2 and `prd.md` §Pricing.
+2. 🟡 **Billing (Shopify App Pricing) — both slices built 2026-08-20; 4 plans DRAFTED in Dashboard
+   2026-08-20; live-verify pending.** Slices 1 (gate) + 2 (cap enforcement + Manage-plan link) are
+   coded + gate-green (Recently Shipped). **App Store registration paid + done 2026-08-20**; the 4
+   public plans (`Free`/`Go`/`Plus`/`Max`, handles matching) are drafted in the App Pricing setup
+   flow — **App Pricing not yet enabled** (readiness checklist's only relevant item for us:
+   "tested end-to-end on a dev shop"). Annual added on Plus ($99.99/yr) + Max ($145.99/yr) — invisible
+   to code (name-keyed). Remaining before Enable + release: (a) set `SHOPIFY_APP_HANDLE` on Render;
+   (b) dev-store live-verify that `activeSubscriptions[].name` returns the Display name (settles
+   deferred CodeRabbit #1). See `prd.md` §Pricing and data-model §11.
 3. **Step 107 Unit B — the onboarding dashboard** (`admin-screen-plan.md` §Screen 1). Where
    `/app` gets its real content: three states, the four-step checklist, and — the one that
    matters for the App Store theme-extension requirement — **the theme-editor deep link**.
