@@ -28,6 +28,10 @@ import {
   evaluateActivationConflicts,
   shouldRebuildRoutingForScopeSave,
 } from "../../shopify/assignmentActivation.server";
+import {
+  capBlockedMessage,
+  evaluateAssignmentCap,
+} from "../../shopify/billingCap.server";
 import { rebuildShopRouting } from "../../shopify/routing.server";
 import { resolveScopeResourceDetails } from "../../shopify/scopeResourceLabel.server";
 import {
@@ -272,6 +276,28 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
           error: activationBlockedMessage(gate.conflicts),
         };
       }
+
+      // Assigned-product cap gate (billing slice 2): a new ACTIVE template with a scope adds its
+      // products to the shop's ACTIVE total. Block atomically on a determined overage (fail-open on
+      // an undetermined plan / unknown count — see billingCap.server). Nothing is written yet.
+      const capGate = await evaluateAssignmentCap({
+        admin,
+        shopId: shop.id,
+        templateId: "new",
+        pendingSelectors: pending.selectors,
+        pendingExcludeCount: reconciledExcludes.length,
+        wasActive: false,
+      });
+      if (capGate.determined && capGate.blocked) {
+        return {
+          ok: false as const,
+          error: capBlockedMessage(
+            capGate.plan ?? null,
+            capGate.cap,
+            capGate.projectedTotal,
+          ),
+        };
+      }
     }
 
     const result = await createTemplateForShop(shop.id, {
@@ -422,6 +448,31 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
         blocked: true as const,
         conflicts: gate.conflicts,
         error: activationBlockedMessage(gate.conflicts),
+      };
+    }
+  }
+
+  // Assigned-product cap gate (billing slice 2): same trigger as the conflict gate — only when the
+  // post-save template will be ACTIVE and its membership changed. Blocks the save atomically when it
+  // would push the shop's ACTIVE assigned-product total past the active plan's cap. Fail-open: only a
+  // DETERMINED overage blocks — a billing/Admin outage never wedges a save (see billingCap.server).
+  if (willBeActive && (!wasActive || scopeChanged || excludesChanged)) {
+    const capGate = await evaluateAssignmentCap({
+      admin,
+      shopId: shop.id,
+      templateId,
+      pendingSelectors,
+      pendingExcludeCount: pendingExcludeGids.length,
+      wasActive,
+    });
+    if (capGate.determined && capGate.blocked) {
+      return {
+        ok: false as const,
+        error: capBlockedMessage(
+          capGate.plan ?? null,
+          capGate.cap,
+          capGate.projectedTotal,
+        ),
       };
     }
   }

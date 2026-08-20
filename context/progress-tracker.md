@@ -83,9 +83,10 @@ retired, broken Ctrl+Z fixed, `ValuePart[]` unchanged; live-verified on `appx-de
 > (Free $0/25, Go $4.99/250, Plus $9.99/1000, Max $14.99/∞; 60-day trial on the three paid);
 > (b) set **`SHOPIFY_APP_HANDLE`** in the Render env to the app handle (the slug in
 > `admin.shopify.com/store/<store>/apps/<handle>`). Then **slice 2**: assigned-product cap enforcement
-> + in-app "Manage plan" link. Optional: signed compliance-webhook 200 check.
-> Full ordered path: [`launch-support-checklist.md`](launch-support-checklist.md). ⚠️ That
-> checklist does **not** cover billing — blocker 2 stays independent.
+>
+> - in-app "Manage plan" link. Optional: signed compliance-webhook 200 check.
+>   Full ordered path: [`launch-support-checklist.md`](launch-support-checklist.md). ⚠️ That
+>   checklist does **not** cover billing — blocker 2 stays independent.
 
 Everything upstream is done and live-verified on the dev store:
 
@@ -166,8 +167,8 @@ saved presets, cuttable).
   things follow and neither is obvious from the code: **(1)** reinstating the Liquid read
   without also reinstating the TOML definition is **silently dead** — an undefined metafield
   resolves to nil, so the branch never fires and reads as a routing bug. **(2)** The old
-  answer to "what if one template's `byProduct` set nears the 128KB json cap" was *materialize
-  those products as per-product metafields via `bulkOperationRunMutation`*. That answer died
+  answer to "what if one template's `byProduct` set nears the 128KB json cap" was _materialize
+  those products as per-product metafields via `bulkOperationRunMutation`_. That answer died
   with the definition. 🟢 **Option 1 (2026-08-05) bought ~2–4×:** the delivery wire is now
   compacted (bare-id keys, interned handle indices, `excluded` as an object), pushing the
   ceiling from **3,446** excludes / 1,745 per-product picks to **~7,276 / ~7,274** (§14). This
@@ -198,6 +199,24 @@ saved presets, cuttable).
 > `context/features/` doc and in git. If a finding is load-bearing for future work it belongs
 > in Binding rules, Key Decisions or Open Questions, not in an entry here.
 
+- **Billing (blocker #2) — slice 2 of 2: assigned-product cap enforcement + "Manage plan" link**
+  — 🛠️ 2026-08-20, gate green (test **1499 / 61**, typecheck · lint · format · build). ⚠️ **NOT
+  live-verified** (same two operator steps as slice 1). **Cap semantics decided 2026-08-20**
+  (data-model §11 rewritten — §11 was stale early-bird content): the cap counts the **SUM of
+  per-template assigned-product counts over ACTIVE templates** (reuses `resolveAssignedProductCounts`,
+  feature 48), and a save is **HARD-BLOCKED** when it would push that total past the active plan's
+  cap. New `app/shopify/billingCap.server.ts`: pure `evaluateCapGate` (blocks only on a DETERMINED
+  overage the change INCREASES into — a same-size re-save or a reduction while over-cap is never
+  blocked, so a downgraded merchant keeps + can prune existing assignments) + live
+  `evaluateAssignmentCap` orchestrator. 🔴 **FAIL BIAS: block only on a determined overage** — an
+  undetermined plan (billing outage) or any unknown Admin count → `determined:false` → NO block;
+  Max (null cap) short-circuits with zero Admin work. Wired into BOTH assignment flows in
+  `app/routes/app.templates_.$id/route.tsx` (create + edit) alongside the activation-conflict gate,
+  same trigger (`willBeActive && membership changed`). The **"Manage plan" link** (App Store req
+  1.2.3) lives on Home (`app/routes/app._index.tsx`) via `app/components/ManagePlanLink.tsx` — a
+  top-frame nav to the hosted plan page (R5b stays O(1); URL is a pure `session.shop` + env
+  construction). 23 new tests. **Both billing slices now built; only live-verify + the 2 operator
+  steps remain to close blocker #2.**
 - **Billing (blocker #2) — App Pricing gate, slice 1 of 2** — 🛠️ 2026-08-20, gate green
   (test **1448 / 59**, typecheck · lint · format · build). ⚠️ **NOT live-verified** — needs the
   Dashboard plans + `SHOPIFY_APP_HANDLE` (see Current Goal item 2). Built: pure plan model
@@ -207,7 +226,7 @@ saved presets, cuttable).
   plan counts as active AND it yields the plan name for cap enforcement — one query, both jobs;
   validated vs API 2026-01); root loader `app/routes/app.tsx` redirects to the hosted plan page
   (`…/charges/<app_handle>/pricing_plans`, `target:"_top"`) when a shop has no active subscription.
-  🔴 **FAIL BIAS:** redirect ONLY on a *determined* absence — a transient Admin failure
+  🔴 **FAIL BIAS:** redirect ONLY on a _determined_ absence — a transient Admin failure
   (`determined:false`) never ejects a paying merchant; on failure the plan resolves null → Free cap.
   PRD §Pricing reconciled to the 4-tier decision (retired the Early-Bird concept). **Slice 2
   (next): assigned-product cap enforcement at assignment time + an in-app "Manage plan" link**
@@ -346,7 +365,7 @@ saved presets, cuttable).
   [`104-…`](features/104-metafield-byte-budgets.md) · `data-model.md` §14.
 - **Scope/exclude chips turned into raw GIDs past 250 products** — ✅ 2026-08-01, test
   **1284**. Chunked at `NODES_MAX_IDS = 250`, per-chunk fail-soft. ⚠️ Not live-verified (no
-  >250-product dev-store data). Record → `data-model.md` §13 F4.
+  > 250-product dev-store data). Record → `data-model.md` §13 F4.
 - **Step 103 — read-pattern catalog** — ✅ 2026-08-01, `data-model.md` §13. No code; 20 reads
   catalogued, six findings routed out.
   [`103-…`](features/103-read-pattern-catalog.md)
@@ -368,17 +387,17 @@ saved presets, cuttable).
   (1) the loader builds `adminAppBase = https://admin.shopify.com/store/<store>/apps/<CLIENT_ID>`
   from `session.shop` (stripped of `.myshopify.com`) + `SHOPIFY_API_KEY`; the name link's
   **href** is now `${adminAppBase}/app/templates/${id}`, so the context-menu "Open in new tab"
-  (which uses the raw href) lands in the admin, which re-embeds the app. Client id (not the
-  derived handle) keeps it environment-independent — verified live: admin resolves
-  `apps/<client_id>` → the handle URL and loads the embedded editor.
-  ⚠️ (2) **A cross-origin admin href makes App Bridge open EVERY click in a new tab** — the
-  first cut shipped that regression. So the link now carries an `onClick`: App Bridge
-  preventDefaults the cross-origin link in a capture-phase listener (killing the unwanted new
-  tab) but doesn't stopPropagation, so our bubble handler still runs — a plain primary click
-  `navigate()`s in place (same-tab SPA), a ⌘/Ctrl/Shift/middle click `window.open`s the
-  absolute href in a new tab. Do NOT bail the handler on `event.defaultPrevented` (it's
-  already true from App Bridge) — that skips the in-place nav and the click does nothing.
-  Added `useNavigate`; no schema/route/test change.
+(which uses the raw href) lands in the admin, which re-embeds the app. Client id (not the
+derived handle) keeps it environment-independent — verified live: admin resolves
+`apps/<client_id>`→ the handle URL and loads the embedded editor.
+⚠️ (2) **A cross-origin admin href makes App Bridge open EVERY click in a new tab** — the
+first cut shipped that regression. So the link now carries an`onClick`: App Bridge
+preventDefaults the cross-origin link in a capture-phase listener (killing the unwanted new
+tab) but doesn't stopPropagation, so our bubble handler still runs — a plain primary click
+`navigate()`s in place (same-tab SPA), a ⌘/Ctrl/Shift/middle click `window.open`s the
+absolute href in a new tab. Do NOT bail the handler on `event.defaultPrevented`(it's
+already true from App Bridge) — that skips the in-place nav and the click does nothing.
+Added`useNavigate`; no schema/route/test change.
 
 ### Editor Save — `saveTemplateForShop` round-trip cut (2026-08-03)
 
@@ -389,19 +408,19 @@ saved presets, cuttable).
   multi-second Save is **round-trips × the dev link's ~0.5–1.6s/RT cost**, NOT DB work —
   and it's near-zero in prod (co-located host). The editor resends styling on **every**
   save (`useRowEngine.ts` sends `serializeStylingOverrides`), so the nested `styling.upsert`
-  + `include` — which forces an interactive transaction — ran on every save even when
-  styling was unchanged. Fix, all in `app/models/template.server.ts`: (1) the ownership
-  `findFirst` now `select`s **`{ rows, styling }`** (styling fetched in the read we already
-  do); (2) new `stylingColumnsMatch` compares the payload's would-be columns to the stored
-  row; (3) when styling is a no-op (absent, or byte-for-byte equal), the write is a plain
-  single-statement `update` with **no nested write and no `include`**, and the already-read
-  styling is reattached to the returned shape the metaobject sync consumes; (4) the nested
-  upsert + `include` runs **only** when styling actually changed (first save / real edit).
-  Shop isolation unchanged — `{ id, shopId }` where-unique on both read and write, both
-  paths. No schema change, no migration, no `route.tsx` change (return shape preserved).
-  Tests: `findFirst`-args updated for the `select`, `styling: null` added to the save-block
-  mocks, +2 tests pinning the fast path (no styling/include) and the changed path (upsert +
-  include). Measurement trail recorded in agent memory (`save-action-latency-breakdown`).
+  - `include` — which forces an interactive transaction — ran on every save even when
+    styling was unchanged. Fix, all in `app/models/template.server.ts`: (1) the ownership
+    `findFirst` now `select`s **`{ rows, styling }`** (styling fetched in the read we already
+    do); (2) new `stylingColumnsMatch` compares the payload's would-be columns to the stored
+    row; (3) when styling is a no-op (absent, or byte-for-byte equal), the write is a plain
+    single-statement `update` with **no nested write and no `include`**, and the already-read
+    styling is reattached to the returned shape the metaobject sync consumes; (4) the nested
+    upsert + `include` runs **only** when styling actually changed (first save / real edit).
+    Shop isolation unchanged — `{ id, shopId }` where-unique on both read and write, both
+    paths. No schema change, no migration, no `route.tsx` change (return shape preserved).
+    Tests: `findFirst`-args updated for the `select`, `styling: null` added to the save-block
+    mocks, +2 tests pinning the fast path (no styling/include) and the changed path (upsert +
+    include). Measurement trail recorded in agent memory (`save-action-latency-breakdown`).
 
 ### Templates-list loader — read-path perf (2026-08-03)
 
@@ -495,9 +514,8 @@ saved presets, cuttable).
   `Underlined`). The cheapest Style-tab unit: no migration, no field, no predicate, no
   Liquid, no `StyleTab.tsx` edit. [`87-…`](features/87-style-plain-section-header.md)
 - **Settings-tab copy pass** — ✅ 2026-07-30. `"A specific product"` → `"Selected
-  products"`; the "say it twice" pattern swept out of four more surfaces. No feature doc.
-- **Feature 86 — Style tab reorganization** (six steps) — ✅ COMPLETE 2026-07-26, tests →
-  1012. Six groups → **eight on one axis** (the object being styled), Colors and Typography
+products"`; the "say it twice" pattern swept out of four more surfaces. No feature doc.
+- **Feature 86 — Style tab reorganization** (six steps) — ✅ COMPLETE 2026-07-26, tests → 1012. Six groups → **eight on one axis** (the object being styled), Colors and Typography
   dissolved, every group ending with its own colors. Zero storefront diff by construction.
   Landed before B2 by merchant decision. [`86-…`](features/86-style-tab-reorganization.md)
 - **Feature 85 — multi-column row flow** — 🛠️ BUILT & live-verified 2026-07-26, tests → 981,
@@ -589,13 +607,13 @@ by handle. Multi-value applies to PRODUCT + COLLECTION only. No migrations neede
 ### Editor build — 13-step order + Step 9.5 (features 02–15)
 
 - Built in order (docs `02-…`–`15-…`): rows reducer + 200-row cap (1) → segmented value cell
-  + toolbar (2) → harden 1–2 (3) → contenteditable value surface + linear caret (4) →
-  Insert-field modal shell + caret save/restore (5) → native Shopify fields list (6) → modal
-  search/filter (7) → product metafield definitions, shop-isolated (8) → selectable metafield
-  section (9) → **Save → Postgres → metaobject sync → read-back, with server-authoritative
-  key finalization** (9.5) → mouse drag reorder via `@dnd-kit` (10) → keyboard reorder + a11y
-  (11) → parse pasted clipboard tables (12) → bulk-insert rows from paste (13).
-  ⚠️ Steps 4/6's contenteditable + pill machinery was **retired** by features 109–114.
+  - toolbar (2) → harden 1–2 (3) → contenteditable value surface + linear caret (4) →
+    Insert-field modal shell + caret save/restore (5) → native Shopify fields list (6) → modal
+    search/filter (7) → product metafield definitions, shop-isolated (8) → selectable metafield
+    section (9) → **Save → Postgres → metaobject sync → read-back, with server-authoritative
+    key finalization** (9.5) → mouse drag reorder via `@dnd-kit` (10) → keyboard reorder + a11y
+    (11) → parse pasted clipboard tables (12) → bulk-insert rows from paste (13).
+    ⚠️ Steps 4/6's contenteditable + pill machinery was **retired** by features 109–114.
 
 ### Reshell to the mockup — Phase A (features 16–18)
 
@@ -721,7 +739,7 @@ by handle. Multi-value applies to PRODUCT + COLLECTION only. No migrations neede
    `listTemplateSummariesForDomain({status, page, pageSize})` options object, not add a
    parallel read path.
 10. **Reshell Phase C** (Settings display rules) → **E** (assignment into the reshell) →
-   **F** (top-bar status/save + cleanup).
+    **F** (top-bar status/save + cleanup).
 
 **Deferred:** editor bulk-delete range-select (Shift+click) + Delete/Backspace shortcut;
 per-product overflow materialization + a bulk apply-to-all styling route.
@@ -805,7 +823,7 @@ per-product overflow materialization + a bulk apply-to-all styling route.
   unaffected and are all schema-backed since the init migration. The `admin-screen-plan.md`
   row now carries a blocked marker so Unit B cannot build from it by accident.
 - ✅ **OQ-103-A — webhook retry burst vs. the Neon connection pool — RESOLVED 2026-08-03 (low risk).** Three compounding grounds: the runtime string is the **transaction-mode pooler**, the webhook handlers are tiny idempotent 1–2-query writes, and 🔴 **hosting is a single long-running server** (merchant decision), so Prisma keeps ONE bounded pool — the serverless per-instance fan-out that would have needed `connection_limit=1` does not apply. See [[hosting-single-long-running-server]] and [[neon-cold-start-prisma-connect-timeout]].
-  📌 **One before-production follow-up, low urgency:** `pooler_mode` is *transaction* and the app uses plain Prisma-over-TCP, which can hit `prepared statement "s0" already exists` under concurrency. Not observed. Before real traffic, add **`pgbouncer=true`** to the pooled `DATABASE_URL` or move to the **`@prisma/adapter-neon`** driver adapter. Folds into the production-host deploy (Next Up item 1).
+  📌 **One before-production follow-up, low urgency:** `pooler_mode` is _transaction_ and the app uses plain Prisma-over-TCP, which can hit `prepared statement "s0" already exists` under concurrency. Not observed. Before real traffic, add **`pgbouncer=true`** to the pooled `DATABASE_URL` or move to the **`@prisma/adapter-neon`** driver adapter. Folds into the production-host deploy (Next Up item 1).
 - ✅ **OQ-103-B — unchunked `nodes(ids:)` past the 250-id cap — CLOSED 2026-08-01** by chunking (`NODES_MAX_IDS = 250`, per-chunk fail-soft). Stub kept because `data-model.md` §13 F4 points here.
 - **OQ-103-C — the activation gate's probe count is O(pairs) and sequential, not O(rules).**
   (raised 2026-08-01 by step 103, finding F5; `data-model.md` §13 R6.) §Key Decisions
@@ -831,7 +849,7 @@ per-product overflow materialization + a bulk apply-to-all styling route.
   them is a **migration**. ✅ **The §9 half of the blocker cleared 2026-08-04**: §9 and
   `schema.prisma` now both mark `ProductAssignmentIndex` **dormant** — its one populated
   case was the per-product override metafield, which no longer exists, so the design
-  question "is this model live?" is answered *no*. What remains is purely the migration
+  question "is this model live?" is answered _no_. What remains is purely the migration
   call (and note `shop/redact` still deletes from the table, step 105, so a drop touches
   that path too). Still blocked on **OQ-107-B**, which has onboarding checklist step 3
   keying off an `APPLIED` row that can now never be written. See
@@ -888,7 +906,7 @@ per-product overflow materialization + a bulk apply-to-all styling route.
   advisory would be friendlier, but today's activation gate is a hard _block_ mechanism for
   conflicts; adding a soft warning lane is its own unit.
 - **Settings-tab "Display rules"** (mockup's `hide rows with empty values` / `show section
-  dividers` / `show on mobile`) are dummy — each needs a real definition + reconciliation with
+dividers` / `show on mobile`) are dummy — each needs a real definition + reconciliation with
   the per-row `hideWhenEmpty` flag before building (Phase C).
 - **Style tab B3 build-time details to lock:** save-as-preset overwrite UX + copy; whether the
   creation gallery ever gets a "don't show again" escape (today it is deliberately
@@ -916,5 +934,5 @@ per-product overflow materialization + a bulk apply-to-all styling route.
 - **Assignment model — rigid block-on-conflict + shop-level routing (2026-07-07, `data-model.md` §5/§9).** One scope per template (`scope`+`scopeValue`+`mode`); overlaps between ACTIVE templates are **blocked at DRAFT→ACTIVE** (merchant decides — no silent precedence, no priority knob; `priority` column dormant). Overlap check is O(rules) Postgres set-algebra + `products(query,first:1)` existence tests, never a catalog scan. ⚠️ **The probe half of that claim is half-falsified — see OQ-103-C.** Broad rules deliver as O(1) entries in one `[shop.metafields.app.routing]` json metafield (wire v3), resolved in Liquid via `metaobjects["$app:appx_spec_table"][handle]`; per-product entries and EXCLUDE carve-outs live in 1024 `$app:appx_routing_shard` metaobjects (feature 108). 🚫 The per-product override metafield was deleted 2026-08-04. `ProductAssignmentIndex` is dormant and, per OQ-103-D, unreferenced.
 - **Style tab design (2026-07-18 — `admin-screen-plan.md` §Tab 2, `data-model.md` §5/§10, PRD, code-standards).** One spec-table primitive with **orthogonal style knobs** (row layout, mobile behavior, section headers, collapsible sections via native `<details>` zero-JS, row dividers incl. zebra `stripeBgColor`, density). Modal/drawer containers rejected. **Presets = COPY semantics** (built-ins as code constants; phase-2 merchant-saved `StylePreset`) copy values into per-template `TableStyling` **real columns**, not `extraStyles`; `basedOnPreset` is provenance only. **No shop-level default styling record** (copy keeps edits side-effect-free on live storefronts). Storefront delivery via the metaobject `styling` json field: layout knobs → wrapper modifier classes, colors/typography → CSS variables. **Typography:** `fontSize` = S/M/L theme-relative presets or bounded Custom px (10–184, clamped; JSON number on the wire, digit-string in the DB); `lineHeight` (TIGHT/NORMAL/LOOSE) + `labelCase` (DEFAULT/UPPERCASE, labels only) + `fontStyle` kept; font-family/letter-spacing/wrap/per-side padding rejected.
 - **Scale ceilings (steps 103–104, `data-model.md` §13/§14).** The 128KB `json` metafield **write** limit applies — the app is **NOT grandfathered** (first commit 2026-06-09, first `type = "json"` 2026-07-02, both after the 2026-04-01 cutoff). It is dormant **only** because the runtime Admin client is pinned to `ApiVersion.January26` (2026-01, pre-2026-04); `app/shopify.server.test.ts` is a tripwire that fails on a bump to 2026-04+. Capacity (current, after Option 1 compaction + Option 2 sharding): the shop wire is broad-only — **9,354** `byCollection` entries, `byType`/`byVendor` count-bounded; `byProduct`/`excluded` moved to 1024 shards, each with its own 128KB budget, so per-product capacity is `N × 128KB`. (Pre-Option-1 figures were 3,446 excludes / 1,745 `byProduct` / 1,769 `byCollection` in one shared budget.) 🚫 Step 104 measures and warns — it does **not** block; refusing / truncating / surfacing a merchant error is a future decision. ⚠️ `Metafield.sizeInBytes` is unstable-only; measurement is app-side and pre-write.
-- **Testing strategy:** Vitest; Phases 1–2 done (unit + shop-isolation, mocked Prisma); reach Phase 4 (route loaders/actions + GDPR webhooks) before App Store submission, E2E (Playwright) fast-follow. Polaris web components don't render in jsdom → editor UI is browser-verified, pure logic unit-tested. ⚠️ **One narrow jsdom carve-out (2026-08-04):** framework-free DOM *glue* (`app/utils/valueDom.ts`) IS jsdom-tested — the file opts in with `// @vitest-environment jsdom` on line 1; the runner default stays `node`, so there is no second project. Component tests remain excluded, as does contenteditable *editing behaviour* — encode that as a fixture and assert our reading of it (`code-standards.md` → Testing). 🔴 **A mocked Prisma cannot enforce a `WHERE` clause** (step 105 M2) — it returns what it was told regardless of the query, so a test named for a query condition can pass while the condition is deleted. Assert the exact `where`, and say which half is which. ⚠️ **The pointer to a fuller doc was DROPPED 2026-08-01:** it cited a plans file that no longer exists and could not be restored. This entry is the whole record of the testing strategy; if the phases need more detail, write it here or in a `context/` file, not in an untracked plans directory outside the repo.
+- **Testing strategy:** Vitest; Phases 1–2 done (unit + shop-isolation, mocked Prisma); reach Phase 4 (route loaders/actions + GDPR webhooks) before App Store submission, E2E (Playwright) fast-follow. Polaris web components don't render in jsdom → editor UI is browser-verified, pure logic unit-tested. ⚠️ **One narrow jsdom carve-out (2026-08-04):** framework-free DOM _glue_ (`app/utils/valueDom.ts`) IS jsdom-tested — the file opts in with `// @vitest-environment jsdom` on line 1; the runner default stays `node`, so there is no second project. Component tests remain excluded, as does contenteditable _editing behaviour_ — encode that as a fixture and assert our reading of it (`code-standards.md` → Testing). 🔴 **A mocked Prisma cannot enforce a `WHERE` clause** (step 105 M2) — it returns what it was told regardless of the query, so a test named for a query condition can pass while the condition is deleted. Assert the exact `where`, and say which half is which. ⚠️ **The pointer to a fuller doc was DROPPED 2026-08-01:** it cited a plans file that no longer exists and could not be restored. This entry is the whole record of the testing strategy; if the phases need more detail, write it here or in a `context/` file, not in an untracked plans directory outside the repo.
 - **Embedded-app verification:** the editor is a cross-origin iframe (top frame can't read its DOM/AOM/console); verify via Claude-in-Chrome on the `shopify app dev` preview + direct Postgres/Neon checks. Polaris CDN-build gotchas → `polaris-web-component-gotchas` memory. Admin GraphQL runtime is **2026-01** (`ApiVersion.January26`) — validate against that. The TOML `webhooks.api_version` (`shopify.app.toml:12`) now also reads **2026-01**, reconciling the old 2026-07/2025-10 split (2026-08-15); the runtime is held one release below the 2026-04 json-write ceiling on purpose ([[admin-api-version-mismatch]]).

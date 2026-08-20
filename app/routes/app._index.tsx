@@ -1,6 +1,9 @@
 import type { HeadersFunction, LoaderFunctionArgs } from "react-router";
+import { useLoaderData } from "react-router";
 import { authenticate } from "../shopify.server";
 import { boundary } from "@shopify/shopify-app-react-router/server";
+import { planSelectionUrl } from "../shopify/billing.server";
+import { ManagePlanLink } from "../components/ManagePlanLink";
 
 // `/app` — the app's home. Step 107 (Unit A) replaced the Shopify template's demo page with this shell
 // (binding spec features/107).
@@ -21,16 +24,24 @@ import { boundary } from "@shopify/shopify-app-react-router/server";
 // editor), but saying it without the deep link that makes it actionable is worse than silence. It
 // arrives whole in Unit B.
 
-// 📌 Deliberately unchanged from the template. `data-model.md` §13 R5b catalogues this route as "O(1),
-// no data read"; a loader that counted templates would move a catalogued read inside a
-// removes-only step. Counts arrive with Unit B, where R5b gets revised.
+// 📌 R5b stays "O(1), no data read": the loader adds only the plan-selection URL, a PURE
+// construction from `session.shop` + the `SHOPIFY_APP_HANDLE` env var (no DB/Admin read). It powers
+// the in-app "Manage plan" link (App Store req 1.2.3). `null` when the handle is unset — the link is
+// then hidden rather than pointing at a broken URL (the billing gate already logs that misconfig).
+// Template-count reads still arrive with Unit B, where R5b gets revised.
 export const loader = async ({ request }: LoaderFunctionArgs) => {
-  await authenticate.admin(request);
+  const { session } = await authenticate.admin(request);
 
-  return null;
+  // eslint-disable-next-line no-undef
+  const appHandle = process.env.SHOPIFY_APP_HANDLE;
+  const planUrl = appHandle ? planSelectionUrl(session.shop, appHandle) : null;
+
+  return { planUrl };
 };
 
 export default function Index() {
+  const { planUrl } = useLoaderData<typeof loader>();
+
   return (
     <s-page heading="Product specs table">
       {/* 🔴 D7 — points at the gallery, NOT `/app/templates/new`. Feature 88 step 92 made the gallery
@@ -59,6 +70,18 @@ export default function Index() {
           View templates
         </s-button>
       </s-section>
+
+      {/* App Store req 1.2.3 — a merchant can change plan in-app without contacting support. Hidden
+          when SHOPIFY_APP_HANDLE is unset (the plan URL can't be built; the billing gate logs it). */}
+      {planUrl ? (
+        <s-section heading="Plan">
+          <s-paragraph>
+            Upgrade, downgrade, or review your subscription on Shopify&rsquo;s
+            plan page.
+          </s-paragraph>
+          <ManagePlanLink url={planUrl}>Manage plan</ManagePlanLink>
+        </s-section>
+      ) : null}
     </s-page>
   );
 }
