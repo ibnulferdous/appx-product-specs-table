@@ -212,6 +212,15 @@ saved presets, cuttable).
   PRD §Pricing reconciled to the 4-tier decision (retired the Early-Bird concept). **Slice 2
   (next): assigned-product cap enforcement at assignment time + an in-app "Manage plan" link**
   (App Store req 1.2.3 — upgrade/downgrade without support).
+  — **CodeRabbit review (PR #28) applied 2026-08-20** (test **1476 / 60**): (a) a structurally
+  malformed HTTP 200 body now throws `BillingResponseError` → `determined:false` (fail-open),
+  instead of redirecting the merchant as if unsubscribed (`parseActiveSubscriptions` distinguishes
+  a malformed envelope from a valid empty list); (b) PRD marks cap enforcement as slice-2 pending,
+  not already-enforced. **Deferred, not applied:** CR's 🔴 "use the Partner API `activeSubscription`
+  instead of `currentAppInstallation.activeSubscriptions`" — the official React Router gate uses the
+  Admin-API loader path, so the `name`-vs-`handle` risk is settled at LIVE-VERIFY (a subscribed test
+  merchant must resolve `hasActiveSubscription:true` + correct plan); rewrite to Partner API only if
+  that fails. CR's migration-dedup finding is pre-existing (already on `main`) → separate follow-up.
 - **CodeRabbit review pass (7 slices) applied → `dev` merged to `main`** — ✅ 2026-08-19.
   PR #11 (`dev → main`) merged as a merge commit (`main` @ `41c734a`) after the CodeRabbit
   findings from review vehicles #14–#20 were triaged (real fixes applied, lint-only noise

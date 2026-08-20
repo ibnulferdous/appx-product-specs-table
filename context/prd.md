@@ -91,8 +91,9 @@ templates resolve to):
   subscription's name and maps it to a cap (`app/utils/billingPlans.ts`).
 - Shopify hosts the plan-selection page and automates recurring charges, proration, free
   trials, price changes, and no-charge review testing. 🔴 **Shopify does NOT enforce the
-  per-plan caps — the app does:** the root loader redirects a shop with no active subscription
-  to the hosted plan page, and the assignment path blocks/​warns once the cap is reached.
+  per-plan caps — the app must.** Two slices: **slice 1 (shipped)** — the root loader redirects a
+  shop with no active subscription to the hosted plan page; **slice 2 (pending, required before
+  release)** — the assignment path blocks/​warns once the plan's product cap is reached.
 - Trial days are tracked over a 180-day window; a reinstall does **not** reset the trial.
 
 ⟨Supersedes the retired **Early Bird / free-for-3-months / review-reward** concept — a
@@ -119,7 +120,7 @@ pre-build idea, dropped 2026-08-16. See the `shopify-app-pricing-vs-billing-api`
 2. The storefront table renders correctly on the top 10 Shopify themes, on desktop and mobile, and passes basic accessibility checks.
 3. All three data source types (manual TEXT, native Shopify fields, metafields) correctly populate row values on the storefront.
 4. The app sustains normal performance with up to 200 rows per table and up to 100 products assigned to templates.
-5. Billing gates correctly with no manual intervention: a shop with no active subscription is redirected to the hosted Shopify App Pricing page, and product assignments beyond the active plan's cap are prevented.
+5. Billing gates correctly with no manual intervention: a shop with no active subscription is redirected to the hosted Shopify App Pricing page (slice 1, shipped), and — required before release — product assignments beyond the active plan's cap are prevented (slice 2, pending).
 
 ---
 
@@ -137,7 +138,7 @@ pre-build idea, dropped 2026-08-16. See the `shopify-app-pricing-vs-billing-api`
 - Styling customization: layout knobs (row layout, section header style, collapsible sections, row dividers, density, mobile behavior), colors, font size/style, column width; built-in style-preset gallery on template creation; merchant-saved presets (phase-2 slice, cuttable without rework)
 - Simple onboarding flow
 - Archive and hard-delete template actions
-- Billing via Shopify App Pricing: four-tier plan gating in the app root loader + assigned-product cap enforcement
+- Billing via Shopify App Pricing: four-tier plan gating in the app root loader (slice 1, shipped) + assigned-product cap enforcement (slice 2, pending — required before release)
 
 ### Out of Scope (Post-MVP)
 

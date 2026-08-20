@@ -22,6 +22,19 @@ import { planFromSubscriptionName, type Plan } from "../utils/billingPlans";
 
 // --- Types ------------------------------------------------------------------
 
+/**
+ * Raised when a successful HTTP 200 carries a structurally-invalid body (no
+ * `currentAppInstallation.activeSubscriptions` array). This is a FAILURE to determine billing
+ * state — not a successful "no subscription" — so it must route to `determined: false`
+ * (fail-open) rather than trigger a redirect. Distinct from a valid, empty subscription list.
+ */
+export class BillingResponseError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "BillingResponseError";
+  }
+}
+
 /** One active AppSubscription as narrowed from the query response. */
 export type ActiveSubscription = {
   id: string;
@@ -66,7 +79,12 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 /**
  * Narrow a `currentAppInstallation.activeSubscriptions` response into a list of
- * ActiveSubscription. Malformed / missing entries are dropped, not defaulted. Pure.
+ * ActiveSubscription. Two failure modes are kept distinct:
+ *   - A structurally-invalid ENVELOPE (missing `currentAppInstallation`, or
+ *     `activeSubscriptions` not an array) throws `BillingResponseError` — a malformed 200 is a
+ *     failure to determine state, not a successful "no subscription", and must not redirect.
+ *   - Malformed individual ENTRIES (missing id/name) are dropped, not defaulted.
+ * A valid, empty `activeSubscriptions` array returns `[]` (a genuine "no subscription"). Pure.
  */
 export function parseActiveSubscriptions(json: unknown): ActiveSubscription[] {
   const data = isRecord(json) && isRecord(json.data) ? json.data : null;
@@ -74,10 +92,12 @@ export function parseActiveSubscriptions(json: unknown): ActiveSubscription[] {
     data && isRecord(data.currentAppInstallation)
       ? data.currentAppInstallation
       : null;
-  const raw =
-    installation && Array.isArray(installation.activeSubscriptions)
-      ? installation.activeSubscriptions
-      : [];
+  if (!installation || !Array.isArray(installation.activeSubscriptions)) {
+    throw new BillingResponseError(
+      "malformed activeSubscriptions response: missing currentAppInstallation.activeSubscriptions",
+    );
+  }
+  const raw = installation.activeSubscriptions;
 
   const subs: ActiveSubscription[] = [];
   for (const node of raw) {

@@ -62,15 +62,27 @@ describe("parseActiveSubscriptions", () => {
     ]);
   });
 
-  it("returns [] for no installation, no subscriptions, or a malformed shape", () => {
-    expect(parseActiveSubscriptions({ data: {} })).toEqual([]);
+  it("returns [] for a valid response with an empty subscription list", () => {
     expect(
       parseActiveSubscriptions({
         data: { currentAppInstallation: { activeSubscriptions: [] } },
       }),
     ).toEqual([]);
-    expect(parseActiveSubscriptions(null)).toEqual([]);
-    expect(parseActiveSubscriptions("nonsense")).toEqual([]);
+  });
+
+  it("throws on a structurally malformed body (distinct from a valid empty list)", () => {
+    // A malformed 200 is a FAILURE to determine state, not a successful "no subscription".
+    expect(() => parseActiveSubscriptions({ data: {} })).toThrow();
+    expect(() =>
+      parseActiveSubscriptions({ data: { currentAppInstallation: {} } }),
+    ).toThrow();
+    expect(() =>
+      parseActiveSubscriptions({
+        data: { currentAppInstallation: { activeSubscriptions: null } },
+      }),
+    ).toThrow();
+    expect(() => parseActiveSubscriptions(null)).toThrow();
+    expect(() => parseActiveSubscriptions("nonsense")).toThrow();
   });
 
   it("drops entries missing an id or name", () => {
@@ -181,6 +193,16 @@ describe("getBillingState", () => {
       subscriptionName: null,
       determined: true,
     });
+  });
+
+  it("reports determined:false on a malformed HTTP 200 body (loader must not redirect)", async () => {
+    // Structurally-invalid success body: must fail open, NOT redirect as if unsubscribed.
+    const admin = mockAdmin({ data: {} });
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const state = await getBillingState(admin);
+    expect(state.determined).toBe(false);
+    expect(state.hasActiveSubscription).toBe(false);
+    spy.mockRestore();
   });
 
   it("reports determined:false on an HTTP error (loader must not redirect)", async () => {
